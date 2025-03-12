@@ -16,8 +16,14 @@ export function compareVersions(a: string, b: string) {
   if (a === b) {
     return 0;
   }
-  const splitA = a.replace("v", "").split(".").map(parseInt);
-  const splitB = b.replace("v", "").split(".").map(parseInt);
+  const splitA = a
+    .replace("v", "")
+    .split(".")
+    .map((x) => parseInt(x));
+  const splitB = b
+    .replace("v", "")
+    .split(".")
+    .map((x) => parseInt(x));
   const length = Math.max(splitA.length, splitB.length);
   for (let i = 0; i < length; i++) {
     if (splitA[i] > splitB[i] || (splitA[i] === splitB[i] && isNaN(splitB[i + 1]))) {
@@ -119,6 +125,6 @@ export const iacTypes = [
   {
     id: "tofu",
     name: "OpenTofu",
-    icon: <img width="18px" src="/providers/opentofu.png" />,
+    icon: <img width="18px" src="/providers/opentofu.png" alt="OpenTofu" />,
   },
 ];
