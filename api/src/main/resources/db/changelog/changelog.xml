@@ -84,4 +84,5 @@
     <include file="/db/changelog/local/changelog-2.26.0-organization-icon.xml" />
     <include file="/db/changelog/local/changelog-2.26.1-webhook-data-fix.xml" />
     <include file="/db/changelog/local/changelog-2.27.0-quartz-job-class-migration.xml" />
+    <include file="/db/changelog/local/changelog-2.27.1-module-versions.xml"/>
 </databaseChangeLog>

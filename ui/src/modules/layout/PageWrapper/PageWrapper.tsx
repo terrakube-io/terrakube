@@ -38,13 +38,13 @@ export default function PageWrapper({
   return (
     <Content className="page-wrapper">
       {breadcrumbs && (
-        <Breadcrumb className="page-wrapper-crumbs">
-          {breadcrumbs.map((bc) => (
-            <Breadcrumb.Item key={bc.path}>
-              <NavLink to={bc.path}>{bc.label}</NavLink>
-            </Breadcrumb.Item>
-          ))}
-        </Breadcrumb>
+        <Breadcrumb
+          className="page-wrapper-crumbs"
+          items={breadcrumbs.map((bc) => ({
+            key: bc.path,
+            label: <NavLink to={bc.path}>{bc.label}</NavLink>,
+          }))}
+        />
       )}
       <div className="page-wrapper-content" style={{ background: colorBgContainer }}>
         <div
@@ -68,7 +68,7 @@ export default function PageWrapper({
 
           {loading ? (
             <Flex align="center" className="page-wrapper-loader" vertical gap="middle">
-              <Spin tip="Loading" size="large" />
+              <Spin size="large" />
               <Typography.Text>{loadingText || "Loading..."}</Typography.Text>
             </Flex>
           ) : (
