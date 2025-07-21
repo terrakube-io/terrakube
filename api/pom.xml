@@ -38,7 +38,7 @@
         <commons-lang3.version>3.18.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
-        <maven-artifact.version>3.9.10</maven-artifact.version>
+        <maven-artifact.version>3.9.11</maven-artifact.version>
         <commons-io.version>2.20.0</commons-io.version>
         <kubernetes-client.version>7.3.1</kubernetes-client.version>
         <!--BUILDPACK DATA-->
