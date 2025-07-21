@@ -18,7 +18,7 @@
 		<commons-text.version>1.13.1</commons-text.version>
 		<terraform-spring-boot-starter.version>1.0.0</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.0.0</terrakube-client-starter.version>
-		<commons-io.version>2.19.0</commons-io.version>
+		<commons-io.version>2.20.0</commons-io.version>
 		<commons-codec>1.18.0</commons-codec>
 		<okhttp.version>4.12.0</okhttp.version>
 		<azure-storage-blob.version>12.30.1</azure-storage-blob.version>
