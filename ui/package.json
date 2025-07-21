@@ -33,7 +33,7 @@
     "react-js-cron": "^5.2.0",
     "react-markdown": "10.1.0",
     "react-oidc-context": "3.3.0",
-    "react-router-dom": "7.6.3",
+    "react-router-dom": "7.7.0",
     "react-vis": "^1.12.1",
     "reactflow": "^11.11.3",
     "redux": "^5.0.1",
