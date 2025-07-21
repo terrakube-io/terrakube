@@ -16,7 +16,6 @@ import {
   Divider,
   Dropdown,
   Layout,
-  Menu,
   message,
   Popconfirm,
   Row,
@@ -364,7 +363,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                       items: allVersions
                                         .sort((a, b) => compareVersions(a.version, b.version))
                                         .reverse()
-                                        .map((v) => ({ key: v.version.replaceAll(".", ""), label: v.version })),
+                                        .map((v) => ({ key: v.version, label: v.version })),
                                       onClick: handleClick,
                                     }}
                                     trigger={["click"]}
@@ -808,10 +807,9 @@ export const ModuleDetails = ({ organizationName }: Props) => {
               <Col span={1}></Col>
             </Row>
           </div>
-        )
-        }
-      </div >
-    </Content >
+        )}
+      </div>
+    </Content>
   );
 };
 
