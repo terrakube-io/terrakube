@@ -24,7 +24,7 @@
         <rest-assured.version>5.5.5</rest-assured.version>
         <wiremock.version>3.10.0</wiremock.version>
         <!--groovy.version>3.0.8</groovy.version-->
-        <aws-sdk.version>2.31.78</aws-sdk.version>
+        <aws-sdk.version>2.32.4</aws-sdk.version>
         <zt-zip.version>1.17</zt-zip.version>
         <gcp-libraries-bom.version>26.63.0</gcp-libraries-bom.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
