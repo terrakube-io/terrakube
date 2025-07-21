@@ -2846,10 +2846,10 @@ ansi-to-react@^6.1.6:
     anser "^1.4.1"
     escape-carriage "^1.3.0"
 
-antd@^5.26.4:
-  version "5.26.4"
-  resolved "https://registry.yarnpkg.com/antd/-/antd-5.26.4.tgz#bfa5da007c30a60e2f8a1e4bfb83b8d6e3363e8c"
-  integrity sha512-e1EnOvEkvvqcQ18dxfzChBJyJACyih13WpNf2OtnP9z2POh/SF0fXL+ynUemT1zfr+p+P1po/tmHXaMc5PMghg==
+antd@^5.26.6:
+  version "5.26.6"
+  resolved "https://registry.yarnpkg.com/antd/-/antd-5.26.6.tgz#cdfd0aa02e6a9762ef26b4cc6d69f5d1bfbdf372"
+  integrity sha512-k8ipeT+UL2tP/x4jHTXElScAxsD94JgrIEeGHj80nNO4dL9hqcmaOUBpHo3ieCf6MFjhS7gLUthysQeP6e7DUg==
   dependencies:
     "@ant-design/colors" "^7.2.1"
     "@ant-design/cssinjs" "^1.23.0"
