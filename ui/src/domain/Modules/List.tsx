@@ -1,5 +1,6 @@
+import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ClockCircleOutlined, CloudOutlined, CloudUploadOutlined, DownloadOutlined } from "@ant-design/icons";
-import { Button, Card, Input, Layout, List, Space, Tag, Typography, Row, Col } from "antd";
+import { Button, Card, Col, Input, List, Row, Space, Tag, Typography } from "antd";
 import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
@@ -11,11 +12,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { FlatModule, ModuleModel } from "../types";
-import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 
-const { Content } = Layout;
 const include = { MODULE: "module" };
 const { Search } = Input;
 
@@ -142,9 +140,7 @@ export const ModuleList = ({ setOrganizationName, organizationName }: Props) => 
                         <IconContext.Provider value={{ size: "1.3em" }}>
                           <RiFolderHistoryLine />
                         </IconContext.Provider>
-                        <Typography.Text>
-                          {item.versions.length > 0 ? item.versions.sort(compareVersions).reverse()[0] : "No versions"}
-                        </Typography.Text>
+                        <Typography.Text>{item.latestVersion}</Typography.Text>
                       </Space>
                       <Space>
                         <ClockCircleOutlined />

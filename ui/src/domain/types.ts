@@ -187,10 +187,16 @@ export type ModuleAttributes = {
   provider: string;
   source: string;
   folder?: string;
+  latestVersion: string;
   versions: string[];
   registryPath: string;
   tagPrefix?: string;
 } & AuditFieldBase;
+
+export type ModuleVersionAttributes = {
+  version: string;
+  commit: string;
+};
 
 export type FlatModule = {
   id: string;
