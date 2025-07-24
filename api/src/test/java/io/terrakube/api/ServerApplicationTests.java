@@ -91,6 +91,9 @@ class ServerApplicationTests {
     @Autowired
     TclService tclService;
 
+    @Autowired
+    VcsRepository vcsRepository;
+
     private static final String ISSUER = "Terrakube";
     private static final String ISSUER_INTERNAL = "TerrakubeInternal";
 

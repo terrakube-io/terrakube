@@ -212,34 +212,88 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .defaultHeader("Content-Type", "application/json")
                     .build();
 
+            AtomicInteger currentPage = new AtomicInteger(1);
+            AtomicBoolean hasMorePages = new AtomicBoolean(true);
+
             log.info("Fetching MR changes for merge request {} in project {}", mergeRequestId, projectId);
-            String diffContentGitlab = webClient.get()
-                    .uri("/projects/{id}/merge_requests/{mergeRequestId}/raw_diffs", projectId, mergeRequestId)
-                    .retrieve()
-                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
-                            clientResponse -> {
-                                log.error("Error fetching MR changes: HTTP {}", clientResponse.statusCode());
-                                return Mono.empty();
+
+            while (hasMorePages.get()) {
+                try {
+                    webClient.get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .path("/projects/{id}/merge_requests/{mergeRequestIid}/diffs")
+                                    .queryParam("per_page", "100")
+                                    .queryParam("page", currentPage.get())
+                                    .build(projectId, mergeRequestId))
+                            .exchangeToMono(response -> {
+                                if (response.statusCode().is2xxSuccessful()) {
+                                    List<String> nextPageHeaders = response.headers().header("x-next-page");
+                                    String nextPageHeader = nextPageHeaders.isEmpty() ? null : nextPageHeaders.get(0);
+
+                                    return response.bodyToMono(String.class)
+                                            .doOnNext(responseBody -> {
+                                                log.info("Processing page {}: {}", currentPage.get(), responseBody);
+                                                try {
+                                                    GitlabDiffResponseModel[] diffModels = objectMapper.readValue(
+                                                            responseBody,
+                                                            GitlabDiffResponseModel[].class
+                                                    );
+
+                                                    for (GitlabDiffResponseModel diffModel : diffModels) {
+
+                                                        if (diffModel.getNewPath() != null ) {
+                                                            if (!fileChanges.contains(diffModel.getNewPath())) {
+                                                                fileChanges.add(diffModel.getNewPath());
+                                                                log.debug("Added new path: {}", diffModel.getNewPath());
+                                                            }
+                                                        }
+
+                                                        log.debug("Processing diff - Old: {}, New: {}, NewFile: {}, DeletedFile: {}, RenamedFile: {}",
+                                                                diffModel.getOldPath(),
+                                                                diffModel.getNewPath(),
+                                                                diffModel.isNewFile(),
+                                                                diffModel.isDeletedFile(),
+                                                                diffModel.isRenamedFile()
+                                                        );
+                                                    }
+
+                                                    if (nextPageHeader == null || nextPageHeader.isEmpty()) {
+                                                        hasMorePages.set(false);
+                                                        log.debug("No more pages available");
+                                                    } else {
+                                                        currentPage.set(Integer.parseInt(nextPageHeader));
+                                                        log.debug("Moving to next page: {}", currentPage.get());
+                                                    }
+
+                                                } catch (Exception e) {
+                                                    log.error("Error parsing diff response on page {}: {}", currentPage.get(), e.getMessage());
+                                                    hasMorePages.set(false);
+                                                }
+                                            });
+                                } else {
+                                    log.error("Error fetching MR changes on page {}: HTTP {}", currentPage.get(), response.statusCode());
+                                    hasMorePages.set(false);
+                                    return Mono.empty();
+                                }
                             })
-                    .bodyToMono(String.class)
-                    .block();
+                            .block();
 
-
-            new BufferedReader(new StringReader(diffContentGitlab)).lines().forEach(line -> {
-                if (line.startsWith("diff --git ")) {
-                    log.warn("Checking change for merge request gitlab: {}", line);
-                    // This is using the same logic from bitbucket to read the diff files to get file changes
-                    String file = line.split("\\s+")[2].substring(2);
-                    log.warn("Adding file: {}", file);
-                    fileChanges.add(file);
+                } catch (Exception e) {
+                    log.error("Failed to retrieve MR diffs on page {}: {}", currentPage.get(), e.getMessage());
+                    hasMorePages.set(false);
                 }
-            });
+            }
+
+            log.info("Successfully retrieved {} file changes from {} pages for MR {}",
+                    fileChanges.size(), currentPage.get() - 1, mergeRequestId);
+
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("Error fetching file changes for MR {}: {}", mergeRequestId, e.getMessage());
         }
 
         return fileChanges;
     }
+
 
     public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {
         String remoteHookId = webhook.getRemoteHookId();
