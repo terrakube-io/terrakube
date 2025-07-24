@@ -17,6 +17,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -31,6 +32,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
 
 @Service
 @Slf4j
@@ -210,6 +212,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .baseUrl(apiUrl)
                     .defaultHeader("Authorization", "Bearer " + accessToken)
                     .defaultHeader("Content-Type", "application/json")
+                    .clientConnector(
+                            new ReactorClientHttpConnector(
+                                    HttpClient.create().proxyWithSystemProperties()))
                     .build();
 
             AtomicInteger currentPage = new AtomicInteger(1);
@@ -369,6 +374,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 .baseUrl(gitlabBaseUrl)
                 .defaultHeader("Authorization", "Bearer " + accessToken)
                 .defaultHeader("Content-Type", "application/json")
+                .clientConnector(
+                        new ReactorClientHttpConnector(
+                                HttpClient.create().proxyWithSystemProperties()))
                 .build();
 
         AtomicInteger currentPage = new AtomicInteger(1);
@@ -508,6 +516,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.ACCEPT, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + job.getWorkspace().getVcs().getAccessToken())
+                    .clientConnector(
+                            new ReactorClientHttpConnector(
+                                    HttpClient.create().proxyWithSystemProperties()))
                     .build();
 
             // Create request body
