@@ -202,7 +202,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
     }
 
 
-    private List<String> getFileChanges(String mergeRequestId, String projectId, String accessToken, String apiUrl) {
+    private List<String> getFileChanges(String mergeRequestIid, String projectId, String accessToken, String apiUrl) {
         List<String> fileChanges = new ArrayList<>();
 
         try {
@@ -215,8 +215,13 @@ public class GitLabWebhookService extends WebhookServiceBase {
             AtomicInteger currentPage = new AtomicInteger(1);
             AtomicBoolean hasMorePages = new AtomicBoolean(true);
 
-            log.info("Fetching MR changes for merge request {} in project {}", mergeRequestId, projectId);
-
+            log.info("Fetching MR changes for merge request {} in project {}", mergeRequestIid, projectId);
+            log.info(apiUrl + "/projects/{id}/merge_requests/{mergeRequestIid}/diffs");
+            log.info("Access Token {}", accessToken);
+            log.info("Project ID: {}", projectId);
+            log.info("Merge Request ID: {}", mergeRequestIid);
+            log.info("Current Page: {}", currentPage.get());
+            log.info("Has More Pages: {}", hasMorePages.get());
             while (hasMorePages.get()) {
                 try {
                     webClient.get()
@@ -224,7 +229,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                     .path("/projects/{id}/merge_requests/{mergeRequestIid}/diffs")
                                     .queryParam("per_page", "100")
                                     .queryParam("page", currentPage.get())
-                                    .build(projectId, mergeRequestId))
+                                    .build(projectId, mergeRequestIid))
                             .exchangeToMono(response -> {
                                 if (response.statusCode().is2xxSuccessful()) {
                                     List<String> nextPageHeaders = response.headers().header("x-next-page");
@@ -285,10 +290,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
             }
 
             log.info("Successfully retrieved {} file changes from {} pages for MR {}",
-                    fileChanges.size(), currentPage.get() - 1, mergeRequestId);
+                    fileChanges.size(), currentPage.get() - 1, mergeRequestIid);
 
         } catch (Exception e) {
-            log.error("Error fetching file changes for MR {}: {}", mergeRequestId, e.getMessage());
+            log.error("Error fetching file changes for MR {}: {}", mergeRequestIid, e.getMessage());
         }
 
         return fileChanges;
