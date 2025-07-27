@@ -5,6 +5,7 @@ import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,10 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -308,7 +306,6 @@ public class VcsGitlabTests extends ServerApplicationTests {
         workspace.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
         workspace = workspaceRepository.save(workspace);
 
-
         String base64WorkspaceId = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
 
@@ -320,6 +317,12 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
         Assert.isTrue(webhookResult.getFileChanges().size()==1,"File changes is not 1");
         Assert.isTrue(webhookResult.getFileChanges().get(0).equals("main.tf"),"File changes is not main.tf");
+
+        workspace.setDeleted(true);
+        workspace.setVcs(null);
+        workspaceRepository.save(workspace);
+        vcsRepository.delete(vcs);
+
     }
 
 }
