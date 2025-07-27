@@ -1014,5 +1014,10 @@ public class VcsBitbucketTests extends ServerApplicationTests{
 
         Assert.isTrue(webhookResult.getFileChanges().size()==1,"File changes is not 1");
 
+        workspace.setDeleted(true);
+        workspace.setVcs(null);
+        workspaceRepository.save(workspace);
+        vcsRepository.delete(vcs);
+
     }
 }

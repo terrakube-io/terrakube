@@ -5,4 +5,5 @@ public enum WebhookEventType {
     PULL_REQUEST,
     PING,
     RELEASE,
+    UNKNOWN
 }

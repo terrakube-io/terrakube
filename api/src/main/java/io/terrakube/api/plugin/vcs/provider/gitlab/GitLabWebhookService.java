@@ -19,6 +19,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import io.terrakube.api.plugin.vcs.WebhookResult;
@@ -128,7 +129,6 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
     private WebhookResult handleMergeRequestEvent(WebhookResult result, String jsonPayload, Workspace workspace) throws IOException, InterruptedException {
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
-        result.setEvent("pull_request"); // hard coded pull_request to change the type from gitlab that is merge_request
         try {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
 
@@ -210,14 +210,26 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .baseUrl(apiUrl)
                     .defaultHeader("Authorization", "Bearer " + accessToken)
                     .defaultHeader("Content-Type", "application/json")
+                    .filter(ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
+                        log.info("WebClient Request: {} {}", clientRequest.method(), clientRequest.url());
+                        clientRequest.headers().forEach((name, values) ->
+                                log.info("Request Header: {}: {}", name, String.join(", ", values)));
+                        return Mono.just(clientRequest);
+                    }))
+                    .filter(ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
+                        log.info("WebClient Response: {}", clientResponse.statusCode());
+                        clientResponse.headers().asHttpHeaders().forEach((name, values) ->
+                                log.info("Response Header: {}: {}", name, String.join(", ", values)));
+                        return Mono.just(clientResponse);
+                    }))
                     .build();
 
             AtomicInteger currentPage = new AtomicInteger(1);
             AtomicBoolean hasMorePages = new AtomicBoolean(true);
 
             log.info("Fetching MR changes for merge request {} in project {}", mergeRequestIid, projectId);
-            log.info(apiUrl + "/projects/{id}/merge_requests/{mergeRequestIid}/diffs");
-            log.info("Access Token {}", accessToken);
+            log.info( "{}/projects/{}/merge_requests/{}/diffs", apiUrl, projectId, mergeRequestIid);
+            log.debug("Access Token {}", accessToken);
             log.info("Project ID: {}", projectId);
             log.info("Merge Request ID: {}", mergeRequestIid);
             log.info("Current Page: {}", currentPage.get());
@@ -226,10 +238,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 try {
                     webClient.get()
                             .uri(uriBuilder -> uriBuilder
-                                    .path("/projects/{id}/merge_requests/{mergeRequestIid}/diffs")
-                                    .queryParam("per_page", "100")
+                                    .path("/projects/{projectId}/merge_requests/{mergeRequestIid}/diffs")
+                                    .queryParam("per_page", "25")
                                     .queryParam("page", currentPage.get())
-                                    .build(projectId, mergeRequestIid))
+                                    .build(Map.of("projectId", projectId, "mergeRequestIid", mergeRequestIid)))
                             .exchangeToMono(response -> {
                                 if (response.statusCode().is2xxSuccessful()) {
                                     List<String> nextPageHeaders = response.headers().header("x-next-page");
@@ -381,7 +393,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                         .uri(uriBuilder -> uriBuilder
                                 .path("/projects")
                                 .queryParam("membership", "true")
-                                .queryParam("per_page", "1")
+                                .queryParam("per_page", "25")
                                 .queryParam("page", currentPage)
                                 .build())
                         .exchangeToMono(response -> {
