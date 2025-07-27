@@ -210,7 +210,7 @@ public class WebhookService {
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getNormalizedEvent()))
+                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
@@ -222,7 +222,7 @@ public class WebhookService {
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getNormalizedEvent()))
+                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
