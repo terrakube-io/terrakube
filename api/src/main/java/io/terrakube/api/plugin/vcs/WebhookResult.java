@@ -35,6 +35,8 @@ public class WebhookResult {
                 break;
             case "release":
                 normalizedEvent = "release";
+            default:
+                normalizedEvent = "unknown";
                 break;
         }
         log.info("Current event {} Normalized event: {}", this.event, normalizedEvent);
