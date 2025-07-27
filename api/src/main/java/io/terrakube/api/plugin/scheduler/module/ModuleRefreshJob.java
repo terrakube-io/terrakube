@@ -25,6 +25,10 @@ import org.quartz.JobExecutionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.repository.ModuleRepository;
@@ -34,10 +38,6 @@ import io.terrakube.api.rs.module.ModuleVersion;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -55,7 +55,7 @@ public class ModuleRefreshJob implements Job {
     @Override
     @Transactional
     public void execute(JobExecutionContext context) throws JobExecutionException {
-       String moduleId = context.getJobDetail().getJobDataMap().getString(moduleRefreshService.getJobDataKey());
+        String moduleId = context.getJobDetail().getJobDataMap().getString(moduleRefreshService.getJobDataKey());
         Optional<Module> search = moduleRepository.findById(UUID.fromString(moduleId));
         if (search.isEmpty())
             return;
@@ -69,13 +69,13 @@ public class ModuleRefreshJob implements Job {
             log.error("Failed to refresh module {} on organization/user {}, error {}", module.getName(),
                     module.getOrganization().getName(), e);
         }
-        
+
         if (versions == null) {
             log.error("There are no tags available for module {} on organization/user {}, error {}", module.getName(),
                     module.getOrganization().getName(), "No versions found");
             return;
         }
-        
+
         List<ModuleVersion> moduleVersions = new ArrayList<>();
         versions.forEach((key, value) -> {
             ModuleVersion moduleVersion = new ModuleVersion();
@@ -84,7 +84,7 @@ public class ModuleRefreshJob implements Job {
             moduleVersion.setModule(module);
             moduleVersions.add(moduleVersion);
         });
-       
+
         moduleVersionRepository.deleteByModuleId(module.getId());
         moduleVersionRepository.saveAll(moduleVersions);
     }
