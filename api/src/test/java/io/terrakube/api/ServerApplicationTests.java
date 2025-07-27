@@ -7,6 +7,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
 import org.junit.jupiter.api.AfterAll;

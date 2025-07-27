@@ -87,7 +87,7 @@ public class WebhookService {
 
         try {
             String templateId = webhookResult.isRelease() ? findTemplateIdRelease(webhookResult, webhook) : findTemplateId(webhookResult, webhook);
-            log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getEvent(),
+            log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
                     webhook.getWorkspace().getName(), templateId);
             Job job = new Job();
             job.setTemplateReference(templateId);
@@ -204,25 +204,25 @@ public class WebhookService {
     private String findTemplateId(WebhookResult result, Webhook webhook) {
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getEvent().toUpperCase()))
+                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent()))
+                        "No valid template found for the configured webhook event " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
     private String findTemplateIdRelease(WebhookResult result, Webhook webhook) {
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getEvent().toUpperCase()))
+                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent()))
+                        "No valid template found for the configured webhook event " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
