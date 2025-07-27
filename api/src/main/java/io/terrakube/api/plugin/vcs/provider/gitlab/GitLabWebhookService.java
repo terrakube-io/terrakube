@@ -288,7 +288,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                                 }
                                             });
                                 } else {
-                                    log.error("Error fetching MR changes on page {}: HTTP {}", currentPage.get(), response.statusCode(), response.bodyToMono(String.class));
+                                    log.error("Error fetching MR changes on page {}: HTTP {}", currentPage.get(), response.statusCode());
                                     hasMorePages.set(false);
                                     return Mono.empty();
                                 }
