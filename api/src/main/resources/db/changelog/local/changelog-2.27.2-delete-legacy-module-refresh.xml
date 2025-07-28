@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-27-0-4" author="alfespa17@gmail.com">
+        <sql dbms="postgresql, mssql">
+            delete from qrtz_cron_triggers where trigger_name in (select trigger_name from qrtz_triggers where job_name in (select job_name from qrtz_job_details where JOB_CLASS_NAME='io.terrakube.api.plugin.scheduler.module.CacheJob'));
+            delete from qrtz_triggers where job_name in (select job_name from qrtz_job_details where JOB_CLASS_NAME='io.terrakube.api.plugin.scheduler.module.CacheJob');
+            delete from qrtz_job_details where JOB_CLASS_NAME='io.terrakube.api.plugin.scheduler.module.CacheJob';
+        </sql>
+    </changeSet>
+</databaseChangeLog>
