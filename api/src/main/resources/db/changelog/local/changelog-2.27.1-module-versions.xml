@@ -14,7 +14,7 @@
             <column name="version" type="varchar(256)">
                 <constraints nullable="false"/>
             </column>
-            <column name="commit" type="varchar(256)">
+            <column name="commit_info" type="varchar(256)">
                 <constraints nullable="false"/>
             </column>
         </createTable>
