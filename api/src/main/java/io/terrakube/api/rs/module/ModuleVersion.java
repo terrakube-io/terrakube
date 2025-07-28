@@ -35,6 +35,6 @@ public class ModuleVersion {
     @Column(name = "version")
     private String version;
     
-    @Column(name = "commit")
+    @Column(name = "commit_info")
     private String commit;
 }
