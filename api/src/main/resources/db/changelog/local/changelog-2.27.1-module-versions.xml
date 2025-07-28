@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-25-1-200" author="Stanley Zhang (stanley.zhang@ityin.net)">
+        <createTable tableName="module_version">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="module_id" type="varchar(36)">
+                <constraints nullable="false" foreignKeyName="fk_module_version_module" references="module(id)" deleteCascade="true"/>
+            </column>
+            <column name="version" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="commit" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>
