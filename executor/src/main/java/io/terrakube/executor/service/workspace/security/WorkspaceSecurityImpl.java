@@ -74,7 +74,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
     public String generateAccessToken(int minutes) {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
-        String token = Jwts.builder()
+        return Jwts.builder()
                 .setHeaderParam("typ", "JWT")
                 .setIssuer(WorkspaceSecurityImpl.ISSUER)
                 .setSubject(WorkspaceSecurityImpl.SUBJECT)
@@ -86,7 +86,6 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)))
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
-        return token;
     }
 
     @Override
