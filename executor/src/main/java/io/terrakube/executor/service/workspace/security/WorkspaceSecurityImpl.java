@@ -55,7 +55,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
-        newToken = Jwts.builder()
+         return Jwts.builder()
                 .setHeaderParam("typ", "JWT")
                 .setIssuer(WorkspaceSecurityImpl.ISSUER)
                 .setSubject(WorkspaceSecurityImpl.SUBJECT)
@@ -68,7 +68,6 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
 
-        return newToken;
     }
 
     @Override
