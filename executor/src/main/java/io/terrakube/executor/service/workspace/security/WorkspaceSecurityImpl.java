@@ -87,8 +87,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)))
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
-        log.info("Generated Token {}", token);
-        return token;   
+        return token;
     }
 
     @Override
