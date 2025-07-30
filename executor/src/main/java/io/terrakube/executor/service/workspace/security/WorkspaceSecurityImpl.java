@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.workspace.security;
 
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +55,8 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
-        newToken = Jwts.builder()
+         return Jwts.builder()
+                .setHeaderParam("typ", "JWT")
                 .setIssuer(WorkspaceSecurityImpl.ISSUER)
                 .setSubject(WorkspaceSecurityImpl.SUBJECT)
                 .setAudience(WorkspaceSecurityImpl.ISSUER)
@@ -63,10 +65,9 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("name", WorkspaceSecurityImpl.NAME)
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(Instant.now().plus(30, ChronoUnit.DAYS)))
-                .signWith(key)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
 
-        return newToken;
     }
 
     @Override
@@ -74,6 +75,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
         return Jwts.builder()
+                .setHeaderParam("typ", "JWT")
                 .setIssuer(WorkspaceSecurityImpl.ISSUER)
                 .setSubject(WorkspaceSecurityImpl.SUBJECT)
                 .setAudience(WorkspaceSecurityImpl.ISSUER)
@@ -82,7 +84,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("name", WorkspaceSecurityImpl.NAME)
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)))
-                .signWith(key)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
