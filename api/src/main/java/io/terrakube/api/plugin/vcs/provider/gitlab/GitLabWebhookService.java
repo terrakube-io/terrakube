@@ -213,13 +213,13 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .filter(ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
                         log.info("WebClient Request: {} {}", clientRequest.method(), clientRequest.url());
                         clientRequest.headers().forEach((name, values) ->
-                                log.info("Request Header: {}: {}", name, String.join(", ", values)));
+                                log.debug("Request Header: {}: {}", name, String.join(", ", values)));
                         return Mono.just(clientRequest);
                     }))
                     .filter(ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
                         log.info("WebClient Response: {}", clientResponse.statusCode());
                         clientResponse.headers().asHttpHeaders().forEach((name, values) ->
-                                log.info("Response Header: {}: {}", name, String.join(", ", values)));
+                                log.debug("Response Header: {}: {}", name, String.join(", ", values)));
                         return Mono.just(clientResponse);
                     }))
                     .build();
