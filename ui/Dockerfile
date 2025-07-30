@@ -12,11 +12,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN yarn build
 
 # => Run container
-FROM bitnami/nginx:latest
+FROM nginxinc/nginx-unprivileged:latest
 
 # Default Terraform version, updated at build time
 ARG REACT_APP_TERRAKUBE_VERSION=2.0.0
 
+WORKDIR /usr/share/nginx/html
+
 # Static build
-COPY --from=builder /app/build /app
-COPY ./conf/conf.d/bitnami.conf /opt/bitnami/nginx/conf/server_blocks/my_server_block.conf
+COPY --from=builder /app/build .
+COPY conf/conf.d/terrakube-ui.conf /etc/nginx/conf.d/default.conf
