@@ -46,8 +46,11 @@ public class ModuleServiceImpl implements ModuleService {
         }
 
         List<ModuleVersion> versionList = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId()).getData();
+        log.debug("Version list: {}", (Object) versionList.stream()
+                .map(version -> version.getAttributes().getVersion())
+                .toArray(String[]::new));
+
         for (ModuleVersion version : versionList) {
-            log.info("Version: {}", version);
             definitionVersions.add(version.getAttributes().getVersion());
         }
         return definitionVersions;
