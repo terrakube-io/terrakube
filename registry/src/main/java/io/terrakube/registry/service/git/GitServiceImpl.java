@@ -100,6 +100,7 @@ public class GitServiceImpl implements GitService {
             String folderName, String tagPrefix) {
         List<String> versionList = new ArrayList<>();
         String finalTag = (tagPrefix == null ? "" : tagPrefix) + originalTag;
+        log.info("Checking if tag {} exists in repository {}", finalTag, repository);
         Map<String, Ref> tags = null;
         try {
             tags = Git.lsRemoteRepository()
@@ -115,8 +116,19 @@ public class GitServiceImpl implements GitService {
             versionList.add(key.replace("refs/tags/", ""));
         });
 
-        if (versionList.contains((tagPrefix == null ? "" : tagPrefix) + "v" + originalTag))
+        log.debug("Current repository tags {}", versionList);
+
+        if (versionList.contains((tagPrefix == null ? "" : tagPrefix) + "v" + originalTag)) {
             finalTag = (tagPrefix == null ? "" : tagPrefix) + "v" + originalTag;
+            log.info("Tag with letter v exists: {}", finalTag);
+        } else if (versionList.contains((tagPrefix == null ? "" : tagPrefix) + originalTag)) {
+            finalTag = (tagPrefix == null ? "" : tagPrefix) + originalTag;
+            log.info("Tag without letter v exists: {}", finalTag);
+        } else {
+            log.info("Tag {} does not exist", finalTag);
+            throw new RuntimeException(
+                    String.format("Tag %s does not exist in repository %s", finalTag, repository));
+        }
 
         return finalTag;
     }
