@@ -115,8 +115,11 @@ public class GitServiceImpl implements GitService {
             versionList.add(key.replace("refs/tags/", ""));
         });
 
-        if (versionList.contains((tagPrefix == null ? "" : tagPrefix) + "v" + originalTag))
+        if (versionList.contains((tagPrefix == null ? "" : tagPrefix) + "v" + originalTag)) {
             finalTag = (tagPrefix == null ? "" : tagPrefix) + "v" + originalTag;
+        } else if (!versionList.isEmpty()) {
+            finalTag = versionList.get(versionList.size() - 1);
+        }
 
         return finalTag;
     }
