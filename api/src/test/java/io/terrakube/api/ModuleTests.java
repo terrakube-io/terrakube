@@ -4,7 +4,10 @@ import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.quartz.JobKey;
+import org.quartz.SchedulerException;
 import org.springframework.http.HttpStatus;
+import org.springframework.util.Assert;
 
 import static io.restassured.RestAssured.given;
 import static org.mockito.Mockito.when;
@@ -32,8 +35,8 @@ class ModuleTests extends ServerApplicationTests {
     }
 
     @Test
-    void createModuleAsOrgMember() {
-        given()
+    void createModuleAsOrgMember() throws SchedulerException {
+        String moduleId = given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body("{\n" +
                         "  \"data\": {\n" +
@@ -53,7 +56,11 @@ class ModuleTests extends ServerApplicationTests {
                 .body("data.attributes.name", IsEqual.equalTo("terrakube-storage"))
                 .log()
                 .all()
-                .statusCode(HttpStatus.CREATED.value());
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        // Validate the job to refresh modules was created automatically in post commit phase
+        boolean jobExist = scheduler.getJobDetail(new JobKey("TerrakubeV2_ModuleRefresh_" + moduleId)) != null;
+        Assert.isTrue(jobExist, "Default job should be created for the vcs connection");
     }
 
     @Test
