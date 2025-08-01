@@ -7,13 +7,13 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
-import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInstance;
 import org.mockito.Mock;
+import org.quartz.Scheduler;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -94,6 +94,9 @@ class ServerApplicationTests {
 
     @Autowired
     VcsRepository vcsRepository;
+
+    @Autowired
+    Scheduler scheduler;
 
     private static final String ISSUER = "Terrakube";
     private static final String ISSUER_INTERNAL = "TerrakubeInternal";

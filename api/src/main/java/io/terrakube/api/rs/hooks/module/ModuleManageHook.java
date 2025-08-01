@@ -43,7 +43,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
     public void execute(LifeCycleHookBinding.Operation operation,
             LifeCycleHookBinding.TransactionPhase transactionPhase, Module module, RequestScope requestScope,
             Optional<ChangeSpec> optional) {
-
+        log.info("ModuleManageHook {}/{}/{} phase {}", module.getOrganization().getName(), module.getName(), module.getProvider(), transactionPhase);
         switch (operation) {
             case CREATE:
                 log.info("ModuleManageHook creation hook for {}/{}/{}", module.getOrganization().getName(),
@@ -54,10 +54,11 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         break;
                     case POSTCOMMIT:
                         try {
+                            log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(), module.getName(), module.getProvider());
                             moduleRefreshService.createTask(300, module.getId().toString(), true);
                         } catch (SchedulerException e) {
                             log.error("Failed to create module refresh task for {}/{}/{}, error {}",
-                                    module.getOrganization().getName(), module.getName(), module.getProvider(), e);
+                                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
                         }
                     default:
                         break;
@@ -71,7 +72,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     moduleRefreshService.createTask(300, module.getId().toString(), true);
                 } catch (SchedulerException e) {
                     log.error("Failed to create module refresh task for {}/{}/{}, error {}",
-                            module.getOrganization().getName(), module.getName(), module.getProvider(), e);
+                            module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
                 }
                 break;
             case DELETE:
@@ -123,7 +124,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     module.getName(), module.getProvider());
         } catch (URISyntaxException | JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
             log.error("Failed to fetch GitHub App Token for module {}/{}/{}, error {}",
-                    module.getOrganization().getName(), module.getName(), module.getProvider(), e);
+                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
         }
     }
 }
