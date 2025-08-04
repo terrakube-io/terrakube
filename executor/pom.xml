@@ -19,7 +19,7 @@
 		<terraform-spring-boot-starter.version>1.0.0</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.1.0</terrakube-client-starter.version>
 		<commons-io.version>2.20.0</commons-io.version>
-		<commons-codec>1.18.0</commons-codec>
+		<commons-codec>1.19.0</commons-codec>
 		<okhttp.version>4.12.0</okhttp.version>
 		<azure-storage-blob.version>12.31.0</azure-storage-blob.version>
 		<jgit.version>7.3.0.202506031305-r</jgit.version>
