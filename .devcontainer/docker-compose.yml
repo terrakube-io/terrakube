@@ -111,7 +111,8 @@ x-ui: &ui_env
   JAVA_TOOL_OPTIONS: -Dcom.sun.security.enableAIAcaIssuers=true
 
 x-traefik_env: &traefik_env
-  TRAEFIK_API_DASHBOARD: "false"
+  TRAEFIK_API_DASHBOARD: "true"
+  TRAEFIK_API_INSECURE: "true"
   TRAEFIK_ENTRYPOINTS_WEB: "true"
   TRAEFIK_ENTRYPOINTS_WEB_ADDRESS: ":${TRAEFIK_HTTP_PORT}"
   TRAEFIK_ENTRYPOINTS_WEB_HTTP_ENCODEQUERYSEMICOLONS: "true"
@@ -121,36 +122,39 @@ x-traefik_env: &traefik_env
   TRAEFIK_PROVIDERS_DOCKER: "true"
   TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false"
   TRAEFIK_PROVIDERS_FILE_FILENAME: /etc/traefik_dynamic.yml
+  # Logging Configuration
+  TRAEFIK_LOG_LEVEL: INFO
+  TRAEFIK_LOG_FORMAT: json
+  TRAEFIK_ACCESSLOG: "true"
+  TRAEFIK_ACCESSLOG_FORMAT: json
+  TRAEFIK_ACCESSLOG_FIELDS_NAMES_STARTUTC: drop
+  TRAEFIK_ACCESSLOG_FIELDS_NAMES_REQUESTADDR: drop
+  TRAEFIK_ACCESSLOG_FIELDS_NAMES_REQUESTPORT: drop
+  TRAEFIK_ACCESSLOG_FIELDS_HEADERS_DEFAULTMODE: keep
+  TRAEFIK_ACCESSLOG_FIELDS_HEADERS_NAMES_USER-AGENT: drop
+  TRAEFIK_ACCESSLOG_FIELDS_HEADERS_NAMES_AUTHORIZATION: drop
+  TRAEFIK_ACCESSLOG_FIELDS_HEADERS_NAMES_CONTENT-TYPE: keep
 
-## Terrakube Components
+## Terrakube Components - Fixed Labels
 x-traefik_dev_labels: &traefik_dev_labels
   traefik.enable: true
+  
   ## Terrakube API
-  ## Terrakube API HTTP
+  ## Terrakube API HTTPS
   traefik.http.routers.terrakube-api-https.rule: Host(`terrakube-api.${DOMAIN}`)
   traefik.http.routers.terrakube-api-https.entrypoints: websecure
   traefik.http.routers.terrakube-api-https.tls: true
   traefik.http.routers.terrakube-api-https.middlewares: terrakube-dex-allow-origin
   traefik.http.routers.terrakube-api-https.service: terrakube-api-https
   traefik.http.services.terrakube-api-https.loadbalancer.server.port: 8080
-  ## Terrakube API HTTPS
+  
+  ## Terrakube API HTTP (redirect to HTTPS)
   traefik.http.routers.terrakube-api-http.rule: Host(`terrakube-api.${DOMAIN}`)
   traefik.http.routers.terrakube-api-http.entrypoints: web
   traefik.http.routers.terrakube-api-http.middlewares: terrakube-api-redirect-https
+  traefik.http.routers.terrakube-api-http.service: terrakube-api-https
   traefik.http.middlewares.terrakube-api-redirect-https.redirectscheme.scheme: https
 
-#  ## Terrakube Executor
-#  ## Terrakube executor HTTPS
-#  traefik.http.routers.terrakube-executor-https.rule: Host(`terrakube-executor.${DOMAIN}`)
-#  traefik.http.routers.terrakube-executor-https.entrypoints: websecure
-#  traefik.http.routers.terrakube-executor-https.tls: true
-#  traefik.http.routers.terrakube-executor-https.middlewares: terrakube-dex-allow-origin
-#  traefik.http.services.terrakube-executor-https.loadbalancer.server.port: 8090
-#  ## Redirect to HTTPS
-#  traefik.http.routers.terrakube-executor-http.rule: Host(`terrakube-executor.${DOMAIN}`)
-#  traefik.http.routers.terrakube-executor-http.entrypoints: web
-#  traefik.http.routers.terrakube-executor-http.middlewares: terrakube-executor-redirect-https
-#  traefik.http.middlewares.terrakube-executor-redirect-https.redirectscheme.scheme: https
   ## Terrakube UI
   ## Terrakube UI HTTPS
   traefik.http.routers.terrakube-ui-https.rule: Host(`terrakube.${DOMAIN}`)
@@ -159,39 +163,49 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-ui-https.tls: true
   traefik.http.routers.terrakube-ui-https.service: terrakube-ui-https
   traefik.http.services.terrakube-ui-https.loadbalancer.server.port: 3000
-  ## Redirect to HTTPS
+  
+  ## Terrakube UI HTTP (redirect to HTTPS)
   traefik.http.routers.terrakube-ui-http.rule: Host(`terrakube.${DOMAIN}`)
   traefik.http.routers.terrakube-ui-http.entrypoints: web
   traefik.http.routers.terrakube-ui-http.middlewares: terrakube-ui-redirect-https
+  traefik.http.routers.terrakube-ui-http.service: terrakube-ui-https
   traefik.http.middlewares.terrakube-ui-redirect-https.redirectscheme.scheme: https
-  ## Terrakube registry
-  ## Terrakube registry HTTPS
+  
+  ## Terrakube Registry
+  ## Terrakube Registry HTTPS
   traefik.http.routers.terrakube-registry-https.rule: Host(`terrakube-registry.${DOMAIN}`)
   traefik.http.routers.terrakube-registry-https.entrypoints: websecure
   traefik.http.routers.terrakube-registry-https.tls: true
   traefik.http.routers.terrakube-registry-https.middlewares: terrakube-dex-allow-origin
   traefik.http.routers.terrakube-registry-https.service: terrakube-registry-https
   traefik.http.services.terrakube-registry-https.loadbalancer.server.port: 8075
-  ## Redirect to HTTPS
+  
+  ## Terrakube Registry HTTP (redirect to HTTPS)
   traefik.http.routers.terrakube-registry-http.rule: Host(`terrakube-registry.${DOMAIN}`)
   traefik.http.routers.terrakube-registry-http.entrypoints: web
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
+  traefik.http.routers.terrakube-registry-http.service: terrakube-registry-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
 
 x-traefik_dex_labels: &traefik_dex_labels
   traefik.enable: true
+  
   ## Terrakube DEX HTTPS
   traefik.http.routers.terrakube-dex-https.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-https.entrypoints: websecure
   traefik.http.routers.terrakube-dex-https.middlewares: terrakube-dex-allow-origin
   traefik.http.routers.terrakube-dex-https.tls: true
+  traefik.http.routers.terrakube-dex-https.service: terrakube-dex-https
   traefik.http.services.terrakube-dex-https.loadbalancer.server.port: 5556
-  ## Redirect to HTTPS
+  
+  ## Terrakube DEX HTTP (redirect to HTTPS)
   traefik.http.routers.terrakube-dex-http.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-http.entrypoints: web
   traefik.http.routers.terrakube-dex-http.middlewares: terrakube-dex-redirect-https
+  traefik.http.routers.terrakube-dex-http.service: terrakube-dex-https
   traefik.http.middlewares.terrakube-dex-redirect-https.redirectscheme.scheme: https
-  ## Allow CORs from Terrakube UI
+  
+  ## CORS Middleware for DEX
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowmethods: GET, PATCH, PUT, POST, DELETE, HEAD, OPTIONS
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders: >
     Content-Type, Accept, Authorization, X-Requested-With, Origin, *
@@ -206,7 +220,7 @@ x-traefik_dex_labels: &traefik_dex_labels
 ### Containers
 services:
   traefik:
-    image: traefik:2.2
+    image: traefik:latest
     container_name: terrakube-traefik
     # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
     networks:
@@ -217,12 +231,21 @@ services:
     ports:
       - $TRAEFIK_HTTP_PORT:80
       - $TRAEFIK_HTTPS_PORT:443
+      - 8080:8080  # Dashboard port
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik_dynamic.yml:/etc/traefik_dynamic.yml
       - ./key.pem:/letsencrypt/privkey.pem:ro
       - ./cert.pem:/letsencrypt/fullchain.pem:ro
+      - ./logs:/var/log/traefik  # Log directory mount
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+        tag: "traefik"
     restart: unless-stopped
+
   terrakube-dev:
     platform: linux/amd64 
     dns: *terrakube_dns
@@ -239,6 +262,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces/terrakube:cached
+
   terrakube-dex:
     image: ghcr.io/dexidp/dex:${TK_DEX_VERSION}
     extra_hosts: *terrakube_hosts
@@ -249,24 +273,28 @@ services:
       - TK_DEX_STATIC_CLIENT=${TK_DEX_STATIC_CLIENT}
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
+
   ldap-service:
     image: bitnami/openldap:${TK_LDAP_VERSION}
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
       - ./config-ldap.ldif:/ldifs/config-ldap.ldif
+
   vault-service:
     image: hashicorp/vault:latest
     extra_hosts: *terrakube_hosts
     container_name: terrakube-vault-service
     environment:
       - VAULT_DEV_ROOT_TOKEN_ID=dev-only-token
+
   minio:
     container_name: terrakube-minio
     image: docker.io/bitnami/minio:${TK_MINIO_VERSION}
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
+
   redis-service:
     image: bitnami/redis:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
@@ -277,6 +305,7 @@ services:
       - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
     volumes:
       - 'redis_data:/bitnami/redis/data'
+
   postgresql-service:
     image: docker.io/bitnami/postgresql:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service
@@ -288,6 +317,7 @@ services:
       - postgresql_data:/bitnami/postgresql
     ports:
       - 5432:5432
+
   mssql-service:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: mssql-service
@@ -295,11 +325,13 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=P@ssw0rd!
+
 volumes:
   minio_data:
   redis_data:
   postgresql_data:
     driver: local
+
 # External network is required, import its name below
 networks:
   default:
