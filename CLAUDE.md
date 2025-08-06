@@ -7,35 +7,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Frontend (React/TypeScript - UI)
 ```bash
 cd ui/
-npm start        # Start development server (Vite)
-npm run build    # Build for production
-npm test         # Run Jest tests
-npm run lint     # Check ESLint rules
-npm run format   # Format code with Prettier
+npm start         # Start development server (Vite, port 3000)
+yarn dev          # Alternative development server
+npm run build     # Build for production
+npm test          # Run Jest tests
+npm run test:coverage  # Test coverage report
+npm run lint      # Check ESLint rules
+npm run lint:modules   # Lint only modules directory
+npm run format    # Format code with Prettier
+npm run format:modules # Format only modules directory
 ```
 
-### Backend (Java/Spring Boot)
+### Backend (Java/Spring Boot 3.5.4)
 ```bash
 # Build all modules
 mvn clean install
 
-# Run API service (main backend)
+# Run services
 cd api/
-mvn spring-boot:run
+mvn spring-boot:run    # API service (port 8080)
 
-# Run Registry service
 cd registry/
-mvn spring-boot:run
+mvn spring-boot:run    # Registry service (port 8075)
 
-# Run Executor service  
 cd executor/
-mvn spring-boot:run
+mvn spring-boot:run    # Executor service (port 8090)
 
-# Run tests
-mvn test
+# Testing
+mvn test              # Run all tests
+mvn verify            # Run tests + additional verification
+mvn test -Dspring.profiles.active=test  # API tests with test profile
 
-# Build Docker images
-mvn spring-boot:build-image
+# Build & Analysis
+mvn spring-boot:build-image  # Build Docker images with buildpacks
+mvn -P sonar              # Run SonarCloud analysis (if configured)
 ```
 
 ### Development Environment Setup
@@ -47,7 +52,14 @@ mvn spring-boot:build-image
 ./scripts/setupDevelopmentEnvironmentAzure.sh
 ./scripts/setupDevelopmentEnvironmentGcp.sh
 ./scripts/setupDevelopmentEnvironmentMinio.sh
+
+# Docker Compose development environment
+cd docker-compose/
+docker-compose up -d  # Full stack with PostgreSQL, Redis, MinIO, Traefik
 ```
+
+### DevContainer Support
+VS Code devcontainer configured with Java 17, Node 20, Terraform, and all required tools.
 
 ## Architecture Overview
 
@@ -122,6 +134,7 @@ src/
 - Runtime configuration via `env.sh` script generating `env-config.js`
 - Access via `window._env_` global object
 - Key vars: `REACT_APP_TERRAKUBE_API_URL`, `REACT_APP_AUTHORITY`, `REACT_APP_CLIENT_ID`
+- Multiple deployment environment files: `.envApi`, `.envRegistry`, `.envExecutor`, `.env` (Docker Compose)
 
 ## Database & Storage
 
@@ -160,6 +173,22 @@ npm run test:coverage      # Test coverage report
 - Postman collections in `postman/` directory
 - Device code authentication flow for testing
 
+## CI/CD & Quality Assurance
+
+### GitHub Actions Workflows
+```bash
+# Automated workflows trigger on PRs and releases:
+# - Backend: Java 17, SonarCloud analysis, multi-platform builds (Jammy, Alpaquita Linux)
+# - Frontend: Node 22, Yarn, ESLint validation
+# - Release: Multi-platform Docker builds, automated versioning
+```
+
+### Code Quality
+- SonarCloud integration for static analysis
+- ESLint + Prettier for frontend code formatting
+- Maven Surefire for backend test execution
+- Jest for frontend unit testing
+
 ## Key Configuration Files
 
 ### Backend Configuration
@@ -168,9 +197,15 @@ npm run test:coverage      # Test coverage report
 - `executor/src/main/resources/application.properties`: Executor settings
 
 ### Frontend Configuration
-- `ui/package.json`: Dependencies and scripts
-- `ui/vite.config.mts`: Build configuration
+- `ui/package.json`: Dependencies and scripts (React 18.3.1, Vite)
+- `ui/vite.config.mts`: Build configuration (dev server port 3000)
 - `ui/tsconfig.*.json`: TypeScript compilation settings
+- `ui/env.sh`: Runtime environment configuration generator
+
+### Docker & Deployment
+- `docker-compose/docker-compose.yml`: Complete stack with Traefik, PostgreSQL, Redis, MinIO
+- `ui/Dockerfile`: Frontend container configuration
+- `.devcontainer/devcontainer.json`: VS Code development environment
 
 ## Development Workflow
 

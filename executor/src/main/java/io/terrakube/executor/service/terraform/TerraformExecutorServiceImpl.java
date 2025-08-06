@@ -179,7 +179,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
             terraformClient.setRedirectErrorStream(true);
-            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, planOutput);
+            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, applyOutput);
             executeTerraformInit(
                     terraformJob,
                     terraformWorkingDir,
@@ -236,7 +236,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
             terraformClient.setRedirectErrorStream(true);
-            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, planOutput);
+            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, outputDestroy);
             executeTerraformInit(
                     terraformJob,
                     terraformWorkingDir,
