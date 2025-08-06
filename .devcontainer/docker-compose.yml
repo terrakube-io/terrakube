@@ -224,6 +224,7 @@ services:
       - ./cert.pem:/letsencrypt/fullchain.pem:ro
     restart: unless-stopped
   terrakube-dev:
+    platform: linux/amd64 
     dns: *terrakube_dns
     extra_hosts: *terrakube_hosts
     labels: *traefik_dev_labels
