@@ -206,7 +206,7 @@ x-traefik_dex_labels: &traefik_dex_labels
 ### Containers
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:2.2
     container_name: terrakube-traefik
     # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
     networks:
