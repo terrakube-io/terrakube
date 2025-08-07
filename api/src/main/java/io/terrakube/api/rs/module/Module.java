@@ -88,7 +88,7 @@ public class Module extends GenericAuditFields {
     @OneToOne
     private Ssh ssh;
 
-    @OneToMany(cascade = { CascadeType.REMOVE }, mappedBy = "module")
+    @OneToMany(cascade = {CascadeType.REMOVE}, mappedBy = "module")
     private List<ModuleVersion> version;
 
     @Transient
@@ -102,10 +102,18 @@ public class Module extends GenericAuditFields {
     public String getLatestVersion() {
         return version != null && !version.isEmpty()
                 ? version.stream()
-                        .map(ModuleVersion::getVersion)
-                        .max((v1, v2) -> Version.parse(v1.replace("v", ""))
-                                .compareTo(Version.parse(v2.replace("v", ""))))
-                        .orElse("Version pending")
+                .map(ModuleVersion::getVersion)
+                .filter(v -> {
+                    try {
+                        Version.parse(v.replace("v", ""));
+                        return true; // Valid version format
+                    } catch (IllegalArgumentException e) {
+                        return false; // Invalid version format
+                    }
+                })
+                .max((v1, v2) -> Version.parse(v1.replace("v", ""))
+                        .compareTo(Version.parse(v2.replace("v", ""))))
+                .orElse("Version pending")
                 : "Version pending";
     }
 }
