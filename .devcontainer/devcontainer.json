@@ -14,7 +14,7 @@
       "version": "17.0.15-librca"
     },
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "20",
+      "version": "22",
       "installYarnUsingApt": true
     },
     "ghcr.io/devcontainers/features/terraform:1": {
