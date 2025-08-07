@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.module;
 
 import java.util.List;
 
+import io.terrakube.api.repository.OrganizationRepository;
 import org.quartz.Job;
 import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,11 +31,13 @@ public class ModuleRefreshService extends ScheduleServiceBase {
     private ModuleRepository moduleRepository;
     @Autowired
     private ModuleVersionRepository moduleVersionRepository;
+    @Autowired
+    private OrganizationRepository organizationRepository;
 
     @PostConstruct
     @Transactional
     public void initModuleRefreshJob() {
-        List<Module> modules = moduleRepository.findAll();
+        List<Module> modules = moduleRepository.findByOrganizationIn(organizationRepository.findAll()); // this will return only enabled organization modules
 
         for (Module module : modules) {
             List<ModuleVersion> versions = moduleVersionRepository.findAllByModuleId(module.getId());
