@@ -254,12 +254,6 @@ services:
     environment: *ldap_env
     volumes:
       - ./config-ldap.ldif:/ldifs/config-ldap.ldif
-  vault-service:
-    image: hashicorp/vault:latest
-    extra_hosts: *terrakube_hosts
-    container_name: terrakube-vault-service
-    environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=dev-only-token
   minio:
     container_name: terrakube-minio
     image: docker.io/bitnami/minio:${TK_MINIO_VERSION}
