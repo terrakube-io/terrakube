@@ -1,0 +1,61 @@
+#cloud-config
+
+package_upgrade: false
+packages:
+  - nginx
+  - git
+  - software-properties-common
+  - apt-transport-https
+  - curl
+  - unzip
+  - zip
+  - ca-certificates
+
+write_files:
+  - path: /opt/terrakube-config/clone-repository.sh
+    content: |
+      #!/bin/bash
+
+      cd /opt
+      git clone https://github.com/terrakube-io/terrakube.git
+      cd terrakube
+      git checkout 2.27.2
+      
+      echo 'Git clone finished successfully!'
+    permissions: '0755'
+  - path: /opt/terrakube-config/maven-setup.sh
+    content: |
+      #!/bin/bash
+
+      export HOME=/root
+      curl -s "https://get.sdkman.io" | bash 
+      export SDKMAN_DIR="/root/.sdkman"
+      source "$SDKMAN_DIR/bin/sdkman-init.sh"
+      export SDKMAN_AUTO_ANSWER=true
+      sdk install java 17.0.16-librca
+      sdk install maven
+      
+      cd /opt/terrakube
+      mvn clean install -Dspring-boot.build-image.skip=true 
+      
+      echo 'Maven setup finished successfully!'
+    permissions: '0755'
+  - path: /opt/terrakube-config/yarn-setup.sh
+    content: |
+      #!/bin/bash
+
+      export HOME=/root
+      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+      export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install 22
+      
+      cd /opt/terrakube/ui
+      npm install -g yarn
+      yarn install
+      
+      echo 'Yarn setup finished successfully!'
+    permissions: '0755'
+
+runcmd:
+  - [ bash, -lc, "/opt/terrakube-config/clone-repository.sh" ]
+  - [ bash, -lc, "/opt/terrakube-config/maven-setup.sh" ]
+  - [ bash, -lc, "/opt/terrakube-config/yarn-setup.sh" ]
