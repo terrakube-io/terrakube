@@ -82,7 +82,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/babel__standalone": "^7.1.9",
     "@types/jest": "^30.0.0",
-    "@types/luxon": "^3.6.2",
+    "@types/luxon": "^3.7.1",
     "@types/node": "^24.2.0",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
