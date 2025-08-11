@@ -18,7 +18,7 @@
         <elide.version>7.1.11</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
         <liquibase-core.version>4.33.0</liquibase-core.version>
-        <azure.version>5.22.0</azure.version>
+        <azure.version>5.23.0</azure.version>
         <mssql-jdbc.version>12.10.1.jre11</mssql-jdbc.version>
         <msal4j.version>1.22.0</msal4j.version>
         <lombok.version>1.18.38</lombok.version>
