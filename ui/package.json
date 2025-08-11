@@ -83,7 +83,7 @@
     "@types/babel__standalone": "^7.1.9",
     "@types/jest": "^30.0.0",
     "@types/luxon": "^3.7.1",
-    "@types/node": "^24.2.0",
+    "@types/node": "^24.2.1",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@types/react-vis": "^1.11.15",
