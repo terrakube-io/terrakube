@@ -143,7 +143,7 @@ public class EphemeralExecutorService {
             String configPVCpath = configPVCOpt.get();
             String PluginVolumeName = "tf-plugin-volume";
             String pvcClaimName = executorContext.getEnvironmentVariables().getOrDefault(PVC_CLAIM_NAME, "terrakube-plugin-pvc");
-            
+
             boolean pvcExists = kubernetesClient.persistentVolumeClaims()
                     .inNamespace(ephemeralConfiguration.getNamespace())
                     .withName(pvcClaimName)
