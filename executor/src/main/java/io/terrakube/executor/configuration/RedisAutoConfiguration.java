@@ -79,7 +79,8 @@ public class RedisAutoConfiguration {
         String password = redisProperties.getPassword();
         RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(
                 hostname, port);
-        redisStandaloneConfiguration.setPassword(password);
+        if (redisProperties.getPassword() != null && !redisProperties.getPassword().isEmpty())
+            redisStandaloneConfiguration.setPassword(password);
 
         if (redisProperties.getUsername() != null && !redisProperties.getUsername().isEmpty())
            redisStandaloneConfiguration.setUsername(username);
