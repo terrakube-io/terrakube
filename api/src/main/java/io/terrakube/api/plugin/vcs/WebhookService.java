@@ -69,7 +69,7 @@ public class WebhookService {
                 break;
             case GITLAB:
                 webhookResult = gitLabWebhookService.processWebhook(jsonPayload, headers,
-                        base64WorkspaceId);
+                        base64WorkspaceId, workspace);
                 break;
             case BITBUCKET:
                 webhookResult = bitBucketWebhookService.processWebhook(jsonPayload, headers,
@@ -87,7 +87,7 @@ public class WebhookService {
 
         try {
             String templateId = webhookResult.isRelease() ? findTemplateIdRelease(webhookResult, webhook) : findTemplateId(webhookResult, webhook);
-            log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getEvent(),
+            log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
                     webhook.getWorkspace().getName(), templateId);
             Job job = new Job();
             job.setTemplateReference(templateId);
@@ -130,10 +130,10 @@ public class WebhookService {
                 webhookRemoteId = gitHubWebhookService.createOrUpdateWebhook(workspace, webhook);
                 break;
             case GITLAB:
-                webhookRemoteId = gitLabWebhookService.createWebhook(workspace, webhook.getId().toString());
+                webhookRemoteId = gitLabWebhookService.createOrUpdateWebhook(workspace, webhook);
                 break;
             case BITBUCKET:
-                webhookRemoteId = bitBucketWebhookService.createWebhook(workspace, webhook.getId().toString());
+                webhookRemoteId = bitBucketWebhookService.createOrUpdateWebhook(workspace, webhook);
                 break;
             default:
                 break;
@@ -204,25 +204,25 @@ public class WebhookService {
     private String findTemplateId(WebhookResult result, Webhook webhook) {
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getEvent().toUpperCase()))
+                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent()))
+                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
     private String findTemplateIdRelease(WebhookResult result, Webhook webhook) {
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getEvent().toUpperCase()))
+                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent()))
+                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
                 .getTemplateId();
     }
 
@@ -230,6 +230,9 @@ public class WebhookService {
         switch (job.getWorkspace().getVcs().getVcsType()) {
             case GITHUB:
                 gitHubWebhookService.sendCommitStatus(job, JobStatus.pending);
+                break;
+            case GITLAB:
+                gitLabWebhookService.sendCommitStatus(job, JobStatus.pending);
                 break;
             default:
                 break;

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
@@ -27,6 +28,7 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
 @AllArgsConstructor
 public class InactiveJobs implements org.quartz.Job {
 
+    private final GitLabWebhookService gitLabWebhookService;
     JobRepository jobRepository;
     RedisTemplate redisTemplate;
     GitHubWebhookService gitHubWebhookService;
@@ -56,7 +58,7 @@ public class InactiveJobs implements org.quartz.Job {
                             stepRepository.save(step);
                         }
                     }
-                    if (job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.Schedule.name()) ) {
+                    if (job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.Schedule.name())) {
                         log.info("No information to update for job", job.getId());
                         return;
                     } else {
@@ -65,6 +67,10 @@ public class InactiveJobs implements org.quartz.Job {
                             case GITHUB:
                                 log.info("Updating VCS information for GITHUB", job.getId());
                                 gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                                break;
+                            case GITLAB:
+                                log.info("Updating VCS information for GITLAB", job.getId());
+                                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
                                 break;
                             default:
                                 break;

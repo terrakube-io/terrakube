@@ -37,11 +37,15 @@ public abstract class ScheduleServiceBase {
 
     // Fire a repeated job that accepts a frequency in seconds
     public void createTask(int frequencyInSeconds, String id) throws SchedulerException {
+        createTask(frequencyInSeconds, id, false);
+    }
+    
+    public void createTask(int frequencyInSeconds, String id, boolean startNow) throws SchedulerException {
         if (jobExists(id)) {
             deleteTask(id);
-            createQuartzJob(frequencyInSeconds, id);
+            createQuartzJob(frequencyInSeconds, id, startNow);
         } else {
-            createQuartzJob(frequencyInSeconds, id);
+            createQuartzJob(frequencyInSeconds, id, startNow);
         }
     }
 
@@ -72,7 +76,7 @@ public abstract class ScheduleServiceBase {
     }
 
     // Fire a repeated job that accepts a frequency in seconds
-    private void createQuartzJob(int frequencyInSeconds, String id) throws SchedulerException {
+    private void createQuartzJob(int frequencyInSeconds, String id, boolean startNow) throws SchedulerException {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put(getJobDataKey(), id);
 
@@ -85,10 +89,14 @@ public abstract class ScheduleServiceBase {
                 .withIdentity(getJobPrefix() + id)
                 .withDescription(id)
                 .build();
+        TriggerBuilder<Trigger> triggerBuilder = TriggerBuilder.newTrigger();
+        if(startNow) {
+            triggerBuilder.startNow();
+        } else {
+            triggerBuilder.startAt(Date.from(Instant.now().plusSeconds(frequencyInSeconds)));
+        }
 
-        Trigger trigger = TriggerBuilder.newTrigger()
-                .startAt(Date.from(Instant.now().plusSeconds(frequencyInSeconds)))
-                .forJob(jobDetail)
+        Trigger trigger = triggerBuilder.forJob(jobDetail)
                 .withIdentity(getJobPrefix() + id)
                 .withDescription(id)
                 .withSchedule(SimpleScheduleBuilder.repeatSecondlyForever(frequencyInSeconds)
@@ -117,9 +125,10 @@ public abstract class ScheduleServiceBase {
     private boolean jobExists(String id) {
         boolean jobExists = false;
         try {
-            scheduler.getJobDetail(new JobKey(getJobPrefix() + id));
-            jobExists = true;
-            log.info("JobId {} on {} exists", id, getJobType());
+            if (scheduler.getJobDetail(new JobKey(getJobPrefix() + id)) != null) {
+                jobExists = true;
+                log.info("JobId {} on {} exists", id, getJobType());
+            }
         } catch (SchedulerException e) {
             log.error(e.getMessage());
         }

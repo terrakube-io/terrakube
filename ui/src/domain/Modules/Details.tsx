@@ -16,7 +16,6 @@ import {
   Divider,
   Dropdown,
   Layout,
-  Menu,
   message,
   Popconfirm,
   Row,
@@ -24,8 +23,8 @@ import {
   Spin,
   Tabs,
   Tag,
-  Typography,
   theme,
+  Typography,
 } from "antd";
 import { Buffer } from "buffer";
 import * as hcl from "hcl2-parser";
@@ -44,7 +43,7 @@ import remarkGfm from "remark-gfm";
 import { unzip } from "unzipit";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
-import { ModuleModel, VcsType } from "../types";
+import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
 const { Content } = Layout;
@@ -63,6 +62,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const [module, setModule] = useState<ModuleModel>();
   const [moduleName, setModuleName] = useState("...");
   const [version, setVersion] = useState("...");
+  const [allVersions, setAllVersions] = useState<ModuleVersionAttributes[]>([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>();
   const [loading, setLoading] = useState(false);
   const [markdown, setMarkdown] = useState("loading...");
@@ -81,7 +81,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const {
     token: {
       colorBgContainer,
-      colorText,
       colorBgTextHover,
       colorBorder,
       colorPrimary,
@@ -219,10 +218,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       });
   };
 
-  const onChange = (key: unknown) => {
-    console.log(key);
-  };
-
   async function loadReadmeFile(text: string) {
     if (text != null) {
       const textReadme = Buffer.from(text, "base64").toString();
@@ -235,17 +230,15 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   useEffect(() => {
     setLoading(true);
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid!);
-    axiosInstance.get(`organization/${orgid}/module/${id}?include=vcs`).then((response) => {
+    axiosInstance.get(`organization/${orgid}/module/${id}?include=vcs,version`).then((response) => {
       setModule(response.data.data);
       setLoading(false);
       setModuleName(response.data.data.attributes.name);
-      if (response.data.included != null && response.data.included[0] != null) {
-        setVCSProvider(response.data.included[0].attributes.vcsType);
-      }
-      const latestVersion = response.data.data.attributes.versions.sort(compareVersions).reverse()[0];
+      const latestVersion = response.data.data.attributes.latestVersion;
       setVersion(latestVersion);
       loadReadme(response.data.data.attributes.registryPath, latestVersion);
       loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
+      setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
     });
   }, [orgid, id]);
 
@@ -338,87 +331,92 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       </Space>
                       <IconContext.Provider value={{ size: "1.3em" }}>
                         <table className="moduleDetails">
-                          <tr>
-                            <td>
-                              <Typography.Text type="secondary">
-                                <RiFolderHistoryLine /> Version
-                              </Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text type="secondary">
-                                <ClockCircleOutlined /> Published
-                              </Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text type="secondary">
-                                <DownloadOutlined /> Provisions
-                              </Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text type="secondary">
-                                <BiBookBookmark /> Source
-                              </Typography.Text>
-                            </td>
-                          </tr>
-                          <tr className="black">
-                            <td>
-                              <Typography.Text>
-                                {version}{" "}
-                                <Dropdown
-                                  overlay={
-                                    <Menu onClick={handleClick}>
-                                      {module.attributes.versions
-                                        .sort(compareVersions)
+                          <tbody>
+                            <tr>
+                              <td>
+                                <Typography.Text type="secondary">
+                                  <RiFolderHistoryLine /> Version
+                                </Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text type="secondary">
+                                  <ClockCircleOutlined /> Published
+                                </Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text type="secondary">
+                                  <DownloadOutlined /> Provisions
+                                </Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text type="secondary">
+                                  <BiBookBookmark /> Source
+                                </Typography.Text>
+                              </td>
+                            </tr>
+                            <tr className="black">
+                              <td>
+                                <Typography.Text>
+                                  {version}{" "}
+                                  <Dropdown
+                                    menu={{
+                                      items: allVersions
+                                        .sort((a, b) => compareVersions(a.version, b.version))
                                         .reverse()
-                                        .map((name) => (
-                                          <Menu.Item key={name}>{name}</Menu.Item>
-                                        ))}
-                                    </Menu>
-                                  }
-                                  trigger={["click"]}
-                                >
-                                  <a className="ant-dropdown-link">
-                                    Change <DownOutlined />
-                                  </a>
-                                </Dropdown>
-                              </Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text>
-                                {DateTime.fromISO(module.attributes.createdDate).toRelative()}
-                              </Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text>&nbsp; {module.attributes.downloadQuantity}</Typography.Text>
-                            </td>
-                            <td>
-                              <Typography.Text>
-                                {renderVCSLogo(vcsProvider)}{" "}
-                                {module.attributes.source && (
-                                  <a
-                                    href={fixSshURL(module.attributes.source)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                        .map((v) => ({ key: v.version, label: v.version })),
+                                      onClick: handleClick,
+                                    }}
+                                    trigger={["click"]}
                                   >
-                                    {new URL(fixSshURL(module.attributes.source)).pathname
-                                      .replace(".git", "")
-                                      .substring(1)}
-                                  </a>
-                                )}
-                              </Typography.Text>
-                            </td>
-                          </tr>
+                                    <button
+                                      type="button"
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        padding: 0,
+                                        color: "#1677ff",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Change <DownOutlined />
+                                    </button>
+                                  </Dropdown>
+                                </Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text>
+                                  {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
+                                </Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text>&nbsp; {module.attributes.downloadQuantity}</Typography.Text>
+                              </td>
+                              <td>
+                                <Typography.Text>
+                                  {renderVCSLogo(vcsProvider)}{" "}
+                                  {module.attributes.source && (
+                                    <a
+                                      href={fixSshURL(module.attributes.source)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {new URL(fixSshURL(module.attributes.source)).pathname
+                                        .replace(".git", "")
+                                        .substring(1)}
+                                    </a>
+                                  )}
+                                </Typography.Text>
+                              </td>
+                            </tr>
+                          </tbody>
                         </table>
                       </IconContext.Provider>
                       {submodules.length > 0 && (
                         <Dropdown
-                          overlay={
-                            <Menu onClick={onClickSubmodule}>
-                              {submodules.map((name) => (
-                                <Menu.Item key={name}>{name}</Menu.Item>
-                              ))}
-                            </Menu>
-                          }
+                          menu={{
+                            items: submodules.map((name) => ({ key: name, label: name })),
+                            onClick: onClickSubmodule,
+                          }}
                           trigger={["click"]}
                         >
                           <Button style={{ marginTop: "20px", fontSize: ".75rem" }}>
@@ -446,18 +444,25 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         <h2 className="moduleTitle">
                           submodules/
                           <Dropdown
-                            overlay={
-                              <Menu onClick={onClickSubmodule}>
-                                {submodules.map((name) => (
-                                  <Menu.Item key={name}>{name}</Menu.Item>
-                                ))}
-                              </Menu>
-                            }
+                            menu={{
+                              items: submodules.map((name) => ({ key: name, label: name })),
+                              onClick: onClickSubmodule,
+                            }}
                             trigger={["click"]}
                           >
-                            <a style={{ color: "black" }}>
+                            <button
+                              type="button"
+                              style={{
+                                color: "black",
+                                background: "none",
+                                border: "none",
+                                padding: 0,
+                                cursor: "pointer",
+                                font: "inherit",
+                              }}
+                            >
                               {submodule} <DownOutlined />
-                            </a>
+                            </button>
                           </Dropdown>
                         </h2>
                       </div>
@@ -466,7 +471,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
 
                   <Tabs
                     className="moduleTabs"
-                    onChange={onChange}
                     defaultActiveKey="1"
                     items={[
                       {
@@ -772,13 +776,13 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       <p className="moduleSubtitles">Copy configuration details</p>
                     </div>
                     <pre className="moduleCode">
-                      module "{module.attributes.name}" {"{"}
+                      module &quot;{module.attributes.name}&quot; {"{"}
                       <br />
-                      &nbsp;&nbsp;source = "{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
+                      &nbsp;&nbsp;source = &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
                       {module.attributes.registryPath}
-                      {submodulePath}"
+                      {submodulePath}&quot;
                       <br />
-                      &nbsp;&nbsp;version = "{version}"
+                      &nbsp;&nbsp;version = &quot;{version}&quot;
                       <br />
                       &nbsp;&nbsp;# insert required variables here
                       <br />
@@ -790,9 +794,9 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         terraform.rc to access this module:
                       </div>
                       <pre className="moduleCredentials">
-                        credentials "{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}" {" {"}
+                        credentials &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}&quot; {" {"}
                         <br />
-                        &nbsp;&nbsp;token = "xxxxxx.yyyyyy.zzzzzzzzzzzzz"
+                        &nbsp;&nbsp;token = &quot;xxxxxx.yyyyyy.zzzzzzzzzzzzz&quot;
                         <br />
                         {"}"}
                       </pre>
@@ -816,4 +820,21 @@ function fixSshURL(source: string | undefined): string {
   } else {
     return source;
   }
+}
+
+function setModuleInclude(
+  includes: any[],
+  setVCSProvider: React.Dispatch<React.SetStateAction<VcsType | undefined>>,
+  setAllVersions: React.Dispatch<React.SetStateAction<ModuleVersionAttributes[]>>
+) {
+  const versions: ModuleVersionAttributes[] = [];
+  includes.forEach((element: any) => {
+    if (element.type === "vcs") {
+      setVCSProvider(element.attributes.vcsType);
+    }
+    if (element.type === "module_version") {
+      versions.push(element.attributes);
+    }
+  });
+  setAllVersions(versions);
 }

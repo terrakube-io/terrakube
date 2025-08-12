@@ -80,14 +80,27 @@ public class DynamicCredentialsService {
         String vaultAddress = workspaceEnvVariables.get("VAULT_ADDR");
         String vaultRole = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_ROLE");
         String vaultToken = "";
+        // Work with vault jwt path
+        String vaultJwtPath;
+        if (workspaceEnvVariables.containsKey("WORKLOAD_IDENTITY_VAULT_AUTH_PATH")) {
+            vaultJwtPath = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUTH_PATH");
+        } else {
+            vaultJwtPath = "jwt";
+        }
+
         try {
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            // Find if vault have namespace then add special header to request
+            if (workspaceEnvVariables.containsKey("VAULT_NAMESPACE")) {
+                headers.add("X-Vault-Namespace", workspaceEnvVariables.get("VAULT_NAMESPACE"));
+            }
+            
             String jsonPayload = String.format("{\"role\":\"%s\",\"jwt\":\"%s\"}", vaultRole, jwtToken);
 
             HttpEntity<String> request = new HttpEntity<>(jsonPayload, headers);
-            String url = String.format("%s/v1/auth/jwt/login",vaultAddress);
+            String url = String.format("%s/v1/auth/%s/login",vaultAddress, vaultJwtPath);
             String vaultResponse = restTemplate.postForObject(url, request, String.class);
 
             log.debug("Vault Response: {}", vaultResponse);

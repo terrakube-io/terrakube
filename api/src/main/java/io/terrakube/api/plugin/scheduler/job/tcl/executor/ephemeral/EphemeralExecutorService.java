@@ -27,6 +27,10 @@ public class EphemeralExecutorService {
     private static final String PVC_CLAIM_NAME = "PVC_CLAIM_NAME";
     private static final String POD_SECURITY_CONTEXT = "EPHEMERAL_CONFIG_POD_SECURITY_CONTEXT";
     private static final String SECURITY_CONTEXT = "EPHEMERAL_CONFIG_SECURITY_CONTEXT";
+    private static final String EPHEMERAL_CPU_REQUEST = "EPHEMERAL_CPU_REQUEST";
+    private static final String EPHEMERAL_MEMORY_REQUEST = "EPHEMERAL_MEMORY_REQUEST";
+    private static final String EPHEMERAL_CPU_LIMIT = "EPHEMERAL_CPU_LIMIT";
+    private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -139,7 +143,6 @@ public class EphemeralExecutorService {
             String configPVCpath = configPVCOpt.get();
             String PluginVolumeName = "tf-plugin-volume";
             String pvcClaimName = executorContext.getEnvironmentVariables().getOrDefault(PVC_CLAIM_NAME, "terrakube-plugin-pvc");
-
             String subPath = executorContext.getEnvironmentVariables().getOrDefault("TF_CACHE_SUBPATH", null);
 
             boolean pvcExists = kubernetesClient.persistentVolumeClaims()
@@ -204,6 +207,31 @@ public class EphemeralExecutorService {
             }
         }
 
+        Optional<String> cpuRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_REQUEST));
+        Optional<String> memoryRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_REQUEST));
+        Optional<String> cpuLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_LIMIT));
+        Optional<String> memoryLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_LIMIT));
+
+        ResourceRequirementsBuilder resourceBuilder = new ResourceRequirementsBuilder();
+        boolean hasResources = false;
+
+        if (cpuRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("cpu", new Quantity(cpuRequestOpt.get()));
+            hasResources = true;
+        }
+        if (memoryRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("memory", new Quantity(memoryRequestOpt.get()));
+            hasResources = true;
+        }
+        if (cpuLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("cpu", new Quantity(cpuLimitOpt.get()));
+            hasResources = true;
+        }
+        if (memoryLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("memory", new Quantity(memoryLimitOpt.get()));
+            hasResources = true;
+        }
+
         io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = new JobBuilder()
                 .withApiVersion("batch/v1")
                 .withNewMetadata()
@@ -229,6 +257,7 @@ public class EphemeralExecutorService {
                 .withEnv(executorEnvVarFlags)
                 .withVolumeMounts(volumeMounts)
                 .withSecurityContext(securityContext)
+                .withResources(hasResources ? resourceBuilder.build() : null)
                 .endContainer()
                 .withRestartPolicy("Never")
                 .endSpec()

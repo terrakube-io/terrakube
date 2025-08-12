@@ -15,31 +15,31 @@
 	<description>Terrakube Spring Boot Executor</description>
 	<properties>
 		<java.version>17</java.version>
-		<commons-text.version>1.13.1</commons-text.version>
-		<terraform-spring-boot-starter.version>1.0.0</terraform-spring-boot-starter.version>
-		<terrakube-client-starter.version>1.0.0</terrakube-client-starter.version>
-		<commons-io.version>2.19.0</commons-io.version>
-		<commons-codec>1.18.0</commons-codec>
+		<commons-text.version>1.14.0</commons-text.version>
+		<terraform-spring-boot-starter.version>1.1.0</terraform-spring-boot-starter.version>
+		<terrakube-client-starter.version>1.1.0</terrakube-client-starter.version>
+		<commons-io.version>2.20.0</commons-io.version>
+		<commons-codec>1.19.0</commons-codec>
 		<okhttp.version>4.12.0</okhttp.version>
-		<azure-storage-blob.version>12.30.1</azure-storage-blob.version>
+		<azure-storage-blob.version>12.31.1</azure-storage-blob.version>
 		<jgit.version>7.3.0.202506031305-r</jgit.version>
 		<bouncy.castle>1.81</bouncy.castle>
 		<lombok.version>1.18.38</lombok.version>
-		<groovy.version>4.0.27</groovy.version>
+		<groovy.version>4.0.28</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>5.5.1</jcolor.version>
-		<aws-sdk.version>2.31.77</aws-sdk.version>
+		<aws-sdk.version>2.32.19</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.17</slf4j.version>
-		<gcp-libraries-bom.version>26.63.0</gcp-libraries-bom.version>
-		<commons-compress.version>1.27.1</commons-compress.version>
-		<jedis.version>6.0.0</jedis.version>
+		<gcp-libraries-bom.version>26.65.0</gcp-libraries-bom.version>
+		<commons-compress.version>1.28.0</commons-compress.version>
+		<jedis.version>6.1.0</jedis.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
 		</sonar.coverage.jacoco.xmlReportPaths>
 		<!--BUILDPACK DATA-->
-		<buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.415</buildpack.builder>
-		<buildpack.java>paketobuildpacks/java:18.8.0</buildpack.java>
-		<buildpack.telemetry>paketobuildpacks/opentelemetry:2.12.0</buildpack.telemetry>
+		<buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.442</buildpack.builder>
+		<buildpack.java>paketobuildpacks/java:18.11.0</buildpack.java>
+		<buildpack.telemetry>paketobuildpacks/opentelemetry:2.14.1</buildpack.telemetry>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -56,6 +56,10 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
+		<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis</artifactId>

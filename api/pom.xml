@@ -17,10 +17,10 @@
         <java.version>17</java.version>
         <elide.version>7.1.11</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
-        <liquibase-core.version>4.32.0</liquibase-core.version>
-        <azure.version>5.22.0</azure.version>
+        <liquibase-core.version>4.33.0</liquibase-core.version>
+        <azure.version>5.23.0</azure.version>
         <mssql-jdbc.version>12.10.1.jre11</mssql-jdbc.version>
-        <msal4j.version>1.21.0</msal4j.version>
+        <msal4j.version>1.22.0</msal4j.version>
         <lombok.version>1.18.38</lombok.version>
         <wiremock.version>3.10.0</wiremock.version>
         <jgit.version>7.3.0.202506031305-r</jgit.version>
@@ -30,21 +30,21 @@
         <postgresql.version>42.7.7</postgresql.version>
         <snakeyaml.version>2.4</snakeyaml.version>
         <quartz.version>2.5.0</quartz.version>
-        <aws-sdk.version>2.31.77</aws-sdk.version>
-        <gcp-libraries-bom.version>26.63.0</gcp-libraries-bom.version>
+        <aws-sdk.version>2.32.19</aws-sdk.version>
+        <gcp-libraries-bom.version>26.65.0</gcp-libraries-bom.version>
         <jjwt.version>0.11.5</jjwt.version>
-        <jedis.version>6.0.0</jedis.version>
-        <commons-text.version>1.13.1</commons-text.version>
-        <commons-lang3.version>3.17.0</commons-lang3.version>
+        <jedis.version>6.1.0</jedis.version>
+        <commons-text.version>1.14.0</commons-text.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
-        <maven-artifact.version>3.9.10</maven-artifact.version>
-        <commons-io.version>2.19.0</commons-io.version>
+        <maven-artifact.version>3.9.11</maven-artifact.version>
+        <commons-io.version>2.20.0</commons-io.version>
         <kubernetes-client.version>7.3.1</kubernetes-client.version>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.415</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:18.8.0</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.12.0</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.442</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:18.11.0</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.14.1</buildpack.telemetry>
     </properties>
     <build>
         <plugins>
@@ -308,7 +308,7 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>10.3.1</version>
+            <version>10.4.1</version>
             <scope>compile</scope>
         </dependency>
         <dependency>

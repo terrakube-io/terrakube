@@ -4,6 +4,7 @@ import com.diogonunes.jcolor.AnsiFormat;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.LogsService;
 import lombok.AllArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
@@ -31,7 +32,6 @@ import static com.diogonunes.jcolor.Ansi.colorize;
 import static com.diogonunes.jcolor.Attribute.*;
 import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY;
 
-@AllArgsConstructor
 @Slf4j
 @Service
 public class TerraformExecutorServiceImpl implements TerraformExecutor {
@@ -42,8 +42,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     TerraformState terraformState;
     ScriptEngineService scriptEngineService;
     RedisTemplate redisTemplate;
-
+    boolean enableColorOutput;
     LogsService logsService;
+
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, LogsService logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate) {
+        this.terraformClient = terraformClient;
+        this.terraformState = terraformState;
+        this.scriptEngineService = scriptEngineService;
+        this.redisTemplate = redisTemplate;
+        this.logsService = logsService;
+        this.enableColorOutput = enableColorOutput;
+    }
 
     private void setupConsumerGroups(String jobId) {
         try {
@@ -63,8 +72,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         File terraformWorkingDir = workingDirectory;
         try {
             if (!terraformJob.getBranch().equals("remote-content") || (terraformJob.getFolder() != null && !terraformJob.getFolder().split(",")[0].equals("/"))) {
-                terraformWorkingDir = new File (Path.of(workingDirectory.getCanonicalPath(), terraformJob.getFolder().split(",")[0]).toString());
-                if (!terraformWorkingDir.isDirectory()){
+                terraformWorkingDir = new File(Path.of(workingDirectory.getCanonicalPath(), terraformJob.getFolder().split(",")[0]).toString());
+                if (!terraformWorkingDir.isDirectory()) {
                     throw new IOException(String.format("Terraform Working Directory not exist: {}", terraformWorkingDir.getCanonicalPath()));
                 }
             }
@@ -98,6 +107,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     .build();
 
             terraformClient.setRedirectErrorStream(true);
+            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, planOutput);
             executeTerraformInit(
                     terraformJob,
                     terraformWorkingDir,
@@ -106,9 +116,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             scriptBeforeSuccessPlan = executePreOperationScripts(terraformJob, terraformWorkingDir, planOutput);
 
-            showTerraformMessage(terraformJob,"PLAN", planOutput);
+            showTerraformMessage(terraformJob, "PLAN", planOutput);
 
-            if (scriptBeforeSuccessPlan)
+            if (scriptBeforeSuccessPlan) {
                 if (isDestroy) {
                     log.warn("Executor running a plan to destroy resources...");
                     exitCode = terraformClient.planDestroyDetailExitCode(
@@ -121,8 +131,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             planOutput,
                             null).get();
                 }
+            }
 
-            if(exitCode != 1 || terraformJob.isIgnoreError()) {
+            if (exitCode != 1 || terraformJob.isIgnoreError()) {
                 executionPlan = true;
             }
 
@@ -167,8 +178,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             boolean execution = false;
             boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
-
             terraformClient.setRedirectErrorStream(true);
+            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, applyOutput);
             executeTerraformInit(
                     terraformJob,
                     terraformWorkingDir,
@@ -195,7 +206,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             log.warn("Terraform apply Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution);
-
 
             Thread.sleep(10000);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
@@ -225,8 +235,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             boolean execution = false;
             boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
-
             terraformClient.setRedirectErrorStream(true);
+            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, outputDestroy);
             executeTerraformInit(
                     terraformJob,
                     terraformWorkingDir,
@@ -268,21 +278,40 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private boolean executePreOperationScripts(TerraformJob terraformJob, File workingDirectory, Consumer<String> output) {
         boolean scriptBeforeSuccess;
-        if (terraformJob.getCommandList() != null)
+        if (terraformJob.getCommandList() != null) {
             scriptBeforeSuccess = scriptEngineService.execute(
                     terraformJob,
                     terraformJob
                             .getCommandList()
                             .stream()
-                            .filter(command -> command.isBefore())
+                            .filter(command -> command.isBefore() && !command.isBeforeInit())
                             .collect(Collectors.toCollection(LinkedList::new)),
                     workingDirectory,
-                    output);
-        else {
+                    output); 
+        }else {
             log.warn("No commands to run before terraform operation Job {}", terraformJob.getJobId());
             scriptBeforeSuccess = true;
         }
         return scriptBeforeSuccess;
+    }
+
+    private boolean executePreInitScripts(TerraformJob terraformJob, File workingDirectory, Consumer<String> output) {
+        boolean scriptBeforeInitSuccess;
+        if (terraformJob.getCommandList() != null) {
+            scriptBeforeInitSuccess = scriptEngineService.execute(
+                    terraformJob,
+                    terraformJob
+                            .getCommandList()
+                            .stream()
+                            .filter(command -> command.isBeforeInit())
+                            .collect(Collectors.toCollection(LinkedList::new)),
+                    workingDirectory,
+                    output);
+        } else {
+            log.warn("No commands to run before terraform init Job {}", terraformJob.getJobId());
+            scriptBeforeInitSuccess = true;
+        }
+        return scriptBeforeInitSuccess;
     }
 
     private boolean executePostOperationScripts(TerraformJob terraformJob, File workingDirectory, Consumer<String> output, boolean execution) {
@@ -322,8 +351,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Boolean showJsonState = terraformClient.show(terraformProcessData, applyJSON, applyJSON).get();
         Boolean showRawState = terraformClient.statePull(terraformProcessData, rawStateJSON, rawStateJSON).get();
 
-        if (Boolean.TRUE.equals(showRawState))
+        if (Boolean.TRUE.equals(showRawState)) {
             terraformJob.setRawState(rawStateJSON.toString());
+        }
 
         if (Boolean.TRUE.equals(showJsonState)) {
             log.info("Uploading terraform state json");
@@ -334,8 +364,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             log.info("Checking terraform output json");
             Boolean showOutput = terraformClient.output(terraformProcessData, terraformJsonOutput, terraformJsonOutput).get();
-            if (Boolean.TRUE.equals(showOutput))
+            if (Boolean.TRUE.equals(showOutput)) {
                 terraformJob.setTerraformOutput(jsonOutput.toString());
+            }
 
         }
     }
@@ -363,28 +394,31 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         ExecutorJobResult error = generateJobResult(false, "", exception.getMessage());
         log.error(exception.getMessage());
 
-        if (exception instanceof InterruptedException)
+        if (exception instanceof InterruptedException) {
             Thread.currentThread().interrupt();
+        }
         return error;
     }
 
     private String executeTerraformInit(TerraformJob terraformJob, File workingDirectory, Consumer<String> output,
-                                        Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
-        if (terraformJob.isShowHeader())
+            Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
+        if (terraformJob.isShowHeader()) {
             initBanner(terraformJob, output);
+        }
 
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, workingDirectory);
         terraformProcessData.setTerraformEnvironmentVariables(terraformProcessData.getTerraformEnvironmentVariables());
         terraformProcessData.setTerraformVariables(new HashMap<>());
 
-        if (terraformJob.isShowHeader())
+        if (terraformJob.isShowHeader()) {
             terraformClient.init(terraformProcessData, output, errorOutput).get();
-        else
+        } else {
             terraformClient.init(terraformProcessData, s -> {
                 log.info(s);
             }, s -> {
                 log.info(s);
             }).get();
+        }
 
         Thread.sleep(5000);
         return terraformProcessData.getTerraformBackendConfigFileName();
@@ -403,24 +437,24 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     private void initBanner(TerraformJob terraformJob, Consumer<String> output) {
-        AnsiFormat colorMessage = new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD());
+        AnsiFormat colorMessage = enableColorOutput ? new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD()) : new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
         output.accept(colorize(STEP_SEPARATOR, colorMessage));
         output.accept(
                 colorize("Initializing Terrakube Job " + terraformJob.getJobId() + " Step " + terraformJob.getStepId(),
                         colorMessage));
         output.accept(colorize(String.format("Running %s ", getIaCType(terraformJob)) + terraformJob.getTerraformVersion(), colorMessage));
         output.accept(colorize("\n\n" + STEP_SEPARATOR, colorMessage));
-        output.accept(colorize(String.format("Running %s Init: ",getIaCType(terraformJob)), colorMessage));
+        output.accept(colorize(String.format("Running %s Init: ", getIaCType(terraformJob)), colorMessage));
     }
 
-    private String getIaCType(TerraformJob terraformJob){
-        return terraformJob.isTofu() ? "Tofu": "Terraform";
+    private String getIaCType(TerraformJob terraformJob) {
+        return terraformJob.isTofu() ? "Tofu" : "Terraform";
     }
 
     private void showTerraformMessage(TerraformJob terraformJob, String operation, Consumer<String> output) throws InterruptedException {
-        AnsiFormat colorMessage = new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD());
+        AnsiFormat colorMessage = enableColorOutput ? new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD()) : new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
         output.accept(colorize(STEP_SEPARATOR, colorMessage));
-        output.accept(colorize(String.format("Running %s ",getIaCType(terraformJob)) + operation, colorMessage));
+        output.accept(colorize(String.format("Running %s ", getIaCType(terraformJob)) + operation, colorMessage));
         output.accept(colorize(STEP_SEPARATOR, colorMessage));
         Thread.sleep(2000);
     }
@@ -436,13 +470,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
             log.warn("1 - Using SSH key from: {}", sshFilePath);
             sshKeyFile = new File(sshFilePath);
-        } else if(terraformJob.getVcsType().startsWith("SSH")){
+        } else if (terraformJob.getVcsType().startsWith("SSH")) {
             //USING THE SAME SSH KEY THAT WAS USED TO CLONE THE REPOSITORY
             String sshFileName = terraformJob.getVcsType().split("~")[1];
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), sshFileName);
             log.warn("2 - Using SSH key from: {}", sshFilePath);
             sshKeyFile = new File(sshFilePath);
-        } else if(terraformJob.getModuleSshKey() != null && terraformJob.getModuleSshKey().length() > 0){
+        } else if (terraformJob.getModuleSshKey() != null && terraformJob.getModuleSshKey().length() > 0) {
             //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN OTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
             log.warn("3 - Using SSH key from: {}", sshFilePath);

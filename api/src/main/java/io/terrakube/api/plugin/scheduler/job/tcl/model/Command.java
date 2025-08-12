@@ -14,4 +14,5 @@ public class Command {
     private boolean before;
     private boolean after;
     private boolean verbose;
+    private boolean beforeInit;
 }

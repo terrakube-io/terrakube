@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler;
 
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -45,6 +46,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     public static final String JOB_ID = "jobId";
     private final EphemeralExecutorService ephemeralExecutorService;
+    private final GitLabWebhookService gitLabWebhookService;
 
     JobRepository jobRepository;
 
@@ -59,7 +61,7 @@ public class ScheduleJob implements org.quartz.Job {
     ScheduleJobService scheduleJobService;
 
     RedisTemplate redisTemplate;
-    
+
     GitHubWebhookService gitHubWebhookService;
 
     @Transactional
@@ -88,7 +90,7 @@ public class ScheduleJob implements org.quartz.Job {
             return;
         }
 
-        if(job.getWorkspace() == null ){
+        if (job.getWorkspace() == null) {
             log.warn("Workspace does not exist anymore, deleting job context for {}", jobId);
             removeJobContext(job, jobExecutionContext);
             return;
@@ -112,7 +114,7 @@ public class ScheduleJob implements org.quartz.Job {
             switch (job.getStatus()) {
                 case pending:
                     log.info("Pending with plan changes {}", job.isPlanChanges());
-                    if(job.isPlanChanges()) {
+                    if (job.isPlanChanges()) {
                         redisTemplate.delete(String.valueOf(job.getId()));
                         executePendingJob(job, jobExecutionContext);
                         removeJobContext(job, jobExecutionContext);
@@ -284,7 +286,7 @@ public class ScheduleJob implements org.quartz.Job {
     private void removeJobContext(Job job, JobExecutionContext jobExecutionContext) {
         try {
             Boolean triggerByStatusChange = jobExecutionContext.getJobDetail().getJobDataMap().getBooleanFromString("isTriggerFromStatusChange");
-            if(!triggerByStatusChange.booleanValue()) {
+            if (!triggerByStatusChange.booleanValue()) {
                 log.info("Deleting Schedule Job Context {}, InstanceId {}", PREFIX_JOB_CONTEXT + job.getId(), jobExecutionContext.getFireInstanceId());
                 jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
             } else {
@@ -308,7 +310,7 @@ public class ScheduleJob implements org.quartz.Job {
                 log.info("Executing Job {} Step Id {}", job.getId(), stepId);
         }
     }
-    
+
     private void updateJobStepsWithStatus(int jobId, JobStatus jobStatus) {
         log.warn("Cancelling pending steps");
         for (Step step : stepRepository.findByJobId(jobId)) {
@@ -321,12 +323,15 @@ public class ScheduleJob implements org.quartz.Job {
 
     private void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
         if (job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.Schedule.name())) {
-            return; 
+            return;
         }
-        
+
         switch (job.getWorkspace().getVcs().getVcsType()) {
             case GITHUB:
                 gitHubWebhookService.sendCommitStatus(job, jobStatus);
+                break;
+            case GITLAB:
+                gitLabWebhookService.sendCommitStatus(job, jobStatus);
                 break;
             default:
                 break;

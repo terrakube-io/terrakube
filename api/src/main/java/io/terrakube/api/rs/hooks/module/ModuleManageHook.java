@@ -15,12 +15,6 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
-import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
-import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
-import io.terrakube.api.rs.module.Module;
-import io.terrakube.api.rs.vcs.GitHubAppToken;
-import io.terrakube.api.rs.vcs.VcsConnectionType;
-import io.terrakube.api.rs.vcs.VcsType;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -28,6 +22,12 @@ import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 
+import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
+import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
+import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
+import io.terrakube.api.rs.vcs.VcsType;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,16 +35,15 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ModuleManageHook implements LifeCycleHook<Module> {
 
-    private static final String PREFIX_JOB_MODULE_DELETE_STORAGE = "TerrakubeV2_ModuleDeleteStorage";
-
     Scheduler scheduler;
     GitHubTokenService gitHubTokenService;
+    ModuleRefreshService moduleRefreshService;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
             LifeCycleHookBinding.TransactionPhase transactionPhase, Module module, RequestScope requestScope,
             Optional<ChangeSpec> optional) {
-
+        log.info("ModuleManageHook {}/{}/{} phase {}", module.getOrganization().getName(), module.getName(), module.getProvider(), transactionPhase);
         switch (operation) {
             case CREATE:
                 log.info("ModuleManageHook creation hook for {}/{}/{}", module.getOrganization().getName(),
@@ -53,8 +52,27 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     case PRECOMMIT:
                         checkAndCreateGitHubAppToken(module);
                         break;
+                    case POSTCOMMIT:
+                        try {
+                            log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(), module.getName(), module.getProvider());
+                            moduleRefreshService.createTask(300, module.getId().toString(), true);
+                        } catch (SchedulerException e) {
+                            log.error("Failed to create module refresh task for {}/{}/{}, error {}",
+                                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
+                        }
                     default:
                         break;
+                }
+                break;
+            case UPDATE:
+                log.info("ModuleManageHookd update hook for {}/{}/{}", module.getOrganization().getName(),
+                        module.getName(),
+                        module.getProvider());
+                try {
+                    moduleRefreshService.createTask(300, module.getId().toString(), true);
+                } catch (SchedulerException e) {
+                    log.error("Failed to create module refresh task for {}/{}/{}, error {}",
+                            module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
                 }
                 break;
             case DELETE:
@@ -69,14 +87,14 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     JobDetail jobDetail = JobBuilder.newJob().ofType(DeleteStorageCacheJob.class)
                             .storeDurably()
                             .setJobData(jobDataMap)
-                            .withIdentity(PREFIX_JOB_MODULE_DELETE_STORAGE + "_" + UUID.randomUUID())
+                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorage")
                             .build();
 
                     Trigger trigger = TriggerBuilder.newTrigger()
                             .startNow()
                             .forJob(jobDetail)
-                            .withIdentity(PREFIX_JOB_MODULE_DELETE_STORAGE + "_" + UUID.randomUUID())
+                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorageV1")
                             .startNow()
                             .build();
@@ -98,17 +116,15 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 || module.getVcs().getVcsType() != VcsType.GITHUB)
             return;
         String[] ownerAndRepo;
-        GitHubAppToken gitHubAppToken = null;
         try {
             ownerAndRepo = Arrays
                     .copyOfRange(new URI(module.getSource()).getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
-            gitHubAppToken = gitHubTokenService.getGitHubAppToken(module.getVcs(), ownerAndRepo);
+            gitHubTokenService.getGitHubAppToken(module.getVcs(), ownerAndRepo);
             log.debug("Successfully fetched GitHub App Token for module {}/{}/{}", module.getOrganization().getName(),
                     module.getName(), module.getProvider());
         } catch (URISyntaxException | JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
             log.error("Failed to fetch GitHub App Token for module {}/{}/{}, error {}",
-                    module.getOrganization().getName(), module.getName(), module.getProvider(), e);
+                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
         }
-        module.setGitHubAppToken(gitHubAppToken);
     }
 }
