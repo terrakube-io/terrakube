@@ -17,7 +17,7 @@
     "core-js-pure": "^3.45.0",
     "cron-to-quartz": "^1.4.7",
     "cronstrue": "^3.2.0",
-    "dotenv": "^17.2.0",
+    "dotenv": "^17.2.1",
     "dotenv-expand": "^12.0.2",
     "github-markdown-css": "^5.8.1",
     "hcl2-parser": "^1.0.3",
