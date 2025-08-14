@@ -6,6 +6,7 @@ import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import com.orbitz.consul.Consul;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Base64;
@@ -17,6 +18,8 @@ import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
+import io.terrakube.executor.plugin.tfstate.consul.ConsulTerraformStateImpl;
+import io.terrakube.executor.plugin.tfstate.consul.ConsulTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
@@ -45,16 +48,26 @@ import java.util.concurrent.CompletableFuture;
         TerraformStateProperties.class,
         AzureTerraformStateProperties.class,
         AwsTerraformStateProperties.class,
-        GcpTerraformStateProperties.class
+        GcpTerraformStateProperties.class,
+        ConsulTerraformStateProperties.class
 })
 @ConditionalOnMissingBean(TerraformState.class)
 public class TerraformStateAutoConfiguration {
-
+    
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService) {
+    public TerraformState terraformState(
+            TerrakubeClient terrakubeClient, 
+            TerraformStateProperties terraformStateProperties, 
+            AzureTerraformStateProperties azureTerraformStateProperties, 
+            AwsTerraformStateProperties awsTerraformStateProperties, 
+            GcpTerraformStateProperties gcpTerraformStateProperties,
+            ConsulTerraformStateProperties consulTerraformStateProperties,
+            TerraformStatePathService terraformStatePathService, 
+            TerraformOutputPathService terraformOutputPathService) {
+        
         TerraformState terraformState = null;
-
-        if (terraformStateProperties != null)
+        
+        if (terraformStateProperties != null) {
             switch (terraformStateProperties.getType()) {
                 case AzureTerraformStateImpl:
                     BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
@@ -63,7 +76,6 @@ public class TerraformStateAutoConfiguration {
                                             azureTerraformStateProperties.getStorageAccountName(),
                                             azureTerraformStateProperties.getStorageAccessKey())
                             ).buildClient();
-
                     terraformState = AzureTerraformStateImpl.builder()
                             .resourceGroupName(azureTerraformStateProperties.getResourceGroupName())
                             .storageAccountName(azureTerraformStateProperties.getStorageAccountName())
@@ -75,9 +87,9 @@ public class TerraformStateAutoConfiguration {
                             .terraformStatePathService(terraformStatePathService)
                             .build();
                     break;
+                    
                 case AwsTerraformStateImpl:
                     S3Client s3client = null;
-
                     if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
                         log.info("Creating AWS with custom endpoint and custom credentials");
                         s3client = S3Client.builder()
@@ -108,7 +120,6 @@ public class TerraformStateAutoConfiguration {
                         }
                     }
 
-
                     terraformState = AwsTerraformStateImpl.builder()
                             .s3client(s3client)
                             .endpoint(!awsTerraformStateProperties.getEndpoint().equals("") ? awsTerraformStateProperties.getEndpoint(): null)
@@ -122,6 +133,7 @@ public class TerraformStateAutoConfiguration {
                             .terraformOutputPathService(terraformOutputPathService)
                             .build();
                     break;
+                    
                 case GcpTerraformStateImpl:
                     try {
                         log.info("GCP Credentials Base64 {} length", gcpTerraformStateProperties.getCredentials().length());
@@ -135,7 +147,6 @@ public class TerraformStateAutoConfiguration {
                                 .setProjectId(gcpTerraformStateProperties.getProjectId())
                                 .build()
                                 .getService();
-
                         terraformState = GcpTerraformStateImpl.builder().storage(gcpStorage)
                                 .terraformStatePathService(terraformStatePathService)
                                 .terraformOutputPathService(terraformOutputPathService)
@@ -147,21 +158,76 @@ public class TerraformStateAutoConfiguration {
                         log.error(e.getMessage());
                     }
                     break;
+                    
+                case ConsulTerraformStateImpl:
+                    log.info("Initializing Consul backend");
+                    
+                    // Initialize Consul client
+                    log.info("Initializing Consul client for address: {}", consulTerraformStateProperties.getAddress());
+                    
+                    Consul.Builder consulBuilder = Consul.builder()
+                            .withUrl(consulTerraformStateProperties.getScheme() + "://" + 
+                                    consulTerraformStateProperties.getAddress());
+                    
+                    // Add token if provided
+                    if (consulTerraformStateProperties.getToken() != null && 
+                        !consulTerraformStateProperties.getToken().isEmpty()) {
+                        consulBuilder.withAclToken(consulTerraformStateProperties.getToken());
+                        log.info("Using provided Consul token");
+                    } else {
+                        log.info("No Consul token provided");
+                    }
+                    
+                    Consul consulClient;
+                    try {
+                        consulClient = consulBuilder.build();
+                        log.info("Consul client initialized successfully");
+                    } catch (Exception e) {
+                        log.error("Failed to initialize Consul client: {}", e.getMessage());
+                        throw new RuntimeException("Failed to initialize Consul client", e);
+                    }
+                    
+                    terraformState = ConsulTerraformStateImpl.builder()
+                            .consulClient(consulClient)
+                            .address(consulTerraformStateProperties.getAddress())
+                            .scheme(consulTerraformStateProperties.getScheme())
+                            .path(consulTerraformStateProperties.getPath())
+                            .token(consulTerraformStateProperties.getToken())
+                            .datacenter(consulTerraformStateProperties.getDatacenter())
+                            .gzip(consulTerraformStateProperties.isGzip())
+                            .lock(consulTerraformStateProperties.isLock())
+                            .vaultAddress(consulTerraformStateProperties.getVaultAddress())
+                            .vaultToken(consulTerraformStateProperties.getVaultToken())
+                            .vaultTokenPath(consulTerraformStateProperties.getVaultTokenPath())
+                            .useVaultForToken(consulTerraformStateProperties.isUseVaultForToken())
+                            .terrakubeClient(terrakubeClient)
+                            .terraformStatePathService(terraformStatePathService)
+                            .terraformOutputPathService(terraformOutputPathService)
+                            .build();
+                    
+                    log.info("Consul Terraform state backend initialized successfully");
+                    break;
+                    
                 default:
+                    log.info("Using default Local Terraform state backend");
                     terraformState = LocalTerraformStateImpl.builder()
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
                             .build();
             }
-        else
+        } else {
+            log.info("No terraform state properties found, using Local backend");
             terraformState = LocalTerraformStateImpl.builder()
                     .terrakubeClient(terrakubeClient)
                     .terraformStatePathService(terraformStatePathService)
+                    .terraformOutputPathService(terraformOutputPathService)
                     .build();
+        }
+        
         return terraformState;
     }
-
+    
     private AwsBasicCredentials getAwsBasicCredentials(AwsTerraformStateProperties awsTerraformStateProperties) {
         return AwsBasicCredentials.create(awsTerraformStateProperties.getAccessKey(), awsTerraformStateProperties.getSecretKey());
     }
