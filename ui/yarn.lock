@@ -2114,16 +2114,15 @@
   dependencies:
     "@sinonjs/commons" "^3.0.1"
 
-"@testing-library/jest-dom@^6.6.4":
-  version "6.6.4"
-  resolved "https://registry.yarnpkg.com/@testing-library/jest-dom/-/jest-dom-6.6.4.tgz#577a1761768bda5458c42241add3b1570c34d39c"
-  integrity sha512-xDXgLjVunjHqczScfkCJ9iyjdNOVHvvCdqHSSxwM9L0l/wHkTRum67SDc020uAlCoqktJplgO2AAQeLP1wgqDQ==
+"@testing-library/jest-dom@^6.7.0":
+  version "6.7.0"
+  resolved "https://registry.yarnpkg.com/@testing-library/jest-dom/-/jest-dom-6.7.0.tgz#cff6452ba03b215c16d97b48adfc4e1ac54c3e03"
+  integrity sha512-RI2e97YZ7MRa+vxP4UUnMuMFL2buSsf0ollxUbTgrbPLKhMn8KVTx7raS6DYjC7v1NDVrioOvaShxsguLNISCA==
   dependencies:
     "@adobe/css-tools" "^4.4.0"
     aria-query "^5.0.0"
     css.escape "^1.5.1"
     dom-accessibility-api "^0.6.3"
-    lodash "^4.17.21"
     picocolors "^1.1.1"
     redent "^3.0.0"
 
@@ -5923,11 +5922,6 @@ lodash.merge@^4.6.2:
   version "4.6.2"
   resolved "https://registry.npmjs.org/lodash.merge/-/lodash.merge-4.6.2.tgz"
   integrity sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==
-
-lodash@^4.17.21:
-  version "4.17.21"
-  resolved "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"
-  integrity sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==
 
 longest-streak@^3.0.0:
   version "3.1.0"
