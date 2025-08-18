@@ -22,7 +22,7 @@
         <bouncy.castle>1.81</bouncy.castle>
         <commons-io.version>2.20.0</commons-io.version>
         <rest-assured.version>5.5.5</rest-assured.version>
-        <wiremock.version>3.10.0</wiremock.version>
+        <wiremock.version>3.10.6</wiremock.version>
         <!--groovy.version>3.0.8</groovy.version-->
         <aws-sdk.version>2.32.24</aws-sdk.version>
         <zt-zip.version>1.17</zt-zip.version>
