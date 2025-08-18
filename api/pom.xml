@@ -25,7 +25,7 @@
         <wiremock.version>3.10.6</wiremock.version>
         <jgit.version>7.3.0.202506031305-r</jgit.version>
         <bouncy.castle>1.81</bouncy.castle>
-        <rest-assured.version>5.5.5</rest-assured.version>
+        <rest-assured.version>5.5.6</rest-assured.version>
         <!--groovy.version>4.0.20</groovy.version-->
         <postgresql.version>42.7.7</postgresql.version>
         <snakeyaml.version>2.4</snakeyaml.version>
