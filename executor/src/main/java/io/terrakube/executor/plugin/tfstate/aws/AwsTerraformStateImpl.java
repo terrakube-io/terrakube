@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AwsTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
-    private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
+    private static final String BACKEND_FILE_NAME = "aws_backend_override.tf";
 
     @NonNull
     private S3Client s3client;
