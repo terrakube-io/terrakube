@@ -12,12 +12,16 @@ import javax.net.ssl.TrustManagerFactory;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisClusterConfiguration;
+import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.jedis.JedisClientConfiguration;
 import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Configuration
@@ -52,39 +56,124 @@ public class StreamingConfiguration {
 
     @Bean
     JedisConnectionFactory jedisConnectionFactory(StreamingProperties props, SSLSocketFactory sslSocketFactory) {
-        log.info("Redis Configuration=> User: {}, Hostname: {}, Port: {}, Ssl: {}",
-                (props.getUsername() != null && !props.getUsername().isEmpty()) ? props.getUsername(): "username is null",
-                props.getHostname(),
-                props.getPort(),
-                props.isSsl()
-        );
+        JedisClientConfiguration.JedisClientConfigurationBuilder clientConfigBuilder = JedisClientConfiguration.builder();
 
-        RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(
-                props.getHostname(), props.getPort());
-        redisStandaloneConfiguration.setPassword(props.getPassword());
+        if (props.isSsl()) {
+            log.info("Setup Redis connection using SSL");
+            clientConfigBuilder.useSsl().sslSocketFactory(sslSocketFactory);
+        } else {
+            log.info("Using default Redis connection");
+        }
 
-        if( props.getUsername() != null && !props.getUsername().isEmpty()) {
+        JedisClientConfiguration clientConfig = clientConfigBuilder.build();
+        if (isCluster(props)) {
+            RedisClusterConfiguration clusterConfig = getClusterConfiguration(props);
+            return new JedisConnectionFactory(clusterConfig, clientConfig);
+        }
+
+        if (isSentinel(props)) {
+            RedisSentinelConfiguration sentinelConfig = getSentinelConfiguration(props);
+            return new JedisConnectionFactory(sentinelConfig, clientConfig);
+        }
+
+        RedisStandaloneConfiguration standaloneConfig = getStandaloneConfiguration(props);
+        return new JedisConnectionFactory(standaloneConfig, clientConfig);
+    }
+
+    private boolean isSentinel(StreamingProperties properties) {
+        return properties.getSentinel() != null &&
+                !CollectionUtils.isEmpty(properties.getSentinel().getNodes()) &&
+                StringUtils.hasText(properties.getSentinel().getMaster());
+    }
+
+    private boolean isCluster(StreamingProperties properties) {
+        return properties.getCluster() != null &&
+                !CollectionUtils.isEmpty(properties.getCluster().getNodes());
+    }
+
+    private RedisStandaloneConfiguration getStandaloneConfiguration(StreamingProperties properties) {
+        if (StringUtils.hasText(properties.getUsername())) {
             log.info("Setting redis connection username");
-            redisStandaloneConfiguration.setUsername(props.getUsername());
         } else {
             log.info("Redis connection is not using username parameter");
         }
 
-        JedisConnectionFactory jedisConFactory;
+        String hostname = properties.getHostname();
+        int port = properties.getPort();
+        RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(
+                hostname, port);
 
-        if (props.isSsl()) {
-            log.info("Setup Redis connection using SSL");
-            JedisClientConfiguration jedisClientConfiguration = JedisClientConfiguration.builder().useSsl()
-                    .sslSocketFactory(sslSocketFactory).build();
-
-            jedisConFactory = new JedisConnectionFactory(redisStandaloneConfiguration,
-                    jedisClientConfiguration);
-        } else {
-            log.info("Using default Redis connection");
-            jedisConFactory = new JedisConnectionFactory(redisStandaloneConfiguration);
+        if (StringUtils.hasText(properties.getUsername())) {
+            redisStandaloneConfiguration.setUsername(properties.getUsername());
         }
 
-        return jedisConFactory;
+        if (StringUtils.hasText(properties.getPassword())) {
+            redisStandaloneConfiguration.setPassword(properties.getPassword());
+        }
+
+        log.info("Redis User: {}, Hostname: {}, Port: {}, Ssl: {}",
+                StringUtils.hasText(properties.getUsername()) ? properties.getUsername(): "NULL username",
+                hostname,
+                port,
+                properties.isSsl());
+
+        return redisStandaloneConfiguration;
+    }
+
+    public RedisSentinelConfiguration getSentinelConfiguration(StreamingProperties properties) {
+        StreamingProperties.Sentinel sentinel = properties.getSentinel();
+        RedisSentinelConfiguration config = new RedisSentinelConfiguration();
+        config.master(sentinel.getMaster());
+        if (StringUtils.hasText(sentinel.getUsername())) {
+            config.setUsername(sentinel.getUsername());
+        }
+
+        if (StringUtils.hasText(sentinel.getPassword())) {
+            config.setPassword(sentinel.getPassword());
+        }
+
+        if (sentinel.getNodes() != null) {
+            sentinel.getNodes().forEach(node -> {
+                String[] parts = node.split(":");
+                if (parts.length == 2) {
+                    config.sentinel(parts[0], Integer.parseInt(parts[1]));
+                }
+            });
+        }
+
+        log.info("Redis Sentinel -> Master: {}, Nodes: {}, User: {}",
+                sentinel.getMaster(),
+                sentinel.getNodes(),
+                sentinel.getUsername() != null
+                        ? sentinel.getUsername()
+                        : "NULL username");
+
+        return config;
+    }
+
+    public RedisClusterConfiguration getClusterConfiguration(StreamingProperties properties) {
+        StreamingProperties.Cluster cluster = properties.getCluster();
+        RedisClusterConfiguration config = new RedisClusterConfiguration(cluster.getNodes());
+        if (StringUtils.hasText(properties.getUsername())) {
+            config.setUsername(properties.getUsername());
+        }
+
+        if (StringUtils.hasText(properties.getPassword())) {
+            config.setPassword(properties.getPassword());
+        }
+
+        if (cluster.getMaxRedirects() != null) {
+            config.setMaxRedirects(cluster.getMaxRedirects());
+        }
+
+        log.info("Redis Cluster -> Nodes: {}, MaxRedirects: {}, User: {}",
+                cluster.getNodes(),
+                cluster.getMaxRedirects(),
+                properties.getUsername() != null
+                        ? properties.getUsername()
+                        : "NULL username");
+
+        return config;
     }
 
     @Bean
