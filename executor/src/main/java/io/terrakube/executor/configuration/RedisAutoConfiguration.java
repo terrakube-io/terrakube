@@ -10,15 +10,18 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
-import org.jetbrains.annotations.NotNull;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisClusterConfiguration;
+import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.jedis.JedisClientConfiguration;
 import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Configuration
@@ -54,36 +57,56 @@ public class RedisAutoConfiguration {
 
     @Bean
     JedisConnectionFactory jedisConnectionFactory(RedisProperties redisProperties, SSLSocketFactory sslSocketFactory) {
-        RedisStandaloneConfiguration redisStandaloneConfiguration = getRedisStandaloneConfiguration(redisProperties);
+        JedisClientConfiguration.JedisClientConfigurationBuilder clientConfigBuilder = JedisClientConfiguration.builder();
 
         if (redisProperties.isSsl()) {
-            JedisClientConfiguration clientConfiguration = JedisClientConfiguration
-                    .builder()
-                    .useSsl()
-                    .sslSocketFactory(sslSocketFactory)
-                    .build();
             log.info("Redis connection with SSL configuration");
-            return new JedisConnectionFactory(redisStandaloneConfiguration, clientConfiguration);
+            clientConfigBuilder.useSsl().sslSocketFactory(sslSocketFactory);
         } else {
             log.info("Redis connection with default configuration");
-            return new JedisConnectionFactory(redisStandaloneConfiguration);
         }
 
+        JedisClientConfiguration clientConfig = clientConfigBuilder.build();
+
+        if (isCluster(redisProperties)) {
+            RedisClusterConfiguration clusterConfig = getClusterConfiguration(redisProperties);
+            return new JedisConnectionFactory(clusterConfig, clientConfig);
+        }
+
+        if (isSentinel(redisProperties)) {
+            RedisSentinelConfiguration sentinelConfig = getSentinelConfiguration(redisProperties);
+            return new JedisConnectionFactory(sentinelConfig, clientConfig);
+        }
+
+        RedisStandaloneConfiguration standaloneConfig = getStandaloneConfiguration(redisProperties);
+        return new JedisConnectionFactory(standaloneConfig, clientConfig);
     }
 
-    @NotNull
-    private static RedisStandaloneConfiguration getRedisStandaloneConfiguration(RedisProperties redisProperties) {
+    private boolean isSentinel(RedisProperties redisProperties) {
+        return redisProperties.getSentinel() != null &&
+                !CollectionUtils.isEmpty(redisProperties.getSentinel().getNodes()) &&
+                StringUtils.hasText(redisProperties.getSentinel().getMaster());
+    }
+
+    private boolean isCluster(RedisProperties redisProperties) {
+        return redisProperties.getCluster() != null &&
+                !CollectionUtils.isEmpty(redisProperties.getCluster().getNodes());
+    }
+
+    private RedisStandaloneConfiguration getStandaloneConfiguration(RedisProperties redisProperties) {
         String hostname = redisProperties.getHostname();
         int port = redisProperties.getPort();
         String username = redisProperties.getUsername();
         String password = redisProperties.getPassword();
         RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(
                 hostname, port);
-        if (redisProperties.getPassword() != null && !redisProperties.getPassword().isEmpty())
+        if (StringUtils.hasText(redisProperties.getPassword())) {
             redisStandaloneConfiguration.setPassword(password);
+        }
 
-        if (redisProperties.getUsername() != null && !redisProperties.getUsername().isEmpty())
-           redisStandaloneConfiguration.setUsername(username);
+        if (StringUtils.hasText(redisProperties.getUsername())) {
+            redisStandaloneConfiguration.setUsername(username);
+        }
 
         log.info("Redis User: {}, Hostname: {}, Port: {}, Ssl: {}",
                 (username != null && !username.isEmpty()) ? username: "NULL username",
@@ -92,6 +115,64 @@ public class RedisAutoConfiguration {
                 redisProperties.isSsl()
         );
         return redisStandaloneConfiguration;
+    }
+
+    public RedisSentinelConfiguration getSentinelConfiguration(RedisProperties redisProperties) {
+        RedisProperties.Sentinel sentinel = redisProperties.getSentinel();
+        RedisSentinelConfiguration config = new RedisSentinelConfiguration();
+        config.master(sentinel.getMaster());
+        if (StringUtils.hasText(sentinel.getUsername())) {
+            config.setUsername(sentinel.getUsername());
+        }
+
+        if (StringUtils.hasText(sentinel.getPassword())) {
+            config.setPassword(sentinel.getPassword());
+        }
+
+        if (sentinel.getNodes() != null) {
+            sentinel.getNodes().forEach(node -> {
+                String[] parts = node.split(":");
+                if (parts.length == 2) {
+                    config.sentinel(parts[0], Integer.parseInt(parts[1]));
+                }
+            });
+        }
+
+        log.info("Redis Sentinel -> Master: {}, Nodes: {}, User: {}",
+                sentinel.getMaster(),
+                sentinel.getNodes(),
+                sentinel.getUsername() != null
+                        ? sentinel.getUsername()
+                        : "NULL username"
+        );
+
+        return config;
+    }
+
+    public RedisClusterConfiguration getClusterConfiguration(RedisProperties redisProperties) {
+        RedisProperties.Cluster cluster = redisProperties.getCluster();
+        RedisClusterConfiguration config = new RedisClusterConfiguration(cluster.getNodes());
+        if (StringUtils.hasText(redisProperties.getPassword())) {
+            config.setPassword(redisProperties.getPassword());
+        }
+
+        if (StringUtils.hasText(redisProperties.getUsername())) {
+            config.setUsername(redisProperties.getUsername());
+        }
+
+        if (cluster.getMaxRedirects() != null) {
+            config.setMaxRedirects(cluster.getMaxRedirects());
+        }
+
+        log.info("Redis Cluster -> Nodes: {}, MaxRedirects: {}, User: {}",
+                cluster.getNodes(),
+                cluster.getMaxRedirects(),
+                redisProperties.getUsername() != null
+                        ? redisProperties.getUsername()
+                        : "NULL username"
+        );
+
+        return config;
     }
 
     @Bean
