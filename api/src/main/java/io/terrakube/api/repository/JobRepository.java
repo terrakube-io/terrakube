@@ -22,4 +22,5 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     Optional<Job> findFirstByWorkspaceAndAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
+    Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
 }

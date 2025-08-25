@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-28-0-1" author="alfespa17@gmail.com">
+        <addColumn tableName="workspace">
+            <column name="last_job_status" type="varchar(36)">
+                <constraints nullable="true" />
+            </column>
+        </addColumn>
+        <addColumn tableName="workspace" >
+            <column name="last_job_date" type="datetime"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

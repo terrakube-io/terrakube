@@ -21,6 +21,8 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                       branch
                       terraformVersion
                       iacType
+                      lastJobStatus
+                      lastJobDate
                       workspaceTag {
                         edges { 
                           node {
@@ -28,15 +30,6 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                             tagId
                           }
                         } 
-                      }
-                      job(sort: "id") {
-                        edges {
-                          node {
-                            id
-                            status
-                            updatedDate
-                          }
-                        }
                       }
                     }
                   }
@@ -69,11 +62,12 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
   const includes = tempData.data.organization.edges[0].node.workspace.edges;
 
   const workspaces = includes.map((element: any) => {
-    const lastJob = element.node.job.edges?.slice(-1)?.pop()?.node;
-    const lastStatus = lastJob?.status ?? "NeverExecuted";
+    console.log(element.node.name + " " + element.node.lastJobStatus + " " + element.node.lastJobDate);
+    const lastStatus = element.node.lastJobStatus;
+    const lastJobDate = element.node.lastJobDate;
     const ws: WorkspaceListItem = {
       id: element.node.id,
-      lastRun: lastJob?.updatedDate,
+      lastRun: lastJobDate,
       lastStatus,
       name: element.node.name,
       description: element.node.description,
