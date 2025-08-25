@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.vcs.provider.gitlab;
 
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -9,6 +11,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Service
 public class GitLabTokenService {
+    @Autowired
+    private WebClient.Builder webClientBuilder;
 
     private static final String DEFAULT_ENDPOINT="https://gitlab.com";
 
@@ -42,7 +46,7 @@ public class GitLabTokenService {
     }
 
     private WebClient getWebClient(String endpoint){
-        return WebClient.builder()
+        return webClientBuilder
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .build();

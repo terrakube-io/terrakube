@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.json;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ import java.io.IOException;
 public class TerraformJsonController {
 
     private TerraformJsonProperties terraformJsonProperties;
+    @Autowired
     private WebClient.Builder webClientBuilder;
 
     @GetMapping(value = "/index.json", produces = MediaType.APPLICATION_JSON_VALUE)
