@@ -1,9 +1,12 @@
 package io.terrakube.api.rs.workspace;
 
 import java.sql.Types;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import io.terrakube.api.rs.job.JobStatus;
+import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLRestriction;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
@@ -31,16 +34,6 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -77,6 +70,12 @@ public class Workspace extends GenericAuditFields {
 
     @Column(name = "folder")
     private String folder;
+
+    @Column(name = "last_job_status")
+    private JobStatus lastJobStatus = JobStatus.NeverExecuted;
+
+    @Column(name = "last_job_date")
+    private Date lastJobDate;
 
     @Column(name = "locked")
     private boolean locked;

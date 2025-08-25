@@ -12,5 +12,6 @@ public enum JobStatus {
     rejected,
     cancelled,
     failed,
-    unknown
+    unknown,
+    NeverExecuted
 }

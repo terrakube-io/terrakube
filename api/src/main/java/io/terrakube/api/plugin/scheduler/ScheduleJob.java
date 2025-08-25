@@ -152,7 +152,15 @@ public class ScheduleJob implements org.quartz.Job {
                     log.info("Job {} Status {}", job.getId(), job.getStatus());
                     break;
             }
+            updateWorkspaceStatus(job);
         }
+    }
+
+    private void updateWorkspaceStatus(Job job) {
+        log.info("Updating last status for workspace {} to {}", job.getWorkspace().getName(), job.getStatus());
+        job.getWorkspace().setLastJobStatus(job.getStatus());
+        job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
+        workspaceRepository.save(job.getWorkspace());
     }
 
     private void executePendingJob(Job job, JobExecutionContext jobExecutionContext) {
@@ -280,6 +288,7 @@ public class ScheduleJob implements org.quartz.Job {
         jobRepository.save(job);
         ephemeralExecutorService.deleteEphemeralJob(job);
         updateJobStatusOnVcs(job, JobStatus.completed);
+        updateWorkspaceStatus(job);
         log.info("Update Job {} to completed", job.getId());
     }
 
