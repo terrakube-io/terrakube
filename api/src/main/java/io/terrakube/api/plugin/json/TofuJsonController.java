@@ -14,6 +14,7 @@ import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +27,7 @@ public class TofuJsonController {
     private static final String TOFU_REDIS_KEY = "tofuReleasesResponse";
     TofuJsonProperties tofuJsonProperties;
     RedisTemplate redisTemplate;
+    @Autowired
     private WebClient.Builder webClientBuilder;
 
     @GetMapping(value= "/index.json", produces = MediaType.APPLICATION_JSON_VALUE)

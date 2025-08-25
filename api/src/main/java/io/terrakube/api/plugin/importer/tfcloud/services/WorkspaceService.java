@@ -3,7 +3,7 @@ package io.terrakube.api.plugin.importer.tfcloud.services;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.importer.tfcloud.StateVersion;
 import io.terrakube.api.plugin.importer.tfcloud.TagResponse;
 import io.terrakube.api.plugin.importer.tfcloud.TagResponse.TagData;
@@ -44,12 +44,13 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @Service
 public class WorkspaceService {
 
-    private final RestTemplate restTemplate;
+    private final WebClient webClient;
     WorkspaceRepository workspaceRepository;
     HistoryRepository historyRepository;
     VcsRepository vcsRepository;
@@ -69,8 +70,9 @@ public class WorkspaceService {
             OrganizationRepository organizationRepository,
             VariableRepository variableRepositor,
             WorkspaceTagRepository workspaceTagRepository,
-            TagRepository tagRepository) {
-        this.restTemplate = new RestTemplate();
+            TagRepository tagRepository,
+            WebClient webClient) {
+        this.webClient = webClient;
         this.workspaceRepository = workspaceRepository;
         this.historyRepository = historyRepository;
         this.storageTypeService = storageTypeService;
@@ -89,12 +91,19 @@ public class WorkspaceService {
     }
 
     private <T> T makeRequest(String apiToken, String url, Class<T> responseType) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", "Bearer " + apiToken);
-        headers.setContentType(MediaType.valueOf("application/vnd.api+json"));
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-
-        ResponseEntity<T> response = restTemplate.exchange(url, HttpMethod.GET, entity, responseType);
+        ResponseEntity<T> response = webClient
+                .get()
+                .uri(url)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken)
+                .header(HttpHeaders.CONTENT_TYPE, "application/vnd.api+json")
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        clientResponse -> clientResponse.createException().flatMap(Mono::error))
+                .toEntity(responseType)
+                .block();
+        if (response == null || response.getBody() == null) {
+            throw new NullResponseException("Error: Response is null");
+        }
         return response.getBody();
     }
 
@@ -185,20 +194,7 @@ public class WorkspaceService {
     }
 
     public Resource downloadState(String apiToken, String stateUrl) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", "Bearer " + apiToken);
-
-        ResponseEntity<Resource> response = restTemplate.exchange(
-                stateUrl,
-                HttpMethod.GET,
-                new HttpEntity<>(headers),
-                Resource.class);
-
-        if (response != null && response.getBody() != null) {
-            return response.getBody();
-        } else {
-            throw new NullResponseException("Error: Response from State is null");
-        }
+        return makeRequest(apiToken, stateUrl, Resource.class);
     }
 
     public String importWorkspace(String apiToken, String apiUrl, WorkspaceImportRequest workspaceImportRequest) {
