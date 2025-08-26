@@ -3511,10 +3511,10 @@ core-js-compat@^3.43.0:
   dependencies:
     browserslist "^4.25.0"
 
-core-js-pure@^3.45.0:
-  version "3.45.0"
-  resolved "https://registry.yarnpkg.com/core-js-pure/-/core-js-pure-3.45.0.tgz#c753b80daf1bf732e56bf0b8cbd62797c0c1f235"
-  integrity sha512-OtwjqcDpY2X/eIIg1ol/n0y/X8A9foliaNt1dSK0gV3J2/zw+89FcNG3mPK+N8YWts4ZFUPxnrAzsxs/lf8yDA==
+core-js-pure@^3.45.1:
+  version "3.45.1"
+  resolved "https://registry.yarnpkg.com/core-js-pure/-/core-js-pure-3.45.1.tgz#b129d86a5f7f8380378577c7eaee83608570a05a"
+  integrity sha512-OHnWFKgTUshEU8MK+lOs1H8kC8GkTi9Z1tvNkxrCcw9wl3MJIO7q2ld77wjWn4/xuGrVu2X+nME1iIIPBSdyEQ==
 
 create-require@^1.1.0:
   version "1.1.1"
