@@ -11,7 +11,7 @@ jobs:
         os: [jammy, jammy-arm, alpaquita]
     env:
       VERSION: ${{ github.event.release.tag_name }}
-    runs-on: ${{ matrix.os == 'jammy-arm' && 'ARM64' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.os == 'jammy-arm' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
     - uses: actions/checkout@v4
 
