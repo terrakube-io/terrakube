@@ -17,27 +17,26 @@ import java.util.List;
 public class RedisProperties {
     private String hostname;
     private Integer port;
+    private String truststorePassword;
+    private Sentinel sentinel;
+    private Cluster cluster;
     private String username;
     private String password;
     private boolean ssl;
     private String truststorePath;
-    private String truststorePassword;
-    private Sentinel sentinel;
-    private Cluster cluster;
-
-    @Getter
-    @Setter
-    public static class Sentinel {
-        private String master;
-        private List<String> nodes;
-        private String username;
-        private String password;
-    }
 
     @Getter
     @Setter
     public static class Cluster {
-        private List<String> nodes;
         private Integer maxRedirects;
+        private List<String> nodes;
+    }
+    @Getter
+    @Setter
+    public static class Sentinel {
+        private String username;
+        private String master;
+        private String password;
+        private List<String> nodes;
     }
 }
