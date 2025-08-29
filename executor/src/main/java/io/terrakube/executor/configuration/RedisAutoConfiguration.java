@@ -68,15 +68,11 @@ public class RedisAutoConfiguration {
 
         JedisClientConfiguration clientConfig = clientConfigBuilder.build();
 
-        if (isCluster(redisProperties)) {
-            RedisClusterConfiguration clusterConfig = getClusterConfig(redisProperties);
-            return new JedisConnectionFactory(clusterConfig, clientConfig);
-        }
+        if (isCluster(redisProperties))
+            return new JedisConnectionFactory(getClusterConfig(redisProperties), clientConfig);
 
-        if (isSentinel(redisProperties)) {
-            RedisSentinelConfiguration sentinelConfig = getSentinelConf(redisProperties);
-            return new JedisConnectionFactory(sentinelConfig, clientConfig);
-        }
+        if (isSentinel(redisProperties))
+            return new JedisConnectionFactory(getSentinelConf(redisProperties), clientConfig);
 
         RedisStandaloneConfiguration standaloneConfig = getStandaloneConfiguration(redisProperties);
         return new JedisConnectionFactory(standaloneConfig, clientConfig);
@@ -93,87 +89,72 @@ public class RedisAutoConfiguration {
                 !CollectionUtils.isEmpty(redisProperties.getCluster().getNodes());
     }
 
-    private RedisStandaloneConfiguration getStandaloneConfiguration(RedisProperties redisProperties) {
-        String hostname = redisProperties.getHostname();
-        int port = redisProperties.getPort();
-        String username = redisProperties.getUsername();
-        String password = redisProperties.getPassword();
-        RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(
-                hostname, port);
-        if (StringUtils.hasText(redisProperties.getPassword())) {
-            redisStandaloneConfiguration.setPassword(password);
-        }
+    private RedisStandaloneConfiguration getStandaloneConfiguration(RedisProperties properties) {
+        String hostname = properties.getHostname();
+        int port = properties.getPort();
+        String username = properties.getUsername();
+        String password = properties.getPassword();
+        RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration(hostname, port);
 
-        if (StringUtils.hasText(redisProperties.getUsername())) {
+        if (StringUtils.hasText(properties.getPassword()))
+            redisStandaloneConfiguration.setPassword(password);
+
+        if (StringUtils.hasText(properties.getUsername()))
             redisStandaloneConfiguration.setUsername(username);
-        }
 
         log.info("Redis User {}, Hostname {}, Port {}, SSL {}",
                 (username != null && !username.isEmpty()) ? username: "NULL username",
                 hostname,
                 port,
-                redisProperties.isSsl()
+                properties.isSsl()
         );
         return redisStandaloneConfiguration;
     }
 
     public RedisSentinelConfiguration getSentinelConf(RedisProperties sentinelProperties) {
-        RedisProperties.Sentinel sentinel = sentinelProperties.getSentinel();
-        RedisSentinelConfiguration config = new RedisSentinelConfiguration();
-        config.master(sentinel.getMaster());
-        if (StringUtils.hasText(sentinel.getUsername())) {
-            config.setUsername(sentinel.getUsername());
-        }
+        RedisProperties.Sentinel newSentinel = sentinelProperties.getSentinel();
+        RedisSentinelConfiguration newConfiguration = new RedisSentinelConfiguration();
+        newConfiguration.master(newSentinel.getMaster());
+        if (StringUtils.hasText(newSentinel.getUsername()))
+            newConfiguration.setUsername(newSentinel.getUsername());
 
-        if (StringUtils.hasText(sentinel.getPassword())) {
-            config.setPassword(sentinel.getPassword());
-        }
+        if (StringUtils.hasText(newSentinel.getPassword()))
+            newConfiguration.setPassword(newSentinel.getPassword());
 
-        if (sentinel.getNodes() != null) {
-            sentinel.getNodes().forEach(node -> {
+        if (newSentinel.getNodes() != null) {
+            newSentinel.getNodes().forEach(node -> {
                 String[] parts = node.split(":");
-                if (parts.length == 2) {
-                    config.sentinel(parts[0], Integer.parseInt(parts[1]));
-                }
+                if (parts.length == 2) newConfiguration.sentinel(parts[0], Integer.parseInt(parts[1]));
             });
         }
 
-        log.info("Redis Config Sentinel -> Master=> {}, Nodes=> {}, User=> {}",
-                sentinel.getMaster(),
-                sentinel.getNodes(),
-                sentinel.getUsername() != null
-                        ? sentinel.getUsername()
+        log.info("Redis Config Sentinel -> Master-> {}, Nodes-> {}, User-> {}",
+                newSentinel.getMaster(),
+                newSentinel.getNodes(),
+                newSentinel.getUsername() != null
+                        ? newSentinel.getUsername()
                         : "NULL USERNAME..."
         );
 
-        return config;
+        return newConfiguration;
     }
 
     public RedisClusterConfiguration getClusterConfig(RedisProperties redisProperties) {
-        RedisProperties.Cluster cluster = redisProperties.getCluster();
-        RedisClusterConfiguration config = new RedisClusterConfiguration(cluster.getNodes());
+        RedisProperties.Cluster newCluster = redisProperties.getCluster();
+        RedisClusterConfiguration newConfig = new RedisClusterConfiguration(newCluster.getNodes());
 
-        if (cluster.getMaxRedirects() != null) {
-            config.setMaxRedirects(cluster.getMaxRedirects());
-        }
+        if (newCluster.getMaxRedirects() != null)
+            newConfig.setMaxRedirects(newCluster.getMaxRedirects());
 
-        if (StringUtils.hasText(redisProperties.getUsername())) {
-            config.setUsername(redisProperties.getUsername());
-        }
+        if (StringUtils.hasText(redisProperties.getUsername()))
+            newConfig.setUsername(redisProperties.getUsername());
 
-        if (StringUtils.hasText(redisProperties.getPassword())) {
-            config.setPassword(redisProperties.getPassword());
-        }
+        if (StringUtils.hasText(redisProperties.getPassword()))
+            newConfig.setPassword(redisProperties.getPassword());
 
-        log.info("Redis Config Cluster -> Node: {}, MaxRedirect: {}, User: {}",
-                cluster.getNodes(),
-                cluster.getMaxRedirects(),
-                redisProperties.getUsername() != null
-                        ? redisProperties.getUsername()
-                        : "NULL USERNAME"
-        );
+        log.info("Redis Config Cluster -> Node: {}, MaxRedirect: {}, User: {}", newCluster.getNodes(), newCluster.getMaxRedirects(), redisProperties.getUsername() != null ? redisProperties.getUsername() : "NULL USERNAME");
 
-        return config;
+        return newConfig;
     }
 
     @Bean
