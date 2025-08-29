@@ -36,12 +36,10 @@ public class ModuleServiceImpl implements ModuleService {
         log.info("Search Module {}/{} in Organization {}", moduleName, providerName, organizationName);
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
-        // This is only required as a intermediate solution for the modules created before this version to create a scheduled task to fetch the versions
-        // All modules created after this version will have the task to fetch the versions. Check the ModuleManageHook.java in API for more details
+
         List<Resource> versionData = module.getRelationships().getVersion().getData();
         if (versionData == null || versionData.isEmpty()) {
-            log.info("No versions found for module: {} in organization: {}, kicking off a update call to the module for it to refresh its versions", moduleName, organizationName);
-            updateModuleDownloadCount(organizationId, module);
+            log.info("No versions found for module: {} in organization: {}", moduleName, organizationName);
             return definitionVersions;
         }
 

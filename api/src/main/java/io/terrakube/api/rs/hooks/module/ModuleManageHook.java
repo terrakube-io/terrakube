@@ -5,6 +5,7 @@ import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,15 +66,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 }
                 break;
             case UPDATE:
-                log.info("ModuleManageHookd update hook for {}/{}/{}", module.getOrganization().getName(),
-                        module.getName(),
-                        module.getProvider());
-                try {
-                    moduleRefreshService.createTask(300, module.getId().toString(), true);
-                } catch (SchedulerException e) {
-                    log.error("Failed to create module refresh task for {}/{}/{}, error {}",
-                            module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
-                }
+                checkNextModuleRefresh(module);
                 break;
             case DELETE:
                 try {
@@ -108,6 +101,29 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             default:
                 log.warn("Hook not supported in module");
                 break;
+        }
+    }
+
+    private void checkNextModuleRefresh(Module module) {
+        log.info("ModuleManageHook update hook for {}/{}/{}", module.getOrganization().getName(),
+                module.getName(),
+                module.getProvider());
+        try {
+            String triggerKey = moduleRefreshService.getJobPrefix() + module.getId();
+            Trigger trigger = scheduler.getTrigger(TriggerBuilder.newTrigger()
+                    .withIdentity(triggerKey)
+                    .build().getKey());
+
+            if (trigger != null) {
+                Date nextFireTime = trigger.getNextFireTime();
+                log.info("Next trigger fire time for module {}/{}/{}: {}",
+                        module.getOrganization().getName(),
+                        module.getName(),
+                        module.getProvider(),
+                        nextFireTime);
+            }
+        } catch (SchedulerException e) {
+            log.error("Failed to get next trigger time: {}", e.getMessage());
         }
     }
 
