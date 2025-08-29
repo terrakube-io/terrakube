@@ -60,6 +60,7 @@ public class ModuleRefreshJob implements Job {
         if (search.isEmpty())
             return;
         Module module = search.get();
+        log.info("Refreshing module {} on {}", module.getName(), module.getOrganization().getName());
         Map<String, Ref> versions = null;
 
         try {

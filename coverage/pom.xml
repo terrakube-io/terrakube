@@ -52,6 +52,10 @@
                         <exclude>org/terrakube/api/plugin/security/user/local/*</exclude>
                         <exclude>org/terrakube/api/plugin/streaming/*Configuration.*</exclude>
                         <exclude>org/terrakube/executor/configuration/*Configuration.*</exclude>
+                        <exclude>api/src/main/java/io/terrakube/api/plugin/streaming/StreamingProperties.java</exclude>
+                        <exclude>api/src/main/java/io/terrakube/api/plugin/streaming/StreamingConfiguration.java</exclude>
+                        <exclude>executor/src/main/java/io/terrakube/executor/configuration/RedisAutoConfiguration.java</exclude>
+                        <exclude>executor/src/main/java/io/terrakube/executor/configuration/RedisProperties.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
