@@ -28,7 +28,7 @@
 		<groovy.version>4.0.28</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>5.5.1</jcolor.version>
-		<aws-sdk.version>2.32.29</aws-sdk.version>
+		<aws-sdk.version>2.33.0</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.17</slf4j.version>
 		<gcp-libraries-bom.version>26.66.0</gcp-libraries-bom.version>
