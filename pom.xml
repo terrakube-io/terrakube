@@ -20,7 +20,7 @@
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.project.key>AzBuilder_azb-server</sonar.project.key>
         <!-- plugins -->
-        <sonar.version>5.1.0.4751</sonar.version>
+        <sonar.version>5.2.0.4988</sonar.version>
         <jacoco.version>0.8.13</jacoco.version>
         <aggregate.report.dir>coverage/target/site/jacoco-aggregate/jacoco.xml</aggregate.report.dir>
     </properties>
