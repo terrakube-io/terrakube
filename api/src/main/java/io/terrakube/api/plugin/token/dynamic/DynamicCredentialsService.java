@@ -33,6 +33,9 @@ public class DynamicCredentialsService {
     @Value("${io.terrakube.hostname}")
     String hostname;
 
+    @Value("${io.terrakube.dynamic.credentials.hostname}")
+    String overrideHostname;
+
     @Value("${io.terrakube.dynamic.credentials.public-key-path}")
     String publicKeyPath;
 
@@ -133,7 +136,7 @@ public class DynamicCredentialsService {
                         .claim("terrakube_organization_name", organizationName)
                         .claim("terrakube_job_id", String.valueOf(jobId))
                         .setIssuedAt(Date.from(now))
-                        .setIssuer(String.format("https://%s", hostname))
+                        .setIssuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
                         .setExpiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
                         .signWith(getPrivateKey())
                         .compact();

@@ -22,6 +22,9 @@ public class OpenIdConfigurationController {
     @Value("${io.terrakube.hostname}")
     String hostname;
 
+    @Value("${io.terrakube.dynamic.credentials.hostname}")
+    String overrideHostname;
+
     OpenIdConfiguration openIdConfiguration;
 
     @GetMapping(produces = "application/json")
@@ -38,7 +41,7 @@ public class OpenIdConfigurationController {
         log.info("Loading default OpenId Configuration data...");
         OpenIdConfiguration openIdData = new OpenIdConfiguration();
 
-        String issuer = String.format("https://%s", hostname);
+        String issuer = String.format("https://%s", overrideHostname.isEmpty() ? hostname: overrideHostname);
 
         openIdData.setIssuer(issuer);
         openIdData.setJwksUri(issuer + "/.well-known/jwks");
