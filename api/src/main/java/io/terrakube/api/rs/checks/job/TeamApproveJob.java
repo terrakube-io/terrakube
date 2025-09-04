@@ -8,6 +8,7 @@ import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.job.Job;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Optional;
 
@@ -22,6 +23,9 @@ public class TeamApproveJob extends OperationCheck<Job> {
     @Autowired
     GroupService groupService;
 
+    @Value("${io.terrakube.owner}")
+    private String instanceOwner;
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         if (job.getApprovalTeam() == null || job.getApprovalTeam().isEmpty())
@@ -31,7 +35,7 @@ public class TeamApproveJob extends OperationCheck<Job> {
             if (isServiceAccount)
                 return groupService.isServiceMember(requestScope.getUser(), job.getApprovalTeam());
             else
-                return groupService.isMember(requestScope.getUser(), job.getApprovalTeam());
+                return groupService.isMember(requestScope.getUser(), job.getApprovalTeam()) || groupService.isMember(requestScope.getUser(), instanceOwner);
 
         }
     }
