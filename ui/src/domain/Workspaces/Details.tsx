@@ -1028,18 +1028,35 @@ function parseState(state: any) {
   if (state?.values?.outputs != null) {
     for (const [key, value] of Object.entries(state?.values?.outputs) as [any, any][]) {
       if (typeof value.type === "string") {
-        outputs.push({
-          name: key,
-          type: value.type,
-          value: value.value,
-        });
+          if (value.sensitive) {
+              outputs.push({
+                  name: key,
+                  type: value.type,
+                  value: "*****",
+              });
+          } else {
+              outputs.push({
+                  name: key,
+                  type: value.type,
+                  value: value.value,
+              });
+          }
       } else {
         const jsonObject = JSON.stringify(value.value);
-        outputs.push({
-          name: key,
-          type: "Other type",
-          value: jsonObject,
-        });
+        if (value.sensitive) {
+            outputs.push({
+                name: key,
+                type: "Other type",
+                value: "*****",
+            });
+        } else {
+            outputs.push({
+                name: key,
+                type: "Other type",
+                value: jsonObject,
+            });
+        }
+
       }
     }
   } else {
@@ -1091,23 +1108,38 @@ function parseState(state: any) {
 function parseOldState(state: any) {
   const resources: any[] = [];
   const outputs = [];
-
+  console.log(state);
   if (state?.outputs != null) {
     for (const [key, value] of Object.entries(state?.outputs) as [any, any][]) {
       if (typeof value.type === "string") {
-        outputs.push({
-          name: key,
-          type: value.type,
-          value: value.value,
-        });
+          if (value.sensitive) {
+              outputs.push({
+              name: key,
+              type: value.type,
+              value: "********",
+              })
+          } else {
+              outputs.push({
+                  name: key,
+                  type: value.type,
+                  value: value.value,
+              });
+          }
       } else {
         const jsonObject = JSON.stringify(value.value);
-
-        outputs.push({
-          name: key,
-          type: "Other type",
-          value: jsonObject,
-        });
+        if (value.sensitive) {
+            outputs.push({
+              name: key,
+              type: "Other type",
+              value: "********",
+            })
+        } else {
+            outputs.push({
+                name: key,
+                type: "Other type",
+                value: jsonObject,
+            });
+        }
       }
     }
   } else {
