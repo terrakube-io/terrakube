@@ -18,7 +18,7 @@
     "cron-to-quartz": "^1.4.7",
     "cronstrue": "^3.2.0",
     "dotenv": "^17.2.2",
-    "dotenv-expand": "^12.0.2",
+    "dotenv-expand": "^12.0.3",
     "github-markdown-css": "^5.8.1",
     "hcl2-parser": "^1.0.3",
     "html-react-parser": "^5.2.6",
