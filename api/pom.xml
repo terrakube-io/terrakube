@@ -40,7 +40,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.11</maven-artifact.version>
         <commons-io.version>2.20.0</commons-io.version>
-        <kubernetes-client.version>7.3.1</kubernetes-client.version>
+        <kubernetes-client.version>7.4.0</kubernetes-client.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.442</buildpack.builder>
         <buildpack.java>paketobuildpacks/java:18.11.0</buildpack.java>
