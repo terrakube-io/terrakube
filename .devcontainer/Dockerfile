@@ -34,7 +34,16 @@ RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor 
 RUN wget https://github.com/openbao/openbao/releases/download/v2.2.2/bao_2.2.2_linux_amd64.deb && \
     dpkg -i bao_2.2.2_linux_amd64.deb
 
-COPY rootCA.pem /usr/local/share/ca-certificates/root.crt
+ARG INSTALL_CA=false
+RUN --mount=type=bind,source=rootCA.pem,target=/tmp/rootCA.pem,required=false sh -c '\
+  if [ "$INSTALL_CA" = "true" ] && [ -f /tmp/rootCA.pem ]; then \
+    install -D /tmp/rootCA.pem /usr/local/share/ca-certificates/root.crt && \
+    update-ca-certificates; \
+  else \
+    echo "Certificado omitido (INSTALL_CA=$INSTALL_CA, existe=$( [ -f /tmp/rootCA.pem ] && echo si || echo no ))"; \
+  fi \
+'
+
 
 RUN update-ca-certificates
 
