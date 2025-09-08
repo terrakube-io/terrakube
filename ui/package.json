@@ -88,7 +88,7 @@
     "@types/react-dom": "^19.1.9",
     "@types/react-vis": "^1.11.15",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
-    "@typescript-eslint/parser": "^8.41.0",
+    "@typescript-eslint/parser": "^8.42.0",
     "@vitejs/plugin-react": "^5.0.2",
     "classnames": "^2.5.1",
     "eslint": "^9.34.0",
