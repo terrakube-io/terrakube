@@ -119,6 +119,7 @@ export enum VcsType {
   GITLAB = "GITLAB",
   BITBUCKET = "BITBUCKET",
   AZURE_DEVOPS = "AZURE_DEVOPS",
+  AZURE_SP_MI = "AZURE_SP_MI",
   PUBLIC = "PUBLIC",
 }
 

@@ -1,5 +1,5 @@
 import { DownOutlined, GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Button, Col, Dropdown, Form, Input, Row, Space, Steps, Typography, message } from "antd";
+import { Button, Dropdown, Form, Input, Space, Steps, Typography, message } from "antd";
 import TextArea from "antd/es/input/TextArea";
 import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -12,7 +12,6 @@ import axiosInstance from "../../config/axiosConfig";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import "./Settings.css";
 
-const { Paragraph } = Typography;
 const { Step } = Steps;
 const validateMessages = {
   required: "${label} is required!",
@@ -191,7 +190,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "Key";
       case "AZURE_DEVOPS":
       case "AZURE_DEVOPS_SERVER":
-        return "App ID";
+        return "Managed Identity App ID";
       default:
         return connectionType === "OAUTH" ? "Client ID" : "App ID";
     }
@@ -208,7 +207,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "BITBUCKET";
       case "AZURE_DEVOPS":
       case "AZURE_DEVOPS_SERVER":
-        return "AZURE_DEVOPS";
+        return "AZURE_SP_MI";
       default:
         return "GITHUB";
     }
@@ -449,10 +448,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
               <Button
                 className="link"
                 target="_blank"
-                href="https://aex.dev.azure.com/app/register?mkt=en-US"
+                href="https://aex.dev.azure.com/me?mkt=es-ES"
                 type="link"
               >
-                register a new OAuth Application&nbsp; <HiOutlineExternalLink />
+                grant accesses to the managed identity &nbsp; <HiOutlineExternalLink />
               </Button>
               . Enter the following information:
             </Typography.Text>
@@ -461,51 +460,22 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                 <p></p>
                 <ul className="disc-list">
                   <li>
-                    <b>Company Name:</b>{" "}
+                    <b>Organization Setup:</b>{" "}
                     <Typography.Paragraph
-                      copyable
                       type="secondary"
                       style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
                     >
-                      Terrakube
+                      Add the manage identity to the organization and grant "Basic" access level
                     </Typography.Paragraph>
                   </li>
                   <li>
-                    <b>Application name:</b>{" "}
+                    <b>Repository setup:</b>{" "}
                     <Typography.Paragraph
-                      copyable
                       type="secondary"
                       style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
                     >
-                      Terrakube ({sessionStorage.getItem(ORGANIZATION_NAME)})
+                      Add the manage identity to the repository and grant "Contributor" access level
                     </Typography.Paragraph>
-                  </li>
-                  <li>
-                    <b>Application website:</b>{" "}
-                    <Typography.Paragraph
-                      copyable
-                      type="secondary"
-                      style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
-                    >
-                      {new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}
-                    </Typography.Paragraph>
-                  </li>
-                  <li>
-                    <b>Callback URL:</b>{" "}
-                    <Typography.Paragraph
-                      copyable
-                      type="secondary"
-                      style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
-                    >
-                      {getCallBackUrl()}
-                    </Typography.Paragraph>
-                  </li>
-                  <li>
-                    <b>Authorized scopes (checkboxes):</b> Only the following should be checked:
-                    <br />
-                    Code (read)
-                    <br />
-                    Code (status)
                   </li>
                 </ul>
               </Typography.Text>
@@ -632,8 +602,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "AZURE_DEVOPS_SERVER":
         return (
           <Typography.Text type="secondary" className="paragraph">
-            2. Create the application. On the following page, you'll find its details. Enter the App ID and Client
-            Secret below:
+            2. Now Terrakube should be able to access your Azure DevOps organization.
           </Typography.Text>
         );
       default:
@@ -723,13 +692,13 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           connectionType: connectionType,
           vcsType: getVcsType(vcsType),
           clientId: values.clientId,
-          clientSecret: values.clientSecret,
+          clientSecret: getVcsType(vcsType) != "AZURE_SP_MI" ? values.clientSecret : "12345",
           privateKey: values.privateKey,
           callback: uuid,
           endpoint: values.endpoint,
           apiUrl: values.apiUrl,
           redirectUrl: `${window._env_.REACT_APP_REDIRECT_URI}/organizations/${orgid}/settings/vcs`,
-          status: connectionType === "OAUTH" ? "PENDING" : "COMPLETED",
+          status: connectionType === "OAUTH" || getVcsType(vcsType) != "AZURE_SP_MI" ? "PENDING" : "COMPLETED",
         },
       },
     };
@@ -741,7 +710,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       })
       .then((response) => {
         if (response.status == 201) {
-          if (connectionType === "OAUTH") {
+          if (connectionType === "OAUTH" && getVcsType(vcsType) != "AZURE_SP_MI") {
             window.location.replace(
               getConnectUrl(
                 vcsType,
@@ -868,8 +837,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <Form.Item
               name="clientSecret"
               label={getSecretIdName(vcsType)}
-              rules={[{ required: connectionType === "OAUTH" ? true : false }]}
-              hidden={connectionType != "OAUTH"}
+              rules={[{ required: connectionType === "OAUTH" && vcsType != "AZURE_DEVOPS" }]}
+              hidden={connectionType != "OAUTH" || vcsType === "AZURE_DEVOPS"}
             >
               <Input placeholder="ex. db55545bd64e851dc298ba900dd197a02b42bb3s" />
             </Form.Item>

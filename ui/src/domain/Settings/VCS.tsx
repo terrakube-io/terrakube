@@ -42,6 +42,12 @@ export const VCSSettings = ({ vcsMode }: Props) => {
             <VscAzureDevops />
           </IconContext.Provider>
         );
+      case "AZURE_SP_MI":
+        return (
+                <IconContext.Provider value={{ size: "20px" }}>
+                    <VscAzureDevops />
+                </IconContext.Provider>
+        );
       default:
         return <GithubOutlined style={{ fontSize: "20px" }} />;
     }
@@ -55,6 +61,8 @@ export const VCSSettings = ({ vcsMode }: Props) => {
         return "BitBucket";
       case "AZURE_DEVOPS":
         return "Azure Devops";
+      case "AZURE_SP_MI":
+          return "Azure Devops";
       default:
         return "GitHub";
     }
@@ -91,7 +99,7 @@ export const VCSSettings = ({ vcsMode }: Props) => {
           "This VCS is currently in use by one or more workspaces. Please remove the VCS from all workspaces before deleting it."
         );
       } else {
-        axiosInstance.delete(`organization/${orgid}/vcs/${id}`).then((response) => {
+        axiosInstance.delete(`organization/${orgid}/vcs/${id}`).then(() => {
           loadVCS();
         });
       }
