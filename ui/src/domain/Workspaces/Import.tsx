@@ -224,6 +224,13 @@ export const ImportWorkspace = () => {
             &nbsp;
           </IconContext.Provider>
         );
+        case "AZURE_SP_MI":
+            return (
+                <IconContext.Provider value={{ size: "20px" }}>
+                    <VscAzureDevops />
+                    &nbsp;
+                </IconContext.Provider>
+            );
       default:
         return <GithubOutlined style={{ fontSize: "20px" }} />;
     }
