@@ -15,13 +15,13 @@
     <description>Spring Boot Terrakube API</description>
     <properties>
         <java.version>17</java.version>
-        <elide.version>7.1.11</elide.version>
+        <elide.version>7.1.15</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
         <liquibase-core.version>4.33.0</liquibase-core.version>
         <azure.version>5.23.0</azure.version>
         <mssql-jdbc.version>12.10.1.jre11</mssql-jdbc.version>
-        <msal4j.version>1.22.0</msal4j.version>
-        <lombok.version>1.18.38</lombok.version>
+        <msal4j.version>1.23.0</msal4j.version>
+        <lombok.version>1.18.40</lombok.version>
         <wiremock.version>3.10.6</wiremock.version>
         <jgit.version>7.3.0.202506031305-r</jgit.version>
         <bouncy.castle>1.81</bouncy.castle>
@@ -30,7 +30,7 @@
         <postgresql.version>42.7.7</postgresql.version>
         <snakeyaml.version>2.5</snakeyaml.version>
         <quartz.version>2.5.0</quartz.version>
-        <aws-sdk.version>2.33.0</aws-sdk.version>
+        <aws-sdk.version>2.33.4</aws-sdk.version>
         <gcp-libraries-bom.version>26.67.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>6.2.0</jedis.version>
@@ -40,7 +40,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.11</maven-artifact.version>
         <commons-io.version>2.20.0</commons-io.version>
-        <kubernetes-client.version>7.3.1</kubernetes-client.version>
+        <kubernetes-client.version>7.4.0</kubernetes-client.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.442</buildpack.builder>
         <buildpack.java>paketobuildpacks/java:18.11.0</buildpack.java>
@@ -308,7 +308,7 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>10.4.2</version>
+            <version>10.5</version>
             <scope>compile</scope>
         </dependency>
         <dependency>

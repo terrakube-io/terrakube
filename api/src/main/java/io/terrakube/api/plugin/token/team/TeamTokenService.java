@@ -4,7 +4,6 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
-import net.minidev.json.JSONArray;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -54,7 +53,7 @@ public class TeamTokenService {
         try {
             log.info("Generated Team Token {}", groupToken.getId());
 
-            JSONArray groupArray = new JSONArray();
+            ArrayList<String> groupArray = new ArrayList<>();
             groupArray.add(groupName);
 
             if (days > 0 || hours > 0 || minutes > 0 ) {
