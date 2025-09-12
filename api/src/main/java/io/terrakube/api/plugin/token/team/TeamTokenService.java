@@ -3,13 +3,13 @@ package io.terrakube.api.plugin.token.team;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.repository.TeamTokenRepository;
+import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
-import io.terrakube.api.repository.TeamTokenRepository;
-import io.terrakube.api.rs.token.group.Group;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
