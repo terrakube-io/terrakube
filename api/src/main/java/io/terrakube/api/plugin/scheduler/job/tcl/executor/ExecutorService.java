@@ -12,7 +12,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
@@ -33,6 +33,7 @@ import io.terrakube.api.rs.workspace.parameters.Variable;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @Service
@@ -68,7 +69,9 @@ public class ExecutorService {
     private VariableRepository variableRepository;
     @Autowired
     private ReferenceRepository referenceRepository;
-
+    @Autowired
+    private WebClient webClient;
+    
     @Transactional
     public ExecutorContext execute(Job job, String stepId, Flow flow) {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
@@ -220,13 +223,18 @@ public class ExecutorService {
     }
 
     private ExecutorContext sendToExecutor(Job job, ExecutorContext executorContext) {
-        RestTemplate restTemplate = new RestTemplate();
         boolean executed = false;
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<ExecutorContext> entity = new HttpEntity<>(executorContext, headers);
-            ResponseEntity<ExecutorContext> response = restTemplate.postForEntity(getExecutorUrl(job), entity, ExecutorContext.class);
+            ResponseEntity<ExecutorContext> response = webClient.post()
+                    .uri(getExecutorUrl(job))
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .bodyValue(executorContext)
+                    .retrieve()
+                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                            clientResponse -> clientResponse.createException().flatMap(Mono::error))
+                    .toEntity(ExecutorContext.class)
+                    .block();
+
             executorContext.setAccessToken("****");
             executorContext.setModuleSshKey("****");
             log.debug("Sending Job: /n {}", executorContext);
@@ -236,15 +244,16 @@ public class ExecutorService {
                 job.setStatus(JobStatus.queue);
                 jobRepository.save(job);
                 executed = true;
-            } else
+            } else {
                 executed = false;
+            }
         } catch (RestClientException ex) {
             log.error(ex.getMessage());
             executed = false;
-        }
-
-        return executed ? executorContext : null;
     }
+
+    return executed ? executorContext : null;
+}
 
     private HashMap<String, String> loadOtherEnvironmentVariables(Job job, Flow flow,
             HashMap<String, String> workspaceEnvVariables) {
