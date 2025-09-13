@@ -3,13 +3,13 @@ package io.terrakube.api.plugin.token.team;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.repository.TeamTokenRepository;
+import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
-import io.terrakube.api.repository.TeamTokenRepository;
-import io.terrakube.api.rs.token.group.Group;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
@@ -61,33 +61,33 @@ public class TeamTokenService {
                 log.info("Team token will expire: {}", expiration);
 
                 jws = Jwts.builder()
-                        .setIssuer(ISSUER)
-                        .setSubject(String.format("%s (Team Token)", groupName))
-                        .setAudience(ISSUER)
-                        .setId(groupToken.getId().toString())
+                        .issuer(ISSUER)
+                        .subject(String.format("%s (Team Token)", groupName))
+                        .audience().add(ISSUER).and()
+                        .id(groupToken.getId().toString())
                         .claim("email", ownerEmail)
                         .claim("description", description)
                         .claim("email_verified", true)
                         .claim("name", String.format("%s (Token)", groupName))
                         .claim("groups", groupArray)
-                        .setIssuedAt(Date.from(Instant.now()))
-                        .setExpiration(expiration)
+                        .issuedAt(Date.from(Instant.now()))
+                        .expiration(expiration)
                         .signWith(key)
                         .compact();
             } else {
                 log.info("Team token will not expire:");
 
                 jws = Jwts.builder()
-                        .setIssuer(ISSUER)
-                        .setSubject(String.format("%s (Team Token)", groupName))
-                        .setAudience(ISSUER)
-                        .setId(groupToken.getId().toString())
+                        .issuer(ISSUER)
+                        .subject(String.format("%s (Team Token)", groupName))
+                        .audience().add(ISSUER).and()
+                        .id(groupToken.getId().toString())
                         .claim("email", ownerEmail)
                         .claim("description", description)
                         .claim("email_verified", true)
                         .claim("name", String.format("%s (Token)", groupName))
                         .claim("groups", groupArray)
-                        .setIssuedAt(Date.from(Instant.now()))
+                        .issuedAt(Date.from(Instant.now()))
                         .signWith(key)
                         .compact();
             }
