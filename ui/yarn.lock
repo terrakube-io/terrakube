@@ -71,10 +71,10 @@
     classnames "^2.2.6"
     rc-util "^5.31.1"
 
-"@ant-design/icons@^6.0.1":
-  version "6.0.1"
-  resolved "https://registry.yarnpkg.com/@ant-design/icons/-/icons-6.0.1.tgz#3be99788c0d5ed07318d701087f05bee9767c7d6"
-  integrity sha512-BsAoYa8NTwh5GfpziqStAyWHNyp8vkc9PkuIR/Cu8O8WkhRzrpx260zd5ygsXMhQEGtfGGFjdAG0DfjhGBOBHw==
+"@ant-design/icons@^6.0.2":
+  version "6.0.2"
+  resolved "https://registry.yarnpkg.com/@ant-design/icons/-/icons-6.0.2.tgz#94d8bba7440db8c3e2df6429ca99529224aacd4d"
+  integrity sha512-1U1+6afDP+w+6jDkxrmn/kwoFJvB/aD4mQ/+Rhkp+BBRAfgK46gxKb6VxnoS/hYDiRdhIjzilkCmi6pD7zjxCw==
   dependencies:
     "@ant-design/colors" "^8.0.0"
     "@ant-design/icons-svg" "^4.4.0"
