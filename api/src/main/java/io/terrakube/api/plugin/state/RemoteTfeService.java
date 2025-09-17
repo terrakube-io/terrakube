@@ -565,7 +565,7 @@ public class RemoteTfeService {
             newWorkspace.setBranch("remote-content");
             newWorkspace.setOrganization(organization);
 
-            if (workspaceData.getData().getRelationships().getProject() != null) {
+            if (workspaceData.getData().getRelationships() != null && workspaceData.getData().getRelationships().getProject() != null) {
                 log.info("Setting project for workspace {}", newWorkspace.getName());
                 String projectId = workspaceData.getData().getRelationships().getProject().getData().getId();
                 log.info("Project Id: {}", projectId);
