@@ -1,24 +1,7 @@
 package io.terrakube.api.plugin.state;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.text.ParseException;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import io.terrakube.api.plugin.state.model.runs.*;
-import io.terrakube.api.plugin.state.model.runs.Relationships;
-import io.terrakube.api.plugin.state.model.workspace.*;
-import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
-import io.terrakube.api.repository.*;
-import org.apache.commons.text.TextStringBuilder;
-import org.quartz.SchedulerException;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.connection.stream.StreamOffset;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
@@ -37,21 +20,29 @@ import io.terrakube.api.plugin.state.model.outputs.OutputData;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.plan.PlanRunData;
 import io.terrakube.api.plugin.state.model.plan.PlanRunModel;
-import io.terrakube.api.plugin.state.model.runs.RunsModel;
+import io.terrakube.api.plugin.state.model.project.ProjectData;
+import io.terrakube.api.plugin.state.model.project.ProjectList;
+import io.terrakube.api.plugin.state.model.project.ProjectModel;
+import io.terrakube.api.plugin.state.model.runs.*;
+import io.terrakube.api.plugin.state.model.runs.Relationships;
 import io.terrakube.api.plugin.state.model.state.StateData;
 import io.terrakube.api.plugin.state.model.state.StateModel;
 import io.terrakube.api.plugin.state.model.terraform.TerraformState;
+import io.terrakube.api.plugin.state.model.workspace.*;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
+import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -61,16 +52,27 @@ import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.history.archive.Archive;
 import io.terrakube.api.rs.workspace.history.archive.ArchiveType;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.text.TextStringBuilder;
+import org.quartz.SchedulerException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.StreamOffset;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.stereotype.Service;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
 public class RemoteTfeService {
 
+    private final ProjectRepository projectRepository;
     private AddressRepository addressRepository;
     private JobRepository jobRepository;
     private ContentRepository contentRepository;
@@ -115,7 +117,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -135,6 +137,7 @@ public class RemoteTfeService {
         this.accessRepository = accessRepository;
         this.encryptionService = encryptionService;
         this.addressRepository = addressRepository;
+        this.projectRepository = projectRepository;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -382,13 +385,25 @@ public class RemoteTfeService {
             Optional<Job> currentJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(workspace.get(),
                     Arrays.asList(JobStatus.pending, JobStatus.running, JobStatus.queue, JobStatus.waitingApproval));
             if (currentJob.isPresent()) {
-                log.info("Found Current Job Id: {}", currentJob.get().getId());
+                log.info("Adding current job id: {}", currentJob.get().getId());
                 workspaceModel.setRelationships(new io.terrakube.api.plugin.state.model.workspace.Relationships());
-                CurrentRunModel currentRunModel = new CurrentRunModel();
-                currentRunModel.setData(new Resource());
-                currentRunModel.getData().setId(String.valueOf(currentJob.get().getId()));
-                currentRunModel.getData().setType("runs");
-                workspaceModel.getRelationships().setCurrentRun(currentRunModel);
+                CurrentRunRelationship currentRunRelationship = new CurrentRunRelationship();
+                currentRunRelationship.setData(new Resource());
+                currentRunRelationship.getData().setId(String.valueOf(currentJob.get().getId()));
+                currentRunRelationship.getData().setType("runs");
+                workspaceModel.getRelationships().setCurrentRun(currentRunRelationship);
+            }
+
+            if (workspace.get().getProject() != null) {
+                Project project = workspace.get().getProject();
+                log.info("Adding project information: {}", project.getId());
+                if (workspaceModel.getRelationships() == null) {
+                    workspaceModel.setRelationships(new io.terrakube.api.plugin.state.model.workspace.Relationships());
+                }
+                workspaceModel.getRelationships().setProject(new ProjectRelationship());
+                workspaceModel.getRelationships().getProject().setData(new Resource());
+                workspaceModel.getRelationships().getProject().getData().setId(project.getId().toString());
+                workspaceModel.getRelationships().getProject().getData().setType("projects");
             }
 
             return workspaceData;
@@ -549,6 +564,14 @@ public class RemoteTfeService {
             newWorkspace.setSource("empty");
             newWorkspace.setBranch("remote-content");
             newWorkspace.setOrganization(organization);
+
+            if (workspaceData.getData().getRelationships().getProject() != null) {
+                log.info("Setting project for workspace {}", newWorkspace.getName());
+                String projectId = workspaceData.getData().getRelationships().getProject().getData().getId();
+                log.info("Project Id: {}", projectId);
+                Project project = projectRepository.getReferenceById(UUID.fromString(projectId));
+                newWorkspace.setProject(project);
+            }
             workspaceRepository.save(newWorkspace);
         }
         Map<String, Object> otherAttributes = new HashMap<>();
@@ -1357,5 +1380,48 @@ public class RemoteTfeService {
         }
 
         return stateOutputs;
+    }
+
+    public ProjectList searchOrganizationProjects(String organizationName, JwtAuthenticationToken currentUser){
+        Organization organization = organizationRepository.getOrganizationByName(organizationName);
+
+        if (organization != null && (validateUserIsMemberOrg(organization, currentUser) || validateUserLimitedWorkspaceAccess(organization, currentUser))) {
+            log.info("Searching projects for organization {}", organizationName);
+            ProjectList projectList = new ProjectList();
+            projectList.setData(new ArrayList());
+            organization.getProject().forEach(project -> {
+                ProjectModel projectData = new ProjectModel();
+                projectData.setId(project.getId().toString());
+                projectData.setType("project");
+                projectData.setAttributes(new HashMap<>());
+                projectData.getAttributes().put("name", project.getName());
+                projectData.setRelationships(new io.terrakube.api.plugin.state.model.project.Relationships());
+                projectData.getRelationships().setOrganization(new io.terrakube.api.plugin.state.model.project.OrganizationModel());
+                Resource organizationResource = new Resource();
+                organizationResource.setId(organization.getId().toString());
+                organizationResource.setType("organizations");
+                projectData.getRelationships().getOrganization().setData(organizationResource);
+                projectList.getData().add(projectData);
+            });
+            return projectList;
+        } else {
+            return null;
+        }
+    }
+
+    public ProjectData createOrganizationProject(String organizationName, ProjectData projectData, JwtAuthenticationToken currentUser){
+        Organization organization = organizationRepository.getOrganizationByName(organizationName);
+
+        if (organization != null && (validateUserIsMemberOrg(organization, currentUser) || validateUserLimitedWorkspaceAccess(organization, currentUser))) {
+            Project project = new Project();
+            project.setName(projectData.getData().getAttributes().get("name").toString());
+            project.setOrganization(organization);
+            project = projectRepository.save(project);
+            projectData.getData().setId(project.getId().toString());
+
+            return projectData;
+        } else {
+            return null;
+        }
     }
 }
