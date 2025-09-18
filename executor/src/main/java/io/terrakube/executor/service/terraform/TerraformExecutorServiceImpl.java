@@ -205,7 +205,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
 
             log.warn("Terraform apply Executed Successfully: {}", execution);
-            scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution);
+            scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
             Thread.sleep(10000);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
