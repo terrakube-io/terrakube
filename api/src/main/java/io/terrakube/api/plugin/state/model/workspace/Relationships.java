@@ -11,5 +11,8 @@ import lombok.ToString;
 public class Relationships {
 
     @JsonProperty("current-run")
-    CurrentRunModel currentRun;
+    CurrentRunRelationship currentRun;
+
+    @JsonProperty("project")
+    ProjectRelationship project;
 }

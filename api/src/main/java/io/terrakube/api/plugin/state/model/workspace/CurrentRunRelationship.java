@@ -1,11 +1,13 @@
 package io.terrakube.api.plugin.state.model.workspace;
 
+import io.terrakube.api.plugin.state.model.generic.Resource;
 import lombok.Getter;
 import lombok.Setter;
-import io.terrakube.api.plugin.state.model.generic.Resource;
+import lombok.ToString;
 
 @Getter
 @Setter
-public class CurrentRunModel {
+@ToString
+public class CurrentRunRelationship {
     Resource data;
 }
