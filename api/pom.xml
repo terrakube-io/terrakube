@@ -21,7 +21,7 @@
         <azure.version>5.23.0</azure.version>
         <mssql-jdbc.version>12.10.1.jre11</mssql-jdbc.version>
         <msal4j.version>1.23.1</msal4j.version>
-        <lombok.version>1.18.40</lombok.version>
+        <lombok.version>1.18.42</lombok.version>
         <wiremock.version>3.10.6</wiremock.version>
         <jgit.version>7.3.0.202506031305-r</jgit.version>
         <bouncy.castle>1.81</bouncy.castle>
