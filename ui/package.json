@@ -107,7 +107,7 @@
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2",
-    "typescript-eslint": "^8.43.0",
+    "typescript-eslint": "^8.44.1",
     "vite": "^7.1.7",
     "vite-plugin-commonjs": "^0.10.4",
     "vite-tsconfig-paths": "^5.1.4"
