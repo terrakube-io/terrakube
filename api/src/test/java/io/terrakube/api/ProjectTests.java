@@ -35,7 +35,7 @@ public class ProjectTests extends ServerApplicationTests {
                 .log()
                 .all()
                 .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
-        
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),"Content-Type", "application/vnd.api+json")
                 .when()
