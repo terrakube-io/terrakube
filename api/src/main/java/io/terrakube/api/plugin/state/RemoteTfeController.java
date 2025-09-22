@@ -125,7 +125,7 @@ public class RemoteTfeController {
     @PostMapping(produces = "application/vnd.api+json", path = "organizations/{organizationName}/workspaces")
     public ResponseEntity<WorkspaceData> createWorkspace(@PathVariable("organizationName") String organizationName,
             @RequestBody WorkspaceData workspaceData, Principal principal) throws IOException {
-        log.info("Create workspace with: {}", workspaceData.toString());
+        log.info("Create workspace with data: {}", workspaceData.toString());
 
         Optional<WorkspaceData> newWorkspace = Optional.ofNullable(
                 remoteTfeService.createWorkspace(organizationName, workspaceData, (JwtAuthenticationToken) principal));

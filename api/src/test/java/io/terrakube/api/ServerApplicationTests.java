@@ -72,6 +72,9 @@ class ServerApplicationTests {
     TemplateRepository templateRepository;
 
     @Autowired
+    ProjectRepository projectRepository;
+
+    @Autowired
     ExecutorService executorService;
 
     @Autowired
