@@ -72,7 +72,7 @@ public class TeamTokenController {
             permissions.setManageJob(permissions.manageJob || group.isManageJob());
         });
 
-        log.info("Permissions: {}", permissions);
+        log.debug("Permissions: {}", permissions);
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
