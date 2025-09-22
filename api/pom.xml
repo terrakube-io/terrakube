@@ -24,7 +24,7 @@
         <lombok.version>1.18.40</lombok.version>
         <wiremock.version>3.10.6</wiremock.version>
         <jgit.version>7.3.0.202506031305-r</jgit.version>
-        <bouncy.castle>1.81</bouncy.castle>
+        <bouncy.castle>1.82</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
         <!--groovy.version>4.0.20</groovy.version-->
         <postgresql.version>42.7.7</postgresql.version>
