@@ -1,17 +1,13 @@
 package io.terrakube.api.rs;
 
-import java.sql.Types;
-import java.util.List;
-import java.util.UUID;
-
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.SQLRestriction;
+import com.yahoo.elide.annotation.*;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.hooks.organization.OrganizationManageHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.tag.Tag;
@@ -19,23 +15,15 @@ import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
-
-import com.yahoo.elide.annotation.CreatePermission;
-import com.yahoo.elide.annotation.DeletePermission;
-import com.yahoo.elide.annotation.Include;
-import com.yahoo.elide.annotation.LifeCycleHookBinding;
-import com.yahoo.elide.annotation.ReadPermission;
-import com.yahoo.elide.annotation.UpdatePermission;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.OneToMany;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
+
+import java.sql.Types;
+import java.util.List;
+import java.util.UUID;
 
 @ReadPermission(expression = "user belongs organization")
 @CreatePermission(expression = "user is a superuser")
@@ -72,6 +60,10 @@ public class Organization {
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<Workspace> workspace;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<Project> project;
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")

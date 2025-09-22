@@ -1,6 +1,24 @@
 package io.terrakube.api.plugin.state;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
+import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
+import io.terrakube.api.plugin.state.model.entitlement.EntitlementData;
+import io.terrakube.api.plugin.state.model.organization.OrganizationData;
+import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
+import io.terrakube.api.plugin.state.model.plan.PlanRunData;
+import io.terrakube.api.plugin.state.model.project.ProjectData;
+import io.terrakube.api.plugin.state.model.project.ProjectList;
+import io.terrakube.api.plugin.state.model.runs.RunsData;
+import io.terrakube.api.plugin.state.model.runs.RunsDataList;
+import io.terrakube.api.plugin.state.model.state.StateData;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceError;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
+import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.SchedulerException;
@@ -11,27 +29,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
-import io.terrakube.api.plugin.state.model.entitlement.EntitlementData;
-import io.terrakube.api.plugin.state.model.organization.OrganizationData;
-import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
-import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
-import io.terrakube.api.plugin.state.model.plan.PlanRunData;
-import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
-import io.terrakube.api.plugin.state.model.runs.RunsData;
-import io.terrakube.api.plugin.state.model.runs.RunsDataList;
-import io.terrakube.api.plugin.state.model.state.StateData;
-import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
-import io.terrakube.api.plugin.state.model.workspace.WorkspaceError;
-import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
-import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
-import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
-
-import java.nio.charset.StandardCharsets;
-
-import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -124,8 +124,9 @@ public class RemoteTfeController {
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", path = "organizations/{organizationName}/workspaces")
     public ResponseEntity<WorkspaceData> createWorkspace(@PathVariable("organizationName") String organizationName,
-            @RequestBody WorkspaceData workspaceData, Principal principal) {
-        log.info("Create {}", workspaceData.toString());
+            @RequestBody WorkspaceData workspaceData, Principal principal) throws IOException {
+        log.info("Create workspace with data: {}", workspaceData.toString());
+
         Optional<WorkspaceData> newWorkspace = Optional.ofNullable(
                 remoteTfeService.createWorkspace(organizationName, workspaceData, (JwtAuthenticationToken) principal));
         if (newWorkspace.isPresent()) {
@@ -328,6 +329,24 @@ public class RemoteTfeController {
     @GetMapping(value = "configuration-versions/{planId}/terraformContent.tar.gz", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public @ResponseBody byte[] getTerraformPlanBinary(@PathVariable("planId") String planId) {
         return remoteTfeService.getContentFile(planId);
+    }
+
+    @Transactional
+    @GetMapping(produces = "application/vnd.api+json", path = "/organizations/{organizationName}/projects")
+    public ResponseEntity<ProjectList> searchOrgProjects(@PathVariable("organizationName") String organizationName, @RequestParam("filter[names]") Optional<String> filterNames, Principal principal) throws IOException {
+        log.info("Searching projects: org: {} filter: {}", organizationName, filterNames.orElse(null));
+        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.searchOrganizationProjects(organizationName, ((JwtAuthenticationToken) principal))));
+    }
+
+    @Transactional
+    @PostMapping(produces = "application/vnd.api+json", path = "/organizations/{organizationName}/projects")
+    public ResponseEntity<ProjectData> createOrgProjects(@PathVariable("organizationName") String organizationName, @RequestBody ProjectData projectData , Principal principal) throws IOException {
+        log.info("Creating project: org: {}  body: {}", organizationName, projectData);
+        ProjectData projectDataResponse = remoteTfeService.createOrganizationProject(organizationName, projectData, ((JwtAuthenticationToken) principal));
+        if (projectDataResponse != null) {
+          return ResponseEntity.status(201).body(projectDataResponse);
+        } else
+          return ResponseEntity.status(403).body(null);
     }
 
 }

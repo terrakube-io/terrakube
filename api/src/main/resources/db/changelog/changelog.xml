@@ -87,4 +87,5 @@
     <include file="/db/changelog/local/changelog-2.27.1-module-versions.xml"/>
     <include file="/db/changelog/local/changelog-2.27.2-delete-legacy-module-refresh.xml"/>
     <include file="/db/changelog/local/changelog-2.28.0-workspace-last-status.xml" />
+    <include file="/db/changelog/local/changelog-2.28.0-project-support.xml" />
 </databaseChangeLog>
