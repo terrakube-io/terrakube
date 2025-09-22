@@ -82,8 +82,12 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         String payloadFromToken = new String(decoder.decode(chunksToken[1]));
         String claimJwt = "";
         try {
+            log.debug("Extracting JWT claim: {}", claim);
             Map<String,Object> resultMap = new ObjectMapper().readValue(payloadFromToken, HashMap.class);
-            claimJwt = resultMap.get(claim).toString();
+            if (resultMap.get(claim) != null) {
+                claimJwt = resultMap.get(claim).toString();
+                log.debug("JWT Claim: {} = {}", claim, claimJwt);
+            }
         } catch (JsonProcessingException e) {
             log.error(e.getMessage());
         }
@@ -91,7 +95,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     }
 
     private boolean isTokenDeleted(String tokenId) {
-        if (tokenId != null) {
+        if (tokenId != null && !tokenId.isEmpty()) {
             Optional<Pat> searchPat = patRepository.findById(UUID.fromString(tokenId));
             Optional<Group> searchGroupToken = teamTokenRepository.findById(UUID.fromString(tokenId));
             if (searchPat.isPresent()) {

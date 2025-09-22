@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-28-0-2" author="alfespa17@gmail.com">
+        <createTable tableName="project">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="name" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="varchar(256)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="created_date" type="datetime"/>
+            <column name="updated_date" type="datetime"/>
+            <column name="created_by" type="varchar2(128)"/>
+            <column name="updated_by" type="varchar2(128)"/>
+            <column name="organization_id" type="varchar(36)">
+                <constraints nullable="false" foreignKeyName="fk_organization_project" references="organization(id)" deleteCascade="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+                columnNames="organization_id, name"
+                constraintName="const_projects"
+                deferrable="true"
+                disabled="true"
+                initiallyDeferred="true"
+                tableName="project"
+                validate="true"/>
+        <addColumn tableName="workspace">
+            <column name="project_id" type="varchar(36)">
+                <constraints nullable="true" foreignKeyName="fk_workspace_project" references="project(id)" deleteCascade="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

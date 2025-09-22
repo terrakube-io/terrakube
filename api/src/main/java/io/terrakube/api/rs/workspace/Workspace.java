@@ -1,14 +1,6 @@
 package io.terrakube.api.rs.workspace;
 
-import java.sql.Types;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
-
-import io.terrakube.api.rs.job.JobStatus;
-import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.SQLRestriction;
+import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
@@ -16,6 +8,8 @@ import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.webhook.Webhook;
@@ -25,17 +19,16 @@ import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
-
-import com.yahoo.elide.annotation.CreatePermission;
-import com.yahoo.elide.annotation.DeletePermission;
-import com.yahoo.elide.annotation.Exclude;
-import com.yahoo.elide.annotation.Include;
-import com.yahoo.elide.annotation.LifeCycleHookBinding;
-import com.yahoo.elide.annotation.ReadPermission;
-import com.yahoo.elide.annotation.UpdatePermission;
-
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
+
+import java.sql.Types;
+import java.util.Date;
+import java.util.List;
+import java.util.UUID;
 
 @ReadPermission(expression = "team view workspace OR team limited view workspace")
 @CreatePermission(expression = "team manage workspace")
@@ -127,6 +120,9 @@ public class Workspace extends GenericAuditFields {
 
     @OneToMany(mappedBy = "workspace")
     private List<WorkspaceTag> workspaceTag;
+
+    @OneToOne
+    private Project project;
 
     @ManyToOne
     private Vcs vcs;
