@@ -31,6 +31,7 @@ public class EphemeralExecutorService {
     private static final String EPHEMERAL_MEMORY_REQUEST = "EPHEMERAL_MEMORY_REQUEST";
     private static final String EPHEMERAL_CPU_LIMIT = "EPHEMERAL_CPU_LIMIT";
     private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
+    private static final String EPHEMERAL_JOB_ENV_VARS = "EPHEMERAL_JOB_ENV_VARS";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -60,6 +61,18 @@ public class EphemeralExecutorService {
         }
 
         final List<EnvVar> executorEnvVarFlags = Arrays.asList(executorFlagBatch, executorFlagBatchJsonContent);
+
+        Optional<String> additionalEnvVars=Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(EPHEMERAL_JOB_ENV_VARS, null));
+
+        if (additionalEnvVars.isPresent()) {
+            Map<String, String> parsedEnvVars = parseKeyValueString(additionalEnvVars.get());
+            for (Map.Entry<String, String> entry : parsedEnvVars.entrySet()) {
+                EnvVar envVar = new EnvVar();
+                envVar.setName(entry.getKey());
+                envVar.setValue(entry.getValue());
+                executorEnvVarFlags.add(envVar);
+            }
+        }
 
         Optional<String> nodeSelector = Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(NODE_SELECTOR, null));
         Map<String, String> nodeSelectorInfo = new HashMap();
@@ -295,5 +308,28 @@ public class EphemeralExecutorService {
         } catch (Exception ex) {
             log.error(ex.getMessage());
         }
+    }
+
+    private Map<String, String> parseKeyValueString(String input) {
+        Map<String, String> result = new HashMap<>();
+
+        if (input == null || input.trim().isEmpty()) {
+            return result;
+        }
+
+        for (String pair : input.split(";")) {
+            if (pair.trim().isEmpty()) {
+                continue;
+            }
+
+            String[] keyValue = pair.split("=", 2);
+            if (keyValue.length == 2) {
+                result.put(keyValue[0].trim(), keyValue[1].trim());
+            } else if (keyValue.length == 1) {
+                result.put(keyValue[0].trim(), "");
+            }
+        }
+
+        return result;
     }
 }
