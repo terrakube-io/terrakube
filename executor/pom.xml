@@ -23,7 +23,7 @@
 		<okhttp.version>4.12.0</okhttp.version>
 		<azure-storage-blob.version>12.31.2</azure-storage-blob.version>
 		<jgit.version>7.3.0.202506031305-r</jgit.version>
-		<bouncy.castle>1.81</bouncy.castle>
+		<bouncy.castle>1.82</bouncy.castle>
 		<lombok.version>1.18.42</lombok.version>
 		<groovy.version>5.0.1</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
