@@ -1,21 +1,26 @@
 package io.terrakube.executor.service.scripts.bash;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.scripts.CommandExecution;
+import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.NotFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
-import io.terrakube.executor.service.mode.TerraformJob;
-import io.terrakube.executor.service.scripts.CommandExecution;
-import io.terrakube.executor.service.scripts.ScriptEngineService;
-import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -85,9 +90,27 @@ public class BashEngine implements CommandExecution {
         ProcessLauncher processLauncher = new ProcessLauncher(this.executor, "bash", bashScript.getAbsolutePath());
         processLauncher.setDirectory(workingDirectory);
 
+        String tempEnv = workingDirectory.getAbsolutePath() + ".terrakube_temp_env";
+        Path path = Paths.get(tempEnv);
+        if (Files.exists(path)) {
+            log.info("File .terrakube_env exists");
+            try (BufferedReader reader = Files.newBufferedReader(path)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] split = line.split("=");
+                    log.info("Loading {}", split[0]);
+                    processLauncher.setEnvironmentVariable(split[0], split[1]);
+                }
+            } catch (IOException e) {
+                log.error("Error reading file: {}", e.getMessage());
+            }
+        } else {
+            log.info("File terrakube_env does not exist");
+        }
+
         processLauncher.setEnvironmentVariable("bashToolsDirectory", getBashToolsDirectory(workingDirectory).getAbsolutePath());
         processLauncher.setEnvironmentVariable("terrakubeToolsRepository", getToolsRepository(workingDirectory).getAbsolutePath());
-
+        processLauncher.setEnvironmentVariable("terrakubeEnv", tempEnv);
         processLauncher.setEnvironmentVariable("workingDirectory", workingDirectory.getAbsolutePath());
         processLauncher.setEnvironmentVariable("organizationId", terraformJob.getOrganizationId());
         processLauncher.setEnvironmentVariable("workspaceId", terraformJob.getWorkspaceId());
