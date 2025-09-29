@@ -1,26 +1,28 @@
 package io.terrakube.executor.service.terraform;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.LogsService;
-import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.terraform.TerraformClient;
+import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
-import org.springframework.data.redis.core.RedisTemplate;
-import io.terrakube.executor.plugin.tfstate.TerraformState;
-import io.terrakube.executor.service.executor.ExecutorJobResult;
-import io.terrakube.executor.service.mode.TerraformJob;
-import io.terrakube.executor.service.scripts.ScriptEngineService;
 import org.jetbrains.annotations.NotNull;
-import io.terrakube.terraform.TerraformClient;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import io.terrakube.terraform.TerraformProcessData;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.nio.file.Path;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.concurrent.ExecutionException;
@@ -287,8 +289,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             .filter(command -> command.isBefore() && !command.isBeforeInit())
                             .collect(Collectors.toCollection(LinkedList::new)),
                     workingDirectory,
-                    output); 
-        }else {
+                    output);
+        } else {
             log.warn("No commands to run before terraform operation Job {}", terraformJob.getJobId());
             scriptBeforeSuccess = true;
         }
@@ -401,7 +403,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     private String executeTerraformInit(TerraformJob terraformJob, File workingDirectory, Consumer<String> output,
-            Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
+                                        Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
         if (terraformJob.isShowHeader()) {
             initBanner(terraformJob, output);
         }
@@ -465,7 +467,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformJob.getWorkspaceId(), workingDirectory, terraformJob.getTerraformVersion());
 
         File sshKeyFile = null;
-        if (terraformJob.getVcsType().startsWith("SSH") && terraformJob.getModuleSshKey() != null && terraformJob.getModuleSshKey().length() > 0) {
+        if (terraformJob.getVcsType().startsWith("SSH") && terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
             //USING MODULE SSH KEY TO DOWNLOAD THE MODULES AND NOT THE DEFAULT SSH KEY THAT WAS USED TO CLONE THE WORKSPACE
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
             log.warn("1 - Using SSH key from: {}", sshFilePath);
@@ -476,7 +478,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), sshFileName);
             log.warn("2 - Using SSH key from: {}", sshFilePath);
             sshKeyFile = new File(sshFilePath);
-        } else if (terraformJob.getModuleSshKey() != null && terraformJob.getModuleSshKey().length() > 0) {
+        } else if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
             //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN OTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
             String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
             log.warn("3 - Using SSH key from: {}", sshFilePath);
@@ -485,17 +487,37 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Not using any SSH key to download modules");
         }
 
-        TerraformProcessData terraformProcessData = TerraformProcessData.builder()
+        return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
                 .terraformVariables(terraformJob.getVariables())
-                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
+                .terraformEnvironmentVariables(loadTempEnvironmentVariables(workingDirectory, terraformJob))
                 .workingDirectory(workingDirectory)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
 
-        return terraformProcessData;
+    private HashMap<String, String> loadTempEnvironmentVariables(File workingDirectory, TerraformJob terraformJob) {
+        String workingEnvTemp = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
+        Path pathEnv = Paths.get(workingEnvTemp);
+        if (Files.exists(pathEnv)) {
+            log.info("File .terrakube_env exists, loading environment variables to terraform/tofu process");
+            try (BufferedReader reader = Files.newBufferedReader(pathEnv)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] split = line.split("=");
+                    log.info("Loading {}", split[0]);
+                    terraformJob.getEnvironmentVariables().put(split[0], split[1]);
+                }
+            } catch (IOException e) {
+                log.error("Error reading file: {}", e.getMessage());
+            }
+        } else {
+            log.info("File terrakube_env does not exist");
+        }
+
+        return terraformJob.getEnvironmentVariables();
     }
 }
