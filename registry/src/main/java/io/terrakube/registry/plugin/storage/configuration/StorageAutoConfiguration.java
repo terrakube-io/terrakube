@@ -74,7 +74,7 @@ public class StorageAutoConfiguration {
                 if (awsStorageServiceProperties.getEndpoint() != null && !awsStorageServiceProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
                     s3client = S3Client.builder()
-                            .region(Region.AWS_GLOBAL)
+                            .region(Region.of("auto"))
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageServiceProperties)))
                             .endpointProvider(new S3EndpointProvider() {
                                 @Override

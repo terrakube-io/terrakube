@@ -82,7 +82,7 @@ public class TerraformStateAutoConfiguration {
                         log.info("Creating AWS with custom endpoint and custom credentials");
                         s3client = S3Client.builder()
                                 .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .region(Region.AWS_GLOBAL)
+                                .region(Region.of("auto"))
                                 .endpointProvider(new S3EndpointProvider() {
                                     @Override
                                     public CompletableFuture<Endpoint> resolveEndpoint(S3EndpointParams endpointParams) {
