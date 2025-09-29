@@ -500,7 +500,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     private HashMap<String, String> loadTempEnvironmentVariables(File workingDirectory, TerraformJob terraformJob) {
-        String workingEnvTemp = workingDirectory.getAbsolutePath() + ".terrakube_temp_env";
+        String workingEnvTemp = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
         Path pathEnv = Paths.get(workingEnvTemp);
         if (Files.exists(pathEnv)) {
             log.info("File .terrakube_env exists, loading environment variables to terraform/tofu process");

@@ -90,7 +90,7 @@ public class BashEngine implements CommandExecution {
         ProcessLauncher processLauncher = new ProcessLauncher(this.executor, "bash", bashScript.getAbsolutePath());
         processLauncher.setDirectory(workingDirectory);
 
-        String tempEnv = workingDirectory.getAbsolutePath() + ".terrakube_temp_env";
+        String tempEnv = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
         Path path = Paths.get(tempEnv);
         if (Files.exists(path)) {
             log.info("File .terrakube_env exists");
