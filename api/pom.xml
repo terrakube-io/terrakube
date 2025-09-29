@@ -35,7 +35,7 @@
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>6.2.0</jedis.version>
         <commons-text.version>1.14.0</commons-text.version>
-        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <commons-lang3.version>3.19.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.11</maven-artifact.version>
