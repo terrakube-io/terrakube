@@ -91,6 +91,7 @@ public class TerraformStateAutoConfiguration {
                                                 .build());
                                     }
                                 })
+                                .forcePathStyle(true)
                                 .build();
                     } else {
                         if (awsTerraformStateProperties.isEnableRoleAuthentication()){

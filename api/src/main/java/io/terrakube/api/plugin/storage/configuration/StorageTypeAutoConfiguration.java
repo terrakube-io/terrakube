@@ -77,6 +77,7 @@ public class StorageTypeAutoConfiguration {
                                             .build());
                                 }
                             })
+                            .forcePathStyle(true)
                             .build();
 
                 } else {

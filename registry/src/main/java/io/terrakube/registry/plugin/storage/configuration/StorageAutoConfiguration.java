@@ -84,6 +84,7 @@ public class StorageAutoConfiguration {
                                             .build());
                                 }
                             })
+                            .forcePathStyle(true)
                             .build();
 
                 } else {
