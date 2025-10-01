@@ -24,6 +24,7 @@ public class RedisProperties {
     private String password;
     private boolean ssl;
     private String truststorePath;
+    private int timeout;
 
     @Getter
     @Setter
