@@ -6,9 +6,6 @@ import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.Base64;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -20,6 +17,9 @@ import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
+import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.binary.Base64;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -27,16 +27,14 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.endpoints.Endpoint;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.endpoints.S3EndpointParams;
-import software.amazon.awssdk.services.s3.endpoints.S3EndpointProvider;
+import software.amazon.awssdk.services.s3.S3Configuration;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @AllArgsConstructor
@@ -80,17 +78,17 @@ public class TerraformStateAutoConfiguration {
 
                     if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
                         log.info("Creating AWS with custom endpoint and custom credentials");
+
+                        S3Configuration serviceConfiguration = S3Configuration.builder()
+                                .pathStyleAccessEnabled(true)
+                                .build();
+
                         s3client = S3Client.builder()
                                 .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .region(Region.AWS_GLOBAL)
-                                .endpointProvider(new S3EndpointProvider() {
-                                    @Override
-                                    public CompletableFuture<Endpoint> resolveEndpoint(S3EndpointParams endpointParams) {
-                                        return CompletableFuture.completedFuture(Endpoint.builder()
-                                                .url(URI.create(awsTerraformStateProperties.getEndpoint() + "/" + endpointParams.bucket()))
-                                                .build());
-                                    }
-                                })
+                                .region(Region.of("auto"))
+                                .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
+                                .serviceConfiguration(serviceConfiguration)
+                                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                                 .build();
                     } else {
                         if (awsTerraformStateProperties.isEnableRoleAuthentication()){
