@@ -7,7 +7,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 @Service
 public class ProxyService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final WebClient webClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WorkspaceRepository workspaceRepository;
     private final VariableRepository variableRepository;
@@ -34,10 +34,11 @@ public class ProxyService {
 
     public static final Map<String, String> VARS = new HashMap<>();
 
-    public ProxyService(WorkspaceRepository workspaceRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository) {
+    public ProxyService(WorkspaceRepository workspaceRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, WebClient webClient) {
         this.workspaceRepository = workspaceRepository;
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
+        this.webClient = webClient;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -91,7 +92,19 @@ public class ProxyService {
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
 
         try {
-            ResponseEntity<String> response = restTemplate.exchange(targetUrl, method, entity, String.class);
+            if (method == null) {
+                throw new IllegalArgumentException("HTTP method must not be null");
+            }
+            ResponseEntity<String> response = webClient.method(method)
+                    .uri(targetUrl)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .bodyValue(entity)
+                    .retrieve()
+                    .toEntity(String.class)
+                    .block();
+            if (response == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Response is null");
+            }
             return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
         } catch (Exception e) {
             log.error("Error forwarding request to {}: ", targetUrl, e);
