@@ -46,14 +46,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     RedisTemplate redisTemplate;
     boolean enableColorOutput;
     LogsService logsService;
+    int redisTimeout;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, LogsService logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, LogsService logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.redis.timeout}") int redisTimeout) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
         this.redisTemplate = redisTemplate;
         this.logsService = logsService;
         this.enableColorOutput = enableColorOutput;
+        this.redisTimeout = redisTimeout;
     }
 
     private void setupConsumerGroups(String jobId) {
@@ -143,7 +145,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
-            Thread.sleep(10000);
+            Thread.sleep(redisTimeout);
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
@@ -209,7 +211,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform apply Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
-            Thread.sleep(10000);
+            Thread.sleep(redisTimeout);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
@@ -261,7 +263,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform destroy Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, outputDestroy, execution);
 
-            Thread.sleep(10000);
+            Thread.sleep(redisTimeout);
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
