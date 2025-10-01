@@ -1,15 +1,17 @@
 package io.terrakube.api.plugin.scheduler.module;
 
-import java.net.URISyntaxException;
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
+import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.repository.ModuleRepository;
+import io.terrakube.api.repository.ModuleVersionRepository;
+import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.module.ModuleVersion;
+import io.terrakube.api.rs.ssh.Ssh;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
+import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.TransportConfigCallback;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -26,19 +28,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-
-import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
-import io.terrakube.api.plugin.vcs.TokenService;
-import io.terrakube.api.repository.ModuleRepository;
-import io.terrakube.api.repository.ModuleVersionRepository;
-import io.terrakube.api.rs.module.Module;
-import io.terrakube.api.rs.module.ModuleVersion;
-import io.terrakube.api.rs.ssh.Ssh;
-import io.terrakube.api.rs.vcs.Vcs;
-import io.terrakube.api.rs.vcs.VcsConnectionType;
-import lombok.extern.slf4j.Slf4j;
+import java.lang.module.ModuleDescriptor;
+import java.net.URISyntaxException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -88,6 +82,25 @@ public class ModuleRefreshJob implements Job {
 
         moduleVersionRepository.deleteByModuleId(module.getId());
         moduleVersionRepository.saveAll(moduleVersions);
+
+        try {
+            module.setLatestVersion(moduleVersions.stream()
+                    .map(ModuleVersion::getVersion)
+                    .filter(v -> {
+                        try {
+                            ModuleDescriptor.Version.parse(v.replace("v", ""));
+                            return true; // Valid version format
+                        } catch (IllegalArgumentException e) {
+                            return false; // Invalid version format
+                        }
+                    })
+                    .max(Comparator.comparing(v -> ModuleDescriptor.Version.parse(v.replace("v", ""))))
+                    .orElse("Version pending"));
+            log.info("Latest module {}/{} version {}", module.getOrganization().getName(), module.getName(), module.getLatestVersion());
+            moduleRepository.save(module);
+        } catch (Exception e) {
+            log.error("Failed to calculate latest module version {}/{}", module.getOrganization().getName(), module.getName());
+        }
     }
 
     private Map<String, Ref> getVersionFromRepository(String source, String tagPrefix, Vcs vcs, Ssh ssh)
