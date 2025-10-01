@@ -7,8 +7,6 @@ import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
-import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.aws.AwsStorageServiceImpl;
@@ -19,6 +17,8 @@ import io.terrakube.registry.plugin.storage.gcp.GcpStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.gcp.GcpStorageServiceProperties;
 import io.terrakube.registry.plugin.storage.local.LocalStorageServiceImpl;
 import io.terrakube.registry.service.git.GitServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -26,17 +26,15 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.endpoints.Endpoint;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.endpoints.S3EndpointParams;
-import software.amazon.awssdk.services.s3.endpoints.S3EndpointProvider;
+import software.amazon.awssdk.services.s3.S3Configuration;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Base64;
-import java.util.concurrent.CompletableFuture;
 
 @Configuration
 @EnableConfigurationProperties({
@@ -73,17 +71,17 @@ public class StorageAutoConfiguration {
                 S3Client s3client;
                 if (awsStorageServiceProperties.getEndpoint() != null && !awsStorageServiceProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
+
+                    S3Configuration serviceConfiguration = S3Configuration.builder()
+                            .pathStyleAccessEnabled(true)
+                            .build();
+
                     s3client = S3Client.builder()
-                            .region(Region.AWS_GLOBAL)
+                            .region(Region.of("auto"))
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageServiceProperties)))
-                            .endpointProvider(new S3EndpointProvider() {
-                                @Override
-                                public CompletableFuture<Endpoint> resolveEndpoint(S3EndpointParams endpointParams) {
-                                    return CompletableFuture.completedFuture(Endpoint.builder()
-                                            .url(URI.create(awsStorageServiceProperties.getEndpoint() + "/" + endpointParams.bucket()))
-                                            .build());
-                                }
-                            })
+                            .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
+                            .serviceConfiguration(serviceConfiguration)
+                            .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                             .build();
 
                 } else {

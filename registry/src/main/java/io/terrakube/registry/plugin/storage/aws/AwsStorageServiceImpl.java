@@ -50,14 +50,18 @@ public class AwsStorageServiceImpl implements StorageService {
             File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
             ZipUtil.pack(gitCloneDirectory, moduleZip);
 
+            log.info("Uploading Aws S3 Object {}", blobKey);
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(blobKey)
+                    .contentType("application/zip")
                     .build();
 
+            log.info("Running PUT Aws S3 Object {}", blobKey);
+            log.info("Path {}", moduleZip.getAbsolutePath());
             s3client.putObject(putObjectRequest, RequestBody.fromFile(moduleZip));
 
-            log.info("Upload Aws S3 Object completed", blobKey);
+            log.info("Upload Aws S3 Object completed {}", blobKey);
             try {
                 FileUtils.cleanDirectory(gitCloneDirectory);
                 if (FileUtils.deleteQuietly(moduleZip))
