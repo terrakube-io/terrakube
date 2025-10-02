@@ -1,42 +1,22 @@
 package io.terrakube.api.rs.module;
 
-import java.lang.module.ModuleDescriptor.Version;
-import java.sql.Types;
-import java.util.List;
-import java.util.UUID;
-
-import org.hibernate.annotations.JdbcTypeCode;
-
-import com.yahoo.elide.annotation.ComputedAttribute;
-import com.yahoo.elide.annotation.ComputedRelationship;
-import com.yahoo.elide.annotation.CreatePermission;
-import com.yahoo.elide.annotation.DeletePermission;
-import com.yahoo.elide.annotation.Include;
-import com.yahoo.elide.annotation.LifeCycleHookBinding;
-import com.yahoo.elide.annotation.ReadPermission;
-import com.yahoo.elide.annotation.UpdatePermission;
+import com.yahoo.elide.annotation.*;
 import com.yahoo.elide.core.RequestScope;
-
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.module.ModuleManageHook;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.Transient;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.annotations.JdbcTypeCode;
+
+import java.sql.Types;
+import java.util.List;
+import java.util.UUID;
 
 @ReadPermission(expression = "team view module")
 @CreatePermission(expression = "team manage module")
@@ -97,23 +77,6 @@ public class Module extends GenericAuditFields {
         return organization.getName() + "/" + name + "/" + provider;
     }
 
-    @Transient
-    @ComputedRelationship
-    public String getLatestVersion() {
-        return version != null && !version.isEmpty()
-                ? version.stream()
-                .map(ModuleVersion::getVersion)
-                .filter(v -> {
-                    try {
-                        Version.parse(v.replace("v", ""));
-                        return true; // Valid version format
-                    } catch (IllegalArgumentException e) {
-                        return false; // Invalid version format
-                    }
-                })
-                .max((v1, v2) -> Version.parse(v1.replace("v", ""))
-                        .compareTo(Version.parse(v2.replace("v", ""))))
-                .orElse("Version pending")
-                : "Version pending";
-    }
+    @Column(name = "latest_version")
+    private String latestVersion;
 }
