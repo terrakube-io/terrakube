@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.vcs.provider.bitbucket;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.rs.webhook.Webhook;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -28,6 +30,9 @@ import java.util.*;
 @Service
 @Slf4j
 public class BitBucketWebhookService extends WebhookServiceBase {
+
+    @Autowired
+    private WebClient.Builder webClientBuilder;
 
     private final ObjectMapper objectMapper;
 
@@ -191,7 +196,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             String accessToken = "Bearer "
                     + workspaceRepository.findById(UUID.fromString(workspaceId)).get().getVcs().getAccessToken();
 
-            WebClient webClient = WebClient.builder()
+            WebClient webClient = webClientBuilder
                     .uriBuilderFactory(createNoEncodingUriBuilderFactory())
                     .defaultHeader(HttpHeaders.AUTHORIZATION, accessToken)
                     .build();

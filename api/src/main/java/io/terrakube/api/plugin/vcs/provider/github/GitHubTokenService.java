@@ -48,7 +48,8 @@ import reactor.netty.transport.ProxyProvider;
 public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     private static final String DEFAULT_ENDPOINT = "https://github.com";
-
+    @Autowired
+    private WebClient.Builder webClientBuilder; 
     @Autowired
     ObjectMapper objectMapper;
     @Autowired
@@ -70,14 +71,14 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
                             .host(System.getProperty("http.proxyHost"))
                             .port(Integer.parseInt(System.getProperty("http.proxyPort"))));
 
-            client = WebClient.builder()
+            client = webClientBuilder
                     .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                     .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                     .clientConnector(new ReactorClientHttpConnector(httpClient))
                     .build();
         } else {
             log.info("No proxy host specified, using default proxy");
-            client = WebClient.builder()
+            client = webClientBuilder
                     .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                     .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                     .build();
