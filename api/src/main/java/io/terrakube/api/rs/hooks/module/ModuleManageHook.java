@@ -121,6 +121,11 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         module.getName(),
                         module.getProvider(),
                         nextFireTime);
+            } else {
+                log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(),
+                        module.getName(),
+                        module.getProvider());
+                moduleRefreshService.createTask(300, module.getId().toString(), true);
             }
         } catch (SchedulerException e) {
             log.error("Failed to get next trigger time: {}", e.getMessage());
