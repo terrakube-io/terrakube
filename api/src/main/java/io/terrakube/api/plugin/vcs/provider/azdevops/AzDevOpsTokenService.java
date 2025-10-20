@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.vcs.provider.azdevops;
 
 import com.azure.core.credential.AccessToken;
 import com.azure.core.credential.TokenRequestContext;
+import com.azure.core.http.ProxyOptions;
+import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.identity.DefaultAzureCredential;
 import com.azure.identity.DefaultAzureCredentialBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -11,12 +13,15 @@ import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
+import java.net.InetSocketAddress;
 import java.util.Collections;
 
 @Service
@@ -28,6 +33,9 @@ public class AzDevOpsTokenService {
 
     @Autowired
     private DynamicCredentialsService dynamicCredentialsService;
+
+    @Autowired
+    private WebClient.Builder webClientBuilder;
 
     private static final String DEFAULT_ENDPOINT="https://app.vssps.visualstudio.com";
     private static final String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
@@ -72,14 +80,45 @@ public class AzDevOpsTokenService {
     public AzDevOpsToken getAzureDefaultToken() throws TokenException {
         AzDevOpsToken azDevOpsToken = new AzDevOpsToken();
         try {
-            DefaultAzureCredential credential = new DefaultAzureCredentialBuilder().build();
+            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+
+            String proxyHost = System.getProperty("http.proxyHost");
+            String proxyPort = System.getProperty("http.proxyPort");
+            if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
+                ProxyOptions proxyOptions = new ProxyOptions(
+                        ProxyOptions.Type.HTTP,
+                        new InetSocketAddress(
+                                proxyHost,
+                                Integer.parseInt(proxyPort)
+                        )
+                );
+
+                String proxyUser = System.getProperty("http.proxyUser");
+                String proxyPassword = System.getProperty("http.proxyPassword");
+                if (proxyUser != null && !proxyUser.isEmpty() && proxyPassword != null && !proxyPassword.isEmpty()) {
+
+                    proxyOptions.setCredentials(
+                            proxyUser,
+                            proxyPassword
+                    );
+                }
+                credentialBuilder.httpClient(
+                        new NettyAsyncHttpClientBuilder().proxy(proxyOptions).build()
+                );
+            }
+
+            DefaultAzureCredential credential = credentialBuilder.build();
             TokenRequestContext requestContext = new TokenRequestContext()
                     .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
             AccessToken accessToken = credential.getToken(requestContext).block();
+            if (accessToken == null || accessToken.getToken() == null) {
+                throw new TokenException("500", "Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+            }
             azDevOpsToken.setAccess_token(accessToken.getToken());
             log.debug("Azure Default Token: {}", azDevOpsToken.getAccess_token());
         } catch (Exception ex) {
             log.error("Error getting Azure Default Token: {}", ex.getMessage());
+            throw new TokenException("500", "Error getting Azure Default Token: " + ex.getMessage());
         }
 
         azDevOpsToken.setRefresh_token("n/a");
@@ -91,9 +130,13 @@ public class AzDevOpsTokenService {
 
 
     private WebClient getWebClient(String endpoint){
-        return WebClient.builder()
+        return webClientBuilder
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                .clientConnector(
+                        new ReactorClientHttpConnector(
+                                HttpClient.create().proxyWithSystemProperties())
+                )
                 .build();
     }
 

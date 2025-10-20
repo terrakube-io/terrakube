@@ -1,11 +1,14 @@
 package io.terrakube.api.plugin.vcs.provider.gitlab;
 
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 @Service
 public class GitLabTokenService {
@@ -14,6 +17,9 @@ public class GitLabTokenService {
 
     @Value("${io.terrakube.hostname}")
     private String hostname;
+
+    @Autowired
+    private WebClient.Builder webClientBuilder;
 
     public GitLabToken getAccessToken(String vcsId, String clientId, String clientSecret, String tempCode, String callback, String endpoint) throws TokenException {
         GitLabToken gitLabToken = getWebClient(endpoint).post().uri(uriBuilder -> uriBuilder.path("/oauth/token")
@@ -42,9 +48,13 @@ public class GitLabTokenService {
     }
 
     private WebClient getWebClient(String endpoint){
-        return WebClient.builder()
+        return webClientBuilder
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                .clientConnector(
+                        new ReactorClientHttpConnector(
+                                HttpClient.create().proxyWithSystemProperties())
+                )
                 .build();
     }
 

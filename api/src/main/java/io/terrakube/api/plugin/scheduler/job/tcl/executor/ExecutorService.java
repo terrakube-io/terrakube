@@ -9,10 +9,11 @@ import io.terrakube.api.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
@@ -33,6 +34,7 @@ import io.terrakube.api.rs.workspace.parameters.Variable;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import lombok.extern.slf4j.Slf4j;
+import reactor.netty.http.client.HttpClient;
 
 @Slf4j
 @Service
@@ -68,6 +70,9 @@ public class ExecutorService {
     private VariableRepository variableRepository;
     @Autowired
     private ReferenceRepository referenceRepository;
+
+    @Autowired
+    private WebClient.Builder webClientBuilder;
 
     @Transactional
     public ExecutorContext execute(Job job, String stepId, Flow flow) {
@@ -220,13 +225,24 @@ public class ExecutorService {
     }
 
     private ExecutorContext sendToExecutor(Job job, ExecutorContext executorContext) {
-        RestTemplate restTemplate = new RestTemplate();
         boolean executed = false;
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<ExecutorContext> entity = new HttpEntity<>(executorContext, headers);
-            ResponseEntity<ExecutorContext> response = restTemplate.postForEntity(getExecutorUrl(job), entity, ExecutorContext.class);
+
+            WebClient webClient = webClientBuilder
+                    .clientConnector(
+                            new ReactorClientHttpConnector(
+                                    HttpClient.create().proxyWithSystemProperties())
+                    )
+                    .build();
+
+            ResponseEntity<ExecutorContext> response = webClient.post()
+                    .uri(getExecutorUrl(job))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(executorContext)
+                    .retrieve()
+                    .toEntity(ExecutorContext.class)
+                    .block();
+
             executorContext.setAccessToken("****");
             executorContext.setModuleSshKey("****");
             log.debug("Sending Job: /n {}", executorContext);
@@ -238,7 +254,7 @@ public class ExecutorService {
                 executed = true;
             } else
                 executed = false;
-        } catch (RestClientException ex) {
+        } catch (WebClientResponseException ex) {
             log.error(ex.getMessage());
             executed = false;
         }
