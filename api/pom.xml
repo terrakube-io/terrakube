@@ -17,7 +17,6 @@
         <java.version>17</java.version>
         <elide.version>7.1.15</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
-        <liquibase-core.version>4.33.0</liquibase-core.version>
         <azure.version>5.23.0</azure.version>
         <mssql-jdbc.version>12.10.1.jre11</mssql-jdbc.version>
         <msal4j.version>1.23.1</msal4j.version>
@@ -138,7 +137,6 @@
         <dependency>
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
-            <version>${liquibase-core.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
