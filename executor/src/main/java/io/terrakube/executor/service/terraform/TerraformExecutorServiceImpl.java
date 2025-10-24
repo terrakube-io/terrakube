@@ -88,6 +88,44 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return terraformWorkingDir;
     }
 
+    private void waitForStreamCompletion(String jobId, int maxWaitSeconds) {
+        int pollInterval = 1000; // 1 second
+        int totalWait = 0;
+        long lastMessageCount = -1;
+        int stableCount = 0;
+
+        while (totalWait < maxWaitSeconds * 1000) {
+            try {
+                // Check if there are pending messages in the stream
+                Long streamLength = redisTemplate.opsForStream().size(jobId);
+
+                if (streamLength != null) {
+                    if (streamLength.equals(lastMessageCount)) {
+                        stableCount++;
+                        // If stream size hasn't changed for 3 consecutive checks, consider it complete
+                        if (stableCount >= 3) {
+                            log.info("Stream appears complete for job {}", jobId);
+                            break;
+                        }
+                    } else {
+                        stableCount = 0;
+                        lastMessageCount = streamLength;
+                    }
+                }
+
+                Thread.sleep(pollInterval);
+                totalWait += pollInterval;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("Interrupted while waiting for stream completion", e);
+                break;
+            }
+        }
+
+        log.info("Waited {} ms for stream completion", totalWait);
+    }
+
+
     @Override
     public ExecutorJobResult plan(TerraformJob terraformJob, File workingDirectory, boolean isDestroy) {
         setupConsumerGroups(terraformJob.getJobId());
@@ -145,7 +183,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
-            Thread.sleep(redisTimeout);
+            waitForStreamCompletion(terraformJob.getJobId(), 300);
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
@@ -211,7 +249,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform apply Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
-            Thread.sleep(redisTimeout);
+            waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
@@ -263,7 +301,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform destroy Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, outputDestroy, execution);
 
-            Thread.sleep(redisTimeout);
+            waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
