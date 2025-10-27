@@ -1,10 +1,5 @@
 package io.terrakube.registry.service.module;
 
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-
-import org.springframework.stereotype.Service;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.generic.Resource;
 import io.terrakube.client.model.organization.module.Module;
@@ -15,9 +10,14 @@ import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
 import io.terrakube.registry.plugin.storage.StorageService;
-
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 
 @AllArgsConstructor
 @Slf4j
@@ -27,6 +27,7 @@ public class ModuleServiceImpl implements ModuleService {
     TerrakubeClient terrakubeClient;
     StorageService storageService;
 
+    @Cacheable(cacheNames = {"getAvailableVersions"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override
     public List<String> getAvailableVersions(String organizationName, String moduleName, String providerName) {
         List<String> definitionVersions = new ArrayList<>();
