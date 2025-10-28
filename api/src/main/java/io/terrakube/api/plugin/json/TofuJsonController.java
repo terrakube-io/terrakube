@@ -2,19 +2,21 @@ package io.terrakube.api.plugin.json;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.netty.http.client.HttpClient;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -26,18 +28,18 @@ public class TofuJsonController {
     private static final String TOFU_REDIS_KEY = "tofuReleasesResponse";
     TofuJsonProperties tofuJsonProperties;
     RedisTemplate redisTemplate;
-    private WebClient.Builder webClientBuilder;
+    DownloadReleasesService downloadReleasesService;
 
-    @GetMapping(value= "/index.json", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = "/index.json", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getTofuReleases() throws IOException {
         String tofuIndex = "";
-        if(redisTemplate.hasKey(TOFU_REDIS_KEY)) {
+        if (redisTemplate.hasKey(TOFU_REDIS_KEY)) {
             log.info("Getting tofu releases from redis....");
             String tofuRedis = (String) redisTemplate.opsForValue().get(TOFU_REDIS_KEY);
             return new ResponseEntity<>(tofuRedis, HttpStatus.OK);
         } else {
             log.info("Getting tofu releases from default endpoint....");
-            if(tofuJsonProperties.getReleasesUrl() != null && !tofuJsonProperties.getReleasesUrl().isEmpty()) {
+            if (tofuJsonProperties.getReleasesUrl() != null && !tofuJsonProperties.getReleasesUrl().isEmpty()) {
                 log.info("Using tofu releases URL {}", tofuJsonProperties.getReleasesUrl());
                 tofuIndex = tofuJsonProperties.getReleasesUrl();
             } else {
@@ -45,27 +47,22 @@ public class TofuJsonController {
                 log.warn("Using tofu releases URL {}", tofuIndex);
             }
 
-            WebClient webClient = webClientBuilder
-                    .exchangeStrategies(ExchangeStrategies.builder()
-                            .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-                            .build())
-                    .baseUrl(tofuIndex)
-                    .clientConnector(
-                            new ReactorClientHttpConnector(
-                                    HttpClient.create().proxyWithSystemProperties())
-                    ).build();
-
             try {
-                String tofuIndexResponse = webClient.get()
-                        .accept(MediaType.APPLICATION_JSON)
-                        .retrieve()
-                        .bodyToMono(String.class)
-                        .block();
+                Path pathTmp = Paths.get(FileUtils.getTempDirectory().getAbsolutePath(), UUID.randomUUID().toString());
+                String tmpdir = Files.createDirectories(pathTmp).toFile().getAbsolutePath() + "/tofu-releases.json";
+                log.info("Downloading tofu releases to {}", tmpdir);
+                File tofuReleasesFile = new File(tmpdir);
+                downloadReleasesService.downloadReleasesToFile(tofuIndex, tofuReleasesFile);
+                log.info("Downloaded tofu releases completed");
+                tofuIndex = FileUtils.readFileToString(tofuReleasesFile, "UTF-8");
+                log.info("Reading tofu releases completed");
+                Files.deleteIfExists(tofuReleasesFile.toPath());
+                log.info("Deleting temporary tofu files completed");
 
                 log.warn("Saving tofu releases to redis...");
-                redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndexResponse);
+                redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndex);
                 redisTemplate.expire(TOFU_REDIS_KEY, 30, TimeUnit.MINUTES);
-                return new ResponseEntity<>(tofuIndexResponse, HttpStatus.OK);
+                return new ResponseEntity<>(tofuIndex, HttpStatus.OK);
             } catch (Exception e) {
                 log.error(e.getMessage());
                 return new ResponseEntity<>("", HttpStatus.INTERNAL_SERVER_ERROR);
