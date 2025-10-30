@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 @Service
 @Slf4j
 @AllArgsConstructor
-@ConditionalOnProperty(name = "org.executor.log-via-api", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "true", matchIfMissing = false)
 public class LogsServiceApi implements ProcessLogs {
     private TerrakubeClient terrakubeClient;
     private final LinkedBlockingDeque<Log> logQueue = new LinkedBlockingDeque<>();

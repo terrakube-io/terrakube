@@ -12,7 +12,7 @@ import java.util.Map;
 @Service
 @Slf4j
 @AllArgsConstructor
-@ConditionalOnProperty(name = "org.executor.log-via-api", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "false", matchIfMissing = true)
 public class LogsServiceRedis implements ProcessLogs {
 
     RedisTemplate redisTemplate;
