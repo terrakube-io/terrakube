@@ -2,6 +2,7 @@ package io.terrakube.executor.service.logs;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -11,9 +12,25 @@ import java.util.Map;
 @Service
 @Slf4j
 @AllArgsConstructor
-public class LogsService implements ProcessLogs {
+@ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "false", matchIfMissing = true)
+public class LogsServiceRedis implements ProcessLogs {
 
     RedisTemplate redisTemplate;
+
+    @Override
+    public void setupConsumerGroups(String jobId) {
+        try {
+            redisTemplate.opsForStream().createGroup(jobId, "CLI");
+        } catch (Exception ex) {
+            log.error(ex.getMessage());
+        }
+
+        try {
+            redisTemplate.opsForStream().createGroup(jobId, "UI");
+        } catch (Exception ex) {
+            log.error(ex.getMessage());
+        }
+    }
 
     @Override
     public void sendLogs(Integer jobId, String stepId, int lineNumber, String output) {

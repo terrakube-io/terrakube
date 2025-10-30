@@ -4,7 +4,7 @@ import com.diogonunes.jcolor.AnsiFormat;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
-import io.terrakube.executor.service.logs.LogsService;
+import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.terraform.TerraformClient;
@@ -45,10 +45,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ScriptEngineService scriptEngineService;
     RedisTemplate redisTemplate;
     boolean enableColorOutput;
-    LogsService logsService;
+    ProcessLogs logsService;
     int redisTimeout;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, LogsService logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -56,20 +56,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.logsService = logsService;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
-    }
-
-    private void setupConsumerGroups(String jobId) {
-        try {
-            redisTemplate.opsForStream().createGroup(jobId, "CLI");
-        } catch (Exception ex) {
-            log.error(ex.getMessage());
-        }
-
-        try {
-            redisTemplate.opsForStream().createGroup(jobId, "UI");
-        } catch (Exception ex) {
-            log.error(ex.getMessage());
-        }
     }
 
     public File getTerraformWorkingDir(TerraformJob terraformJob, File workingDirectory) throws IOException {
@@ -90,7 +76,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult plan(TerraformJob terraformJob, File workingDirectory, boolean isDestroy) {
-        setupConsumerGroups(terraformJob.getJobId());
+        logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
         TextStringBuilder jobOutput = new TextStringBuilder();
@@ -162,7 +148,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult apply(TerraformJob terraformJob, File workingDirectory) {
-        setupConsumerGroups(terraformJob.getJobId());
+        logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
         TextStringBuilder terraformOutput = new TextStringBuilder();
@@ -221,7 +207,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult destroy(TerraformJob terraformJob, File workingDirectory) {
-        setupConsumerGroups(terraformJob.getJobId());
+        logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
         TextStringBuilder jobOutput = new TextStringBuilder();
