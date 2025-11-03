@@ -91,7 +91,7 @@
     "@typescript-eslint/parser": "^8.45.0",
     "@vitejs/plugin-react": "^5.1.0",
     "classnames": "^2.5.1",
-    "eslint": "^9.38.0",
+    "eslint": "^9.39.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
