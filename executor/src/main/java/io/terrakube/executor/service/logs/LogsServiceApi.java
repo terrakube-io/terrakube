@@ -39,6 +39,7 @@ public class LogsServiceApi implements ProcessLogs {
             logQueue.put(logEntry);
         } catch (InterruptedException addLogException) {
             log.error("Failed to add log to queue", addLogException);
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -74,6 +75,7 @@ public class LogsServiceApi implements ProcessLogs {
                 logQueue.putFirst(failedBatch.get(i));
             } catch (InterruptedException e) {
                 log.error("Thread interrupted while re-queuing logs", e);
+                Thread.currentThread().interrupt();
             }
         }
     }
