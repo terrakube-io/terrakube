@@ -12,7 +12,6 @@ import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -420,7 +419,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return parameters != null ? parameters : new HashMap<>();
     }
 
-    @NotNull
     private Consumer<String> getStringConsumer(TextStringBuilder terraformOutput) {
         return responseOutput -> {
             log.info(responseOutput);

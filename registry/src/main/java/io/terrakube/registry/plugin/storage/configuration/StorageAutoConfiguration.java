@@ -18,7 +18,6 @@ import io.terrakube.registry.plugin.storage.gcp.GcpStorageServiceProperties;
 import io.terrakube.registry.plugin.storage.local.LocalStorageServiceImpl;
 import io.terrakube.registry.service.git.GitServiceImpl;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -150,7 +149,7 @@ public class StorageAutoConfiguration {
         return storageService;
     }
 
-    private static @NotNull AwsBasicCredentials getAwsBasicCredentials(AwsStorageServiceProperties
+    private static AwsBasicCredentials getAwsBasicCredentials(AwsStorageServiceProperties
                                                                                awsStorageServiceProperties) {
         return AwsBasicCredentials.create(awsStorageServiceProperties.getAccessKey(), awsStorageServiceProperties.getSecretKey());
     }

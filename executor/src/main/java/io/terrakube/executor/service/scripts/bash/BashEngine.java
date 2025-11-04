@@ -10,7 +10,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.NotFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -85,7 +84,6 @@ public class BashEngine implements CommandExecution {
         return executeSuccess;
     }
 
-    @NotNull
     private ProcessLauncher setupBashProcess(TerraformJob terraformJob, File workingDirectory, File bashScript, Consumer<String> outputListener, Consumer<String> errorListener) {
         ProcessLauncher processLauncher = new ProcessLauncher(this.executor, "bash", bashScript.getAbsolutePath());
         processLauncher.setDirectory(workingDirectory);
@@ -145,7 +143,6 @@ public class BashEngine implements CommandExecution {
         return processLauncher;
     }
 
-    @NotNull
     private String loadingBashTools(File workingDirectory) {
         // Loading Bash scripts from central repository /.terrakube/toolsRepository and adding to the process PATH
         Collection<File> bashTools = FileUtils.listFiles(getToolsRepository(workingDirectory), new String[]{"sh"}, true);
@@ -186,12 +183,10 @@ public class BashEngine implements CommandExecution {
         return bashToolsCompletePath;
     }
 
-    @NotNull
     private File getToolsRepository(File workingDirectory) {
         return new File(workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS_REPOSITORY);
     }
 
-    @NotNull
     private File getBashToolsDirectory(File workingDirectory) {
         return new File(workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS);
     }
