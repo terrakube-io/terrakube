@@ -1,9 +1,19 @@
 package io.terrakube.executor.service.scripts;
 
-import static com.diogonunes.jcolor.Ansi.colorize;
-import static com.diogonunes.jcolor.Attribute.BLACK_BACK;
-import static com.diogonunes.jcolor.Attribute.BOLD;
-import static com.diogonunes.jcolor.Attribute.GREEN_TEXT;
+import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.service.mode.Command;
+import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.scripts.bash.BashEngine;
+import io.terrakube.executor.service.scripts.groovy.GroovyEngine;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
@@ -12,23 +22,8 @@ import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import org.apache.commons.io.FileUtils;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.transport.CredentialsProvider;
-import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import io.terrakube.executor.service.mode.Command;
-import io.terrakube.executor.service.mode.TerraformJob;
-import io.terrakube.executor.service.scripts.bash.BashEngine;
-import io.terrakube.executor.service.scripts.groovy.GroovyEngine;
-
-import com.diogonunes.jcolor.AnsiFormat;
-
-import lombok.extern.slf4j.Slf4j;
+import static com.diogonunes.jcolor.Ansi.colorize;
+import static com.diogonunes.jcolor.Attribute.*;
 
 @Slf4j
 @Service
@@ -119,18 +114,9 @@ public class ScriptEngineService {
         FileUtils.deleteDirectory(getToolsRepository(terraformWorkingDir));
         FileUtils.forceMkdir(getToolsRepository(terraformWorkingDir));
         String privateRepositoryType = "PUBLIC";
-        privateRepositoryType = terraformJob.getEnvironmentVariables()
-                .containsKey("TERRAKUBE_PRIVATE_EXTENSION_REPO_TYPE")
-                        ? terraformJob.getEnvironmentVariables().get("TERRAKUBE_PRIVATE_EXTENSION_REPO_TYPE")
-                        : privateRepositoryType;
-        String privateRepositoryToken = terraformJob.getEnvironmentVariables()
-                .containsKey("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN")
-                        ? terraformJob.getEnvironmentVariables().get("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN")
-                        : null;
-        String privateRepositoryTokenType = terraformJob.getEnvironmentVariables()
-                .containsKey("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN_TYPE")
-                        ? terraformJob.getEnvironmentVariables().get("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN_TYPE")
-                        : null;
+        privateRepositoryType = terraformJob.getEnvironmentVariables().getOrDefault("TERRAKUBE_PRIVATE_EXTENSION_REPO_TYPE", privateRepositoryType);
+        String privateRepositoryToken = terraformJob.getEnvironmentVariables().getOrDefault("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", null);
+        String privateRepositoryTokenType = terraformJob.getEnvironmentVariables().getOrDefault("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN_TYPE", null);
         try {
             CredentialsProvider credentialsProvider;
             log.info("Private Extension vcsType: {}", privateRepositoryType);
@@ -169,7 +155,6 @@ public class ScriptEngineService {
         }
     }
 
-    @NotNull
     private File getToolsRepository(File terraformWorkingDir) {
         return new File(terraformWorkingDir.getAbsolutePath() + TOOLS_REPOSITORY);
     }

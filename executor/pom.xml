@@ -17,10 +17,9 @@
 		<java.version>17</java.version>
 		<commons-text.version>1.14.0</commons-text.version>
 		<terraform-spring-boot-starter.version>1.2.2</terraform-spring-boot-starter.version>
-		<terrakube-client-starter.version>1.2.0-beta.1</terrakube-client-starter.version>
+		<terrakube-client-starter.version>1.2.0</terrakube-client-starter.version>
 		<commons-io.version>2.20.0</commons-io.version>
 		<commons-codec>1.19.0</commons-codec>
-		<okhttp.version>4.12.0</okhttp.version>
 		<azure-storage-blob.version>12.32.0</azure-storage-blob.version>
 		<jgit.version>7.4.0.202509020913-r</jgit.version>
 		<bouncy.castle>1.82</bouncy.castle>
@@ -98,11 +97,6 @@
 			<groupId>com.azure</groupId>
 			<artifactId>azure-storage-blob</artifactId>
 			<version>${azure-storage-blob.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>com.squareup.okhttp3</groupId>
-			<artifactId>okhttp</artifactId>
-			<version>${okhttp.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>commons-codec</groupId>

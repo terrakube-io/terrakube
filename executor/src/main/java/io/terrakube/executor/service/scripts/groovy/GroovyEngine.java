@@ -10,7 +10,6 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.CommandExecution;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 
@@ -76,17 +75,14 @@ public class GroovyEngine implements CommandExecution {
         return executeSuccess;
     }
 
-    @NotNull
     private File getToolsRepository(File workingDirectory) {
         return new File(workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS_REPOSITORY);
     }
 
-    @NotNull
     private File getBashToolsDirectory(File workingDirectory) {
         return new File(workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS);
     }
 
-    @NotNull
     private Binding setupBindings(TerraformJob terraformJob, File workingDirectory) {
         Binding sharedData = new Binding();
         sharedData.setVariable("workingDirectory", workingDirectory.getAbsolutePath());
