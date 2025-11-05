@@ -84,7 +84,9 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
 
         // Load collection workspace references
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`).then((response) => {
-          const workspaceIds = response.data.data.map((ref: any) => ref.relationships.workspace.data.id);
+          const workspaceIds = response.data.data
+              .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
+              .map((ref: any) => ref.relationships.workspace.data.id);
           setSelectedWorkspaces(workspaceIds);
         });
 
@@ -177,12 +179,16 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
         const refsResponse = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`);
 
         const existingRefs = refsResponse.data.data;
-        const existingWorkspaceIds = existingRefs.map((ref: any) => ref.relationships.workspace.data.id);
+        const existingWorkspaceIds = existingRefs
+            .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
+            .map((ref: any) => ref.relationships.workspace.data.id);
 
-        // Delete references that are not in the new selection
+        // Delete references that are not in the new selection or where the workspace is null because it was deleted
         for (const ref of existingRefs) {
-          const workspaceId = ref.relationships.workspace.data.id;
-          if (!selectedWorkspaces.includes(workspaceId)) {
+          const workspaceId = ref.relationships?.workspace?.data?.id;
+          if (workspaceId == null) {
+              await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);
+          } else if (!selectedWorkspaces.includes(workspaceId)) {
             await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);
           }
         }
