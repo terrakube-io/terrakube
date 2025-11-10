@@ -1,15 +1,17 @@
 package io.terrakube.registry.service.module;
 
 import io.terrakube.client.TerrakubeClient;
-import io.terrakube.client.model.generic.Resource;
+import io.terrakube.client.model.graphql.GraphQLRequest;
+import io.terrakube.client.model.graphql.GraphQLResponse;
+import io.terrakube.client.model.graphql.queries.search.module.SearchOrganizationModuleResponse;
 import io.terrakube.client.model.organization.module.Module;
 import io.terrakube.client.model.organization.module.ModuleAttributes;
 import io.terrakube.client.model.organization.module.ModuleRequest;
-import io.terrakube.client.model.organization.module.version.ModuleVersion;
 import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @AllArgsConstructor
 @Slf4j
@@ -26,41 +29,69 @@ public class ModuleServiceImpl implements ModuleService {
 
     TerrakubeClient terrakubeClient;
     StorageService storageService;
+    CommonSearchService commonSearchService;
+
+    public static final String SEARCH_ORGANIZATION_MODULE_VERSION="{ \n" +
+            "  organization(filter: \"name==%s\") {\n" +
+            "    edges {\n" +
+            "      node {\n" +
+            "        id\n" +
+            "        name\n" +
+            "        module(filter: \"name==%s;provider==%s\") {\n" +
+            "            edges{\n" +
+            "                node{\n" +
+            "                    id\n" +
+            "                    name\n" +
+            "                    provider\n" +
+            "                    version {\n" +
+            "                        edges{\n" +
+            "                            node{\n" +
+            "                                id\n" +
+            "                                version\n" +
+            "                            }\n" +
+            "                        }\n" +
+            "                    }\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
 
     @Cacheable(cacheNames = {"getAvailableVersions"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override
     public List<String> getAvailableVersions(String organizationName, String moduleName, String providerName) {
+        String organizationId = commonSearchService.getOrganizationId(organizationName);
+        log.info("Search Module versions {}/{} in Organization {} with OrgId {}", moduleName, providerName, organizationName, organizationId);
+
+        GraphQLRequest query = new GraphQLRequest();
+        query.setQuery(String.format(SEARCH_ORGANIZATION_MODULE_VERSION, organizationName, moduleName, providerName));
+
+        AtomicInteger count= new AtomicInteger();
         List<String> definitionVersions = new ArrayList<>();
-        String organizationId = terrakubeClient.getOrganizationByName(organizationName).getData().get(0).getId();
-        log.info("Search Organization: {} {}", organizationName, organizationId);
 
-        log.info("Search Module {}/{} in Organization {}", moduleName, providerName, organizationName);
-        Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
-                .get(0);
+        GraphQLResponse<SearchOrganizationModuleResponse> moduleVersionResponse = terrakubeClient.searchOrganizationModules(query);
+        moduleVersionResponse.getData().getOrganization().getEdges().forEach(organizationEdge -> {
+            organizationEdge.getNode().getModule().getEdges().forEach(moduleEdge -> {
+                moduleEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
+                    definitionVersions.add(versionEdge.getNode().getVersion());
+                    count.getAndIncrement();
+                });
+            });
+        });
+        log.info("Found {} versions for module {}/{}", count.get(), moduleName, providerName);
 
-        List<Resource> versionData = module.getRelationships().getVersion().getData();
-        if (versionData == null || versionData.isEmpty()) {
-            log.info("No versions found for module: {} in organization: {}", moduleName, organizationName);
-            return definitionVersions;
-        }
-
-        List<ModuleVersion> versionList = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId()).getData();
-        log.debug("Version list: {}", (Object) versionList.stream()
-                .map(version -> version.getAttributes().getVersion())
-                .toArray(String[]::new));
-
-        for (ModuleVersion version : versionList) {
-            definitionVersions.add(version.getAttributes().getVersion());
-        }
         return definitionVersions;
     }
 
+    @Cacheable(cacheNames = {"getModuleVersionPath"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName" + '-' + "#version")
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version,
             boolean countDownload) {
         String moduleVersionPath = "";
 
-        String organizationId = terrakubeClient.getOrganizationByName(organizationName).getData().get(0).getId();
+        String organizationId = commonSearchService.getOrganizationId(organizationName);
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
         String moduleSource = module.getAttributes().getSource();
@@ -132,7 +163,7 @@ public class ModuleServiceImpl implements ModuleService {
         URI uri = URI.create(repository_source);
         String owner = uri.getPath().split("/")[1];
         List<GitHubAppToken> gitHubAppTokens = terrakubeClient.getGitHubAppTokenByVcsIdAndOwner(owner, vcsClientId).getData();
-        if (gitHubAppTokens.size() == 0)  return null;
+        if (gitHubAppTokens.isEmpty())  return null;
 
         return gitHubAppTokens.get(0);
     }
