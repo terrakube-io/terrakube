@@ -29,7 +29,7 @@
         <postgresql.version>42.7.8</postgresql.version>
         <snakeyaml.version>2.5</snakeyaml.version>
         <quartz.version>2.5.0</quartz.version>
-        <aws-sdk.version>2.37.3</aws-sdk.version>
+        <aws-sdk.version>2.38.2</aws-sdk.version>
         <gcp-libraries-bom.version>26.71.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.0.0</jedis.version>
