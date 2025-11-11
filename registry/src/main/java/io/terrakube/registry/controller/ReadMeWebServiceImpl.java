@@ -26,7 +26,7 @@ public class ReadMeWebServiceImpl {
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
     public ResponseEntity<ReadMe> getModuleVersionPath(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version) {
         ReadMe readMe = new ReadMe();
-        String moduleURL = moduleService.getModuleVersionPath(organization, module, provider, version, false);
+        String moduleURL = moduleService.getModuleVersionPath(organization, module, provider, version);
         readMe.setUrl(moduleURL);
         readMe.setContent(readMeService.getContent(new ByteArrayInputStream(storageService.downloadModule(organization, module, provider, version))));
         return ResponseEntity.ok().body(readMe);

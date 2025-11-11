@@ -46,11 +46,12 @@ public class ModuleWebServiceImpl {
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.set(
                 "X-Terraform-Get",
-                moduleService.getModuleVersionPath(organization, module, provider, version, true)
+                moduleService.getModuleVersionPath(organization, module, provider, version)
         );
         responseHeaders.set(
                 "Access-Control-Expose-Headers","X-Terraform-Get"
         );
+        moduleService.updateModuleDownloadCount(organization, module, provider);
         return ResponseEntity.noContent().headers(responseHeaders).build();
     }
 
