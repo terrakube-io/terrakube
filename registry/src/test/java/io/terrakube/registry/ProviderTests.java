@@ -3,160 +3,115 @@ package io.terrakube.registry;
 import org.apache.http.HttpStatus;
 import org.junit.jupiter.api.Test;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 public class ProviderTests extends OpenRegistryApplicationTests{
 
-    private static final String PATH_SEARCH="/api/v1/organization";
-    private static final String PATH_SEARCH_BODY="{\n" +
-            "    \"data\": [\n" +
-            "        {\n" +
-            "            \"type\": \"organization\",\n" +
-            "            \"id\": \"b8938f8f-92c7-40fc-90ce-e4725ee8e986\",\n" +
-            "            \"attributes\": {\n" +
-            "                \"description\": \"Sample Organization\",\n" +
-            "                \"name\": \"sampleOrganization\"\n" +
-            "            },\n" +
-            "            \"relationships\": {\n" +
-            "                \"job\": {\n" +
-            "                    \"data\": []\n" +
-            "                },\n" +
-            "                \"module\": {\n" +
-            "                    \"data\": []\n" +
-            "                },\n" +
-            "                \"provider\": {\n" +
-            "                    \"data\": [\n" +
-            "                        {\n" +
-            "                            \"type\": \"provider\",\n" +
-            "                            \"id\": \"46c6327b-6580-4204-ad2f-088c03d5251a\"\n" +
+    private static final String GRAPHQL_ENDPOINT="/graphql/api/v1";
+    private static final String PROVIDER_SEARCH_VERSION="{\n" +
+            "    \"data\": {\n" +
+            "        \"organization\": {\n" +
+            "            \"edges\": [\n" +
+            "                {\n" +
+            "                    \"node\": {\n" +
+            "                        \"id\": \"d9b58bd3-f3fc-4056-a026-1163297e80a8\",\n" +
+            "                        \"name\": \"simple\",\n" +
+            "                        \"provider\": {\n" +
+            "                            \"edges\": [\n" +
+            "                                {\n" +
+            "                                    \"node\": {\n" +
+            "                                        \"id\": \"ccde2641-b998-4ffe-8a67-bd434ba4b00a\",\n" +
+            "                                        \"name\": \"random\",\n" +
+            "                                        \"version\": {\n" +
+            "                                            \"edges\": [\n" +
+            "                                                {\n" +
+            "                                                    \"node\": {\n" +
+            "                                                        \"id\": \"76a3f378-895f-45f1-85f1-37d9a360f311\",\n" +
+            "                                                        \"versionNumber\": \"3.0.1\",\n" +
+            "                                                        \"protocols\": \"5.0\",\n" +
+            "                                                        \"implementation\": {\n" +
+            "                                                            \"edges\": [\n" +
+            "                                                                {\n" +
+            "                                                                    \"node\": {\n" +
+            "                                                                        \"id\": \"8c7fd5f4-d43f-4395-9b92-89c1dbcf6927\",\n" +
+            "                                                                        \"os\": \"linux\",\n" +
+            "                                                                        \"arch\": \"amd64\"\n" +
+            "                                                                    }\n" +
+            "                                                                }\n" +
+            "                                                            ]\n" +
+            "                                                        }\n" +
+            "                                                    }\n" +
+            "                                                }\n" +
+            "                                            ]\n" +
+            "                                        }\n" +
+            "                                    }\n" +
+            "                                }\n" +
+            "                            ]\n" +
             "                        }\n" +
-            "                    ]\n" +
-            "                },\n" +
-            "                \"workspace\": {\n" +
-            "                    \"data\": []\n" +
+            "                    }\n" +
             "                }\n" +
-            "            }\n" +
+            "            ]\n" +
             "        }\n" +
-            "    ]\n" +
+            "    }\n" +
             "}";
-    private static final String PATH_SEARCH_IMPLEMENTATION="/api/v1/organization/b8938f8f-92c7-40fc-90ce-e4725ee8e986/provider/46c6327b-6580-4204-ad2f-088c03d5251a/version";
-    private static final String PATH_SEARCH_IMPLEMENTATION_BODY="{\n" +
-            "    \"data\": [\n" +
-            "        {\n" +
-            "            \"type\": \"version\",\n" +
-            "            \"id\": \"3bc6b6ac-9aa1-438b-8108-bbed1d61db33\",\n" +
-            "            \"attributes\": {\n" +
-            "                \"protocols\": \"5.0\",\n" +
-            "                \"versionNumber\": \"2.0.0\"\n" +
-            "            },\n" +
-            "            \"relationships\": {\n" +
-            "                \"implementation\": {\n" +
-            "                    \"data\": [\n" +
-            "                        {\n" +
-            "                            \"type\": \"implementation\",\n" +
-            "                            \"id\": \"05a71052-cccb-42e6-8754-faf39d37c677\"\n" +
+    private static final String PROVIDER_SEARCH_IMPLEMENTATION="{\n" +
+            "    \"data\": {\n" +
+            "        \"organization\": {\n" +
+            "            \"edges\": [\n" +
+            "                {\n" +
+            "                    \"node\": {\n" +
+            "                        \"id\": \"d9b58bd3-f3fc-4056-a026-1163297e80a8\",\n" +
+            "                        \"name\": \"simple\",\n" +
+            "                        \"provider\": {\n" +
+            "                            \"edges\": [\n" +
+            "                                {\n" +
+            "                                    \"node\": {\n" +
+            "                                        \"id\": \"ccde2641-b998-4ffe-8a67-bd434ba4b00a\",\n" +
+            "                                        \"name\": \"random\",\n" +
+            "                                        \"version\": {\n" +
+            "                                            \"edges\": [\n" +
+            "                                                {\n" +
+            "                                                    \"node\": {\n" +
+            "                                                        \"id\": \"76a3f378-895f-45f1-85f1-37d9a360f311\",\n" +
+            "                                                        \"versionNumber\": \"3.0.1\",\n" +
+            "                                                        \"protocols\": \"5.0\",\n" +
+            "                                                        \"implementation\": {\n" +
+            "                                                            \"edges\": [\n" +
+            "                                                                {\n" +
+            "                                                                    \"node\": {\n" +
+            "                                                                        \"id\": \"8c7fd5f4-d43f-4395-9b92-89c1dbcf6927\",\n" +
+            "                                                                        \"os\": \"linux\",\n" +
+            "                                                                        \"arch\": \"amd64\",\n" +
+            "                                                                        \"filename\": \"terraform-provider-random_3.0.1_linux_amd64.zip\",\n" +
+            "                                                                        \"downloadUrl\": \"https://releases.hashicorp.com/terraform-provider-random/3.0.1/terraform-provider-random_3.0.1_linux_amd64.zip\",\n" +
+            "                                                                        \"shasumsUrl\": \"https://releases.hashicorp.com/terraform-provider-random/3.0.1/terraform-provider-random_3.0.1_SHA256SUMS\",\n" +
+            "                                                                        \"shasumsSignatureUrl\": \"https://releases.hashicorp.com/terraform-provider-random/3.0.1/terraform-provider-random_3.0.1_SHA256SUMS.72D7468F.sig\",\n" +
+            "                                                                        \"shasum\": \"e385e00e7425dda9d30b74ab4ffa4636f4b8eb23918c0b763f0ffab84ece0c5c\",\n" +
+            "                                                                        \"keyId\": \"34365D9472D7468F\",\n" +
+            "                                                                        \"asciiArmor\": \"-----BEGIN PGP PUBLIC KEY BLOCK-----\\n\\n-----END PGP PUBLIC KEY BLOCK-----\",\n" +
+            "                                                                        \"trustSignature\": \"5.0\",\n" +
+            "                                                                        \"source\": \"HashiCorp\",\n" +
+            "                                                                        \"sourceUrl\": \"https://www.hashicorp.com/security.html\"\n" +
+            "                                                                    }\n" +
+            "                                                                }\n" +
+            "                                                            ]\n" +
+            "                                                        }\n" +
+            "                                                    }\n" +
+            "                                                }\n" +
+            "                                            ]\n" +
+            "                                        }\n" +
+            "                                    }\n" +
+            "                                }\n" +
+            "                            ]\n" +
             "                        }\n" +
-            "                    ]\n" +
-            "                },\n" +
-            "                \"provider\": {\n" +
-            "                    \"data\": {\n" +
-            "                        \"type\": \"provider\",\n" +
-            "                        \"id\": \"46c6327b-6580-4204-ad2f-088c03d5251a\"\n" +
             "                    }\n" +
             "                }\n" +
-            "            }\n" +
+            "            ]\n" +
             "        }\n" +
-            "    ],\n" +
-            "    \"included\": [\n" +
-            "        {\n" +
-            "            \"type\": \"implementation\",\n" +
-            "            \"id\": \"05a71052-cccb-42e6-8754-faf39d37c677\",\n" +
-            "            \"attributes\": {\n" +
-            "                \"arch\": \"amd64\",\n" +
-            "                \"asciiArmor\": \"sampleData\",\n" +
-            "                \"downloadUrl\": \"sampleData\",\n" +
-            "                \"filename\": \"sampleData.zip\",\n" +
-            "                \"keyId\": \"sampleData\",\n" +
-            "                \"os\": \"darwin\",\n" +
-            "                \"shasum\": \"sampleData\",\n" +
-            "                \"shasumsSignatureUrl\": \"sampleData.sig\",\n" +
-            "                \"shasumsUrl\": \"sampleData\",\n" +
-            "                \"source\": \"sampleData\",\n" +
-            "                \"sourceUrl\": \"sampleData\",\n" +
-            "                \"trustSignature\": \"\"\n" +
-            "            },\n" +
-            "            \"relationships\": {\n" +
-            "                \"version\": {\n" +
-            "                    \"data\": {\n" +
-            "                        \"type\": \"version\",\n" +
-            "                        \"id\": \"3bc6b6ac-9aa1-438b-8108-bbed1d61db33\"\n" +
-            "                    }\n" +
-            "                }\n" +
-            "            }\n" +
-            "        }\n" +
-            "    ]\n" +
-            "}";
-    private static final String PATH_SEARCH_IMPLEMENTATION_VERSION_BODY="{\n" +
-            "    \"data\": [\n" +
-            "        {\n" +
-            "            \"type\": \"version\",\n" +
-            "            \"id\": \"3bc6b6ac-9aa1-438b-8108-bbed1d61db33\",\n" +
-            "            \"attributes\": {\n" +
-            "                \"protocols\": \"5.0\",\n" +
-            "                \"versionNumber\": \"2.0.0\"\n" +
-            "            },\n" +
-            "            \"relationships\": {\n" +
-            "                \"implementation\": {\n" +
-            "                    \"data\": [\n" +
-            "                        {\n" +
-            "                            \"type\": \"implementation\",\n" +
-            "                            \"id\": \"05a71052-cccb-42e6-8754-faf39d37c677\"\n" +
-            "                        }\n" +
-            "                    ]\n" +
-            "                },\n" +
-            "                \"provider\": {\n" +
-            "                    \"data\": {\n" +
-            "                        \"type\": \"provider\",\n" +
-            "                        \"id\": \"46c6327b-6580-4204-ad2f-088c03d5251a\"\n" +
-            "                    }\n" +
-            "                }\n" +
-            "            }\n" +
-            "        }\n" +
-            "    ]" +
-            "}";
-    private static final String PATH_SEARCH_IMPLEMENTATION_FILE="/api/v1/organization/b8938f8f-92c7-40fc-90ce-e4725ee8e986/provider/46c6327b-6580-4204-ad2f-088c03d5251a/version/3bc6b6ac-9aa1-438b-8108-bbed1d61db33/implementation";
-    private static final String PATH_SEARCH_IMPLEMENTATION_FILE_BODY="{\n" +
-            "    \"data\": [\n" +
-            "        {\n" +
-            "            \"type\": \"implementation\",\n" +
-            "            \"id\": \"05a71052-cccb-42e6-8754-faf39d37c677\",\n" +
-            "            \"attributes\": {\n" +
-            "                \"arch\": \"amd64\",\n" +
-            "                \"asciiArmor\": \"sampleData\",\n" +
-            "                \"downloadUrl\": \"sampleData\",\n" +
-            "                \"filename\": \"sampleData.zip\",\n" +
-            "                \"keyId\": \"sampleData\",\n" +
-            "                \"os\": \"darwin\",\n" +
-            "                \"shasum\": \"sampleData\",\n" +
-            "                \"shasumsSignatureUrl\": \"sampleData.sig\",\n" +
-            "                \"shasumsUrl\": \"sampleData\",\n" +
-            "                \"source\": \"sampleData\",\n" +
-            "                \"sourceUrl\": \"sampleData\",\n" +
-            "                \"trustSignature\": \"\"\n" +
-            "            },\n" +
-            "            \"relationships\": {\n" +
-            "                \"version\": {\n" +
-            "                    \"data\": {\n" +
-            "                        \"type\": \"version\",\n" +
-            "                        \"id\": \"3bc6b6ac-9aa1-438b-8108-bbed1d61db33\"\n" +
-            "                    }\n" +
-            "                }\n" +
-            "            }\n" +
-            "        }\n" +
-            "    ]\n" +
+            "    }\n" +
             "}";
 
 
@@ -164,30 +119,16 @@ public class ProviderTests extends OpenRegistryApplicationTests{
     void providerApiGetTestStep1() {
         wireMockServer.resetAll();
         
-        stubFor(get(urlPathEqualTo(PATH_SEARCH))
-                .withQueryParam("filter[organization]", containing("name==sampleOrganization"))
-                .withQueryParam("filter[provider]", containing("name==sampleProvider"))
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_BODY)));
-
-        stubFor(get(urlPathEqualTo(PATH_SEARCH_IMPLEMENTATION))
-                .withQueryParam("include", containing("implementation"))
-                .willReturn(aResponse()
-                        .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_IMPLEMENTATION_BODY)));
+                        .withBody(PROVIDER_SEARCH_VERSION)));
 
         when()
-                .get("/terraform/providers/v1/sampleOrganization/sampleProvider/versions")
+                .get("/terraform/providers/v1/simple/random/versions")
                 .then()
                 .log().all()
-                .body("versions",hasSize(1))
-                .body("versions[0].version",equalTo("2.0.0"))
-                .body("versions[0].protocols",hasSize(1))
-                .body("versions[0].protocols[0]",equalTo("5.0"))
-                .body("versions[0].platforms[0].os",equalTo("darwin"))
-                .body("versions[0].platforms[0].arch",equalTo("amd64"))
-                .log().all()
+                .body("versions[0].version", equalTo("3.0.1"))
                 .statusCode(HttpStatus.SC_OK);
 
     }
@@ -195,63 +136,20 @@ public class ProviderTests extends OpenRegistryApplicationTests{
     @Test
     void providerApiGetTestStep2() {
         wireMockServer.resetAll();
-        
-        stubFor(get(urlPathEqualTo(PATH_SEARCH))
-                .withQueryParam("filter[organization]", containing("name==sampleOrganization"))
-                .withQueryParam("filter[provider]", containing("name==sampleProvider"))
-                .willReturn(aResponse()
-                        .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_BODY)));
 
-        stubFor(get(urlPathEqualTo(PATH_SEARCH_IMPLEMENTATION))
-                .withQueryParam("include", containing("implementation"))
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_IMPLEMENTATION_BODY)));
-
-        stubFor(get(urlPathEqualTo(PATH_SEARCH_IMPLEMENTATION))
-                .withQueryParam("filter[version]", containing("versionNumber==2.0.0"))
-                .willReturn(aResponse()
-                        .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_IMPLEMENTATION_VERSION_BODY)));
-
-        stubFor(get(urlPathEqualTo(PATH_SEARCH_IMPLEMENTATION_FILE))
-                .withQueryParam("filter[implementation]", containing("os==darwin;arch==amd64"))
-                .willReturn(aResponse()
-                        .withStatus(HttpStatus.SC_OK)
-                        .withBody(PATH_SEARCH_IMPLEMENTATION_FILE_BODY)));
+                        .withBody(PROVIDER_SEARCH_IMPLEMENTATION)));
 
         when()
-                .get("/terraform/providers/v1/sampleOrganization/sampleProvider/versions")
-                .then()
-                .log().all()
-                .body("versions",hasSize(1))
-                .body("versions[0].version",equalTo("2.0.0"))
-                .body("versions[0].protocols",hasSize(1))
-                .body("versions[0].protocols[0]",equalTo("5.0"))
-                .body("versions[0].platforms[0].os",equalTo("darwin"))
-                .body("versions[0].platforms[0].arch",equalTo("amd64"))
-                .log().all()
-                .statusCode(HttpStatus.SC_OK);
-
-        when()
-                .get("/terraform/providers/v1/sampleOrganization/sampleProvider/2.0.0/download/darwin/amd64")
+                .get("/terraform/providers/v1/sampleOrganization/simple/3.0.1/download/linux/amd64")
                 .then()
                 .log().all()
                 .body("protocols",hasSize(1))
                 .body("protocols[0]",equalTo("5.0"))
-                .body("os",equalTo("darwin"))
+                .body("os",equalTo("linux"))
                 .body("arch",equalTo("amd64"))
-                .body("filename",equalTo("sampleData.zip"))
-                .body("download_url",equalTo("sampleData"))
-                .body("shasums_url",equalTo("sampleData"))
-                .body("shasums_signature_url",equalTo("sampleData.sig"))
-                .body("shasum",equalTo("sampleData"))
-                .body("signing_keys.gpg_public_keys[0].key_id",equalTo("sampleData"))
-                .body("signing_keys.gpg_public_keys[0].ascii_armor",equalTo("sampleData"))
-                .body("signing_keys.gpg_public_keys[0].trust_signature",equalTo(""))
-                .body("signing_keys.gpg_public_keys[0].source",equalTo("sampleData"))
-                .body("signing_keys.gpg_public_keys[0].source_url",equalTo("sampleData"))
                 .log().all()
                 .statusCode(HttpStatus.SC_OK);
 
