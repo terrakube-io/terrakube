@@ -6,5 +6,7 @@ public interface ModuleService {
 
     List<String> getAvailableVersions(String organizationName, String moduleName, String providerName);
 
-    String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version, boolean countDownload);
+    String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version);
+
+    void updateModuleDownloadCount(String organizationName, String moduleName, String providerName);
 }

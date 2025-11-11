@@ -85,10 +85,9 @@ public class ModuleServiceImpl implements ModuleService {
         return definitionVersions;
     }
 
-    @Cacheable(cacheNames = {"getModuleVersionPath"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName" + '-' + "#version")
+    @Cacheable(cacheNames = {"getModuleVersionPath"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version")
     @Override
-    public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version,
-            boolean countDownload) {
+    public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
         String moduleVersionPath = "";
 
         String organizationId = commonSearchService.getOrganizationId(organizationName);
@@ -120,15 +119,16 @@ public class ModuleServiceImpl implements ModuleService {
                 organizationName, moduleName, providerName, version, moduleSource, vcsType, vcsConnectionType,
                 accessToken, tagPrefix, folder);
 
-        if (countDownload)
-            updateModuleDownloadCount(organizationId, module);
-
         log.info("Registry Path: {}", moduleVersionPath);
         return moduleVersionPath;
     }
 
-    private void updateModuleDownloadCount(String organizationId, Module module) {
+    @Override
+    public void updateModuleDownloadCount(String organizationName, String moduleName, String providerName) {
         log.info("Update module download count");
+        String organizationId = commonSearchService.getOrganizationId(organizationName);
+        Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
+                .get(0);
         ModuleRequest moduleRequest = new ModuleRequest();
         ModuleAttributes moduleAttributes = new ModuleAttributes();
         moduleAttributes.setDownloadQuantity(module.getAttributes().getDownloadQuantity() + 1);

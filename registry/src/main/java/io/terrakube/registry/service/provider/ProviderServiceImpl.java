@@ -1,15 +1,11 @@
 package io.terrakube.registry.service.provider;
 
-import lombok.extern.slf4j.Slf4j;
 import io.terrakube.client.TerrakubeClient;
-import io.terrakube.client.model.organization.Organization;
-import io.terrakube.client.model.organization.provider.version.Version;
-import io.terrakube.client.model.organization.provider.version.implementation.Implementation;
-import io.terrakube.client.model.response.Response;
-import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.client.model.graphql.GraphQLRequest;
+import io.terrakube.registry.controller.model.provider.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import io.terrakube.registry.controller.model.provider.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,64 +18,153 @@ public class ProviderServiceImpl implements ProviderService {
     @Autowired
     TerrakubeClient terrakubeClient;
 
+    private static final String SEARCH_PROVIDER_VERSIONS="{ \n" +
+            "  organization(filter: \"name==%s\") {\n" +
+            "    edges {\n" +
+            "      node {\n" +
+            "        id\n" +
+            "        name\n" +
+            "        provider(filter: \"name==%s\") {\n" +
+            "            edges{\n" +
+            "                node{\n" +
+            "                    id\n" +
+            "                    name\n" +
+            "                    version{\n" +
+            "                        edges{\n" +
+            "                            node{\n" +
+            "                                id\n" +
+            "                                versionNumber\n" +
+            "                                protocols\n" +
+            "                                implementation{\n" +
+            "                                    edges{\n" +
+            "                                        node{\n" +
+            "                                            id\n" +
+            "                                            os\n" +
+            "                                            arch\n" +
+            "                                        }\n" +
+            "                                    }\n" +
+            "                                }\n" +
+            "                            }\n" +
+            "                        }\n" +
+            "                    }\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+    private static final String SEARCH_PROVIDER_IMPLEMENTATIONS="{ \n" +
+            "  organization(filter: \"name==%s\") {\n" +
+            "    edges {\n" +
+            "      node {\n" +
+            "        id\n" +
+            "        name\n" +
+            "        provider(filter: \"name==%s\") {\n" +
+            "            edges{\n" +
+            "                node{\n" +
+            "                    id\n" +
+            "                    name\n" +
+            "                    version(filter: \"versionNumber==%s\"){\n" +
+            "                        edges{\n" +
+            "                            node{\n" +
+            "                                id\n" +
+            "                                versionNumber\n" +
+            "                                protocols\n" +
+            "                                implementation(filter: \"os==%s;arch==%s\"){\n" +
+            "                                    edges{\n" +
+            "                                        node{\n" +
+            "                                            id\n" +
+            "                                            os\n" +
+            "                                            arch\n" +
+            "                                            filename\n" +
+            "                                            downloadUrl\n" +
+            "                                            shasumsUrl\n" +
+            "                                            shasumsSignatureUrl\n" +
+            "                                            shasum\n" +
+            "                                            keyId\n" +
+            "                                            asciiArmor\n" +
+            "                                            trustSignature\n" +
+            "                                            source\n" +
+            "                                            sourceUrl\n" +
+            "                                        }\n" +
+            "                                    }\n" +
+            "                                }\n" +
+            "                            }\n" +
+            "                        }\n" +
+            "                    }\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
     @Override
     public List<VersionDTO> getAvailableVersions(String organization, String provider) {
         log.info("Organization Provider: {} {}", organization, provider);
-        Response<List<Organization>> listOrganization = terrakubeClient.getOrganizationsByNameAndProvider(organization, provider);
-        ResponseWithInclude<List<Version>, Implementation> versionsWithFile = terrakubeClient.getAllVersionsByProviderWithImplementation(listOrganization.getData().get(0).getId(), listOrganization.getData().get(0).getRelationships().getProvider().getData().get(0).getId());
         List<VersionDTO> versionDTOList = new ArrayList<>();
-        for (Version version : versionsWithFile.getData()) {
-            VersionDTO versionDTO = new VersionDTO();
-            versionDTO.setVersion(version.getAttributes().getVersionNumber());
-            versionDTO.setProtocols(Arrays.asList(version.getAttributes().getProtocols().split(",")));
-            List<PlatformDTO> platformDTOList = new ArrayList<>();
-            for (Implementation implementation : versionsWithFile.getIncluded()) {
-                if (implementation.getRelationships().getVersion().getData().getId().equals(version.getId())) {
-                    PlatformDTO platformDTO = new PlatformDTO();
-                    platformDTO.setOs(implementation.getAttributes().getOs());
-                    platformDTO.setArch(implementation.getAttributes().getArch());
-                    platformDTOList.add(platformDTO);
-                }
-            }
-            versionDTO.setPlatforms(platformDTOList);
-            versionDTOList.add(versionDTO);
-        }
+
+        GraphQLRequest query = new GraphQLRequest();
+        query.setQuery(String.format(SEARCH_PROVIDER_VERSIONS, organization, provider));
+        terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().forEach(organizationEdge -> {
+            organizationEdge.getNode().getProvider().getEdges().forEach(providerEdge -> {
+                providerEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
+                    VersionDTO versionDTO = new VersionDTO();
+                    versionDTO.setVersion(versionEdge.getNode().getVersionNumber());
+                    versionDTO.setProtocols(Arrays.asList(versionEdge.getNode().getProtocols().split(",")));
+                    List<PlatformDTO> platformDTOList = new ArrayList<>();
+                    versionEdge.getNode().getImplementation().getEdges().forEach(implementationEdge -> {
+                        PlatformDTO platformDTO = new PlatformDTO();
+                        platformDTO.setOs(implementationEdge.getNode().getOs());
+                        platformDTO.setArch(implementationEdge.getNode().getArch());
+                        platformDTOList.add(platformDTO);
+                    });
+                    versionDTO.setPlatforms(platformDTOList);
+                    versionDTOList.add(versionDTO);
+                });
+            });
+        });
+
         return versionDTOList;
     }
 
     @Override
     public FileDTO getFileInformation(String organization, String provider, String version, String os, String arch) {
-        Response<List<Organization>> listOrganization = terrakubeClient.getOrganizationsByNameAndProvider(organization, provider);
-        String organizationId = listOrganization.getData().get(0).getId();
-        String providerId = listOrganization.getData().get(0).getRelationships().getProvider().getData().get(0).getId();
-        Response<List<Version>> listVersion =  terrakubeClient.getVersionsByOrganizationIdAndProviderIdAndVersionNumber(organizationId, providerId , version);
-        String versionId = listVersion.getData().get(0).getId();
-        Response<List<Implementation>> files = terrakubeClient.getImplementationByOsArchVersion(organizationId, providerId, versionId, os, arch);
-
         FileDTO fileDTO = new FileDTO();
-        for (Implementation implementation : files.getData()) {
-            fileDTO.setProtocols(Arrays.asList(listVersion.getData().get(0).getAttributes().getProtocols().split(",")));
-            fileDTO.setOs(implementation.getAttributes().getOs());
-            fileDTO.setArch(implementation.getAttributes().getArch());
-            fileDTO.setFilename(implementation.getAttributes().getFilename());
-            fileDTO.setDownload_url(implementation.getAttributes().getDownloadUrl());
-            fileDTO.setShasums_url(implementation.getAttributes().getShasumsUrl());
-            fileDTO.setShasums_signature_url(implementation.getAttributes().getShasumsSignatureUrl());
-            fileDTO.setShasum(implementation.getAttributes().getShasum());
+        GraphQLRequest query = new GraphQLRequest();
+        query.setQuery(String.format(SEARCH_PROVIDER_IMPLEMENTATIONS, organization, provider, version, os, arch));
+        terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().forEach(organizationEdge -> {
+            organizationEdge.getNode().getProvider().getEdges().forEach(providerEdge -> {
+                providerEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
+                    fileDTO.setProtocols(Arrays.asList(versionEdge.getNode().getProtocols().split(",")));
+                    versionEdge.getNode().getImplementation().getEdges().forEach(implementationEdge -> {
 
-            GpgPublicKeys gpgPublicKeys = new GpgPublicKeys();
-            gpgPublicKeys.setKey_id(implementation.getAttributes().getKeyId());
-            gpgPublicKeys.setAscii_armor(implementation.getAttributes().getAsciiArmor());
-            gpgPublicKeys.setTrust_signature(implementation.getAttributes().getTrustSignature());
-            gpgPublicKeys.setSource(implementation.getAttributes().getSource());
-            gpgPublicKeys.setSource_url(implementation.getAttributes().getSourceUrl());
+                        fileDTO.setOs(implementationEdge.getNode().getOs());
+                        fileDTO.setArch(implementationEdge.getNode().getArch());
+                        fileDTO.setFilename(implementationEdge.getNode().getFilename());
+                        fileDTO.setDownload_url(implementationEdge.getNode().getDownloadUrl());
+                        fileDTO.setShasums_url(implementationEdge.getNode().getShasumsUrl());
+                        fileDTO.setShasums_signature_url(implementationEdge.getNode().getShasumsSignatureUrl());
+                        fileDTO.setShasum(implementationEdge.getNode().getShasum());
 
-            SigningKeys signingKeys = new SigningKeys();
-            signingKeys.setGpg_public_keys(Arrays.asList(gpgPublicKeys));
+                        GpgPublicKeys gpgPublicKeys = new GpgPublicKeys();
+                        gpgPublicKeys.setKey_id(implementationEdge.getNode().getKeyId());
+                        gpgPublicKeys.setAscii_armor(implementationEdge.getNode().getAsciiArmor());
+                        gpgPublicKeys.setTrust_signature(implementationEdge.getNode().getTrustSignature());
+                        gpgPublicKeys.setSource(implementationEdge.getNode().getSource());
+                        gpgPublicKeys.setSource_url(implementationEdge.getNode().getSourceUrl());
 
-            fileDTO.setSigning_keys(signingKeys);
+                        SigningKeys signingKeys = new SigningKeys();
+                        signingKeys.setGpg_public_keys(List.of(gpgPublicKeys));
 
-        }
+                        fileDTO.setSigning_keys(signingKeys);
+                    });
+                });
+            });
+        });
 
         return fileDTO;
     }
