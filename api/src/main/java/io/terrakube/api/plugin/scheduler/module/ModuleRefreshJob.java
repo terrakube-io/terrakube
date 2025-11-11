@@ -157,7 +157,7 @@ public class ModuleRefreshJob implements Job {
                 case GITLAB:
                     credentialsProvider = new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
                     break;
-                case AZURE_DEVOPS:
+                case AZURE_DEVOPS, AZURE_SP_MI:
                     credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
                     break;
                 default:
