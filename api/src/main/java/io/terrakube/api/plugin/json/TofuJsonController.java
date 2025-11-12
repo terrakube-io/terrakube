@@ -61,7 +61,7 @@ public class TofuJsonController {
 
                 log.warn("Saving tofu releases to redis...");
                 redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndex);
-                redisTemplate.expire(TOFU_REDIS_KEY, 30, TimeUnit.MINUTES);
+                redisTemplate.expire(TOFU_REDIS_KEY, tofuJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
                 return new ResponseEntity<>(tofuIndex, HttpStatus.OK);
             } catch (Exception e) {
                 log.error(e.getMessage());
