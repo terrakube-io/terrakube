@@ -51,7 +51,7 @@ cd terrakube/docker-compose
 mkcert -key-file key.pem -cert-file cert.pem platform.local *.platform.local
 CAROOT=$(mkcert -CAROOT)/rootCA.pem
 cp $CAROOT rootCA.pem
-docker compose up -d --force-recreate
+docker-compose up -d --force-recreate
 ```
 
 Terrakube will be available in the following URL:
