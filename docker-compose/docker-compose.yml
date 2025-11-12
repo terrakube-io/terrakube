@@ -249,7 +249,8 @@ services:
     extra_hosts: *terrakube_hosts
     labels: *traefik_ui_labels
     volumes:
-      - ./env-config.js:/app/env-config.js
+      - ./env-config.js:/usr/share/nginx/html/env-config.js
+      - ./my_server_block.conf:/etc/nginx/conf.d/default.conf
     environment:
       <<: [*ui_env]
   terrakube-executor:
@@ -282,14 +283,14 @@ services:
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
   ldap-service:
-    image: bitnami/openldap:${TK_LDAP_VERSION}
+    image: bitnamilegacy/openldap:${TK_LDAP_VERSION}
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
       - ./config-ldap.ldif:/ldifs/config-ldap.ldif
   minio:
     container_name: terrakube-minio
-    image: docker.io/bitnami/minio:${TK_MINIO_VERSION}
+    image: docker.io/bitnamilegacy/minio:${TK_MINIO_VERSION}
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
@@ -304,14 +305,14 @@ services:
     volumes:
       - 'redis_data:/bitnami/redis/data'
   postgresql-service:
-    image: docker.io/bitnami/postgresql:${TK_POSTGRESQL_VERSION}
+    image: docker.io/bitnamilegacy/postgresql:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service
     environment:
       - POSTGRESQL_USERNAME=${TK_POSTGRESQL_USERNAME}
       - POSTGRESQL_PASSWORD=${TK_POSTGRESQL_PASSWORD}
       - POSTGRESQL_DATABASE=${TK_POSTGRESQL_DATABASE_NAME}
     volumes:
-      - postgresql_data:/bitnami/postgresql
+      - postgresql_data:/bitnamilegacy/postgresql
 volumes:
   minio_data:
   redis_data:
