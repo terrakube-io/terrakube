@@ -62,7 +62,7 @@ public class TerraformJsonController {
 
                 log.warn("Saving tofu releases to redis...");
                 redisTemplate.opsForValue().set(TERRAFORM_REDIS_KEY, terraformIndex);
-                redisTemplate.expire(TERRAFORM_REDIS_KEY, TerraformJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
+                redisTemplate.expire(TERRAFORM_REDIS_KEY, terraformJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
 
                 return new ResponseEntity<>(terraformIndex, HttpStatus.OK);
             } catch (Exception e) {
