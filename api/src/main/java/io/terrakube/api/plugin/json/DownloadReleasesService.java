@@ -33,6 +33,7 @@ public class DownloadReleasesService {
                                 .proxyWithSystemProperties()
                 ))
                 .defaultHeaders(h -> {
+                    h.add("User-Agent", "releases-downloader");
                     h.setAccept(List.of(MediaType.APPLICATION_JSON));
 
                     if (githubToken != null && !githubToken.isEmpty()) {
