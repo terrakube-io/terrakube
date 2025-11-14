@@ -52,7 +52,16 @@ public class TofuJsonController {
                 String tmpdir = Files.createDirectories(pathTmp).toFile().getAbsolutePath() + "/tofu-releases.json";
                 log.info("Downloading tofu releases to {}", tmpdir);
                 File tofuReleasesFile = new File(tmpdir);
-                downloadReleasesService.downloadReleasesToFile(tofuIndex, tofuReleasesFile);
+
+                String githubToken = tofuJsonProperties.getGithubToken();
+                if (githubToken != null && !githubToken.isEmpty()) {
+                    log.info("Using authenticated GitHub API request");
+                    downloadReleasesService.downloadReleasesToFile(tofuIndex, tofuReleasesFile, githubToken);
+                } else {
+                    log.warn("No GitHub token configured - using unauthenticated request (subject to rate limits)");
+                    downloadReleasesService.downloadReleasesToFile(tofuIndex, tofuReleasesFile);
+                }
+
                 log.info("Downloaded tofu releases completed");
                 tofuIndex = FileUtils.readFileToString(tofuReleasesFile, "UTF-8");
                 log.info("Reading tofu releases completed");
@@ -61,16 +70,12 @@ public class TofuJsonController {
 
                 log.warn("Saving tofu releases to redis...");
                 redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndex);
-                redisTemplate.expire(TOFU_REDIS_KEY, 30, TimeUnit.MINUTES);
+                redisTemplate.expire(TOFU_REDIS_KEY, tofuJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
                 return new ResponseEntity<>(tofuIndex, HttpStatus.OK);
             } catch (Exception e) {
                 log.error(e.getMessage());
                 return new ResponseEntity<>("", HttpStatus.INTERNAL_SERVER_ERROR);
             }
-
         }
-
     }
 }
-
-
