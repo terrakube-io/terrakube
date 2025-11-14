@@ -14,5 +14,6 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "io.terrakube.tofu.json")
 public class TofuJsonProperties {
     private String releasesUrl;
-    private Long cacheExpirationMinutes = 30L;
+    private Long cacheExpirationMinutes;
+    private String githubToken;
 }
