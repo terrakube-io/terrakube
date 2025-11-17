@@ -6695,10 +6695,10 @@ object.values@^1.1.6, object.values@^1.2.1:
     define-properties "^1.2.1"
     es-object-atoms "^1.0.0"
 
-oidc-client-ts@3.4.0:
-  version "3.4.0"
-  resolved "https://registry.yarnpkg.com/oidc-client-ts/-/oidc-client-ts-3.4.0.tgz#f669470eb046c07567eb6417e2aa429f67a04c6d"
-  integrity sha512-Fe4EKXYxT1SkKfvEv4qOkVlPWYBjrV+4XXKLSvX9U4s5EHchawF1x2sguO+6u0tOa/Xw6lOvD/ClzCAxJUI25g==
+oidc-client-ts@3.4.1:
+  version "3.4.1"
+  resolved "https://registry.yarnpkg.com/oidc-client-ts/-/oidc-client-ts-3.4.1.tgz#7cad95ba7213cb93b7c141965ce03ad658baa30f"
+  integrity sha512-jNdst/U28Iasukx/L5MP6b274Vr7ftQs6qAhPBCvz6Wt5rPCA+Q/tUmCzfCHHWweWw5szeMy2Gfrm1rITwUKrw==
   dependencies:
     jwt-decode "^4.0.0"
 
