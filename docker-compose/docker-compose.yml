@@ -214,7 +214,7 @@ x-traefik_registry_labels: &traefik_registry_labels
 ### Containers
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v2
     container_name: terrakube-traefik
     # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
     networks:
