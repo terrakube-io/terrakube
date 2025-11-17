@@ -1,34 +1,34 @@
 package io.terrakube.api.plugin.scheduler;
 
-import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
-import io.terrakube.api.repository.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.time.DateUtils;
-import org.springframework.data.redis.core.RedisTemplate;
-import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
+import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.template.Template;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.schedule.Schedule;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.time.DateUtils;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
 import org.quartz.SchedulerException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import io.terrakube.api.rs.template.Template;
-import io.terrakube.api.rs.workspace.Workspace;
-import io.terrakube.api.rs.workspace.schedule.Schedule;
 
 import java.text.ParseException;
 import java.util.*;
@@ -63,6 +63,7 @@ public class ScheduleJob implements org.quartz.Job {
     RedisTemplate redisTemplate;
 
     GitHubWebhookService gitHubWebhookService;
+
 
     @Transactional
     @Override
@@ -137,6 +138,7 @@ public class ScheduleJob implements org.quartz.Job {
                     removeJobContext(job, jobExecutionContext);
                     ephemeralExecutorService.deleteEphemeralJob(job);
                     updateJobStatusOnVcs(job, JobStatus.completed);
+                    deleteOldJobs(job);
                     break;
                 case cancelled:
                 case failed:
@@ -147,12 +149,37 @@ public class ScheduleJob implements org.quartz.Job {
                     updateJobStatusOnVcs(job, JobStatus.failed);
                     removeJobContext(job, jobExecutionContext);
                     ephemeralExecutorService.deleteEphemeralJob(job);
+                    deleteOldJobs(job);
                     break;
                 default:
                     log.info("Job {} Status {}", job.getId(), job.getStatus());
                     break;
             }
             updateWorkspaceStatus(job);
+        }
+    }
+
+    private void deleteOldJobs(Job job) {
+        int keepHistory = System.getenv("KEEP_JOB_HISTORY") != null ? Integer.parseInt(System.getenv("KEEP_JOB_HISTORY")) : 0;
+        if (keepHistory > 0) {
+            log.info("Keeping history of {} jobs", keepHistory);
+            Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
+                    job.getWorkspace(),
+                    Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
+                    job.getId()
+            );
+            if (previousJobs.isPresent()) {
+                for (int i = 0; i < previousJobs.get().size(); i++) {
+                    if (i >= keepHistory) {
+                        Job previousJob = previousJobs.get().get(i);
+                        log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                        stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
+                        jobRepository.delete(previousJob);
+                    }
+                }
+            }
+        } else {
+            log.info("Keeping history for {}", job.getWorkspace().getName());
         }
     }
 
@@ -245,6 +272,7 @@ public class ScheduleJob implements org.quartz.Job {
         } else {
             completeJob(job);
             removeJobContext(job, jobExecutionContext);
+            deleteOldJobs(job);
         }
     }
 

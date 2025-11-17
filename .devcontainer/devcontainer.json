@@ -11,7 +11,7 @@
     "ghcr.io/devcontainers/features/java:1": {
       "installMaven": false,
       "jdkDistro": "Liberica",
-      "version": "17.0.15-librca"
+      "version": "25.0.1-librca"
     },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22",
