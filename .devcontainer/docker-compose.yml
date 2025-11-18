@@ -249,19 +249,19 @@ services:
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
   ldap-service:
-    image: bitnami/openldap:${TK_LDAP_VERSION}
+    image: bitnamilegacy/openldap:${TK_LDAP_VERSION}
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
       - ./config-ldap.ldif:/ldifs/config-ldap.ldif
   minio:
     container_name: terrakube-minio
-    image: docker.io/bitnami/minio:${TK_MINIO_VERSION}
+    image: docker.io/bitnamilegacy/minio:${TK_MINIO_VERSION}
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
   redis-service:
-    image: bitnami/redis:${TK_REDIS_VERSION}
+    image: docker.io/bitnamilegacy/redis:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
     environment:
       - REDIS_REPLICATION_MODE=master
@@ -271,7 +271,7 @@ services:
     volumes:
       - 'redis_data:/bitnami/redis/data'
   postgresql-service:
-    image: docker.io/bitnami/postgresql:${TK_POSTGRESQL_VERSION}
+    image: docker.io/bitnamilegacy/postgresql:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service
     environment:
       - POSTGRESQL_USERNAME=${TK_POSTGRESQL_USERNAME}
