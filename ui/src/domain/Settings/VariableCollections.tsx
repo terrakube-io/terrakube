@@ -107,7 +107,9 @@ export const VariableCollectionsSettings = () => {
         collection.relationships = {
           ...collection.relationships,
           workspaces: {
-            data: workspacesResponse.data.data || [],
+              data: (workspacesResponse.data.data || []).filter(
+                  (item: any) => item.relationships?.workspace?.data?.id != null
+              ),
           },
         };
 
