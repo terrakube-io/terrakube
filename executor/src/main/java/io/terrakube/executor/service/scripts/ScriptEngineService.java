@@ -142,7 +142,7 @@ public class ScriptEngineService {
                     credentialsProvider = new UsernamePasswordCredentialsProvider("x-token-auth",
                             privateRepositoryToken);
                     break;
-                case "AZURE_DEVOPS":
+                case "AZURE_DEVOPS", "AZURE_SP_MI":
                     credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", privateRepositoryToken);
                     break;
                 case "GITHUB":
