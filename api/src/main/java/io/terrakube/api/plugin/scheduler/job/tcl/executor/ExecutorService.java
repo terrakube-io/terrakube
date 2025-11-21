@@ -1,23 +1,11 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
-import java.net.URISyntaxException;
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
-import java.util.*;
-
-import io.terrakube.api.repository.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.collection.item.Item;
@@ -30,11 +18,23 @@ import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
+
+import java.net.URISyntaxException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -265,11 +265,11 @@ public class ExecutorService {
     private HashMap<String, String> loadOtherEnvironmentVariables(Job job, Flow flow,
             HashMap<String, String> workspaceEnvVariables) {
         if (flow.getInputsEnv() != null
-                || (flow.getImportComands() != null && flow.getImportComands().getInputsEnv() != null)) {
-            if (flow.getImportComands() != null && flow.getImportComands().getInputsEnv() != null) {
+                || (flow.getImportCommands() != null && flow.getImportCommands().getInputsEnv() != null)) {
+            if (flow.getImportCommands() != null && flow.getImportCommands().getInputsEnv() != null) {
                 log.info("Loading ENV inputs from ImportComands");
                 workspaceEnvVariables = loadInputData(job, Category.ENV,
-                        new HashMap(flow.getImportComands().getInputsEnv()), workspaceEnvVariables);
+                        new HashMap(flow.getImportCommands().getInputsEnv()), workspaceEnvVariables);
             }
 
             if (flow.getInputsEnv() != null) {
@@ -323,11 +323,11 @@ public class ExecutorService {
     private HashMap<String, String> loadOtherTerraformVariables(Job job, Flow flow,
             HashMap<String, String> workspaceTerraformVariables) {
         if (flow.getInputsTerraform() != null
-                || (flow.getImportComands() != null && flow.getImportComands().getInputsTerraform() != null)) {
-            if (flow.getImportComands() != null && flow.getImportComands().getInputsTerraform() != null) {
+                || (flow.getImportCommands() != null && flow.getImportCommands().getInputsTerraform() != null)) {
+            if (flow.getImportCommands() != null && flow.getImportCommands().getInputsTerraform() != null) {
                 log.info("Loading TERRAFORM inputs from ImportComands");
                 workspaceTerraformVariables = loadInputData(job, Category.TERRAFORM,
-                        new HashMap(flow.getImportComands().getInputsTerraform()), workspaceTerraformVariables);
+                        new HashMap(flow.getImportCommands().getInputsTerraform()), workspaceTerraformVariables);
             }
 
             if (flow.getInputsTerraform() != null) {

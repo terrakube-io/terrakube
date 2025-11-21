@@ -25,5 +25,5 @@ public class Flow {
 
     Map<String, String> inputsTerraform;
 
-    ImportComands importComands;
+    ImportCommands importCommands;
 }
