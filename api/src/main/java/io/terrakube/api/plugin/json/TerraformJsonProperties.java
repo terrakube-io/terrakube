@@ -14,4 +14,5 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "io.terrakube.terraform.json")
 public class TerraformJsonProperties {
     private String releasesUrl;
+    private Long cacheExpirationMinutes = 30L;
 }

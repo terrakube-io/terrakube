@@ -44,8 +44,8 @@ public class TerraformJsonController {
 
         if(redisTemplate.hasKey(TERRAFORM_REDIS_KEY)) {
             log.info("Getting terraform releases from redis....");
-            String tofuRedis = (String) redisTemplate.opsForValue().get(TERRAFORM_REDIS_KEY);
-            return new ResponseEntity<>(tofuRedis, HttpStatus.OK);
+            String terraformRedis = (String) redisTemplate.opsForValue().get(TERRAFORM_REDIS_KEY);
+            return new ResponseEntity<>(terraformRedis, HttpStatus.OK);
         } else {
 
             try {
@@ -60,9 +60,9 @@ public class TerraformJsonController {
                 Files.deleteIfExists(terraformReleasesFile.toPath());
                 log.info("Deleting temporary files completed");
 
-                log.warn("Saving tofu releases to redis...");
+                log.warn("Saving terraform releases to redis...");
                 redisTemplate.opsForValue().set(TERRAFORM_REDIS_KEY, terraformIndex);
-                redisTemplate.expire(TERRAFORM_REDIS_KEY, 30, TimeUnit.MINUTES);
+                redisTemplate.expire(TERRAFORM_REDIS_KEY, terraformJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
 
                 return new ResponseEntity<>(terraformIndex, HttpStatus.OK);
             } catch (Exception e) {

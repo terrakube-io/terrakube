@@ -295,7 +295,7 @@ services:
     volumes:
       - 'minio_data:/data'
   redis-service:
-    image: bitnami/redis:${TK_REDIS_VERSION}
+    image: bitnamilegacy/redis:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
     environment:
       - REDIS_REPLICATION_MODE=master

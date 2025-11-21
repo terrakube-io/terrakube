@@ -22,6 +22,10 @@ public class DownloadReleasesService {
     private WebClient.Builder webClientBuilder;
 
     public void downloadReleasesToFile(String releasesUrl, File releasesFile) {
+        downloadReleasesToFile(releasesUrl, releasesFile, null);
+    }
+
+    public void downloadReleasesToFile(String releasesUrl, File releasesFile, String githubToken) {
         WebClient webClient = webClientBuilder
                 .clientConnector(new ReactorClientHttpConnector(
                         HttpClient.create()
@@ -31,6 +35,13 @@ public class DownloadReleasesService {
                 .defaultHeaders(h -> {
                     h.add("User-Agent", "releases-downloader");
                     h.setAccept(List.of(MediaType.APPLICATION_JSON));
+
+                    if (githubToken != null && !githubToken.isEmpty()) {
+                        h.setBearerAuth(githubToken);
+                        log.debug("Using authenticated GitHub API request");
+                    } else {
+                        log.warn("No GitHub token provided - using unauthenticated request (subject to rate limits)");
+                    }
                 })
                 .build();
 
@@ -39,10 +50,14 @@ public class DownloadReleasesService {
                 .retrieve()
                 .onStatus(
                         status -> !status.is2xxSuccessful(),
-                        clientResponse -> clientResponse.createException().flatMap(Mono::error)
+                        clientResponse -> {
+                            log.error("Failed to download releases from {}: HTTP {}",
+                                releasesUrl, clientResponse.statusCode());
+                            return clientResponse.createException().flatMap(Mono::error);
+                        }
                 )
                 .bodyToFlux(DataBuffer.class)
-                .as(dataBufferFlux -> DataBufferUtils.write(dataBufferFlux, releasesFile.toPath() ))
+                .as(dataBufferFlux -> DataBufferUtils.write(dataBufferFlux, releasesFile.toPath()))
                 .then()
                 .block();
     }
