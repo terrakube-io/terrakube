@@ -9,10 +9,11 @@ import java.util.Map;
 @ToString
 @Getter
 @Setter
-public class ImportComands {
+public class ImportCommands {
     String repository;
     String folder;
     String branch;
+    String vcsId;
     Map<String, String> inputsEnv;
     Map<String, String> inputsTerraform;
 }

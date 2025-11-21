@@ -1,6 +1,15 @@
 package io.terrakube.api.plugin.scheduler.job.tcl;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.model.*;
+import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.StepRepository;
+import io.terrakube.api.repository.TemplateRepository;
+import io.terrakube.api.repository.VcsRepository;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -8,13 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.stereotype.Service;
-import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.repository.TemplateRepository;
-import io.terrakube.api.rs.job.Job;
-import io.terrakube.api.rs.job.JobStatus;
-import io.terrakube.api.rs.job.step.Step;
 import org.springframework.transaction.annotation.Transactional;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -37,6 +42,7 @@ public class TclService {
     JobRepository jobRepository;
     StepRepository stepRepository;
     TemplateRepository templateRepository;
+    VcsRepository vcsRepository;
 
     @Transactional
     public Job initJobConfiguration(Job job) {
@@ -123,10 +129,10 @@ public class TclService {
             if (nextFlow.isPresent()) {
                 Flow finalFlow = nextFlow.get();
                 log.info("Checking import commands in YAML");
-                ImportComands importComands = finalFlow.getImportComands();
-                if (importComands != null) {
-                    log.info("Import commands from {} branch {} folder {}", importComands.getRepository(), importComands.getBranch(), importComands.getFolder().split(",")[0]);
-                    finalFlow.setCommands(importCommands(importComands.getRepository(), importComands.getBranch(), importComands.getFolder().split(",")[0]));
+                ImportCommands importCommands = finalFlow.getImportCommands();
+                if (importCommands != null) {
+                    log.info("Import commands from {} branch {} folder {} VcsId {}", importCommands.getRepository(), importCommands.getBranch(), importCommands.getFolder().split(",")[0], importCommands.getVcsId());
+                    finalFlow.setCommands(importCommands(importCommands.getRepository(), importCommands.getBranch(), importCommands.getFolder().split(",")[0], importCommands.getVcsId()));
                 }
 
                 return finalFlow;
@@ -138,12 +144,12 @@ public class TclService {
             return null;
     }
 
-    private List<Command> importCommands(String repository, String branch, String folder) {
+    private List<Command> importCommands(String repository, String branch, String folder, String vcsId) {
         List<Command> commands = new ArrayList<>();
         try {
             File importFolder = generateImportFolder();
             log.info("Get commands text");
-            String commandsText = getCommandList(repository, branch, folder, generateImportFolder());
+            String commandsText = getCommandList(repository, branch, folder, generateImportFolder(), vcsId);
 
             log.info("Parsing yaml file");
             Yaml yaml = new Yaml(new Constructor(CommandConfig.class, new LoaderOptions()));
@@ -161,15 +167,26 @@ public class TclService {
         return commands;
     }
 
-    private String getCommandList(String repository, String branch, String folder, File folderImport) {
+    private String getCommandList(String repository, String branch, String folder, File folderImport, String vcsId) {
         String commandList = "";
         try {
+
             log.info("Cloning template import repository");
-            Git.cloneRepository()
-                    .setURI(repository)
-                    .setDirectory(folderImport)
-                    .setBranch(branch)
-                    .call();
+            if(vcsId !=null && !vcsId.isEmpty()) {
+                Git.cloneRepository()
+                        .setURI(repository)
+                        .setDirectory(folderImport)
+                        .setBranch(branch)
+                        .setCredentialsProvider(setupImportCredentials(vcsId))
+                        .call();
+            } else {
+                log.info("Importing from public repository");
+                Git.cloneRepository()
+                        .setURI(repository)
+                        .setDirectory(folderImport)
+                        .setBranch(branch)
+                        .call();
+            }
             File importData = null;
             if (folder.equals("/")) {
                 importData = new File(String.format("%s/commands.yaml", folderImport.getCanonicalPath()));
@@ -183,6 +200,35 @@ public class TclService {
             log.error(e.getMessage());
         }
         return commandList;
+    }
+
+    private CredentialsProvider setupImportCredentials(String vcsId) {
+        CredentialsProvider importCredentialProvider = null;
+        Vcs vcs = vcsRepository.findById(UUID.fromString(vcsId)).orElse(null);
+        assert vcs != null;
+        log.info("Import using VCS id: {}", vcs.getId());
+        switch (vcs.getVcsType().toString()) {
+            case "GITHUB":
+                if (vcs.getConnectionType().equals(VcsConnectionType.OAUTH)) {
+                    importCredentialProvider = new UsernamePasswordCredentialsProvider(vcs.getAccessToken(), "");
+                } else {
+                    importCredentialProvider = new UsernamePasswordCredentialsProvider("x-access-token", vcs.getAccessToken());
+                }
+                break;
+            case "AZURE_DEVOPS", "AZURE_SP_MI":
+                importCredentialProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
+                break;
+            case "GITLAB":
+                importCredentialProvider = new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
+                break;
+            case "BITBUCKET":
+                importCredentialProvider = new UsernamePasswordCredentialsProvider("x-token-auth", vcs.getAccessToken());
+                break;
+            default:
+                importCredentialProvider = null;
+                break;
+        }
+        return importCredentialProvider;
     }
 
     private File generateImportFolder() {
