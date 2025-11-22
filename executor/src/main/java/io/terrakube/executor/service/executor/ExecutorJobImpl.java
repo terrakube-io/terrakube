@@ -41,8 +41,8 @@ public class ExecutorJobImpl implements ExecutorJob {
             try {
                 terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
             } catch (WorkspaceException e) {
-                // TODO Report failed preparation to terrakube-api
-                log.error("Failed to prepare workspace: ", e);
+                log.error("Failed to prepare work dir: ", e);
+                updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Failed to prepare work dir\n", e.getMessage(), null, "");
                 return;
             }
             executeJob(terraformJob, terraformWorkingDir);
