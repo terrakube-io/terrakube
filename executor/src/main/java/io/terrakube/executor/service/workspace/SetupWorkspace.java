@@ -6,5 +6,5 @@ import java.io.File;
 
 public interface SetupWorkspace {
 
-    File prepareWorkspace(TerraformJob terraformJob);
+    File prepareWorkspace(TerraformJob terraformJob) throws WorkspaceException;
 }
