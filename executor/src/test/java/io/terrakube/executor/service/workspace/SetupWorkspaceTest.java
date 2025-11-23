@@ -29,8 +29,8 @@ public class SetupWorkspaceTest {
         job.setOrganizationId("ze-org");
         job.setWorkspaceId("ze-ws");
         // TODO Restore actual values
-        job.setSource("https://github.com/bittrance/terrakube");
-        job.setBranch("executor-vcs-errors");
+        job.setSource("https://github.com/terrakube-io/terrakube");
+        job.setBranch("main");
         job.setFolder("executor/src/test/resources/terraform/hello-world");
         job.setVcsType("GITHUB");
         job.setConnectionType("OAUTH");
