@@ -7,6 +7,8 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.rs.job.Job;
 
@@ -36,7 +38,7 @@ public class EphemeralExecutorService {
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
 
-    public ExecutorContext sendToEphemeralExecutor(Job job, ExecutorContext executorContext) {
+    public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         final String jobName = "job-" + job.getId();
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         SecretEnvSource secretEnvSource = new SecretEnvSource();
@@ -276,14 +278,11 @@ public class EphemeralExecutorService {
                 .endSpec()
                 .build();
 
-        log.info("Running ephemeral job");
         try {
             kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
-            return executorContext;
-        } catch (Exception ex) {
-            log.error(ex.getMessage());
+        } catch (Exception e) {
+            throw new ExecutionException(e);
         }
-        return null;
     }
 
     private Map<String, String> parseKeyValueString(String input) {
