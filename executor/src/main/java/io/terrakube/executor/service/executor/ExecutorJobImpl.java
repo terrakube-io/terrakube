@@ -9,6 +9,7 @@ import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
+import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
@@ -35,9 +36,32 @@ public class ExecutorJobImpl implements ExecutorJob {
     @Override
     public void createJob(TerraformJob terraformJob) {
         log.info("Create Job for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-        boolean executionSuccess = true;
-        File terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
+        File terraformWorkingDir = null;
+        try {
+            try {
+                terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
+            } catch (WorkspaceException e) {
+                log.error("Failed to prepare work dir: ", e);
+                updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Failed to prepare work dir\n", e.getMessage(), null, "");
+                return;
+            }
+            executeJob(terraformJob, terraformWorkingDir);
+        } finally {
+            try {
+                if (terraformWorkingDir != null) {
+                    FileUtils.cleanDirectory(terraformWorkingDir);
+                }
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
 
+            if (executorFlagsProperties.isEphemeral()) {
+                shutdownService.shutdownApplication();
+            }
+        }
+    }
+
+    private void executeJob(TerraformJob terraformJob, File terraformWorkingDir) {
         String commitId = "000000000";
         ExecutorJobResult terraformResult = new ExecutorJobResult();
 
@@ -66,7 +90,7 @@ public class ExecutorJobImpl implements ExecutorJob {
                 TextStringBuilder scriptOutput = new TextStringBuilder();
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
                 Consumer<String> output = outputScripts -> scriptOutput.appendln(outputScripts);
-                executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
+                boolean executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
                 terraformResult.setOutputLog(scriptOutput.toString());
                 terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
                 terraformResult.setSuccessfulExecution(executionSuccess);
@@ -79,18 +103,8 @@ public class ExecutorJobImpl implements ExecutorJob {
                 break;
         }
 
-
-        try {
-            FileUtils.cleanDirectory(terraformWorkingDir);
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-
-        executionSuccess = terraformResult.isSuccessfulExecution();
+        boolean executionSuccess = terraformResult.isSuccessfulExecution();
         updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId);
-
-        if (executorFlagsProperties.isEphemeral())
-            shutdownService.shutdownApplication();
     }
 
     private static String getCommitId(File workspaceFolder) {
