@@ -38,7 +38,6 @@ public class EphemeralExecutorService {
 
     public ExecutorContext sendToEphemeralExecutor(Job job, ExecutorContext executorContext) {
         final String jobName = "job-" + job.getId();
-        deleteEphemeralJob(job);
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         SecretEnvSource secretEnvSource = new SecretEnvSource();
         secretEnvSource.setName(ephemeralConfiguration.getSecret());
@@ -248,7 +247,6 @@ public class EphemeralExecutorService {
                 .withApiVersion("batch/v1")
                 .withNewMetadata()
                 .withName(jobName)
-                .withNamespace(ephemeralConfiguration.getNamespace())
                 .withLabels(Collections.singletonMap("jobId", executorContext.getJobId()))
                 .withLabels(Collections.singletonMap("organizationId", executorContext.getOrganizationId()))
                 .withLabels(Collections.singletonMap("workspaceId", executorContext.getWorkspaceId()))
@@ -274,40 +272,18 @@ public class EphemeralExecutorService {
                 .withRestartPolicy("Never")
                 .endSpec()
                 .endTemplate()
+                .withTtlSecondsAfterFinished(30)
                 .endSpec()
                 .build();
 
         log.info("Running ephemeral job");
         try {
-            kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).createOrReplace(k8sJob);
+            kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
             return executorContext;
         } catch (Exception ex) {
             log.error(ex.getMessage());
         }
         return null;
-    }
-
-    public void deleteEphemeralJob(Job job){
-        try {
-            io.fabric8.kubernetes.api.model.batch.v1.Job jobK8s = kubernetesClient
-                    .batch()
-                    .jobs()
-                    .inNamespace(ephemeralConfiguration.getNamespace())
-                    .withName("job-" + job.getId())
-                    .get();
-
-            if (jobK8s != null) {
-                kubernetesClient
-                        .batch()
-                        .jobs()
-                        .inNamespace(ephemeralConfiguration.getNamespace())
-                        .withName("job-" + job.getId())
-                        .delete();
-            }
-
-        } catch (Exception ex) {
-            log.error(ex.getMessage());
-        }
     }
 
     private Map<String, String> parseKeyValueString(String input) {
