@@ -136,7 +136,6 @@ public class ScheduleJob implements org.quartz.Job {
                 case completed:
                     redisTemplate.delete(String.valueOf(job.getId()));
                     removeJobContext(job, jobExecutionContext);
-                    ephemeralExecutorService.deleteEphemeralJob(job);
                     updateJobStatusOnVcs(job, JobStatus.completed);
                     deleteOldJobs(job);
                     break;
@@ -148,7 +147,6 @@ public class ScheduleJob implements org.quartz.Job {
                     updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                     updateJobStatusOnVcs(job, JobStatus.failed);
                     removeJobContext(job, jobExecutionContext);
-                    ephemeralExecutorService.deleteEphemeralJob(job);
                     deleteOldJobs(job);
                     break;
                 default:
@@ -314,7 +312,6 @@ public class ScheduleJob implements org.quartz.Job {
     private void completeJob(Job job) {
         job.setStatus(JobStatus.completed);
         jobRepository.save(job);
-        ephemeralExecutorService.deleteEphemeralJob(job);
         updateJobStatusOnVcs(job, JobStatus.completed);
         updateWorkspaceStatus(job);
         log.info("Update Job {} to completed", job.getId());
