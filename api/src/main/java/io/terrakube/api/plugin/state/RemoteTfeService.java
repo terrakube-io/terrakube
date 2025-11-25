@@ -905,6 +905,11 @@ public class RemoteTfeService {
             job.setOverrideSource(sourceTarGz);
         }
 
+        if (workspace.getVcs() == null && workspace.getBranch().equals("remote-content")) {
+            log.warn("Overriding source to run job using a remote configuration id: {}", configurationId);
+            job.setOverrideSource(sourceTarGz);
+        }
+
         job = jobRepository.save(job);
         log.info("Job Created");
 
