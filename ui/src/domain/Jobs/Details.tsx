@@ -31,6 +31,10 @@ export const DetailsJob = ({ jobId }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [loading, setLoading] = useState(false);
   const [job, setJob] = useState<AxiosResponse<Job>>();
+  const [workspaceSource, setWorkspaceSource] = useState<String>();
+  const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<String>();
+  const [workspaceVcsId, setWorkspaceVcsId] = useState<String>();
+  const [workspaceVcsName, setWorkspaceVcsName] = useState<String>();
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [uiType, setUIType] = useState("structured");
   const [uiTemplates, setUITemplates] = useState<Record<number, string>>({});
@@ -167,21 +171,34 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const loadJob = () => {
     const jobSteps: JobStep[] = [];
-    axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step`).then((response) => {
+    axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`).then((response) => {
       (async () => {
         setJob(response.data);
-
         if (response.data.included != null) {
           for (const element of response.data.included) {
-            const log = await outputLog(element.attributes.output, element.attributes.status);
-            jobSteps.push({
-              id: element.id,
-              stepNumber: element.attributes.stepNumber,
-              status: element.attributes.status,
-              output: element.attributes.output,
-              name: element.attributes.name,
-              outputLog: log,
-            });
+              if (element.type === "step") {
+                  const log = await outputLog(element.attributes.output, element.attributes.status);
+                  jobSteps.push({
+                      id: element.id,
+                      stepNumber: element.attributes.stepNumber,
+                      status: element.attributes.status,
+                      output: element.attributes.output,
+                      name: element.attributes.name,
+                      outputLog: log,
+                  });
+              } else if (element.type === "workspace") {
+                  setWorkspaceSource(element.attributes.source);
+                  setWorkspaceDefaultBranch(element.attributes.branch);
+
+                axiosInstance.get(`organization/${organizationId}/workspace/${element.id}`).then((vcsResponse) => {
+                    setWorkspaceVcsId(vcsResponse.data.data.relationships.vcs.data?.id);
+                    if (vcsResponse.data.data.relationships.vcs.data?.id) {
+                        axiosInstance.get(`organization/${organizationId}/vcs/${vcsResponse.data.data.relationships.vcs.data.id}`).then((vcsDataResponse) => {
+                            setWorkspaceVcsName(vcsDataResponse.data.data.attributes.name);
+                        });
+                    }
+                })
+              }
           }
         }
         setSteps(jobSteps.sort(sortbyName));
@@ -253,9 +270,54 @@ export const DetailsJob = ({ jobId }: Props) => {
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
                     {DateTime.fromISO(job.data.attributes.createdDate).toRelative()}
+
                   </span>
                 ),
-                children: <p></p>,
+                children: <p>
+
+                    <table>
+                        <tbody>
+                        <tr>
+                            <td>JobId:</td>
+                            <td>{ job.data.id }</td>
+                        </tr>
+                        {workspaceDefaultBranch !== "remote-content" ? (
+                            <>
+                                <tr>
+                                    <td>Workspace source:</td>
+                                    <td>{workspaceSource}</td>
+                                </tr>
+                                <tr>
+                                    <td>Workspace default branch:</td>
+                                    <td>{workspaceDefaultBranch}</td>
+                                </tr>
+                                <tr>
+                                    <td>Job branch:</td>
+                                    <td>{ job.data.attributes.overrideBranch }</td>
+                                </tr>
+                                <tr>
+                                    <td>Commit:</td>
+                                    <td>{ job.data.attributes.commitId }</td>
+                                </tr>
+                                <tr>
+                                    <td>VcsId:</td>
+                                    <td>{ workspaceVcsId }</td>
+                                </tr>
+                                <tr>
+                                    <td>VcsName:</td>
+                                    <td>{ workspaceVcsName }</td>
+                                </tr>
+                            </>
+                        ):(
+                            <>
+                                <tr>
+                                    <td>Using CLI driven workflow</td>
+                                </tr>
+                            </>
+                        )}
+                        </tbody>
+                    </table>
+                </p>,
               },
             ]}
           />
