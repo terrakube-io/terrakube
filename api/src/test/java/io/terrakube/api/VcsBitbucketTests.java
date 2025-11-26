@@ -15,11 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.mockito.Mockito.when;
 
 public class VcsBitbucketTests extends ServerApplicationTests{
@@ -300,6 +296,8 @@ public class VcsBitbucketTests extends ServerApplicationTests{
                 "   }\n" +
                 "}";
 
+        payload = payload.replace("9999", String.valueOf(wireMockServer.port()));
+
         String diffResponse = "diff --git a/main.tf b/main.tf\n" +
                 "index f7884af..66c627b 100644\n" +
                 "--- a/main.tf\n" +
@@ -315,6 +313,7 @@ public class VcsBitbucketTests extends ServerApplicationTests{
                 " }\n";
 
         stubFor(get(urlPathEqualTo("/2.0/repositories/dummyuser/simple-terraform/diff/dummyuser/simple-terraform:383254320963%0Df7647c752c7e"))
+                .withPort(wireMockServer.port())
                 .withQueryParam("from_pullrequest_id", equalTo("1"))
                 .withQueryParam("topic", equalTo("true"))
                 .willReturn(aResponse()
@@ -975,6 +974,8 @@ public class VcsBitbucketTests extends ServerApplicationTests{
                 "   }\n" +
                 "}";
 
+        payload = payload.replace("9999", String.valueOf(wireMockServer.port()));
+
         String diffResponse = "diff --git a/main.tf b/main.tf\n" +
                 "index f7884af..66c627b 100644\n" +
                 "--- a/main.tf\n" +
@@ -990,6 +991,7 @@ public class VcsBitbucketTests extends ServerApplicationTests{
                 " }\n";
 
         stubFor(get(urlPathEqualTo("/2.0/repositories/dummyuser/simple-terraform/diff/c7eae9b0c5450123c943a4baf7c357fc2564c316..71085ceb4314ac77d1a36ab687b3e067814c9395"))
+                .withPort(wireMockServer.port())
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.OK.value())
                         .withBody(diffResponse)));

@@ -5,7 +5,6 @@ import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
-import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,13 +15,12 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.mockito.Mockito.when;
 
 public class VcsGitlabTests extends ServerApplicationTests {
@@ -45,6 +43,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                 "]";
 
         stubFor(get(urlPathEqualTo("/projects"))
+                .withPort(wireMockServer.port())
                 .withQueryParam("membership", equalTo("true"))
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.OK.value())
@@ -52,7 +51,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
         GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder());
 
-        Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:9999")), "Gitlab project id not found");
+        Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:"+ wireMockServer.port())), "Gitlab project id not found");
 
         String projectSearch="[\n" +
                 "    {\n" +
@@ -66,20 +65,22 @@ public class VcsGitlabTests extends ServerApplicationTests {
                 "    }\n" +
                 "]";
         stubFor(get(urlPathEqualTo("/projects"))
+                .withPort(wireMockServer.port())
                 .withQueryParam("membership", equalTo("true"))
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.OK.value())
                         .withBody(projectSearch)));
 
-        Assert.isTrue(("7107040".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/test/simple-terraform", "12345", "http://localhost:9999"))), "Gitlab project id not found");
+        Assert.isTrue(("7107040".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/test/simple-terraform", "12345", "http://localhost:" + wireMockServer.port()))), "Gitlab project id not found");
 
         stubFor(get(urlPathEqualTo("/projects"))
+                .withPort(wireMockServer.port())
                 .withQueryParam("membership", equalTo("true"))
                 .willReturn(aResponse()
                         .withStatus(HttpStatus.OK.value())
                         .withBody(projectSearch)));
 
-        Assert.isTrue("7138024".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/simple-terraform", "12345", "http://localhost:9999")), "Gitlab project id not found");
+        Assert.isTrue("7138024".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "Gitlab project id not found");
 
     }
 
@@ -293,7 +294,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
         vcs.setDescription("1234");
         vcs.setVcsType(VcsType.GITLAB);
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
-        vcs.setApiUrl("http://localhost:9999/api/v4");
+        vcs.setApiUrl("http://localhost:" + wireMockServer.port() + "/api/v4");
         vcs = vcsRepository.save(vcs);
 
         Workspace workspace = new Workspace();

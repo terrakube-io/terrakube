@@ -1,11 +1,15 @@
 package io.terrakube.api;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.security.encryption.EncryptionService;
+import io.terrakube.api.plugin.token.pat.PatService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
@@ -14,25 +18,22 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInstance;
 import org.mockito.Mock;
 import org.quartz.Scheduler;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.context.ActiveProfiles;
-import io.terrakube.api.plugin.security.encryption.EncryptionService;
-import io.terrakube.api.plugin.token.pat.PatService;
-import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
-import com.github.tomakehurst.wiremock.WireMockServer;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.UUID;
+
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -45,7 +46,7 @@ class ServerApplicationTests {
     @Mock
     protected ValueOperations<String, Object> valueOperations;
 
-    protected WireMockServer wireMockServer;
+    public WireMockServer wireMockServer;
 
     @LocalServerPort
     int port;
@@ -107,9 +108,10 @@ class ServerApplicationTests {
     @BeforeAll
     public void setUp() {
         RestAssured.port = port;
-        wireMockServer = new WireMockServer(WireMockConfiguration.options().port(9999).bindAddress("localhost"));
+        wireMockServer = new WireMockServer(options().dynamicPort());
         wireMockServer.start();
-        WireMock.configureFor("localhost", 9999);
+        // Ensure WireMock static client points to the dynamically started server
+        WireMock.configureFor("localhost", wireMockServer.port());
     }
 
 
