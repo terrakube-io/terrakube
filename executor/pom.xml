@@ -14,7 +14,7 @@
 	<name>Terrakube Executor</name>
 	<description>Terrakube Spring Boot Executor</description>
 	<properties>
-		<java.version>17</java.version>
+		<java.version>25</java.version>
 		<commons-text.version>1.14.0</commons-text.version>
 		<terraform-spring-boot-starter.version>1.2.2</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
@@ -222,7 +222,7 @@
                     	</bindings>
                     <env>
                         <BP_OPENTELEMETRY_ENABLED>true</BP_OPENTELEMETRY_ENABLED>
-						<BP_JVM_VERSION>17</BP_JVM_VERSION>
+						<BP_JVM_VERSION>25</BP_JVM_VERSION>
                     </env>
                 	</image>
 				</configuration>
@@ -234,6 +234,26 @@
                     </execution>
                 </executions>
 			</plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
 		</plugins>
 	</build>
 
