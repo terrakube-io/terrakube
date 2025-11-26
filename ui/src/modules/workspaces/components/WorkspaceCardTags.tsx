@@ -13,7 +13,7 @@ export default function WorkspaceCardTags({ item, tags }: Props) {
   return item.tags.map((tag) => {
     const c = getDeterministicColors(tag);
     return (
-        <Tag style={{ backgroundColor: c.background, color: c.color, borderColor: "transparent",}} key={tag}>{tags.find((tg) => tg.id === tag)?.name}</Tag>
+        <Tag style={{ backgroundColor: c.background, color: c.color, borderColor: "transparent"}} key={tag}>{tags.find((tg) => tg.id === tag)?.name}</Tag>
     );
   });
 }
