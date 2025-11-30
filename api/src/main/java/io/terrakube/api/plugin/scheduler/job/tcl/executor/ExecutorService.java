@@ -75,7 +75,7 @@ public class ExecutorService {
     private WebClient.Builder webClientBuilder;
 
     @Transactional
-    public ExecutorContext execute(Job job, String stepId, Flow flow) {
+    public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
 
         ExecutorContext executorContext = new ExecutorContext();
@@ -170,11 +170,12 @@ public class ExecutorService {
                 .setFolder(job.getWorkspace().getFolder() != null ? job.getWorkspace().getFolder().split(",")[0] : "/");
         executorContext.setRefresh(job.isRefresh());
         executorContext.setRefreshOnly(job.isRefreshOnly());
-        executorContext.setAgentUrl(getExecutorUrl(job));
         executorContext = validateJobAddress(executorContext, job);
-        return executorContext.getEnvironmentVariables().containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")
-                ? ephemeralExecutorService.sendToEphemeralExecutor(job, executorContext)
-                : sendToExecutor(job, executorContext);
+        if (executorContext.getEnvironmentVariables().containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
+            ephemeralExecutorService.sendToEphemeralExecutor(job, executorContext);
+        } else {
+            sendToExecutor(job, executorContext);
+        }
     }
 
     private ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
