@@ -30,6 +30,9 @@ function generateApiVars(){
 
   StorageType="AWS"
   DexClientId="example-app"
+  
+  TerrakubeToolsRepository=https://github.com/AzBuilder/terrakube-extensions.git
+  TerrakubeToolsBranch=main
 
   JAVA_TOOL_OPTIONS="-Xmx512m -Xms256m"
 
@@ -53,6 +56,8 @@ function generateApiVars(){
   echo "TerrakubeUiURL=$TerrakubeUiURL" >> .envApi
   echo "spring_profiles_active=demo" >> .envApi
   echo "DexClientId=$DexClientId" >> .envApi
+  echo "TerrakubeToolsRepository=$TerrakubeToolsRepository" >> .envApi
+  echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >> .envApi
   echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >> .envApi
   echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >> .envApi
   echo "TerrakubeRedisHostname=localhost" >> .envApi

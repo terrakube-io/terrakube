@@ -39,6 +39,8 @@ x-api: &api_env
   TerrakubeUiURL: https://terrakube.${DOMAIN}
   spring_profiles_active: demo
   DexClientId: terrakube-app
+  TerrakubeToolsRepository: https://github.com/terrakube-io/terrakube-extensions.git
+  TerrakubeToolsBranch: main
   CustomTerraformReleasesUrl: "https://releases.hashicorp.com/terraform/index.json"
   TerrakubeRedisHostname: ${TK_REDIS_CONTAINER_NAME}
   TerrakubeRedisPort: 6379

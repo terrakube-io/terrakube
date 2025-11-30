@@ -16,6 +16,7 @@ import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,9 @@ public class ExecutorService {
 
     @Value("${io.terrakube.hostname}")
     String hostname;
+
+    @Value("${io.terrakube.tools.repository}")
+    String toolsRepository;
 
     @Autowired
     JobRepository jobRepository;
@@ -309,9 +313,28 @@ public class ExecutorService {
                     .findById(UUID.fromString(workspaceEnvVariables.get("PRIVATE_EXTENSION_VCS_ID_AUTH")));
             if (vcs.isPresent()) {
                 workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TYPE", vcs.get().getVcsType().toString());
-                workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", vcs.get().getAccessToken());
                 workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN_TYPE",
                         vcs.get().getConnectionType().toString());
+
+                if (vcs.get().getConnectionType() == VcsConnectionType.OAUTH) {
+                    workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", vcs.get().getAccessToken());
+                } else {
+                    if (toolsRepository == null || toolsRepository.isEmpty()) {
+                        log.error(
+                                "Missing tools repository configuration while configuring private extensions for job {} on workspace {}",
+                                job.getId(), job.getWorkspace().getName());
+                    } else {
+                        try {
+                            String accessToken = tokenService.getAccessToken(toolsRepository, vcs.get());
+                            workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", accessToken);
+                        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
+                                | URISyntaxException e) {
+                            log.error(
+                                    "Failed to fetch access token for private extension repository for job {} on workspace {}, error {}",
+                                    job.getId(), job.getWorkspace().getName(), e);
+                        }
+                    }
+                }
             } else {
                 log.error("VCS for private extension repository not found");
             }
