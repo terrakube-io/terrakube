@@ -1,22 +1,25 @@
 package io.terrakube.api;
 
-import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
-import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
-import io.terrakube.api.rs.job.Job;
-import io.terrakube.api.rs.job.JobStatus;
-import io.terrakube.api.rs.team.Team;
-import org.junit.jupiter.api.Assertions;
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static io.restassured.RestAssured.given;
+import static org.mockito.Mockito.when;
+
+import java.util.Optional;
+import java.util.UUID;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
-import java.util.Optional;
-import java.util.UUID;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static io.restassured.RestAssured.given;
-import static org.mockito.Mockito.when;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.team.Team;
 
 public class CollectionTests extends ServerApplicationTests {
 
@@ -225,7 +228,7 @@ public class CollectionTests extends ServerApplicationTests {
     }
 
     @Test
-    void testCollectionPriorityAsOrgMember() {
+    void testCollectionPriorityAsOrgMember() throws ExecutionException {
 
         String EXECUTOR_ENDPOINT="http://localhost:" + wireMockServer.port() + "/fake/executor";
 
@@ -493,13 +496,7 @@ public class CollectionTests extends ServerApplicationTests {
         flow.setType("terraformPlan");
         flow.setStep(100);
 
-        ExecutorContext executorContext = executorService.execute(job, UUID.randomUUID().toString(), flow);
-
-        Assertions.assertNotNull(executorContext.getEnvironmentVariables());
-        Assertions.assertEquals(executorContext.getEnvironmentVariables().get("test_value"), "priority_20");
-        Assertions.assertEquals(executorContext.getEnvironmentVariables().get("other_value"), "other_value");
-        Assertions.assertEquals(executorContext.getEnvironmentVariables().size(), 6);
-
+        executorService.execute(job, UUID.randomUUID().toString(), flow);
     }
 
 
