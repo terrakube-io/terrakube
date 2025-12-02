@@ -10,12 +10,15 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
+import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.parameters.Category;
+import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -32,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
@@ -62,6 +66,8 @@ public class ScheduleJob implements org.quartz.Job {
     RedisTemplate redisTemplate;
 
     GitHubWebhookService gitHubWebhookService;
+    GlobalVarRepository globalVarRepository;
+    VariableRepository variableRepository;
 
 
     @Transactional
@@ -168,8 +174,24 @@ public class ScheduleJob implements org.quartz.Job {
 
     // TODO Untestable code; var could come in through the normal workspace var hierarchy
     private void deleteOldJobs(Job job) {
-        int keepHistory = System.getenv("KEEP_JOB_HISTORY") != null ? Integer.parseInt(System.getenv("KEEP_JOB_HISTORY")) : 0;
-        if (keepHistory > 0) {
+        AtomicInteger keepHistory = new AtomicInteger();
+        keepHistory.set(0);
+
+        Optional<List<Globalvar>> globalsList = Optional.ofNullable(globalVarRepository.findByOrganization(job.getOrganization()));
+        globalsList.ifPresent(variableList -> variableList.forEach(variable -> {
+            if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
+                keepHistory.set(Integer.parseInt(variable.getValue()));
+            }
+        }));
+
+        Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
+        variables.ifPresent(variableList -> variableList.forEach(variable -> {
+            if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
+                keepHistory.set(Integer.parseInt(variable.getValue()));
+            }
+        }));
+
+        if (keepHistory.get() > 0) {
             log.info("Keeping history of {} jobs", keepHistory);
             Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
                     job.getWorkspace(),
@@ -178,7 +200,7 @@ public class ScheduleJob implements org.quartz.Job {
             );
             if (previousJobs.isPresent()) {
                 for (int i = 0; i < previousJobs.get().size(); i++) {
-                    if (i >= keepHistory) {
+                    if (i >= keepHistory.get()) {
                         Job previousJob = previousJobs.get().get(i);
                         log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
                         stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
