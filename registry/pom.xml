@@ -19,7 +19,7 @@
         <lombok.version>1.18.42</lombok.version>
         <terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
         <jgit.version>7.4.0.202509020913-r</jgit.version>
-        <bouncy.castle>1.82</bouncy.castle>
+        <bouncy.castle>1.83</bouncy.castle>
         <commons-io.version>2.21.0</commons-io.version>
         <rest-assured.version>5.5.6</rest-assured.version>
         <wiremock.version>4.0.8</wiremock.version>
