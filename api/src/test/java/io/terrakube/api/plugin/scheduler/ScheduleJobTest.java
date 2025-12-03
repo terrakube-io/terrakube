@@ -1,32 +1,5 @@
 package io.terrakube.api.plugin.scheduler;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
-import java.util.Collections;
-import java.util.Date;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.apache.commons.lang3.time.DateUtils;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.stubbing.Answer;
-import org.springframework.data.redis.core.RedisTemplate;
-
 import graphql.Assert;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
@@ -38,11 +11,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
-import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.ScheduleRepository;
-import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.repository.TemplateRepository;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -52,6 +21,23 @@ import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
+import org.apache.commons.lang3.time.DateUtils;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.stubbing.Answer;
+import org.springframework.data.redis.core.RedisTemplate;
+
+import java.util.Collections;
+import java.util.Date;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 class FailUnkownMethod<T> implements Answer<T> {
     @Override
@@ -76,6 +62,8 @@ public class ScheduleJobTest {
     TemplateRepository templateRepository;
     EphemeralExecutorService ephemeralExecutorService;
     GitLabWebhookService gitLabWebhookService;
+    GlobalVarRepository globalVarRepository;
+    VariableRepository variableRepository;
 
     UUID stepId = UUID.randomUUID();
 
@@ -93,6 +81,8 @@ public class ScheduleJobTest {
         scheduleRepository = mock(ScheduleRepository.class, new FailUnkownMethod<ScheduleRepository>());
         templateRepository = mock(TemplateRepository.class, new FailUnkownMethod<TemplateRepository>());
         gitLabWebhookService = mock(GitLabWebhookService.class, new FailUnkownMethod<GitLabWebhookService>());
+        globalVarRepository = mock(GlobalVarRepository.class, new FailUnkownMethod<GlobalVarRepository>());
+        variableRepository = mock(VariableRepository.class, new FailUnkownMethod<VariableRepository>());
     }
 
     private ScheduleJob subject() {
@@ -108,7 +98,9 @@ public class ScheduleJobTest {
                 softDeleteService,
                 scheduleJobService,
                 redisTemplate,
-                gitHubWebhookService);
+                gitHubWebhookService,
+                globalVarRepository,
+                variableRepository);
     }
 
     private Job job(JobStatus status) {
@@ -466,6 +458,9 @@ public class ScheduleJobTest {
         Flow flow = new Flow();
         flow.setType(FlowType.terraformPlan.name());
 
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
         doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
@@ -585,6 +580,10 @@ public class ScheduleJobTest {
     public void completedJob() {
         Job job = job(JobStatus.completed);
 
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -593,7 +592,6 @@ public class ScheduleJobTest {
                         anyInt());
         // Called twice :(
         doReturn(null).when(redisTemplate).delete(anyString());
-        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
@@ -605,6 +603,9 @@ public class ScheduleJobTest {
     @Test
     public void failedJob() {
         Job job = job(JobStatus.failed);
+
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
 
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
