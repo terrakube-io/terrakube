@@ -22,12 +22,12 @@
 		<commons-codec>1.20.0</commons-codec>
 		<azure-storage-blob.version>12.32.0</azure-storage-blob.version>
 		<jgit.version>7.4.0.202509020913-r</jgit.version>
-		<bouncy.castle>1.82</bouncy.castle>
+		<bouncy.castle>1.83</bouncy.castle>
 		<lombok.version>1.18.42</lombok.version>
 		<groovy.version>5.0.2</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>5.5.1</jcolor.version>
-		<aws-sdk.version>2.39.2</aws-sdk.version>
+		<aws-sdk.version>2.39.6</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.17</slf4j.version>
 		<gcp-libraries-bom.version>26.72.0</gcp-libraries-bom.version>
