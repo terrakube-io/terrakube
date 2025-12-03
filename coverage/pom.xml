@@ -61,7 +61,7 @@
                 <executions>
                     <execution>
                         <id>report</id>
-                        <phase>verify</phase>
+                        <phase>test</phase>
                         <goals>
                             <goal>report-aggregate</goal>
                         </goals>
