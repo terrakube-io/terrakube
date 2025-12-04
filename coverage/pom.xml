@@ -14,6 +14,7 @@
     <name>Terrakube Code Coverage</name>
     <description>Code Coverage Report</description>
     <properties>
+        <java.version>25</java.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
     </properties>
