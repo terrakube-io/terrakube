@@ -14,7 +14,7 @@
     <name>Terrakube Terraform Registry</name>
     <description>Open Source Terraform Registry for Terrakube</description>
     <properties>
-        <java.version>17</java.version>
+        <java.version>25</java.version>
         <azure.version>6.0.0</azure.version>
         <lombok.version>1.18.42</lombok.version>
         <terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
@@ -62,13 +62,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

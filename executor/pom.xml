@@ -14,7 +14,7 @@
 	<name>Terrakube Executor</name>
 	<description>Terrakube Spring Boot Executor</description>
 	<properties>
-		<java.version>17</java.version>
+		<java.version>25</java.version>
 		<commons-text.version>1.14.0</commons-text.version>
 		<terraform-spring-boot-starter.version>1.2.2</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
@@ -234,13 +234,6 @@
                     </execution>
                 </executions>
 			</plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
