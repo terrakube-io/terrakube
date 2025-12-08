@@ -15,7 +15,7 @@
 	<description>Terrakube Spring Boot Executor</description>
 	<properties>
 		<java.version>25</java.version>
-		<commons-text.version>1.14.0</commons-text.version>
+		<commons-text.version>1.15.0</commons-text.version>
 		<terraform-spring-boot-starter.version>1.2.2</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
 		<commons-io.version>2.21.0</commons-io.version>
