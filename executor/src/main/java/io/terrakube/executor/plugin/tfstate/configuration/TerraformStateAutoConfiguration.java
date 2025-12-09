@@ -76,7 +76,13 @@ public class TerraformStateAutoConfiguration {
                 case AwsTerraformStateImpl:
                     S3Client s3client = null;
 
-                    if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
+                    if (awsTerraformStateProperties.isEnableRoleAuthentication()) {
+                        log.info("Creating AWS SDK with default credentials");
+                        s3client = S3Client.builder()
+                                .region(Region.of(awsTerraformStateProperties.getRegion()))
+                                .credentialsProvider(DefaultCredentialsProvider.create())
+                                .build();
+                    } else if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
                         log.info("Creating AWS with custom endpoint and custom credentials");
 
                         S3Configuration serviceConfiguration = S3Configuration.builder()
@@ -91,19 +97,11 @@ public class TerraformStateAutoConfiguration {
                                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                                 .build();
                     } else {
-                        if (awsTerraformStateProperties.isEnableRoleAuthentication()){
-                            log.info("Creating AWS SDK with default credentials");
-                            s3client = S3Client.builder()
-                                    .credentialsProvider(DefaultCredentialsProvider.create())
-                                    .region(Region.of(awsTerraformStateProperties.getRegion()))
-                                    .build();
-                        } else {
-                            log.info("Creating AWS SDK with custom credentials");
-                            s3client = S3Client.builder()
-                                    .region(Region.of(awsTerraformStateProperties.getRegion()))
-                                    .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                    .build();
-                        }
+                        log.info("Creating AWS SDK with custom credentials");
+                        s3client = S3Client.builder()
+                                .region(Region.of(awsTerraformStateProperties.getRegion()))
+                                .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
+                                .build();
                     }
 
 

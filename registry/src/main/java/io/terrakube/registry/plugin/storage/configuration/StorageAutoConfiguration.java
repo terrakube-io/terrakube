@@ -68,7 +68,13 @@ public class StorageAutoConfiguration {
                 break;
             case AwsStorageImpl:
                 S3Client s3client;
-                if (awsStorageServiceProperties.getEndpoint() != null && !awsStorageServiceProperties.getEndpoint().isEmpty()) {
+                if (awsStorageServiceProperties.isEnableRoleAuthentication()) {
+                    log.info("Creating AWS SDK with default credentials");
+                    s3client = S3Client.builder()
+                            .region(Region.of(awsStorageServiceProperties.getRegion()))
+                            .credentialsProvider(DefaultCredentialsProvider.create())
+                            .build();
+                } else if (awsStorageServiceProperties.getEndpoint() != null && !awsStorageServiceProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
 
                     S3Configuration serviceConfiguration = S3Configuration.builder()
@@ -84,20 +90,11 @@ public class StorageAutoConfiguration {
                             .build();
 
                 } else {
-                    if (awsStorageServiceProperties.isEnableRoleAuthentication()) {
-                        log.info("Creating AWS SDK with default credentials");
-                        s3client = S3Client.builder()
-                                .region(Region.of(awsStorageServiceProperties.getRegion()))
-                                .credentialsProvider(DefaultCredentialsProvider.create())
-                                .build();
-                    } else {
-                        log.info("Creating AWS SDK with custom credentials");
-                        s3client = S3Client.builder()
-                                .region(Region.of(awsStorageServiceProperties.getRegion()))
-                                .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageServiceProperties)))
-                                .build();
-
-                    }
+                    log.info("Creating AWS SDK with custom credentials");
+                    s3client = S3Client.builder()
+                            .region(Region.of(awsStorageServiceProperties.getRegion()))
+                            .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageServiceProperties)))
+                            .build();
                 }
 
                 storageService = AwsStorageServiceImpl.builder()
