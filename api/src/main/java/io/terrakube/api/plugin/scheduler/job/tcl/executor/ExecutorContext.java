@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.ToString;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -35,5 +36,5 @@ public class ExecutorContext {
     private String commitId;
     private boolean tofu;
     private HashMap<String, String> environmentVariables;
-    private HashMap<String, String> variables;
+    private List<TerraformVariable> variables = new ArrayList<>();
 }

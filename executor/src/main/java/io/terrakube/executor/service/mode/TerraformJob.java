@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -36,6 +37,6 @@ public class TerraformJob {
     private boolean tofu;
     private String agentUrl;
     private HashMap<String, String> environmentVariables;
-    private HashMap<String, String> variables;
+    private List<TerraformVariable> variables = new ArrayList<>();
 
 }

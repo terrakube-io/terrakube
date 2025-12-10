@@ -513,9 +513,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Not using any SSH key to download modules");
         }
 
+        // Process variables - separate HCL and non-HCL variables
+        HashMap<String, String> nonHclVariables = processVariables(terraformJob.getVariables(), workingDirectory);
+
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
-                .terraformVariables(terraformJob.getVariables())
+                .terraformVariables(nonHclVariables)
                 .terraformEnvironmentVariables(loadTempEnvironmentVariables(workingDirectory, terraformJob))
                 .workingDirectory(workingDirectory)
                 .refresh(terraformJob.isRefresh())
@@ -523,6 +526,49 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    private HashMap<String, String> processVariables(List<io.terrakube.executor.service.mode.TerraformVariable> variables, File workingDirectory) {
+        HashMap<String, String> nonHclVariables = new HashMap<>();
+        List<io.terrakube.executor.service.mode.TerraformVariable> hclVariables = new ArrayList<>();
+
+        // Separate HCL and non-HCL variables
+        for (io.terrakube.executor.service.mode.TerraformVariable variable : variables) {
+            if (variable.isHcl()) {
+                hclVariables.add(variable);
+                log.info("Found HCL variable: {}", variable.getKey());
+            } else {
+                nonHclVariables.put(variable.getKey(), variable.getValue());
+            }
+        }
+
+        // Write HCL variables to .auto.tfvars file
+        if (!hclVariables.isEmpty()) {
+            writeHclVariablesToFile(hclVariables, workingDirectory);
+        }
+
+        return nonHclVariables;
+    }
+
+    private void writeHclVariablesToFile(List<io.terrakube.executor.service.mode.TerraformVariable> hclVariables, File workingDirectory) {
+        try {
+            File tfvarsFile = new File(workingDirectory, "terrakube.auto.tfvars");
+            StringBuilder tfvarsContent = new StringBuilder();
+            tfvarsContent.append("# Terrakube HCL Variables - Auto-generated\n");
+            tfvarsContent.append("# This file is managed by Terrakube and should not be edited manually\n\n");
+
+            for (io.terrakube.executor.service.mode.TerraformVariable variable : hclVariables) {
+                tfvarsContent.append(variable.getKey())
+                        .append(" = ")
+                        .append(variable.getValue())
+                        .append("\n");
+            }
+
+            Files.write(tfvarsFile.toPath(), tfvarsContent.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            log.info("Created terrakube.auto.tfvars with {} HCL variables at: {}", hclVariables.size(), tfvarsFile.getAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to write HCL variables to .auto.tfvars file", e);
+        }
     }
 
     private HashMap<String, String> loadTempEnvironmentVariables(File workingDirectory, TerraformJob terraformJob) {

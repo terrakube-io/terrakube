@@ -123,7 +123,7 @@ public class BashEngine implements CommandExecution {
         processLauncher.setEnvironmentVariable("terrakubeApi", this.terrakubeApi);
         processLauncher.setEnvironmentVariable("terrakubeToken", workspaceSecurity.generateAccessToken(5));
         terraformJob.getEnvironmentVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
-        terraformJob.getVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
+        terraformJob.getVariables().forEach(variable -> processLauncher.setEnvironmentVariable(variable.getKey(), variable.getValue()));
         processLauncher.setOrAppendEnvironmentVariable("PATH", workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS, ":");
 
         //Adding terraform to the process PATH

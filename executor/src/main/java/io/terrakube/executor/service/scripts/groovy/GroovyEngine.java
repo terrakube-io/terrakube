@@ -105,8 +105,8 @@ public class GroovyEngine implements CommandExecution {
         }
 
         if(!terraformJob.getVariables().isEmpty()){
-            terraformJob.getVariables().forEach((key,value)->{
-                sharedData.setVariable(key,value);
+            terraformJob.getVariables().forEach(variable -> {
+                sharedData.setVariable(variable.getKey(), variable.getValue());
             });
         }
 

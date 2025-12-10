@@ -117,7 +117,7 @@ public class ExecutorService {
             log.info("Public Repository");
         }
 
-        HashMap<String, String> terraformVariables = new HashMap<>();
+        List<TerraformVariable> terraformVariables = new ArrayList<>();
         HashMap<String, String> environmentVariables = new HashMap<>();
         environmentVariables.put("TF_IN_AUTOMATION", "1");
         environmentVariables.put("workspaceName", job.getWorkspace().getName());
@@ -125,8 +125,8 @@ public class ExecutorService {
         List<Variable> variableList = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
         for (Variable variable : variableList) {
             if (variable.getCategory().equals(Category.TERRAFORM)) {
-                log.info("Adding terraform");
-                terraformVariables.put(variable.getKey(), variable.getValue());
+                log.info("Adding terraform variable: {} (HCL: {})", variable.getKey(), variable.isHcl());
+                terraformVariables.add(new TerraformVariable(variable.getKey(), variable.getValue(), variable.isHcl()));
             } else {
                 log.info("Adding environment variable");
                 environmentVariables.put(variable.getKey(), variable.getValue());
@@ -285,25 +285,25 @@ public class ExecutorService {
         return workspaceEnvVariables;
     }
 
-    private HashMap<String, String> loadOtherTerraformVariables(Job job, Flow flow,
-            HashMap<String, String> workspaceTerraformVariables) {
+    private List<TerraformVariable> loadOtherTerraformVariables(Job job, Flow flow,
+            List<TerraformVariable> workspaceTerraformVariables) {
         if (flow.getInputsTerraform() != null
                 || (flow.getImportCommands() != null && flow.getImportCommands().getInputsTerraform() != null)) {
             if (flow.getImportCommands() != null && flow.getImportCommands().getInputsTerraform() != null) {
                 log.info("Loading TERRAFORM inputs from ImportComands");
-                workspaceTerraformVariables = loadInputData(job, Category.TERRAFORM,
+                workspaceTerraformVariables = loadInputDataForTerraformVariables(job, Category.TERRAFORM,
                         new HashMap(flow.getImportCommands().getInputsTerraform()), workspaceTerraformVariables);
             }
 
             if (flow.getInputsTerraform() != null) {
                 log.info("Loading TERRAFORM inputs from InputsTerraform");
-                workspaceTerraformVariables = loadInputData(job, Category.TERRAFORM,
+                workspaceTerraformVariables = loadInputDataForTerraformVariables(job, Category.TERRAFORM,
                         new HashMap(flow.getInputsTerraform()), workspaceTerraformVariables);
             }
 
         } else {
             log.info("Loading default env variables to job");
-            workspaceTerraformVariables = loadDefault(job, Category.TERRAFORM, workspaceTerraformVariables);
+            workspaceTerraformVariables = loadDefaultTerraformVariables(job, workspaceTerraformVariables);
         }
         return workspaceTerraformVariables;
     }
@@ -360,6 +360,73 @@ public class ExecutorService {
 
 
         return workspaceData;
+    }
+
+    private List<TerraformVariable> loadDefaultTerraformVariables(Job job, List<TerraformVariable> workspaceData) {
+        // Get existing variable keys for deduplication
+        Set<String> existingKeys = workspaceData.stream()
+                .map(TerraformVariable::getKey)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Load global variables
+        for (Globalvar globalvar : globalVarRepository.findByOrganization(job.getOrganization())) {
+            if (globalvar.getCategory().equals(Category.TERRAFORM) && !existingKeys.contains(globalvar.getKey())) {
+                workspaceData.add(new TerraformVariable(globalvar.getKey(), globalvar.getValue(), globalvar.isHcl()));
+                existingKeys.add(globalvar.getKey());
+                log.info("Adding TERRAFORM Global Variable Key: {} Value {} HCL: {}", globalvar.getKey(),
+                        globalvar.isSensitive() ? "sensitive" : globalvar.getValue(), globalvar.isHcl());
+            }
+        }
+
+        // Load collection items
+        List<Reference> referenceList = referenceRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
+        List<Collection> collectionList = new ArrayList();
+        for (Reference reference : referenceList) {
+            collectionList.add(reference.getCollection());
+        }
+
+        List<Collection> sortedList = collectionList.stream()
+                .sorted(Comparator.comparing(Collection::getPriority).reversed())
+                .toList();
+
+        sortedList.stream().forEach(collection -> {
+            log.info("Adding data from collection {} using priority {}", collection.getName(), collection.getPriority());
+            List<Item> itemList = collection.getItem();
+            for (Item item : itemList) {
+                if (item.getCategory().equals(Category.TERRAFORM) && !existingKeys.contains(item.getKey())) {
+                    workspaceData.add(new TerraformVariable(item.getKey(), item.getValue(), item.isHcl()));
+                    existingKeys.add(item.getKey());
+                    log.info("Adding TERRAFORM Collection Item Key: {} Value {} HCL: {}", item.getKey(),
+                            item.getValue(), item.isHcl());
+                }
+            }
+        });
+
+        return workspaceData;
+    }
+
+    private List<TerraformVariable> loadInputDataForTerraformVariables(Job job, Category categoryVar,
+            HashMap<String, String> importFrom, List<TerraformVariable> importTo) {
+        // Get existing variable keys for deduplication
+        Set<String> existingKeys = importTo.stream()
+                .map(TerraformVariable::getKey)
+                .collect(java.util.stream.Collectors.toSet());
+
+        importFrom.forEach((key, value) -> {
+            if (!existingKeys.contains(key)) {
+                java.lang.String searchValue = value.replace("$", "");
+                Globalvar globalvar = globalVarRepository.getGlobalvarByOrganizationAndCategoryAndKey(
+                        job.getOrganization(), categoryVar, searchValue);
+                log.info("Searching globalvar {} ({}) in Org {} found {}", searchValue, categoryVar,
+                        job.getOrganization().getName(), (globalvar != null));
+                if (globalvar != null) {
+                    importTo.add(new TerraformVariable(key, globalvar.getValue(), globalvar.isHcl()));
+                    existingKeys.add(key);
+                }
+            }
+        });
+
+        return importTo;
     }
 
 }
