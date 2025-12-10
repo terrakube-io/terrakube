@@ -30,6 +30,8 @@ const VARIABLES_COLUMS = (
     dataIndex: "key",
     width: "30%",
     key: "key",
+    sorter: (a: FlatVariable, b: FlatVariable) => a.key.localeCompare(b.key),
+    defaultSortOrder: "ascend" as const,
     render: (_: string, record: FlatVariable) => {
       return (
         <div>
@@ -65,6 +67,7 @@ const VARIABLES_COLUMS = (
     dataIndex: "category",
     key: "category",
     width: "15%",
+    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
     render: (_: string, record: FlatVariable) => {
       return record.category === "TERRAFORM" ? "terraform" : "env";
     },
@@ -110,6 +113,8 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     dataIndex: "key",
     width: "25%",
     key: "key",
+    sorter: (a: any, b: any) => a.key.localeCompare(b.key),
+    defaultSortOrder: "ascend" as const,
     render: (_: string, record: any) => {
       return (
         <div>
@@ -145,6 +150,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "15%",
     key: "category",
+    sorter: (a: any, b: any) => a.category.localeCompare(b.category),
     render: (_: string, record: any) => {
       return record.category === "TERRAFORM" ? "terraform" : "env";
     },
@@ -175,6 +181,8 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     dataIndex: "key",
     width: "40%",
     key: "key",
+    sorter: (a: FlatVariable, b: FlatVariable) => a.key.localeCompare(b.key),
+    defaultSortOrder: "ascend" as const,
     render: (_: string, record: FlatVariable) => {
       return (
         <div>
@@ -210,6 +218,7 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "20%",
     key: "category",
+    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
     render: (_: string, record: FlatVariable) => {
       return record.category === "TERRAFORM" ? "terraform" : "env";
     },

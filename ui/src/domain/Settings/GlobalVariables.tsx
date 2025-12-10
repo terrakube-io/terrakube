@@ -22,6 +22,8 @@ export const GlobalVariablesSettings = () => {
       dataIndex: "key",
       width: "40%",
       key: "key",
+      sorter: (a: Variable, b: Variable) => a.attributes.key.localeCompare(b.attributes.key),
+      defaultSortOrder: "ascend" as const,
       render: (_: any, record: Variable) => {
         return (
           <div>
