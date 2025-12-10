@@ -39,7 +39,7 @@ public class EphemeralExecutorService {
     EphemeralConfiguration ephemeralConfiguration;
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
-        final String jobName = "job-" + job.getId();
+        final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         SecretEnvSource secretEnvSource = new SecretEnvSource();
         secretEnvSource.setName(ephemeralConfiguration.getSecret());

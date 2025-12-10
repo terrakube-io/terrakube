@@ -136,7 +136,7 @@ public class EphemeralExecutorServiceTest {
         subject().send(job(), context());
 
         verify(namespaced, times(1)).resource(job.capture());
-        assertEquals("job-4711", job.getValue().getMetadata().getName());
+        assertEquals("job-4711-", job.getValue().getMetadata().getName().substring(0, 9));
     }
 
     @Test
