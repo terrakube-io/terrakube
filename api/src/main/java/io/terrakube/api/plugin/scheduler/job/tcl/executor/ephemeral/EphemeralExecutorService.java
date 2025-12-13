@@ -7,6 +7,8 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.rs.job.Job;
 
@@ -36,8 +38,8 @@ public class EphemeralExecutorService {
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
 
-    public ExecutorContext sendToEphemeralExecutor(Job job, ExecutorContext executorContext) {
-        final String jobName = "job-" + job.getId();
+    public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
+        final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         SecretEnvSource secretEnvSource = new SecretEnvSource();
         secretEnvSource.setName(ephemeralConfiguration.getSecret());
@@ -59,7 +61,9 @@ public class EphemeralExecutorService {
             log.error(e.getMessage());
         }
 
-        final List<EnvVar> executorEnvVarFlags = Arrays.asList(executorFlagBatch, executorFlagBatchJsonContent);
+        final List<EnvVar> executorEnvVarFlags = new LinkedList<>();
+        executorEnvVarFlags.add(executorFlagBatch);
+        executorEnvVarFlags.add(executorFlagBatchJsonContent);
 
         Optional<String> additionalEnvVars=Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(EPHEMERAL_JOB_ENV_VARS, null));
 
@@ -74,14 +78,10 @@ public class EphemeralExecutorService {
         }
 
         Optional<String> nodeSelector = Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(NODE_SELECTOR, null));
-        Map<String, String> nodeSelectorInfo = new HashMap();
+        Map<String, String> nodeSelectorInfo = new HashMap<>();
         log.info("Custom Node selector: {} {}", nodeSelector.isPresent(), nodeSelector.isEmpty());
         if(nodeSelector.isPresent()) {
-            log.info("Using custom node selector information");
-            for (String nodeSelectorData : nodeSelector.get().split(";")) {
-                String[] info = nodeSelectorData.split("=");
-                nodeSelectorInfo.put(info[0], info[1]);
-            }
+            nodeSelectorInfo.putAll(parseKeyValueString(nodeSelector.get()));
         } else {
             log.info("Using default node selector information");
             nodeSelectorInfo = ephemeralConfiguration.getNodeSelector();
@@ -112,13 +112,10 @@ public class EphemeralExecutorService {
         }
 
         Optional<String> annotationsInfo = Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(ANNOTATIONS, null));
-        Map<String, String> annotations = new HashMap();
+        Map<String, String> annotations = new HashMap<>();
         log.info("Custom Annotations: {}", annotationsInfo.isPresent());
         if(annotationsInfo.isPresent()) {
-            for (String annotationData : annotationsInfo.get().split(";")) {
-                String[] info = annotationData.split("=");
-                annotations.put(info[0], info[1]);
-            }
+            annotations.putAll(parseKeyValueString(annotationsInfo.get()));
         }
 
         Optional<String> serviceAccountInfo = Optional.ofNullable(
@@ -133,7 +130,7 @@ public class EphemeralExecutorService {
         Optional<String> configMapMountPathOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(CONFIG_MAP_PATH));
         if (configMapNameOpt.isPresent()) {
             String configMapName = configMapNameOpt.get();
-            String mountPath = configMapMountPathOpt.orElse("/tmp");  // Default mount path if not specified
+            String mountPath = configMapMountPathOpt.orElse("/data");  // Default mount path if not specified
 
             // Define ConfigMap volume
             Volume configMapVolume = new Volume();
@@ -185,19 +182,20 @@ public class EphemeralExecutorService {
         PodSecurityContext podSecurityContext = new PodSecurityContextBuilder().withFsGroup(1000L).build();
         if (configPodSecurityContext.isPresent()) {
             log.info("Using custom pod security context");
-            String[] podSecurityContextData = configPodSecurityContext.get().split(";");
-            for (String data : podSecurityContextData) {
-                String[] securitySetting = data.split("=");
-                switch (securitySetting[0]) {
+            Map<String, String> podSecurityContextData = parseKeyValueString(configPodSecurityContext.get());
+            for (Map.Entry<String, String> entry : podSecurityContextData.entrySet()) {
+                switch (entry.getKey()) {
                     case "fsGroup":
-                        podSecurityContext.setFsGroup(Long.parseLong(securitySetting[1]));
+                        podSecurityContext.setFsGroup(Long.parseLong(entry.getValue()));
                         break;
                     case "runAsNonRoot":
-                        podSecurityContext.setRunAsNonRoot(Boolean.parseBoolean(securitySetting[1]));
+                        podSecurityContext.setRunAsNonRoot(Boolean.parseBoolean(entry.getValue()));
                         break;
                     case "runAsUser":
-                        podSecurityContext.setRunAsUser(Long.parseLong(securitySetting[1]));
+                        podSecurityContext.setRunAsUser(Long.parseLong(entry.getValue()));
                         break;
+                    default:
+                        throw new ExecutionException(new Throwable(String.format("Unknown value %s for %s", entry.getValue(), POD_SECURITY_CONTEXT)));
                 }
             }
         }
@@ -207,13 +205,14 @@ public class EphemeralExecutorService {
         SecurityContext securityContext = new SecurityContext();
         if (configSecurityContext.isPresent()) {
             log.info("Using custom security context");
-            String[] securityContextData = configSecurityContext.get().split(";");
-            for (String data : securityContextData) {
-                String[] securitySetting = data.split("=");
-                switch (securitySetting[0]) {
+            Map<String, String> securityContextData = parseKeyValueString(configSecurityContext.get());
+            for (Map.Entry<String, String> entry : securityContextData.entrySet()) {
+                switch (entry.getKey()) {
                     case "allowPrivilegeEscalation":
-                        securityContext.setAllowPrivilegeEscalation(Boolean.parseBoolean(securitySetting[1]));
+                        securityContext.setAllowPrivilegeEscalation(Boolean.parseBoolean(entry.getValue()));
                         break;
+                    default:
+                        throw new ExecutionException(new Throwable(String.format("Unknown values %s for %s", entry.getValue(), SECURITY_CONTEXT)));
                 }
             }
         }
@@ -243,13 +242,15 @@ public class EphemeralExecutorService {
             hasResources = true;
         }
 
+        Map<String, String> labels = new HashMap<>();
+        labels.put("terrakube.io/organization", executorContext.getOrganizationId());
+        labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());
+
         io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = new JobBuilder()
                 .withApiVersion("batch/v1")
                 .withNewMetadata()
                 .withName(jobName)
-                .withLabels(Collections.singletonMap("jobId", executorContext.getJobId()))
-                .withLabels(Collections.singletonMap("organizationId", executorContext.getOrganizationId()))
-                .withLabels(Collections.singletonMap("workspaceId", executorContext.getWorkspaceId()))
+                .withLabels(labels)
                 .withAnnotations(annotations)
                 .endMetadata()
                 .withNewSpec()
@@ -261,7 +262,7 @@ public class EphemeralExecutorService {
                 .withTolerations(tolerations)
                 .withVolumes(volumes)
                 .addNewContainer()
-                .withName(jobName)
+                .withName("executor")
                 .withEnvFrom(executorEnvVarFromSecret)
                 .withImage(ephemeralConfiguration.getImage())
                 .withEnv(executorEnvVarFlags)
@@ -276,14 +277,11 @@ public class EphemeralExecutorService {
                 .endSpec()
                 .build();
 
-        log.info("Running ephemeral job");
         try {
             kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
-            return executorContext;
-        } catch (Exception ex) {
-            log.error(ex.getMessage());
+        } catch (Exception e) {
+            throw new ExecutionException(e);
         }
-        return null;
     }
 
     private Map<String, String> parseKeyValueString(String input) {

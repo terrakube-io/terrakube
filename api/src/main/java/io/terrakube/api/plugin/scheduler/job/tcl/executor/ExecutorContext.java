@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -8,6 +9,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 import java.util.HashMap;
 import java.util.List;
 
+@Builder(toBuilder = true)
 @ToString
 @Getter
 @Setter
@@ -32,7 +34,6 @@ public class ExecutorContext {
     private String moduleSshKey;
     private String commitId;
     private boolean tofu;
-    private String agentUrl;
     private HashMap<String, String> environmentVariables;
     private HashMap<String, String> variables;
 }

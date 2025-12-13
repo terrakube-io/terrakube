@@ -236,6 +236,8 @@ public class ScheduleJob implements org.quartz.Job {
                 case customScripts:
                     try {
                         executorService.execute(job, stepId, flow.get());
+                        job.setStatus(JobStatus.queue);
+                        jobRepository.save(job);
                     } catch (ExecutionException e) {
                         errorJobAtStep(job, stepId, e);
                     }
@@ -306,7 +308,6 @@ public class ScheduleJob implements org.quartz.Job {
             if (template != null) {
                 Schedule schedule = new Schedule();
                 schedule.setWorkspace(job.getWorkspace());
-//                schedule.setId(UUID.randomUUID());
                 schedule.setCron(scheduleTemplate.getSchedule());
                 schedule.setEnabled(true);
                 schedule.setCreatedBy(job.getCreatedBy());
@@ -381,6 +382,8 @@ public class ScheduleJob implements org.quartz.Job {
             jobRepository.save(job);
             try {
                 executorService.execute(job, stepId, flow.get());
+                job.setStatus(JobStatus.queue);
+                jobRepository.save(job);
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
             }

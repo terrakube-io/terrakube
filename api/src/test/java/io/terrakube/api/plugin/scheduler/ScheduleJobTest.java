@@ -1,6 +1,33 @@
 package io.terrakube.api.plugin.scheduler;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.apache.commons.lang3.time.DateUtils;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.RedisTemplate;
+
 import graphql.Assert;
+import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
@@ -11,7 +38,13 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
-import io.terrakube.api.repository.*;
+import io.terrakube.api.repository.GlobalVarRepository;
+import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.ScheduleRepository;
+import io.terrakube.api.repository.StepRepository;
+import io.terrakube.api.repository.TemplateRepository;
+import io.terrakube.api.repository.VariableRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -24,27 +57,6 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
-import org.apache.commons.lang3.time.DateUtils;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.stubbing.Answer;
-import org.springframework.data.redis.core.RedisTemplate;
-
-import java.util.*;
-
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-class FailUnkownMethod<T> implements Answer<T> {
-    @Override
-    public T answer(InvocationOnMock invocation) throws Throwable {
-        throw new UnsupportedOperationException("Unimplemented method " + invocation.getMethod());
-    }
-}
 
 @ExtendWith(MockitoExtension.class)
 public class ScheduleJobTest {
@@ -182,12 +194,14 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
         doNothing().when(executorService).execute(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+        verify(jobRepository, times(1)).save(job);
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
     @Test
@@ -309,7 +323,7 @@ public class ScheduleJobTest {
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
         Assertions.assertEquals("", job.getApprovalTeam());
     }
 
@@ -508,7 +522,8 @@ public class ScheduleJobTest {
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        Assertions.assertEquals(JobStatus.approved, job.getStatus());
+        verify(jobRepository, times(2)).save(job);
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
     @Test

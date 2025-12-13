@@ -1,17 +1,38 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
+import java.net.URISyntaxException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
+
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
-import io.terrakube.api.repository.*;
+import io.terrakube.api.repository.GlobalVarRepository;
+import io.terrakube.api.repository.ReferenceRepository;
+import io.terrakube.api.repository.SshRepository;
+import io.terrakube.api.repository.VariableRepository;
+import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.collection.item.Item;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
-import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.ssh.Ssh;
@@ -20,38 +41,16 @@ import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.netty.http.client.HttpClient;
-
-import java.net.URISyntaxException;
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
-import java.util.*;
 
 @Slf4j
 @Service
 public class ExecutorService {
-
-    @Value("${io.terrakube.executor.url}")
-    private String executorUrl;
 
     @Value("${io.terrakube.hostname}")
     String hostname;
 
     @Value("${io.terrakube.tools.repository}")
     String toolsRepository;
-
-    @Autowired
-    JobRepository jobRepository;
 
     @Autowired
     GlobalVarRepository globalVarRepository;
@@ -69,20 +68,20 @@ public class ExecutorService {
     EphemeralExecutorService ephemeralExecutorService;
 
     @Autowired
+    PersistentExecutorService persistentExecutorService;
+
+    @Autowired
     TokenService tokenService;
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
     private ReferenceRepository referenceRepository;
 
-    @Autowired
-    private WebClient.Builder webClientBuilder;
-
     @Transactional
     public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
 
-        ExecutorContext executorContext = new ExecutorContext();
+        ExecutorContext executorContext = ExecutorContext.builder().build();
         executorContext.setOrganizationId(job.getOrganization().getId().toString());
         executorContext.setWorkspaceId(job.getWorkspace().getId().toString());
         executorContext.setJobId(String.valueOf(job.getId()));
@@ -176,9 +175,9 @@ public class ExecutorService {
         executorContext.setRefreshOnly(job.isRefreshOnly());
         executorContext = validateJobAddress(executorContext, job);
         if (executorContext.getEnvironmentVariables().containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
-            ephemeralExecutorService.sendToEphemeralExecutor(job, executorContext);
+            ephemeralExecutorService.send(job, executorContext);
         } else {
-            sendToExecutor(job, executorContext);
+            persistentExecutorService.send(job, executorContext);
         }
     }
 
@@ -205,66 +204,9 @@ public class ExecutorService {
         return executorContext;
     }
 
-    private String getExecutorUrl(Job job) {
-        String agentUrl = job.getWorkspace().getAgent() != null
-                ? job.getWorkspace().getAgent().getUrl() + "/api/v1/terraform-rs"
-                : validateDefaultExecutor(job);
-        log.info("Job {} Executor agent url: {}", job.getId(), agentUrl);
-        return agentUrl;
-    }
-
-    private String validateDefaultExecutor(Job job) {
-        Optional<Globalvar> defaultExecutor = globalVarRepository.findByOrganizationAndKey(job.getOrganization(), "TERRAKUBE_DEFAULT_EXECUTOR");
-        if (defaultExecutor.isPresent()) {
-            log.info("Found default executor url {}", defaultExecutor.get().getValue());
-            return defaultExecutor.get().getValue() + "/api/v1/terraform-rs";
-        } else {
-            log.info("No default executor found, using default executor url {}", this.executorUrl);
-            return this.executorUrl;
-        }
-    }
-
     private boolean iacType(Job job) {
         return job.getWorkspace().getIacType() != null && job.getWorkspace().getIacType().equals("terraform") ? false
                 : true;
-    }
-
-    private ExecutorContext sendToExecutor(Job job, ExecutorContext executorContext) {
-        boolean executed = false;
-        try {
-
-            WebClient webClient = webClientBuilder
-                    .clientConnector(
-                            new ReactorClientHttpConnector(
-                                    HttpClient.create().proxyWithSystemProperties())
-                    )
-                    .build();
-
-            ResponseEntity<ExecutorContext> response = webClient.post()
-                    .uri(getExecutorUrl(job))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(executorContext)
-                    .retrieve()
-                    .toEntity(ExecutorContext.class)
-                    .block();
-
-            executorContext.setAccessToken("****");
-            executorContext.setModuleSshKey("****");
-            log.debug("Sending Job: /n {}", executorContext);
-            log.info("Response Status: {}", response.getStatusCode().value());
-
-            if (response.getStatusCode().equals(HttpStatus.ACCEPTED)) {
-                job.setStatus(JobStatus.queue);
-                jobRepository.save(job);
-                executed = true;
-            } else
-                executed = false;
-        } catch (WebClientResponseException ex) {
-            log.error(ex.getMessage());
-            executed = false;
-        }
-
-        return executed ? executorContext : null;
     }
 
     private HashMap<String, String> loadOtherEnvironmentVariables(Job job, Flow flow,
