@@ -32,7 +32,8 @@ RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor 
 #    setcap -r /usr/bin/vault
 
 RUN wget https://github.com/openbao/openbao/releases/download/v2.2.2/bao_2.2.2_linux_amd64.deb && \
-    dpkg -i bao_2.2.2_linux_amd64.deb
+    dpkg -i bao_2.2.2_linux_amd64.deb && \
+    rm bao_2.2.2_linux_amd64.deb
 
 COPY rootCA.pem /usr/local/share/ca-certificates/root.crt
 

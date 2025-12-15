@@ -31,10 +31,33 @@
   "initializeCommand": "bash ${localWorkspaceFolder}/.devcontainer/init-devcontainer.sh",
 
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postStartCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh",
+  "postCreateCommand": "bash -c 'npm install -g yarn && /workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh'",
 
   // Configure tool-specific properties.
-  // "customizations": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // Java development
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-spring-boot-dashboard",
+        "Pivotal.vscode-spring-boot",
+        // JavaScript/TypeScript
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next",
+        // Claude Code
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash"
+          }
+        }
+      }
+    }
+  },
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   "remoteUser": "vscode",

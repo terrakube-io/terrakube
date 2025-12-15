@@ -10,10 +10,16 @@ This directory contains the configuration for a development container that provi
 
 ## Features
 
-- Java 17 (Liberica)
-- Maven 3.9.9
-- Node.js 20.x with Yarn
-- VS Code extensions for Java, JavaScript/TypeScript
+- **Java Development**: Java 25 (Liberica), Maven 3.9.9
+- **Node.js Development**: Node.js 22.x with npm and Yarn
+- **Infrastructure as Code**: Terraform CLI
+- **Database Tools**: MSSQL tools, PostgreSQL client
+- **Security**: OpenBao for secret management
+- **VS Code Extensions**:
+  - Java Pack (Spring Boot, Maven, debugging)
+  - ESLint and Prettier for code formatting
+  - Claude Code AI assistant
+- **Automatic Setup**: Self-signed SSL certificates and Docker network creation
 
 ## Getting Started
 
