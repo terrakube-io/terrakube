@@ -27,8 +27,8 @@
   // This can be used to network with other containers or with the host.
   // "forwardPorts": [3000, 5432],
 
-  // Run before building the container to generate certificates if they don't exist
-  "initializeCommand": "bash ${localWorkspaceFolder}/.devcontainer/generate-certs.sh",
+  // Run before building the container to initialize the environment (network + certificates)
+  "initializeCommand": "bash ${localWorkspaceFolder}/.devcontainer/init-devcontainer.sh",
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postStartCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh",

@@ -61,11 +61,15 @@ The local CA is now installed in the Firefox trust store (requires browser resta
 
 #### Create Docker Network for the devcontainer
 
+The Docker network is required for the devcontainer to work properly:
+
 ```bash
 docker network create terrakube-network -d bridge --subnet 10.25.25.0/24 --gateway 10.25.25.254
 ```
 
-We will be using `10.25.25.253` for our the traefik gateway
+We will be using `10.25.25.253` for the traefik gateway.
+
+**Note:** If you use the automated initialization script (recommended), the network will be created automatically.
 
 #### Local DNS entries
 
@@ -86,15 +90,21 @@ Update the /etc/hosts file adding the following entries:
    cd terrakube
    ```
 
-2. Generate certificates (choose one method):
+2. Initialize the environment (choose one method):
 
-   **Method A - Automatic (uses self-signed certificates):**
+   **Method A - Automatic initialization (recommended):**
+   This script creates the Docker network and generates self-signed certificates:
    ```bash
-   bash .devcontainer/generate-certs.sh
+   bash .devcontainer/init-devcontainer.sh
    ```
 
-   **Method B - Using mkcert (recommended for local development):**
+   **Method B - Manual setup with mkcert:**
+   Create the Docker network and generate certificates using mkcert:
    ```bash
+   # Create Docker network
+   docker network create terrakube-network -d bridge --subnet 10.25.25.0/24 --gateway 10.25.25.254
+
+   # Generate certificates with mkcert
    cd .devcontainer
    mkcert -key-file key.pem -cert-file cert.pem platform.local *.platform.local
    CAROOT=$(mkcert -CAROOT)/rootCA.pem
