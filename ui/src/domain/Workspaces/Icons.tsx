@@ -198,12 +198,147 @@ const AzureIcons = [
   { type: "azurerm_sql_server", path: "/providers/azurerm/Databases/02390-icon-service-Azure-SQL.svg" },
 ];
 
+const GCPIcons = [
+  // Compute
+  { type: "google_compute_instance", path: "/providers/google/compute_engine/compute_engine.svg" },
+  { type: "google_compute_", path: "/providers/google/compute_engine/compute_engine.svg" },
+  { type: "google_container_cluster", path: "/providers/google/google_kubernetes_engine/google_kubernetes_engine.svg" },
+  { type: "google_container_", path: "/providers/google/google_kubernetes_engine/google_kubernetes_engine.svg" },
+  { type: "google_cloud_run_", path: "/providers/google/cloud_run/cloud_run.svg" },
+  { type: "google_app_engine_", path: "/providers/google/app_engine/app_engine.svg" },
+
+  // Storage
+  { type: "google_storage_", path: "/providers/google/cloud_storage/cloud_storage.svg" },
+  { type: "google_filestore_", path: "/providers/google/filestore/filestore.svg" },
+  { type: "google_bigtable_", path: "/providers/google/bigtable/bigtable.svg" },
+
+  // Database
+  { type: "google_sql_", path: "/providers/google/cloud_sql/cloud_sql.svg" },
+  { type: "google_spanner_", path: "/providers/google/cloud_spanner/cloud_spanner.svg" },
+  { type: "google_firestore_", path: "/providers/google/firestore/firestore.svg" },
+  { type: "google_datastore_", path: "/providers/google/datastore/datastore.svg" },
+
+  // Networking
+  { type: "google_compute_network", path: "/providers/google/virtual_private_cloud/virtual_private_cloud.svg" },
+  { type: "google_compute_subnetwork", path: "/providers/google/virtual_private_cloud/virtual_private_cloud.svg" },
+  { type: "google_compute_firewall", path: "/providers/google/cloud_firewall_rules/cloud_firewall_rules.svg" },
+  { type: "google_compute_router", path: "/providers/google/cloud_router/cloud_router.svg" },
+  { type: "google_compute_vpn", path: "/providers/google/cloud_vpn/cloud_vpn.svg" },
+  { type: "google_compute_interconnect", path: "/providers/google/cloud_interconnect/cloud_interconnect.svg" },
+  {
+    type: "google_compute_address",
+    path: "/providers/google/cloud_external_ip_addresses/cloud_external_ip_addresses.svg",
+  },
+  {
+    type: "google_compute_global_address",
+    path: "/providers/google/cloud_external_ip_addresses/cloud_external_ip_addresses.svg",
+  },
+  { type: "google_dns_", path: "/providers/google/cloud_dns/cloud_dns.svg" },
+  { type: "google_compute_backend_service", path: "/providers/google/cloud_load_balancing/cloud_load_balancing.svg" },
+  {
+    type: "google_compute_url_map",
+    path: "/providers/google/cloud_load_balancing/cloud_load_balancing.svg",
+  },
+  {
+    type: "google_compute_target_http_proxy",
+    path: "/providers/google/cloud_load_balancing/cloud_load_balancing.svg",
+  },
+  {
+    type: "google_compute_target_https_proxy",
+    path: "/providers/google/cloud_load_balancing/cloud_load_balancing.svg",
+  },
+
+  // BigQuery & Data Analytics
+  { type: "google_bigquery_", path: "/providers/google/bigquery/bigquery.svg" },
+  { type: "google_dataflow_", path: "/providers/google/dataflow/dataflow.svg" },
+  { type: "google_dataproc_", path: "/providers/google/dataproc/dataproc.svg" },
+  { type: "google_data_fusion_", path: "/providers/google/cloud_data_fusion/cloud_data_fusion.svg" },
+  { type: "google_composer_", path: "/providers/google/cloud_composer/cloud_composer.svg" },
+  { type: "google_dataplex_", path: "/providers/google/dataplex/dataplex.svg" },
+  { type: "google_pubsub_", path: "/providers/google/pubsub/pubsub.svg" },
+
+  // AI & Machine Learning
+  { type: "google_vertex_ai_", path: "/providers/google/vertexai/vertexai.svg" },
+  { type: "google_ml_engine_", path: "/providers/google/ai_platform/ai_platform.svg" },
+  { type: "google_notebooks_", path: "/providers/google/ai_platform/ai_platform.svg" },
+
+  // Security & Identity
+  {
+    type: "google_project_iam_",
+    path: "/providers/google/identity_and_access_management/identity_and_access_management.svg",
+  },
+  {
+    type: "google_service_account",
+    path: "/providers/google/identity_and_access_management/identity_and_access_management.svg",
+  },
+  { type: "google_kms_", path: "/providers/google/key_management_service/key_management_service.svg" },
+  { type: "google_secret_manager_", path: "/providers/google/secret_manager/secret_manager.svg" },
+  { type: "google_iap_", path: "/providers/google/identity-aware_proxy/identity-aware_proxy.svg" },
+  { type: "google_identity_platform_", path: "/providers/google/identity_platform/identity_platform.svg" },
+  {
+    type: "google_binary_authorization_",
+    path: "/providers/google/binary_authorization/binary_authorization.svg",
+  },
+  {
+    type: "google_certificate_manager_",
+    path: "/providers/google/certificate_manager/certificate_manager.svg",
+  },
+
+  // Developer Tools
+  { type: "google_cloudbuild_", path: "/providers/google/cloud_build/cloud_build.svg" },
+  { type: "google_cloudfunctions_", path: "/providers/google/cloud_functions/cloud_functions.svg" },
+  { type: "google_cloud_scheduler_", path: "/providers/google/cloud_scheduler/cloud_scheduler.svg" },
+  { type: "google_cloud_tasks_", path: "/providers/google/cloud_tasks/cloud_tasks.svg" },
+  { type: "google_sourcerepo_", path: "/providers/google/cloud_build/cloud_build.svg" },
+  { type: "google_artifact_registry_", path: "/providers/google/artifact_registry/artifact_registry.svg" },
+  { type: "google_container_registry", path: "/providers/google/container_registry/container_registry.svg" },
+
+  // Monitoring & Logging
+  { type: "google_monitoring_", path: "/providers/google/cloud_monitoring/cloud_monitoring.svg" },
+  { type: "google_logging_", path: "/providers/google/cloud_logging/cloud_logging.svg" },
+
+  // Management & Governance
+  { type: "google_project", path: "/providers/google/project/project.svg" },
+  { type: "google_folder", path: "/providers/google/project/project.svg" },
+  { type: "google_organization_", path: "/providers/google/project/project.svg" },
+  { type: "google_billing_", path: "/providers/google/billing/billing.svg" },
+
+  // API & Services
+  { type: "google_endpoints_", path: "/providers/google/cloud_endpoints/cloud_endpoints.svg" },
+  { type: "google_api_gateway_", path: "/providers/google/cloud_api_gateway/cloud_api_gateway.svg" },
+  { type: "google_apigee_", path: "/providers/google/apigee_api_platform/apigee_api_platform.svg" },
+
+  // IoT
+  { type: "google_cloudiot_", path: "/providers/google/iot_core/iot_core.svg" },
+
+  // Healthcare
+  { type: "google_healthcare_", path: "/providers/google/cloud_healthcare_api/cloud_healthcare_api.svg" },
+
+  // Migration & Transfer
+  {
+    type: "google_database_migration_",
+    path: "/providers/google/database_migration_service/database_migration_service.svg",
+  },
+  { type: "google_datastream_", path: "/providers/google/datastream/datastream.svg" },
+
+  // VMware Engine
+  { type: "google_vmwareengine_", path: "/providers/google/vmware_engine/vmware_engine.svg" },
+
+  // Workflows
+  { type: "google_workflows_", path: "/providers/google/workflows/workflows.svg" },
+
+  // Cloud Deploy
+  { type: "google_clouddeploy_", path: "/providers/google/cloud_deploy/cloud_deploy.svg" },
+];
+
 export function getServiceIcon(providerType: string, resourceType: string) {
   switch (providerType) {
     case "registry.terraform.io/hashicorp/aws":
       return getAWSIcon(resourceType);
     case "registry.terraform.io/hashicorp/azurerm":
       return getAzureIcon(resourceType);
+    case "registry.terraform.io/hashicorp/google":
+      return getGCPIcon(resourceType);
     default:
       return "/providers/terraform.svg";
   }
@@ -227,4 +362,14 @@ const getAzureIcon = (resourceType: string) => {
   // search partial match
   icon = AzureIcons.find((icon) => resourceType.includes(icon.type));
   return icon ? icon.path : "/providers/azurerm/Azure.svg";
+};
+
+const getGCPIcon = (resourceType: string) => {
+  // search exact match
+  let icon = GCPIcons.find((icon) => resourceType === icon.type);
+  if (icon) return icon.path;
+
+  // search partial match
+  icon = GCPIcons.find((icon) => resourceType.includes(icon.type));
+  return icon ? icon.path : "/providers/google.svg";
 };
