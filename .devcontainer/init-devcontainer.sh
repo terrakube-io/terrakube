@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Script to initialize Terrakube development environment
 # This is automatically run before building the devcontainer (e.g., in GitHub Codespaces)
@@ -19,25 +18,38 @@ echo ""
 
 # Load environment variables
 if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 NETWORK_NAME="${EXTERNAL_NETWORK_NAME:-terrakube-network}"
 SUBNET="${NETWORK_SUBNET:-10.25.25.0/24}"
 GATEWAY="${NETWORK_GATEWAY:-10.25.25.254}"
 
-echo "Checking Docker network '$NETWORK_NAME'..."
-
-# Check if network exists
-if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
-    echo "✓ Docker network '$NETWORK_NAME' already exists."
+# Check if Docker is available
+if ! command -v docker >/dev/null 2>&1; then
+    echo "⚠ Docker command not found. Skipping network creation."
+    echo "  The network will need to be created manually or by the devcontainer."
 else
-    echo "Creating Docker network '$NETWORK_NAME'..."
-    docker network create "$NETWORK_NAME" \
-        -d bridge \
-        --subnet "$SUBNET" \
-        --gateway "$GATEWAY"
-    echo "✓ Docker network '$NETWORK_NAME' created successfully!"
+    echo "Checking Docker network '$NETWORK_NAME'..."
+
+    # Check if network exists
+    if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
+        echo "✓ Docker network '$NETWORK_NAME' already exists."
+    else
+        echo "Creating Docker network '$NETWORK_NAME'..."
+        if docker network create "$NETWORK_NAME" \
+            -d bridge \
+            --subnet "$SUBNET" \
+            --gateway "$GATEWAY" 2>&1; then
+            echo "✓ Docker network '$NETWORK_NAME' created successfully!"
+        else
+            echo "⚠ Failed to create Docker network. This may cause issues during container startup."
+            echo "  You can create it manually with:"
+            echo "  docker network create $NETWORK_NAME -d bridge --subnet $SUBNET --gateway $GATEWAY"
+        fi
+    fi
 fi
 
 echo ""
@@ -50,6 +62,13 @@ echo ""
 if [ -f "rootCA.pem" ] && [ -f "cert.pem" ] && [ -f "key.pem" ]; then
     echo "✓ SSL certificates already exist. Skipping generation."
 else
+    # Check if OpenSSL is available
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "✗ OpenSSL command not found. Cannot generate certificates."
+        echo "  Please install OpenSSL or generate certificates manually."
+        exit 1
+    fi
+
     echo "Generating self-signed SSL certificates..."
 
     # Generate Root CA configuration
@@ -117,10 +136,17 @@ EOF
     echo "4. Cleaning up temporary files..."
     rm -f openssl-ca.cnf openssl-server.cnf server.csr rootCA.pem.srl
 
-    echo "✓ Self-signed certificates generated successfully!"
-    echo "  - rootCA.pem: Root CA certificate"
-    echo "  - cert.pem: Server certificate"
-    echo "  - key.pem: Server private key"
+    # Verify certificates were created
+    if [ -f "rootCA.pem" ] && [ -f "cert.pem" ] && [ -f "key.pem" ]; then
+        echo "✓ Self-signed certificates generated successfully!"
+        echo "  - rootCA.pem: Root CA certificate"
+        echo "  - cert.pem: Server certificate"
+        echo "  - key.pem: Server private key"
+    else
+        echo "✗ Certificate generation failed. Some certificate files are missing."
+        echo "  Please check for errors above or generate certificates manually."
+        exit 1
+    fi
 fi
 
 echo ""
