@@ -2,8 +2,11 @@
 
 This directory contains the configuration for a development container that provides a consistent environment for working with Terrakube. The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
 
-> Make sure 
-> The below was tested using Ubuntu-based distribution, not sure if this will work with macos, windows or codespaces
+> **Note for GitHub Codespaces Users:**
+> Certificate generation is now automatic! The devcontainer will automatically generate self-signed certificates when you open the project in Codespaces. You can skip the manual certificate generation steps in the "HTTPS Local Certificates" section below.
+
+> **Note for Local Development:**
+> The instructions below were tested using Ubuntu-based distributions. Compatibility with macOS and Windows may vary.
 
 ## Features
 
@@ -14,9 +17,22 @@ This directory contains the configuration for a development container that provi
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: GitHub Codespaces (Recommended for Quick Start)
 
-- [Visual Studio Code](https://code.visualstudio.com/)
+GitHub Codespaces provides a cloud-based development environment with automatic setup:
+
+1. Click on "Code" → "Codespaces" → "Create codespace on main"
+2. Wait for the environment to build (certificates will be generated automatically)
+3. Once ready, Terrakube will be available at the forwarded ports
+4. Login with `admin@example.com` and password `admin`
+
+**Note:** In Codespaces, the local domains (*.platform.local) won't work as expected. You'll need to use the forwarded port URLs provided by Codespaces instead.
+
+### Option 2: Local Development with VS Code
+
+#### Prerequisites
+
+- [Visual Studio Code](https://code.visualstudio.com())
 - [VS Code Remote - Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 
 #### Local Development Domains
@@ -64,28 +80,44 @@ Update the /etc/hosts file adding the following entries:
 
 ### Opening the Project in a Dev Container
 
-1. Clone the Terrakube repository and run the project:
+1. Clone the Terrakube repository:
    ```bash
    git clone https://github.com/AzBuilder/terrakube.git
-   cd terrakube/.devcontainer
+   cd terrakube
+   ```
+
+2. Generate certificates (choose one method):
+
+   **Method A - Automatic (uses self-signed certificates):**
+   ```bash
+   bash .devcontainer/generate-certs.sh
+   ```
+
+   **Method B - Using mkcert (recommended for local development):**
+   ```bash
+   cd .devcontainer
    mkcert -key-file key.pem -cert-file cert.pem platform.local *.platform.local
    CAROOT=$(mkcert -CAROOT)/rootCA.pem
    cp $CAROOT rootCA.pem
    cd ..
+   ```
+
+3. Open in VS Code:
+   ```bash
    code .
    ```
 
-2. When prompted to "Reopen in Container", click "Reopen in Container". Alternatively, you can:
+4. When prompted to "Reopen in Container", click "Reopen in Container". Alternatively, you can:
    - Press F1 or Ctrl+Shift+P
    - Type "Remote-Containers: Reopen in Container" and press Enter
 
-3. Wait for the container to build and start. This may take a few minutes the first time.
+5. Wait for the container to build and start. This may take a few minutes the first time.
 
-4. Start all Terrakube components
+6. Start all Terrakube components
 
    ![image](https://github.com/user-attachments/assets/34a4d4c9-d1b0-443f-834e-c4d76db26187)
 
-5. Terrakube should be availabe with the following url `https://terrakube.platform.local` using `admin@example.com` with password `admin`
+7. Terrakube should be available at `https://terrakube.platform.local` using `admin@example.com` with password `admin`
 
    ![image](https://github.com/user-attachments/assets/c92b5f7a-c484-47b5-bb31-4edd4513278e)
 
