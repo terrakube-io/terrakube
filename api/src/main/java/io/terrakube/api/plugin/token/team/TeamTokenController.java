@@ -72,6 +72,9 @@ public class TeamTokenController {
             permissions.setManageJob(permissions.manageJob || group.isManageJob());
         });
 
+        if (log.isDebugEnabled()) {
+            log.debug("Permissions: {}", permissions);
+        }
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
@@ -101,6 +104,9 @@ public class TeamTokenController {
             });
         });
 
+        if (log.isDebugEnabled()) {
+            log.debug("Permissions with Workspace: {}", permissions);
+        }
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
