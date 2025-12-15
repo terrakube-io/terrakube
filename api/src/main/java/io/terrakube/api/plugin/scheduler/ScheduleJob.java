@@ -344,7 +344,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     private void errorJobAtStep(Job job, String stepId, Throwable e) {
         String logMessage = String.format(
-            "Error when sending context to executor marking job {} as failed, step count {}",
+            "Error when sending context to executor marking job %s as failed, step count %s",
             job.getId(),
             job.getStep().size()
         );
@@ -352,8 +352,9 @@ public class ScheduleJob implements org.quartz.Job {
         job.setStatus(JobStatus.failed);
         jobRepository.save(job);
         Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
-        step.setName("Error sending to executor");
-        step.setOutput(e.getMessage());
+        String message = String.format("Error sending to executor: %s", e.getMessage())
+                .substring(0, Math.min(e.getMessage().length(), 127));
+        step.setName(message);
         stepRepository.save(step);
     }
 
