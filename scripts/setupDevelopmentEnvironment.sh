@@ -20,7 +20,19 @@ done
 
 function generateApiVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+
+  # Check if we're in GitHub Codespaces
+  if [ -n "$CODESPACES" ] && [ "$CODESPACES" = "true" ]; then
+    # GitHub Codespaces environment
+    CODESPACE_DOMAIN="${CODESPACE_NAME}-PORT.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+
+    # Replace PORT placeholder with actual port numbers
+    TerrakubeHostname=$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8080/g" | sed "s+https://++g")
+    AzBuilderExecutorUrl="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8090/g")/api/v1/terraform-rs"
+    DexIssuerUri="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/5556/g")/dex"
+    TerrakubeUiURL="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/3000/g")"
+    TerrakubeRedisHostname=terrakube-redis
+  elif [ "$USER" = "gitpod" ]; then
     TerrakubeHostname=$(gp url 8080 | sed "s+https://++g")
     AzBuilderExecutorUrl="$(gp url 8090)/api/v1/terraform-rs"
     DexIssuerUri="$(gp url 5556)/dex"
@@ -146,7 +158,17 @@ function generateApiVars(){
 
 function generateExecutorVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+
+  # Check if we're in GitHub Codespaces
+  if [ -n "$CODESPACES" ] && [ "$CODESPACES" = "true" ]; then
+    # GitHub Codespaces environment
+    CODESPACE_DOMAIN="${CODESPACE_NAME}-PORT.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+
+    AzBuilderApiUrl="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8080/g")"
+    TerrakubeRegistryDomain=$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8075/g")
+    TerrakubeApiUrl="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8080/g")"
+    TerrakubeRedisHostname=terrakube-redis
+  elif [ "$USER" = "gitpod" ]; then
     AzBuilderApiUrl=$(gp url 8080)
     TerrakubeRegistryDomain=$(gp url 8075 | sed "s+https://++g")
     TerrakubeApiUrl=$(gp url 8080)
@@ -252,7 +274,18 @@ function generateExecutorVars(){
 
 function generateRegistryVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+
+  # Check if we're in GitHub Codespaces
+  if [ -n "$CODESPACES" ] && [ "$CODESPACES" = "true" ]; then
+    # GitHub Codespaces environment
+    CODESPACE_DOMAIN="${CODESPACE_NAME}-PORT.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+
+    AzBuilderRegistry="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8075/g")"
+    AzBuilderApiUrl="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8080/g")"
+    DexIssuerUri="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/5556/g")/dex"
+    TerrakubeUiURL="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/3000/g")"
+    AppIssuerUri="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/5556/g")/dex"
+  elif [ "$USER" = "gitpod" ]; then
     AzBuilderRegistry=$(gp url 8075)
     AzBuilderApiUrl=$(gp url 8080)
     DexIssuerUri="$(gp url 5556)/dex"
@@ -328,7 +361,17 @@ function generateRegistryVars(){
 
 function generateUiVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+
+  # Check if we're in GitHub Codespaces
+  if [ -n "$CODESPACES" ] && [ "$CODESPACES" = "true" ]; then
+    # GitHub Codespaces environment
+    CODESPACE_DOMAIN="${CODESPACE_NAME}-PORT.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+
+    REACT_CONFIG_TERRAKUBE_URL="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8080/g")/api/v1/"
+    REACT_CONFIG_REDIRECT="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/3000/g")"
+    REACT_CONFIG_REGISTRY_URI="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/8075/g")"
+    REACT_CONFIG_AUTHORITY="https://$(echo "$CODESPACE_DOMAIN" | sed "s/PORT/5556/g")/dex"
+  elif [ "$USER" = "gitpod" ]; then
     REACT_CONFIG_TERRAKUBE_URL="$(gp url 8080)/api/v1/"
     REACT_CONFIG_REDIRECT=$(gp url 3000)
     REACT_CONFIG_REGISTRY_URI=$(gp url 8075)
@@ -342,8 +385,10 @@ function generateUiVars(){
 
   REACT_CONFIG_CLIENT_ID="example-app"
   REACT_CONFIG_SCOPE="email openid profile offline_access groups"
-  if [ "$USER" = "gitpod" ]; then
-    REACT_APP_TERRAKUBE_VERSION=v$(git describe --tags --abbrev=0)
+
+  # Set version based on environment
+  if [ "$USER" = "gitpod" ] || [ -n "$CODESPACES" ]; then
+    REACT_APP_TERRAKUBE_VERSION=v$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
   else
     REACT_APP_TERRAKUBE_VERSION="devcontainer"
   fi
