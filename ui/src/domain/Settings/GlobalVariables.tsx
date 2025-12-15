@@ -47,7 +47,11 @@ export const GlobalVariablesSettings = () => {
       dataIndex: "category",
       key: "category",
       width: "15%",
-      sorter: (a: Variable, b: Variable) => a.attributes.category.localeCompare(b.attributes.category),
+      sorter: (a: Variable, b: Variable) => {
+        const categoryA = a.attributes.category === "TERRAFORM" ? "terraform" : "env";
+        const categoryB = b.attributes.category === "TERRAFORM" ? "terraform" : "env";
+        return categoryA.localeCompare(categoryB);
+      },
       render: (_: any, record: Variable) => {
         return record.attributes.category === "TERRAFORM" ? "terraform" : "env";
       },
