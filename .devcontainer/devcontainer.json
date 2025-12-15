@@ -61,5 +61,36 @@
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   "remoteUser": "vscode",
-  "forwardPorts": [8080, 3000, 8075, 8090, 5556]
+
+  // Forward ports for Terrakube services
+  "forwardPorts": [8080, 3000, 8075, 8090, 5556],
+
+  // Make all forwarded ports public for easy access in Codespaces
+  "portsAttributes": {
+    "3000": {
+      "label": "Terrakube UI",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
+    "8080": {
+      "label": "Terrakube API",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
+    "8075": {
+      "label": "Terrakube Registry",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
+    "8090": {
+      "label": "Terrakube Executor",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
+    "5556": {
+      "label": "DEX (Authentication)",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    }
+  }
 }
