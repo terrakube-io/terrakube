@@ -20,7 +20,7 @@ export const GlobalVariablesSettings = () => {
     {
       title: "Key",
       dataIndex: "key",
-      width: "40%",
+      width: "30%",
       key: "key",
       sorter: (a: Variable, b: Variable) => a.attributes.key.localeCompare(b.attributes.key),
       defaultSortOrder: "ascend" as const,
@@ -37,14 +37,25 @@ export const GlobalVariablesSettings = () => {
       title: "Value",
       dataIndex: "value",
       key: "value",
-      width: "40%",
+      width: "30%",
       render: (_: any, record: Variable) => {
         return record.attributes.sensitive ? <i>Sensitive - write only</i> : <div>{record.attributes.value}</div>;
       },
     },
     {
+      title: "Category",
+      dataIndex: "category",
+      key: "category",
+      width: "15%",
+      sorter: (a: Variable, b: Variable) => a.attributes.category.localeCompare(b.attributes.category),
+      render: (_: any, record: Variable) => {
+        return record.attributes.category === "TERRAFORM" ? "terraform" : "env";
+      },
+    },
+    {
       title: "Actions",
       key: "action",
+      width: "25%",
       render: (_: any, record: Variable) => {
         return (
           <div>
