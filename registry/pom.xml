@@ -21,7 +21,7 @@
         <jgit.version>7.4.0.202509020913-r</jgit.version>
         <bouncy.castle>1.83</bouncy.castle>
         <commons-io.version>2.21.0</commons-io.version>
-        <rest-assured.version>5.5.6</rest-assured.version>
+        <rest-assured.version>6.0.0</rest-assured.version>
         <wiremock.version>4.0.8</wiremock.version>
         <!--groovy.version>3.0.8</groovy.version-->
         <aws-sdk.version>2.40.3</aws-sdk.version>
