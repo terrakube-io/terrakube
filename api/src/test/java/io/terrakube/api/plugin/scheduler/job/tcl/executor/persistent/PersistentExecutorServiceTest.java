@@ -50,7 +50,7 @@ public class PersistentExecutorServiceTest {
 
     @SuppressWarnings("unchecked")
     @BeforeEach
-    private void setup() {
+    void setup() {
         globalVarRepository = mock(GlobalVarRepository.class, new FailUnkownMethod<>());
         doReturn(Optional.ofNullable(null)).when(globalVarRepository).findByOrganizationAndKey(any(), any());
 

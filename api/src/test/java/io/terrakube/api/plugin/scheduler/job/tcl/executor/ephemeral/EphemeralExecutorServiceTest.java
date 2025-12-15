@@ -58,7 +58,7 @@ public class EphemeralExecutorServiceTest {
     ArgumentCaptor<io.fabric8.kubernetes.api.model.batch.v1.Job> job;
 
     @BeforeEach
-    private void setup() {
+    void setup() {
         client = mock(KubernetesClient.class, new FailUnkownMethod<KubernetesClient>());
         doReturn(batch).when(client).batch();
         doReturn(v1).when(batch).v1();
