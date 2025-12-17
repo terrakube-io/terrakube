@@ -5,6 +5,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -13,8 +15,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.quartz.JobBuilder;
+import org.quartz.JobDetail;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
 import org.springframework.http.HttpStatus;
 
+import io.terrakube.api.plugin.scheduler.ScheduleJob;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.rs.job.Job;
@@ -228,7 +235,7 @@ public class CollectionTests extends ServerApplicationTests {
     }
 
     @Test
-    void testCollectionPriorityAsOrgMember() throws ExecutionException {
+    void testCollectionPriorityAsOrgMember() throws JobExecutionException {
 
         String EXECUTOR_ENDPOINT="http://localhost:" + wireMockServer.port() + "/fake/executor";
 
@@ -491,12 +498,14 @@ public class CollectionTests extends ServerApplicationTests {
         job.setTemplateReference("42201234-a5e2-4c62-b2fc-9729ca6b4515");
         job = jobRepository.save(job);
 
-        Flow flow = new Flow();
-        flow.setName("Plan");
-        flow.setType("terraformPlan");
-        flow.setStep(100);
-
-        executorService.execute(job, UUID.randomUUID().toString(), flow);
+        JobDetail jobDetail = JobBuilder.newJob(ScheduleJob.class)
+                .withIdentity("myJob", "group1")
+                .usingJobData("jobId", job.getId())
+                .build();
+        JobExecutionContext ctx = mock(JobExecutionContext.class);
+        doReturn(jobDetail).when(ctx).getJobDetail();
+        doReturn(scheduler).when(ctx).getScheduler();
+        scheduleJob.execute(ctx);
     }
 
 

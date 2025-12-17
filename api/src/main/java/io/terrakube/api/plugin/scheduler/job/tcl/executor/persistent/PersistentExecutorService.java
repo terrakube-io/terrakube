@@ -61,7 +61,7 @@ public class PersistentExecutorService {
                     .retrieve()
                     .toEntity(ExecutorContext.class)
                     .block();
-        } catch (URISyntaxException | WebClientResponseException ex) {
+        } catch (Exception ex) {
             throw new ExecutionException(ex);
         }
 

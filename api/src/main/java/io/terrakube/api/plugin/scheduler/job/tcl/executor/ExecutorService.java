@@ -77,7 +77,6 @@ public class ExecutorService {
     @Autowired
     private ReferenceRepository referenceRepository;
 
-    @Transactional
     public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
 
