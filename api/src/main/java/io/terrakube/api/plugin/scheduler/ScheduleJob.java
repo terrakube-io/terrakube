@@ -356,6 +356,8 @@ public class ScheduleJob implements org.quartz.Job {
                 .substring(0, Math.min(e.getMessage().length(), 127));
         step.setName(message);
         stepRepository.save(step);
+        updateJobStepsWithStatus(job.getId(), JobStatus.failed);
+        updateJobStatusOnVcs(job, JobStatus.unknown);
     }
 
     private void removeJobContext(Job job, JobExecutionContext jobExecutionContext) {
