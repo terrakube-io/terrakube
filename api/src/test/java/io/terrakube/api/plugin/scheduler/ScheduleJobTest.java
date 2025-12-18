@@ -258,16 +258,19 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
 
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
         verify(jobRepository, times(1)).save(job);
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
-        Assertions.assertEquals(JobStatus.pending, job.getStep().get(0).getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
 
     @Test
@@ -545,15 +548,18 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
 
         // TODO Could be true with no extra scheduling, because we know we are done
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
-        Assertions.assertEquals(JobStatus.pending, job.getStep().get(0).getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
 
      @Test

@@ -6,6 +6,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
+import io.terrakube.api.plugin.scheduler.ScheduleJob;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
@@ -76,7 +77,7 @@ class ServerApplicationTests {
     ProjectRepository projectRepository;
 
     @Autowired
-    ExecutorService executorService;
+    ScheduleJob scheduleJob;
 
     @Autowired
     AgentRepository agentRepository;

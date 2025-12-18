@@ -12,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
@@ -61,7 +60,7 @@ public class PersistentExecutorService {
                     .retrieve()
                     .toEntity(ExecutorContext.class)
                     .block();
-        } catch (URISyntaxException | WebClientResponseException ex) {
+        } catch (Exception ex) {
             throw new ExecutionException(ex);
         }
 
