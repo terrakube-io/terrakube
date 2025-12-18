@@ -20,7 +20,12 @@ export default defineConfig(() => {
         },
       },
     },
-    plugins: [react(), commonjs(), tsconfigPaths()],
+    plugins: [
+      react(),
+      commonjs(),
+      // Ensure path aliases are loaded from tsconfig.app.json where the paths are defined
+      tsconfigPaths({ projects: ["./tsconfig.app.json"] }),
+    ],
     rollup: {
       plugins: [dynamicImportVars()],
     },
