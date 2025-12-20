@@ -63,7 +63,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     ScheduleJobService scheduleJobService;
 
-    RedisTemplate redisTemplate;
+    RedisTemplate<String, Object> redisTemplate;
 
     GitHubWebhookService gitHubWebhookService;
     GlobalVarRepository globalVarRepository;
@@ -77,6 +77,7 @@ public class ScheduleJob implements org.quartz.Job {
         Job job = jobRepository.getReferenceById(jobId);
         boolean deschedule = runExecution(job);
         if (deschedule) {
+            redisTemplate.delete(String.valueOf(job.getId()));
             removeJobContext(job, jobExecutionContext);
         }
     }
@@ -92,7 +93,6 @@ public class ScheduleJob implements org.quartz.Job {
             try {
                 job.setStatus(JobStatus.failed);
                 jobRepository.save(job);
-                redisTemplate.delete(String.valueOf(job.getId()));
                 log.warn("Deleting Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                 updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                 updateJobStatusOnVcs(job, JobStatus.unknown);
@@ -130,7 +130,6 @@ public class ScheduleJob implements org.quartz.Job {
                          throw new AssertionError(String.format("Expected pending job %d to have plan changes", jobId));
                     }
                     log.info("Executing pending job {}", jobId);
-                    redisTemplate.delete(String.valueOf(job.getId()));
                     executePendingJob(job);
                     deschedule = true;
                     break;
@@ -142,7 +141,6 @@ public class ScheduleJob implements org.quartz.Job {
                     log.info("Job {} running", job.getId());
                     break;
                 case completed:
-                    redisTemplate.delete(String.valueOf(job.getId()));
                     deschedule = true;
                     updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
                     updateJobStatusOnVcs(job, JobStatus.completed);
@@ -151,7 +149,6 @@ public class ScheduleJob implements org.quartz.Job {
                 case cancelled:
                 case failed:
                 case rejected:
-                    redisTemplate.delete(String.valueOf(job.getId()));
                     log.info("Deleting Failed/Cancelled/Rejected Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                     updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                     updateJobStatusOnVcs(job, JobStatus.failed);
