@@ -86,7 +86,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
             if (isPlan) {
                 switch (exitCode){
                     case 0:
-                        status = "pending";
+                        status = "completed";
                         planChanges = false;
                         break;
                     case 1:

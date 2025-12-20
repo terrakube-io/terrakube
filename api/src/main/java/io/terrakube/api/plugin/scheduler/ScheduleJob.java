@@ -126,19 +126,13 @@ public class ScheduleJob implements org.quartz.Job {
 
             switch (job.getStatus()) {
                 case pending:
-                    log.info("Pending with plan changes {}", job.isPlanChanges());
-                    if (job.isPlanChanges()) {
-                        redisTemplate.delete(String.valueOf(job.getId()));
-                        executePendingJob(job);
-                        deschedule = true;
-                    } else {
-                        // TODO https://terrakubeworkspace.slack.com/archives/C06JPG68R7Y/p1764450723780359
-                        log.warn("Job {} completed with no changes...", jobId);
-                        completeJob(job);
-                        redisTemplate.delete(String.valueOf(job.getId()));
-                        updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
-                        updateJobStatusOnVcs(job, JobStatus.completed);
+                    if (!job.isPlanChanges()) {
+                         throw new AssertionError(String.format("Expected pending job %d to have plan changes", jobId));
                     }
+                    log.info("Executing pending job {}", jobId);
+                    redisTemplate.delete(String.valueOf(job.getId()));
+                    executePendingJob(job);
+                    deschedule = true;
                     break;
                 case approved:
                     executeApprovedJobs(job);
@@ -150,6 +144,7 @@ public class ScheduleJob implements org.quartz.Job {
                 case completed:
                     redisTemplate.delete(String.valueOf(job.getId()));
                     deschedule = true;
+                    updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
                     updateJobStatusOnVcs(job, JobStatus.completed);
                     deleteOldJobs(job);
                     break;
@@ -172,7 +167,6 @@ public class ScheduleJob implements org.quartz.Job {
         return deschedule;
     }
 
-    // TODO Untestable code; var could come in through the normal workspace var hierarchy
     private void deleteOldJobs(Job job) {
         AtomicInteger keepHistory = new AtomicInteger();
         keepHistory.set(0);

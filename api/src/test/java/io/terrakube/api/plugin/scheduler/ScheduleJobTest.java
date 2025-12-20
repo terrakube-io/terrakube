@@ -205,39 +205,6 @@ public class ScheduleJobTest {
     }
 
     @Test
-    public void pendingJobNoPlanChanges() {
-        Job job = job(JobStatus.pending);
-        job.setPlanChanges(false);
-
-        Flow flow = new Flow();
-        flow.setType(FlowType.terraformPlan.name());
-
-        // Called twice :(
-        doReturn(null).when(redisTemplate).delete(anyString());
-        doReturn(Optional.of(Collections.emptyList()))
-                .when(jobRepository)
-                .findByWorkspaceAndStatusNotInAndIdLessThan(
-                        any(Workspace.class),
-                        anyList(),
-                        anyInt());
-        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
-        doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
-
-        // Seems odd that we do not remove the job from the scheduler?
-        Assert.assertFalse(subject().runExecution(job));
-
-        verify(jobRepository, times(1)).save(job);
-        // TODO Called twice :(
-        verify(workspaceRepository, times(2)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(2)).sendCommitStatus(job, JobStatus.completed);
-        Assertions.assertEquals(JobStatus.completed, job.getStatus());
-        Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
-    }
-
-    @Test
     public void pendingJobFailsOnExecutionChanges() throws Exception {
         Job job = job(JobStatus.pending);
         job.setPlanChanges(true);
@@ -662,12 +629,15 @@ public class ScheduleJobTest {
                         anyInt());
         // Called twice :(
         doReturn(null).when(redisTemplate).delete(anyString());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
     }
 
     @Test
