@@ -63,7 +63,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     ScheduleJobService scheduleJobService;
 
-    RedisTemplate redisTemplate;
+    RedisTemplate<String, Object> redisTemplate;
 
     GitHubWebhookService gitHubWebhookService;
     GlobalVarRepository globalVarRepository;
@@ -77,6 +77,7 @@ public class ScheduleJob implements org.quartz.Job {
         Job job = jobRepository.getReferenceById(jobId);
         boolean deschedule = runExecution(job);
         if (deschedule) {
+            redisTemplate.delete(String.valueOf(job.getId()));
             removeJobContext(job, jobExecutionContext);
         }
     }
@@ -92,7 +93,6 @@ public class ScheduleJob implements org.quartz.Job {
             try {
                 job.setStatus(JobStatus.failed);
                 jobRepository.save(job);
-                redisTemplate.delete(String.valueOf(job.getId()));
                 log.warn("Deleting Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                 updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                 updateJobStatusOnVcs(job, JobStatus.unknown);
@@ -126,19 +126,12 @@ public class ScheduleJob implements org.quartz.Job {
 
             switch (job.getStatus()) {
                 case pending:
-                    log.info("Pending with plan changes {}", job.isPlanChanges());
-                    if (job.isPlanChanges()) {
-                        redisTemplate.delete(String.valueOf(job.getId()));
-                        executePendingJob(job);
-                        deschedule = true;
-                    } else {
-                        // TODO https://terrakubeworkspace.slack.com/archives/C06JPG68R7Y/p1764450723780359
-                        log.warn("Job {} completed with no changes...", jobId);
-                        completeJob(job);
-                        redisTemplate.delete(String.valueOf(job.getId()));
-                        updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
-                        updateJobStatusOnVcs(job, JobStatus.completed);
+                    if (!job.isPlanChanges()) {
+                         throw new AssertionError(String.format("Expected pending job %d to have plan changes", jobId));
                     }
+                    log.info("Executing pending job {}", jobId);
+                    executePendingJob(job);
+                    deschedule = true;
                     break;
                 case approved:
                     executeApprovedJobs(job);
@@ -148,15 +141,14 @@ public class ScheduleJob implements org.quartz.Job {
                     log.info("Job {} running", job.getId());
                     break;
                 case completed:
-                    redisTemplate.delete(String.valueOf(job.getId()));
                     deschedule = true;
+                    updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
                     updateJobStatusOnVcs(job, JobStatus.completed);
                     deleteOldJobs(job);
                     break;
                 case cancelled:
                 case failed:
                 case rejected:
-                    redisTemplate.delete(String.valueOf(job.getId()));
                     log.info("Deleting Failed/Cancelled/Rejected Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                     updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                     updateJobStatusOnVcs(job, JobStatus.failed);
@@ -172,7 +164,6 @@ public class ScheduleJob implements org.quartz.Job {
         return deschedule;
     }
 
-    // TODO Untestable code; var could come in through the normal workspace var hierarchy
     private void deleteOldJobs(Job job) {
         AtomicInteger keepHistory = new AtomicInteger();
         keepHistory.set(0);

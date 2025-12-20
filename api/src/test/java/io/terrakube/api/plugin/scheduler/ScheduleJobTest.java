@@ -3,7 +3,6 @@ package io.terrakube.api.plugin.scheduler;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -24,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.RedisTemplate;
 
 import graphql.Assert;
 import io.terrakube.api.helpers.FailUnkownMethod;
@@ -68,7 +66,6 @@ public class ScheduleJobTest {
     WorkspaceRepository workspaceRepository;
     SoftDeleteService softDeleteService;
     ScheduleJobService scheduleJobService;
-    RedisTemplate<String, String> redisTemplate;
     GitHubWebhookService gitHubWebhookService;
     ScheduleRepository scheduleRepository;
     TemplateRepository templateRepository;
@@ -88,7 +85,6 @@ public class ScheduleJobTest {
         workspaceRepository = mock(WorkspaceRepository.class, new FailUnkownMethod<WorkspaceRepository>());
         softDeleteService = mock(SoftDeleteService.class, new FailUnkownMethod<SoftDeleteService>());
         scheduleJobService = mock(ScheduleJobService.class, new FailUnkownMethod<ScheduleJobService>());
-        redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate<String, String>>());
         gitHubWebhookService = mock(GitHubWebhookService.class, new FailUnkownMethod<GitHubWebhookService>());
         scheduleRepository = mock(ScheduleRepository.class, new FailUnkownMethod<ScheduleRepository>());
         templateRepository = mock(TemplateRepository.class, new FailUnkownMethod<TemplateRepository>());
@@ -109,7 +105,7 @@ public class ScheduleJobTest {
                 workspaceRepository,
                 softDeleteService,
                 scheduleJobService,
-                redisTemplate,
+                null,
                 gitHubWebhookService,
                 globalVarRepository,
                 variableRepository);
@@ -148,7 +144,6 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
@@ -165,7 +160,6 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
@@ -183,7 +177,6 @@ public class ScheduleJobTest {
         Flow flow = new Flow();
         flow.setType(FlowType.terraformPlan.name());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -205,39 +198,6 @@ public class ScheduleJobTest {
     }
 
     @Test
-    public void pendingJobNoPlanChanges() {
-        Job job = job(JobStatus.pending);
-        job.setPlanChanges(false);
-
-        Flow flow = new Flow();
-        flow.setType(FlowType.terraformPlan.name());
-
-        // Called twice :(
-        doReturn(null).when(redisTemplate).delete(anyString());
-        doReturn(Optional.of(Collections.emptyList()))
-                .when(jobRepository)
-                .findByWorkspaceAndStatusNotInAndIdLessThan(
-                        any(Workspace.class),
-                        anyList(),
-                        anyInt());
-        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
-        doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
-
-        // Seems odd that we do not remove the job from the scheduler?
-        Assert.assertFalse(subject().runExecution(job));
-
-        verify(jobRepository, times(1)).save(job);
-        // TODO Called twice :(
-        verify(workspaceRepository, times(2)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(2)).sendCommitStatus(job, JobStatus.completed);
-        Assertions.assertEquals(JobStatus.completed, job.getStatus());
-        Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
-    }
-
-    @Test
     public void pendingJobFailsOnExecutionChanges() throws Exception {
         Job job = job(JobStatus.pending);
         job.setPlanChanges(true);
@@ -245,7 +205,6 @@ public class ScheduleJobTest {
         Flow flow = new Flow();
         flow.setType(FlowType.terraformPlan.name());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -281,7 +240,6 @@ public class ScheduleJobTest {
         flow.setType(FlowType.approval.name());
         flow.setTeam("ze-team");
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -309,7 +267,6 @@ public class ScheduleJobTest {
         flow.setType(FlowType.approval.name());
         flow.setTeam("ze-team");
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -337,7 +294,6 @@ public class ScheduleJobTest {
         Flow flow = new Flow();
         flow.setType(FlowType.disableWorkspace.name());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -377,7 +333,6 @@ public class ScheduleJobTest {
 
         UUID sId = UUID.randomUUID();
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -418,7 +373,6 @@ public class ScheduleJobTest {
         flow.setType(FlowType.scheduleTemplates.name());
         flow.setTemplates(Collections.singletonList(schedTemplate));
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -445,7 +399,6 @@ public class ScheduleJobTest {
         Flow flow = new Flow();
         flow.setType(FlowType.yamlError.name());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -478,7 +431,6 @@ public class ScheduleJobTest {
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
         doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -578,7 +530,6 @@ public class ScheduleJobTest {
          doReturn(Collections.singletonList(globalVar)).when(globalVarRepository).findByOrganization(any());
          doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
 
-         doReturn(null).when(redisTemplate).delete(anyString());
          doReturn(Optional.of(Collections.emptyList()))
                  .when(jobRepository)
                  .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -620,7 +571,6 @@ public class ScheduleJobTest {
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
         doReturn(Optional.of(Collections.singletonList(variable))).when(variableRepository).findByWorkspace(any());
 
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusNotInAndIdLessThan(
@@ -651,7 +601,6 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.completed);
 
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
-        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
 
         doReturn(Optional.of(Collections.emptyList()))
@@ -660,14 +609,16 @@ public class ScheduleJobTest {
                         any(Workspace.class),
                         anyList(),
                         anyInt());
-        // Called twice :(
-        doReturn(null).when(redisTemplate).delete(anyString());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
     }
 
     @Test
@@ -683,8 +634,6 @@ public class ScheduleJobTest {
                         any(Workspace.class),
                         anyList(),
                         anyInt());
-        // Called twice :(
-        doReturn(null).when(redisTemplate).delete(anyString());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
