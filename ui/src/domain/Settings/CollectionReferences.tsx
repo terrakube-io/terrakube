@@ -88,8 +88,8 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
               cancelText="No"
             >
               {" "}
-              <Button danger type="link" icon={<DeleteOutlined />}>
-                Remove
+              <Button icon={<DeleteOutlined />} type="link" danger>
+                Delete
               </Button>
             </Popconfirm>
           </div>

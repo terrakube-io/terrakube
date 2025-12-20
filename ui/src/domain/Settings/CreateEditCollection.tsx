@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import "./Settings.css";
-import { InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { DeleteOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
 
 // Type definitions
 type Collection = {
@@ -360,8 +360,8 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
       title: "Actions",
       key: "actions",
       render: (_: any, record: any) => (
-        <Button type="link" danger onClick={() => handleRemoveVariable(record.id)}>
-          Remove
+        <Button icon={<DeleteOutlined />} type="link" danger onClick={() => handleRemoveVariable(record.id)}>
+          Delete
         </Button>
       ),
     },
