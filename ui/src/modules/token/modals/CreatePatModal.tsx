@@ -1,24 +1,24 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Modal, Space, Form, Input, InputNumber, Typography, Alert, ModalProps, Button, Flex } from "antd";
 import { useState } from "react";
-import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
-import "./CreatePatModal.css";
-import { CreateTokenForm } from "@/modules/user/types";
+import CreatePatModal from "@/modules/token/modals/CreatePatModal";
+import { CreateTokenForm } from "@/modules/token/types";
 
 type Props = {
   visible: boolean;
   onCancel: () => void;
   onCreated: () => void;
+  action: (data?: CreateTokenForm) => Promise<ApiResponse<CreatedToken>>;
 };
 
-export default function CreatePatModal({ onCancel, onCreated, visible }: Props) {
+export default function CreatePatModal({ onCancel, action, onCreated, visible }: Props) {
   const [form] = Form.useForm<CreateTokenForm>();
   const [tokenValue, setTokenValue] = useState<string>();
 
   const { loading, execute, error } = useApiRequest({
     showErrorAsNotification: false,
-    action: (values?: CreateTokenForm) => userService.createPersonalAccessToken(values!),
+    action: action,
     onReturn: (data) => {
       setTokenValue(data.token);
       form.resetFields();
@@ -50,13 +50,7 @@ export default function CreatePatModal({ onCancel, onCreated, visible }: Props) 
         };
 
   return (
-    <Modal
-      className="create-pat-modal"
-      open={visible}
-      title="Create Personal Access Token"
-      destroyOnClose
-      {...buttonProps}
-    >
+    <Modal className="create-pat-modal" open={visible} title="Create Access Token" destroyOnClose {...buttonProps}>
       {tokenValue === undefined && (
         <Space className="content" direction="vertical">
           {error && <Alert type="error" banner message={error?.message} />}
