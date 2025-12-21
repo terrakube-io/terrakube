@@ -20,12 +20,12 @@ import {
 } from "antd";
 import CreatePatModal from "@/modules/token/modals/CreatePatModal";
 import { CreatedToken, CreateTokenForm } from "@/modules/user/types";
-import { apiPost } from "@/modules/api/apiWrapper";
+import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import FormItem from "antd/es/form/FormItem";
 import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance, { axiosClientAuth } from "../../config/axiosConfig";
+import axiosInstance from "../../config/axiosConfig";
 import { TeamToken } from "../types";
 import "./Settings.css";
 import { TeamPermissions } from "./TeamPermissions";
@@ -177,12 +177,9 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
     }
   };
 
-  const onDelete = (id: string) => {
-    axiosClientAuth
-      .delete(`${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/access-token/v1/teams/${id}`)
-      .then((response) => {
-        loadTokens(teamName);
-      });
+  const onDelete = async (id: string) => {
+    await apiDelete(`/access-token/v1/teams/${id}`);
+    loadTokens(teamName);
   };
 
   const onCancel = () => {
@@ -201,30 +198,18 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
     return await apiPost("/access-token/v1/teams", token);
   };
 
-  const loadTokens = (teamName: string) => {
-    axiosClientAuth
-      .get(`${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/access-token/v1/teams`)
-      .then((response) => {
-        if (teamName) {
-          const filteredTokens = response.data.filter((token: any) => token.group === teamName);
-          console.log("access-tokens filtered.....")
-          console.log(filteredTokens)
-          setTokens(filteredTokens);
-        } else {
-          setTokens([]);
-        }
-        setLoadingTokens(false);
-      });
+  const loadTokens = async (teamName: string) => {
+    const response = await apiGet("/access-token/v1/teams");
+    console.log(response);
+    setTokens(response.data.filter((token: any) => token.group === teamName));
+    setLoadingTokens(false);
   };
 
-  const loadUserTeams = (teamName: string) => {
-    axiosClientAuth
-      .get(`${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/access-token/v1/teams/current-teams`)
-      .then((response) => {
-        if (response.data?.groups.includes(teamName)) {
-          setCreateTokenDisabled(false);
-        }
-      });
+  const loadUserTeams = async (teamName: string) => {
+    const response = await apiGet("/access-token/v1/teams/current-teams");
+    if (response.data?.groups.includes(teamName)) {
+      setCreateTokenDisabled(false);
+    }
   };
 
   return (
