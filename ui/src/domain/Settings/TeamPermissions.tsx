@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Form, Switch, Typography, Row, Col, Input, Tooltip } from "antd";
+import { Form, Switch, Table, Typography, Row, Col, Input, Tooltip } from "antd";
 import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 
 type TeamPermissionsProps = {
@@ -77,44 +77,42 @@ export const TeamPermissions: React.FC<TeamPermissionsProps> = ({ managePermissi
         />
 
         <div className="permissions-table" style={{ maxWidth: "80%", marginLeft: 0 }}>
-          <Row className="permissions-header">
-            <Col span={12}>
-              <Typography.Text strong>Permission</Typography.Text>
-            </Col>
-            <Col span={12} style={{ textAlign: "right" }}>
-              <Typography.Text strong>Access</Typography.Text>
-            </Col>
-          </Row>
-
-          <div className="permission-items">
-            {filteredPermissions.length > 0 ? (
-              filteredPermissions.map((item) => (
-                <div key={item.name} className="permission-row">
-                  <Row style={{ width: "100%" }} align="middle">
-                    <Col span={12}>
-                      <div style={{ display: "flex", alignItems: "center" }}>
-                        <span>{item.label}</span>
-                        <Tooltip title={item.tooltip}>
-                          <Typography.Text type="secondary" style={{ marginLeft: 8, cursor: "help" }}>
-                            <InfoCircleOutlined />
-                          </Typography.Text>
-                        </Tooltip>
-                      </div>
-                    </Col>
-                    <Col span={12} style={{ textAlign: "right" }}>
-                      <Form.Item name={item.name} valuePropName="checked" noStyle>
-                        <Switch disabled={!managePermissions} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </div>
-              ))
-            ) : (
-              <div style={{ padding: "20px 0", textAlign: "center", color: "rgba(0, 0, 0, 0.45)" }}>
-                No permissions found matching "{searchText}"
-              </div>
-            )}
-          </div>
+          <Table
+            dataSource={filteredPermissions}
+            columns={[
+              {
+                title: "Permission",
+                dataIndex: "name",
+                key: "name",
+                render: (_: any, record: any) => (
+                  <div>
+                    <span>{record.label}</span>
+                    <Tooltip title={record.tooltip}>
+                      <Typography.Text type="secondary" style={{ marginLeft: 8, cursor: "help" }}>
+                        <InfoCircleOutlined />
+                      </Typography.Text>
+                    </Tooltip>
+                  </div>
+                )
+              },
+              {
+                title: "Access",
+                dataIndex: "name",
+                key: "name",
+                align: "right",
+                render: (_: any, record: any) => (
+                  <Form.Item name={record.name} valuePropName="checked" noStyle>
+                    <Switch disabled={!managePermissions} />
+                  </Form.Item>
+                ),
+              },
+            ]}
+            rowKey="label"
+            pagination={false}
+            locale={{ emptyText: "No matching permissions found" }}
+            style={{ marginBottom: "20px" }}
+            bordered
+          />
         </div>
       </div>
     </Form.Provider>
