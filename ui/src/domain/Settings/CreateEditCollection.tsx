@@ -463,6 +463,35 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
     </Modal>
   );
 
+  const variableListing = (
+    <div>
+      <div style={{ marginBottom: "15px" }}>
+        <Typography.Text>
+          You can add any number of variables. Terrakube will use these variables for jobs in the specified
+          workspaces.
+        </Typography.Text>
+      </div>
+
+      <div style={{ marginBottom: "30px" }}>
+        <Table
+          dataSource={variables}
+          columns={variableColumns}
+          rowKey="id"
+          pagination={false}
+          locale={{ emptyText: "There are no variables added." }}
+          style={{ marginBottom: "20px" }}
+          bordered
+        />
+
+        <Button icon={<PlusOutlined />} onClick={() => setAddingVariable(true)} style={{ marginBottom: "20px" }}>
+          Add variable
+        </Button>
+
+        {addVariableModal}
+      </div>
+    </div>
+  );
+
   return (
     <div className="setting">
       <Spin spinning={loading}>
@@ -545,31 +574,15 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
             <h2 style={{ fontSize: "20px", fontWeight: "bold" }}>Variables</h2>
           </div>
 
-          <div style={{ marginBottom: "15px" }}>
-            <Typography.Text>
-              You can add any number of variables. Terrakube will use these variables for jobs in the specified
-              workspaces.
-            </Typography.Text>
-          </div>
-
-          <div style={{ marginBottom: "30px" }}>
-            <Table
-              dataSource={variables}
-              columns={variableColumns}
-              rowKey="id"
-              pagination={false}
-              locale={{ emptyText: "There are no variables added." }}
-              style={{ marginBottom: "20px" }}
-              bordered
-            />
-
-            <Button icon={<PlusOutlined />} onClick={() => setAddingVariable(true)} style={{ marginBottom: "20px" }}>
-              Add variable
-            </Button>
-
-            {addVariableModal}
-          </div>
-
+          {mode === "create" ? (
+            <div style={{ marginBottom: "15px" }}>
+              <Typography.Text>
+                Create the collection first. Then you can add variables to it.
+              </Typography.Text>
+            </div>
+          ) : (
+            variableListing
+          )}
           <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
             <Space>
               <Button onClick={handleCancel}>Cancel</Button>
