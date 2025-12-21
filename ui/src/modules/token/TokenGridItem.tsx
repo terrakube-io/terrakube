@@ -78,8 +78,10 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
           </Typography.Text>
           {token.createdDate ? (
             <Typography.Text type="warning">
-              {token.days > 0 && token.createdDate
-                ? DateTime.fromISO(token.createdDate).plus({ days: token.days }).toLocaleString(DateTime.DATETIME_MED)
+              {(token.days > 0 || token.hours > 0 || token.minutes > 0) && token.createdDate
+                ? DateTime.fromISO(token.createdDate)
+                    .plus({ days: token.days, hours: token.hours, minutes: token.minutes })
+                    .toLocaleString(DateTime.DATETIME_MED)
                 : "Token without expiration date"}
             </Typography.Text>
           ) : (

@@ -2,17 +2,17 @@ import { Row, Col, Alert } from "antd";
 import { UserToken } from "@/modules/user/types";
 import TokenGridItem from "./TokenGridItem";
 import "./TokenList.css";
-import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
 
 type Props = {
   tokens: UserToken[];
   onDeleted: () => void;
+  action: (id: string) => Promise<ApiResponse<undefined>>;
 };
 
-export default function TokenGrid({ tokens, onDeleted }: Props) {
+export default function TokenGrid({ tokens, action, onDeleted }: Props) {
   const { loading, execute, error } = useApiRequest({
-    action: (id?: string) => userService.deletePersonalAccessToken(id!),
+    action: action,
     onReturn: () => {
       onDeleted();
     },

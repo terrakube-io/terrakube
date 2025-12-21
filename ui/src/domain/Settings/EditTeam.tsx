@@ -20,6 +20,7 @@ import {
 } from "antd";
 import CreatePatModal from "@/modules/token/modals/CreatePatModal";
 import { CreatedToken, CreateTokenForm } from "@/modules/user/types";
+import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import FormItem from "antd/es/form/FormItem";
 import { DateTime } from "luxon";
@@ -177,9 +178,10 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
     }
   };
 
-  const onDelete = async (id: string) => {
-    await apiDelete(`/access-token/v1/teams/${id}`);
+  const onDeleteToken = async (id: string) => {
+    const response = await apiDelete(`/access-token/v1/teams/${id}`);
     loadTokens(teamName);
+    return response;
   };
 
   const onCancel = () => {
@@ -269,65 +271,10 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           {loadingTokens ? (
             <p>Data loading...</p>
           ) : (
-            <List
-              itemLayout="horizontal"
-              dataSource={tokens}
-              renderItem={(item) => (
-                <List.Item>
-                  <List.Item.Meta
-                    description={
-                      <Card style={{ width: "100%" }}>
-                        <Row>
-                          <Col span={23}>
-                            <h3>{item.description}</h3>
-                          </Col>
-                          <Col span={1}>
-                            <Popconfirm
-                              onConfirm={() => {
-                                onDelete(item.id);
-                              }}
-                              style={{ width: "20px" }}
-                              title={
-                                <p>
-                                  This operation is irreversible.
-                                  <br />
-                                  Are you sure you want to proceed? <br />
-                                </p>
-                              }
-                              okText="Yes"
-                              cancelText="No"
-                            >
-                              <Button icon={<DeleteOutlined />}></Button>
-                            </Popconfirm>
-                          </Col>
-                        </Row>
-                        <Row>
-                          <Col span={20}>
-                            <Tag icon={<ExclamationCircleOutlined />} color="warning">
-                              {" "}
-                              <b>
-                                Expires{": "}
-                                {item.days > 0 || item.minutes > 0 || item.hours > 0
-                                  ? DateTime.fromISO(item.createdDate)
-                                      .plus({ days: item.days, minutes: item.minutes, hours: item.hours })
-                                      .toLocaleString(DateTime.DATETIME_MED)
-                                  : "Token without expiration date"}
-                              </b>
-                            </Tag>
-                          </Col>
-                        </Row>
-                        <br />
-                        <Row>
-                          <Col span={20} style={{ color: themeToken.colorTextSecondary }}>
-                            <ClockCircleOutlined /> Created <b>{DateTime.fromISO(item.createdDate).toRelative()}</b> by
-                            user <b>{item.createdBy}</b>
-                          </Col>
-                        </Row>
-                      </Card>
-                    }
-                  />
-                </List.Item>
-              )}
+            <TokenGrid
+              tokens={tokens}
+              action={onDeleteToken}
+              onDeleted={() => loadTokens(teamName)}
             />
           )}
           <CreatePatModal

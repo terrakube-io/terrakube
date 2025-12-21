@@ -7,7 +7,7 @@ import CreatePatModal from "@/modules/token/modals/CreatePatModal";
 import { CreateTokenForm } from "@/modules/token/types";
 import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
-import TokenGrid from "@/modules/user/components/TokenGrid/TokenGrid";
+import TokenGrid from "@/modules/token/TokenGrid";
 
 type Params = {
   orgid: string;
@@ -71,7 +71,13 @@ export const Tokens = () => {
           </Empty>
         </Flex>
       )}
-      {!loading && tokens.length > 0 && <TokenGrid tokens={tokens} onDeleted={() => loadTokens()} />}
+      {!loading && tokens.length > 0 && (
+        <TokenGrid
+          tokens={tokens}
+          action={(id) => userService.deletePersonalAccessToken(id!)}
+          onDeleted={() => loadTokens()}
+        />
+      )}
 
       {visible && (
         <CreatePatModal
