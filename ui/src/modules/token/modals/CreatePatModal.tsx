@@ -6,12 +6,13 @@ import { CreateTokenForm } from "@/modules/token/types";
 
 type Props = {
   visible: boolean;
+  shortlivedTokens: boolean;
   onCancel: () => void;
   onCreated: () => void;
   action: (data?: CreateTokenForm) => Promise<ApiResponse<CreatedToken>>;
 };
 
-export default function CreatePatModal({ onCancel, action, onCreated, visible }: Props) {
+export default function CreatePatModal({ onCancel, action, onCreated, visible, shortlivedTokens }: Props) {
   const [form] = Form.useForm<CreateTokenForm>();
   const [tokenValue, setTokenValue] = useState<string>();
 
@@ -58,6 +59,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible }:
             form={form}
             layout="vertical"
             disabled={loading}
+            initialValues={{ minutes: 0, hours: 0, days: 0 }}
             validateMessages={{
               required: "${label} is required",
             }}
@@ -84,6 +86,32 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible }:
             >
               <InputNumber min={0} placeholder="10" />
             </Form.Item>
+            {shortlivedTokens ? (
+              <>
+                <Form.Item
+                  name="hours"
+                  tooltip={{
+                    title: "Number of hours for the token to be valid",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                  label="Hours"
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} />
+                </Form.Item>
+                <Form.Item
+                  name="minutes"
+                  tooltip={{
+                    title: "Number of minutes for the token to be valid",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                  label="Minutes"
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} />
+                </Form.Item>
+              </>
+            ) : undefined}
           </Form>
         </Space>
       )}
@@ -112,6 +140,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible }:
               type="primary"
               danger
               onClick={() => {
+                setTokenValue(undefined);
                 onCreated();
                 onCancel();
               }}

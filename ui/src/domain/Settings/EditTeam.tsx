@@ -190,8 +190,6 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
   const onCreateToken = async (values: CreateTokenForm) => {
     const token = {
       ...values,
-      minutes: 0, //values.minutes,
-      hours: 0, //values.hours,
       group: teamName,
     };
 
@@ -337,6 +335,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
             onCancel={() => setVisible(false)}
             onCreated={() => loadTokens(teamName)}
             action={onCreateToken}
+            shortlivedTokens={true}
           />
         </>
       ) : (
