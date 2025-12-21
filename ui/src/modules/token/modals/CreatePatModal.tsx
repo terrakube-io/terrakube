@@ -2,7 +2,6 @@ import { InfoCircleOutlined } from "@ant-design/icons";
 import { Modal, Space, Form, Input, InputNumber, Typography, Alert, ModalProps, Button, Flex } from "antd";
 import { useState } from "react";
 import useApiRequest from "@/modules/api/useApiRequest";
-import CreatePatModal from "@/modules/token/modals/CreatePatModal";
 import { CreateTokenForm } from "@/modules/token/types";
 
 type Props = {
