@@ -232,6 +232,9 @@ export const CreateWorkspace = () => {
   const loadOrgTemplates = () => {
     axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
       setOrgTemplates(response.data.data);
+      if(response.data.data.length > 0) {
+        form.setFieldsValue({defaultTemplate: response.data.data[0].id});
+      }
     });
   };
 
@@ -277,7 +280,11 @@ export const CreateWorkspace = () => {
           if (!version.includes("-")) tfVersions.push(version);
         }
       }
-      setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+      tfVersions.sort(compareVersions).reverse();
+      setTerraformVersions(tfVersions);
+      if (tfVersions.length > 0) {
+        form.setFieldsValue({terraformVersion: tfVersions[0]})
+      }
     });
   };
 
@@ -646,7 +653,7 @@ export const CreateWorkspace = () => {
                 rules={[{ required: true }]}
                 hidden={!versionControlFlow}
               >
-                <Input placeholder="(default branch)" />
+                <Input placeholder="Branch name" />
               </Form.Item>
               <Form.Item
                 name="folder"
