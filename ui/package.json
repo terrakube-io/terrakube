@@ -99,7 +99,7 @@
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.25",
+    "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^16.5.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
