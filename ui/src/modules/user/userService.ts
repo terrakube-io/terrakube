@@ -1,4 +1,5 @@
-import { CreatedToken, CreateTokenForm, UserToken } from "@/modules/user/types";
+import { UserToken } from "@/modules/user/types";
+import { CreatedToken, CreateTokenForm } from "@/modules/token/types";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 

@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { UserToken } from "@/modules/user/types";
 import "./PatSection.css";
-import CreatePatModal from "@/modules/user/modals/CreatePatModal/CreatePatModal";
+import CreatePatModal from "@/modules/token/modals/CreatePatModal";
+import { CreateTokenForm } from "@/modules/token/types";
 import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import TokenGrid from "@/modules/user/components/TokenGrid/TokenGrid";
@@ -73,7 +74,12 @@ export const Tokens = () => {
       {!loading && tokens.length > 0 && <TokenGrid tokens={tokens} onDeleted={() => loadTokens()} />}
 
       {visible && (
-        <CreatePatModal visible={visible} onCancel={() => setVisible(false)} onCreated={() => loadTokens()} />
+        <CreatePatModal
+          visible={visible}
+          onCancel={() => setVisible(false)}
+          onCreated={() => loadTokens()}
+          action={(values?: CreateTokenForm) => userService.createPersonalAccessToken(values!)}
+        />
       )}
     </div>
   );
