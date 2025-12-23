@@ -140,7 +140,7 @@ export const GeneralSettings = () => {
             <Form.Item name="description" label="Description">
               <Input.TextArea />
             </Form.Item>
-            <Form.Item name="executionMode" label="Default Execution Mode">
+            <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces (informational only)">
               <Radio.Group>
                 <Space direction="vertical">
                   <Radio value="remote">

@@ -27,8 +27,7 @@ import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
-
-
+import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.tag.Tag;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -335,7 +334,7 @@ public class WorkspaceService {
         workspace.setName(workspaceImportRequest.getName());
         workspace.setDescription(workspaceImportRequest.getDescription());
         workspace.setTerraformVersion(workspaceImportRequest.getTerraformVersion());
-        workspace.setExecutionMode(workspaceImportRequest.getExecutionMode().equals("local") ? "local" : "remote");
+        workspace.setExecutionMode(workspaceImportRequest.getExecutionMode().equals("local") ? ExecutionMode.local : ExecutionMode.remote);
 
         // If the workspace has a VCS, set it
         if (workspaceImportRequest.getVcsId() != null && !workspaceImportRequest.getVcsId().isEmpty()) {

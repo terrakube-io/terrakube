@@ -103,7 +103,8 @@ public class Organization {
     private List<Tag> tag;
 
     @Column(name = "execution_mode")
-    private String executionMode;
+    @Enumerated(EnumType.STRING)
+    private ExecutionMode executionMode = ExecutionMode.remote;
 
     @Column(name = "icon")
     private String icon;

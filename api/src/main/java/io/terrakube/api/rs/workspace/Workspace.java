@@ -2,6 +2,7 @@ package io.terrakube.api.rs.workspace;
 
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
@@ -95,7 +96,8 @@ public class Workspace extends GenericAuditFields {
     private String terraformVersion;
 
     @Column(name = "execution_mode")
-    private String executionMode;
+    @Enumerated(EnumType.STRING)
+    private ExecutionMode executionMode;
 
     @ManyToOne
     private Organization organization;
