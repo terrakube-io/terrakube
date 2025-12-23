@@ -61,6 +61,7 @@ export const CreateWorkspace = () => {
     token: { colorBgContainer },
   } = theme.useToken();
   const [organizationName, setOrganizationName] = useState<string | null>();
+  const [executionMode, setExecutionMode] = useState<string | null>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
@@ -259,6 +260,7 @@ export const CreateWorkspace = () => {
     setStep4Hidden(false);
     setSSHKeysVisible(false);
     setRequiredVcsPush(false);
+    setExecutionMode("local");
     form.setFieldsValue({ source: "empty", branch: "remote-content" });
   };
 
@@ -306,6 +308,7 @@ export const CreateWorkspace = () => {
               branch: values.branch,
               iacType: iacType.id,
               defaultTemplate: values.defaultTemplate,
+              executionMode: executionMode,
             },
             relationships: {},
           },

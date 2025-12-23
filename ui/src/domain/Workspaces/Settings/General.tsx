@@ -267,9 +267,9 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
             name="executionMode"
             label="Execution Mode"
             extra={
-              "Use this option with terraform remote state/cloud block if you want to execute " +
-              getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-              " CLI remotely and just upload the state to Terrakube"
+              "Local indicates users should run " + getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " " +
+              "locally with remote state/cloud block and just upload the state to Terrakube. Remote " +
+              "indicates Terrakube will run plans and apply. Informational only."
             }
           >
             <Select

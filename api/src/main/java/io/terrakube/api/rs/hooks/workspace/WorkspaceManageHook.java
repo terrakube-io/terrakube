@@ -39,7 +39,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
             case CREATE:
                 switch (transactionPhase) {
                     case PRECOMMIT:
-                        if (workspace.getExecutionMode() == null || workspace.getExecutionMode().isEmpty()) {
+                        if (workspace.getExecutionMode() == null) {
                             log.debug("setting default execution mode");
                             workspace.setExecutionMode(workspace.getOrganization().getExecutionMode());
                         }

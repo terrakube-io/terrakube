@@ -713,7 +713,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                         </span>
                         <span>
                           <ThunderboltOutlined /> Execution Mode:{" "}
-                          <a onClick={handleClickSettings}>{executionMode}</a>{" "}
+                          {executionMode}{" "}
                         </span>
                         <span>
                           <PlayCircleOutlined /> Auto apply: <a>Off</a>{" "}
