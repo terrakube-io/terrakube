@@ -1,0 +1,4 @@
+[tools]
+java = "25"
+maven = "latest"
+node = "22"

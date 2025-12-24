@@ -1,3 +1,21 @@
+## Development Environment Setup
+
+### Local Development with mise
+
+Terrakube uses [mise](https://mise.jdx.dev/) for managing development tools and ensuring consistent versions across environments.
+
+#### Required Tool Versions
+- Java 25
+- Maven (latest)
+- Node 22
+
+#### Setup
+1. Install mise: Follow instructions at [mise.jdx.dev](https://mise.jdx.dev/)
+2. Run `mise install` in the repository root to install all required tools
+3. Tools will be automatically activated when you enter the project directory
+
+The `.mise.toml` file in the repository root defines all required tool versions.
+
 ## Terrakube Ready to Code.
 We use Gitpod to develop the platform. You can have a complete development environment to test all the components and features with one click using the following button.
 
