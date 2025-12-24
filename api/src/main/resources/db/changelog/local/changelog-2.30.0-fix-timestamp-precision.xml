@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+        Fix for issue #2787: Console time calculation precision
+
+        Problem: Liquibase 'datetime' type maps to SQL Server's 'datetime' which has ~3.33ms precision,
+        causing timestamp rounding and incorrect "X seconds ago" displays in the UI.
+
+        Solution: Change all audit timestamp columns (created_date, updated_date) from 'datetime'
+        to 'timestamp' type for better precision across all supported databases:
+        - PostgreSQL: TIMESTAMP (microsecond precision)
+        - SQL Server: datetime2(7) (100ns precision)
+        - MySQL: TIMESTAMP (microsecond precision)
+        - H2: TIMESTAMP (nanosecond precision)
+    -->
+
+    <changeSet id="fix-timestamp-precision-history" author="maestro-ai">
+        <comment>Fix timestamp precision for history table audit columns</comment>
+        <modifyDataType tableName="history" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="history" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-job" author="maestro-ai">
+        <comment>Fix timestamp precision for job table audit columns</comment>
+        <modifyDataType tableName="job" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="job" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-workspace" author="maestro-ai">
+        <comment>Fix timestamp precision for workspace table audit columns</comment>
+        <modifyDataType tableName="workspace" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="workspace" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-organization" author="maestro-ai">
+        <comment>Fix timestamp precision for organization table audit columns</comment>
+        <modifyDataType tableName="organization" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="organization" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-team" author="maestro-ai">
+        <comment>Fix timestamp precision for team table audit columns</comment>
+        <modifyDataType tableName="team" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="team" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-template" author="maestro-ai">
+        <comment>Fix timestamp precision for template table audit columns</comment>
+        <modifyDataType tableName="template" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="template" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-vcs" author="maestro-ai">
+        <comment>Fix timestamp precision for vcs table audit columns</comment>
+        <modifyDataType tableName="vcs" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="vcs" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-module" author="maestro-ai">
+        <comment>Fix timestamp precision for module table audit columns</comment>
+        <modifyDataType tableName="module" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="module" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-provider" author="maestro-ai">
+        <comment>Fix timestamp precision for provider table audit columns</comment>
+        <modifyDataType tableName="provider" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="provider" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-ssh" author="maestro-ai">
+        <comment>Fix timestamp precision for ssh table audit columns</comment>
+        <modifyDataType tableName="ssh" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="ssh" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-agent" author="maestro-ai">
+        <comment>Fix timestamp precision for agent table audit columns</comment>
+        <modifyDataType tableName="agent" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="agent" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-global-var" author="maestro-ai">
+        <comment>Fix timestamp precision for global_var table audit columns</comment>
+        <modifyDataType tableName="global_var" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="global_var" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-tag" author="maestro-ai">
+        <comment>Fix timestamp precision for tag table audit columns</comment>
+        <modifyDataType tableName="tag" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="tag" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-team-token" author="maestro-ai">
+        <comment>Fix timestamp precision for team_token table audit columns</comment>
+        <modifyDataType tableName="team_token" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="team_token" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-pat" author="maestro-ai">
+        <comment>Fix timestamp precision for pat table audit columns</comment>
+        <modifyDataType tableName="pat" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="pat" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-action" author="maestro-ai">
+        <comment>Fix timestamp precision for action table audit columns</comment>
+        <modifyDataType tableName="action" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="action" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-webhook" author="maestro-ai">
+        <comment>Fix timestamp precision for webhook table audit columns</comment>
+        <modifyDataType tableName="webhook" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="webhook" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-collection" author="maestro-ai">
+        <comment>Fix timestamp precision for collection table audit columns</comment>
+        <modifyDataType tableName="collection" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="collection" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-cli-address" author="maestro-ai">
+        <comment>Fix timestamp precision for cli_address table audit columns</comment>
+        <modifyDataType tableName="cli_address" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="cli_address" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-webhook-event" author="maestro-ai">
+        <comment>Fix timestamp precision for webhook_event table audit columns</comment>
+        <modifyDataType tableName="webhook_event" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="webhook_event" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+
+    <changeSet id="fix-timestamp-precision-project" author="maestro-ai">
+        <comment>Fix timestamp precision for project table audit columns</comment>
+        <modifyDataType tableName="project" columnName="created_date" newDataType="timestamp"/>
+        <modifyDataType tableName="project" columnName="updated_date" newDataType="timestamp"/>
+    </changeSet>
+</databaseChangeLog>
