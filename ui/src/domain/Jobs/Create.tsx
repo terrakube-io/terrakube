@@ -1,4 +1,4 @@
-import { DeleteOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, InfoCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Modal, Select, Space, message, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -21,6 +21,7 @@ export const CreateJob = ({ changeJob }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [visible, setVisible] = useState(false);
   const [form] = Form.useForm<CreateJobForm>();
+  const [defaultTemplate, setDefaultTemplate] = useState();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [branchName, setBranchName] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -36,8 +37,10 @@ export const CreateJob = ({ changeJob }: Props) => {
 
   const loadBranch = () => {
     axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}`).then((response) => {
-      const branchName = response.data.data.attributes.branch;
-      setBranchName(branchName);
+      console.log(response.data);
+      const { branch, defaultTemplate } = response.data.data.attributes;
+      setDefaultTemplate(defaultTemplate);
+      setBranchName(branch);
     });
   };
 
@@ -99,14 +102,14 @@ export const CreateJob = ({ changeJob }: Props) => {
         onClick={() => {
           setVisible(true);
         }}
-        icon={<PlusOutlined />}
+        icon={<PlayCircleOutlined />}
       >
-        New job
+        Run now
       </Button>
 
       <Modal
         open={visible}
-        title="Start a new job"
+        title="Run job"
         okText="Start"
         cancelText="Cancel"
         onCancel={onCancel}
@@ -130,7 +133,11 @@ export const CreateJob = ({ changeJob }: Props) => {
             </Typography.Text>
           </div>
           <Form form={form} layout="vertical" name="create-org" validateMessages={validateMessages}>
-            <Form.Item name="templateId" label="Choose job type" rules={[{ required: true }]}>
+            <Form.Item
+              name="templateId"
+              label="Choose job type"
+              rules={[{ required: true }]}
+              initialValue={defaultTemplate}>
               {loading || !templates ? (
                 <p>Data loading...</p>
               ) : (
