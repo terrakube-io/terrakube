@@ -46,7 +46,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "comments")
     private String comments;
 
-    @UpdatePermission(expression = "team approve job OR user is a super service")
+    @UpdatePermission(expression = "team approve job OR team limited manage job OR team manage job OR user is a super service")
     @Enumerated(EnumType.STRING)
     private JobStatus status = JobStatus.pending;
 
