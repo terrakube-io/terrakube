@@ -9,12 +9,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
+import graphql.AssertException;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -121,6 +126,20 @@ class JobTests extends ServerApplicationTests {
         return templateRepository.save(template);
     }
 
+    private void awaitJobStatus(String jobId, JobStatus status, Duration timeout) {
+        Instant deadline = Instant.now().plusMillis(timeout.toMillis());
+        while(Instant.now().isBefore(deadline)) {
+            Optional<Job> maybeJob = jobRepository.findById(Integer.parseInt(jobId));
+            if(maybeJob.filter(job -> status.equals(job.getStatus())).isPresent()) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {}
+        }
+        throw new AssertException(String.format("Timeout waiting for job %s to reach status %s", jobId, status));
+    }
+
     @Test
     void createJobAsOrgMember() {
         devsManageJobs(true);
@@ -203,6 +222,8 @@ class JobTests extends ServerApplicationTests {
         String jobId = createJob(jobDefinition(template.getId().toString()));
         devsManageJobs(false);
 
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body(statusChangePayload(jobId, JobStatus.approved))
@@ -221,6 +242,8 @@ class JobTests extends ServerApplicationTests {
         String jobId = createJob(jobDefinition(template.getId().toString()));
         devsManageJobs(false);
 
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body(statusChangePayload(jobId, JobStatus.approved))
@@ -238,6 +261,8 @@ class JobTests extends ServerApplicationTests {
         devsManageJobs(true);
         String jobId = createJob(jobDefinition(template.getId().toString()));
         devsManageJobs(false);
+
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
 
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
