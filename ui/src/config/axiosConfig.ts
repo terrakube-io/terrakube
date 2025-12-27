@@ -21,7 +21,7 @@ axiosInstance.interceptors.request.use(
     return config;
   },
   function (error) {
-    Promise.reject(error);
+    return Promise.reject(error);
   }
 );
 
@@ -33,7 +33,7 @@ axiosGraphQL.interceptors.request.use(
     return config;
   },
   function (error) {
-    Promise.reject(error);
+    return Promise.reject(error);
   }
 );
 

@@ -408,15 +408,14 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
         },
       })
       .then((response) => {
-        if (response.status === 204) {
-          loadWorkspace(true);
-          var newstatus = locked ? "unlocked" : "locked";
-          message.success("Workspace " + newstatus + " successfully");
-        } else {
-          var newstatus = locked ? "unlock" : "lock";
-          message.error("Workspace " + newstatus + " failed");
-        }
-      });
+        loadWorkspace(true);
+        var newstatus = locked ? "unlocked" : "locked";
+        message.success("Workspace " + newstatus + " successfully");
+      })
+      .catch((error) => {
+        var newstatus = locked ? "unlock" : "lock";
+        message.error("Workspace " + newstatus + " failed: " + error.response.data.errors[0].detail);
+      })
   };
 
   return (
@@ -714,9 +713,6 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                         <span>
                           <ThunderboltOutlined /> Execution Mode:{" "}
                           {executionMode}{" "}
-                        </span>
-                        <span>
-                          <PlayCircleOutlined /> Auto apply: <a>Off</a>{" "}
                         </span>
                         <Divider />
                         <h4>Tags</h4>

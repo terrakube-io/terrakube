@@ -169,11 +169,6 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
           layout="vertical"
           name="form-settings"
         >
-          <Form.Item name="id" label="ID">
-            <Typography.Paragraph copyable={{ tooltips: false }}>
-              <span className="App-text"> {id}</span>
-            </Typography.Paragraph>
-          </Form.Item>
           <Form.Item
             name="name"
             rules={[

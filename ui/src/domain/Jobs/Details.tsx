@@ -8,7 +8,6 @@ import {
   ExclamationCircleOutlined,
   LoadingOutlined,
   MinusCircleOutlined,
-  PlayCircleOutlined,
   StopOutlined,
   SyncOutlined,
   UserOutlined,
@@ -85,6 +84,9 @@ export const DetailsJob = ({ jobId }: Props) => {
       .then(() => {
         message.success("Job Cancelled Succesfully");
         loadJob();
+      })
+      .catch((error) => {
+        message.error("Could not cancel job: " + error.response.data.errors[0].detail);
       });
   };
 
@@ -124,8 +126,11 @@ export const DetailsJob = ({ jobId }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
-        console.log(response);
+      .then(() => {
+        message.success("Approve successful");
+      })
+      .catch((error) => {
+        message.error("Could not approve: " + error.response.data.errors[0].detail);
       });
   };
 
@@ -146,8 +151,11 @@ export const DetailsJob = ({ jobId }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
-        console.log(response);
+      .then(() => {
+        message.success("Discard successful");
+      })
+      .catch((error) => {
+        message.error("Could not discard: " + error.response.data.errors[0].detail);
       });
   };
 
