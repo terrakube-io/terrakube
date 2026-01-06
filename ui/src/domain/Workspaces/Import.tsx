@@ -13,7 +13,7 @@ import {
   Steps,
   Table,
   message,
-  theme,
+  theme, Alert,
 } from "antd";
 import parse from "html-react-parser";
 import { ValidateErrorEntity } from "rc-field-form/lib/interface";
@@ -406,6 +406,13 @@ export const ImportWorkspace = () => {
           <h2>Import Workspaces</h2>
           <div className="App-text">
             Easily transfer workspaces from Terraform Cloud and Terraform Enterprise to Terrakube.
+            <Alert
+                title="Warning"
+                description="Only approved URLs can be used when using Terraform Enterprise to import workspaces. Please verify with your Terrakube administrator if you encounter any issues."
+                type="warning"
+                showIcon
+                style={{ marginBottom: "20px" }}
+            />
           </div>
           <Content hidden={stepsHidden}>
             <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
