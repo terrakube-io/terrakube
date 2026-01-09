@@ -162,6 +162,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             if (exitCode != 1 || terraformJob.isIgnoreError()) {
                 executionPlan = true;
+            } else {
+                executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, planOutput);
             }
 
             log.warn("Terraform plan Executed: {} Exit Code: {}", executionPlan, exitCode);
@@ -229,6 +231,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 handleTerraformStateChange(terraformJob, terraformWorkingDir);
 
+            }
+
+            if(!execution){
+                executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, applyOutput);
             }
 
             log.warn("Terraform apply Executed Successfully: {}", execution);
@@ -363,6 +369,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         log.warn("No commands to run after terraform operation Job {}", scriptAfterSuccess);
         return scriptAfterSuccess;
+    }
+
+    private void executeOnFailureOperationScripts(TerraformJob terraformJob, File workingDirectory, Consumer<String> output) {
+            log.warn("Terraform operation failed, running onFailure scripts");
+            if (terraformJob.getOnFailureList() != null) {
+                scriptEngineService.execute(
+                        terraformJob,
+                        new LinkedList<>(terraformJob
+                                .getOnFailureList()),
+                        workingDirectory,
+                        output);
+            }
+
+        log.warn("Terraform operation failed, running onFailure scripts completed");
     }
 
     private void handleTerraformStateChange(TerraformJob terraformJob, File workingDirectory)
