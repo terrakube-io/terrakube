@@ -15,6 +15,7 @@ import java.util.List;
 @Setter
 public class ExecutorContext {
     private List<Command> commandList;
+    private List<Command> onFailureList;
     private String type;
     private String organizationId;
     private String workspaceId;

@@ -142,6 +142,7 @@ public class ExecutorService {
         executorContext.setEnvironmentVariables(environmentVariables);
 
         executorContext.setCommandList(flow.getCommands());
+        executorContext.setOnFailureList(flow.getOnFailure());
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
         executorContext.setTerraformVersion(job.getWorkspace().getTerraformVersion());

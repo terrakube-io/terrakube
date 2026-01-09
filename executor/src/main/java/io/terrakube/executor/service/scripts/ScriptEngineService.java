@@ -52,6 +52,7 @@ public class ScriptEngineService {
         AtomicBoolean executeSuccess = new AtomicBoolean(true);
         TreeMap<Integer, Command> commandOrder = new TreeMap<>();
         if (commands != null) {
+            log.debug("Executing scripts: {}", commands);
             commands.forEach(command -> {
                 commandOrder.put(command.getPriority(), command);
             });
