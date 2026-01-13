@@ -5,6 +5,7 @@ import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.text.ParseException;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
@@ -15,7 +16,6 @@ import java.util.UUID;
 import org.quartz.SchedulerException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import io.terrakube.api.plugin.scheduler.ScheduleVcsService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsToken;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketToken;
@@ -49,9 +49,7 @@ public class TokenService {
     BitbucketTokenService bitbucketTokenService;
     GitLabTokenService gitLabTokenService;
     AzDevOpsTokenService azDevOpsTokenService;
-    ScheduleVcsService scheduleVcsService;
 
-    @Transactional
     public String generateAccessToken(String vcsId, String tempCode) {
         String result = "";
         Vcs vcs = vcsRepository.findByCallback(vcsId);
@@ -61,13 +59,15 @@ public class TokenService {
         } else {
             log.info("VCS found with custom callback");
         }
-        int minutes = Calendar.getInstance().get(Calendar.MINUTE);
         try {
             switch (vcs.getVcsType()) {
                 case GITHUB:
                     GitHubToken gitHubToken = gitHubTokenService.getAccessToken(vcs.getClientId(),
                             vcs.getClientSecret(), tempCode, null, vcs.getEndpoint());
                     vcs.setAccessToken(gitHubToken.getAccess_token());
+                    vcs.setRefreshToken(gitHubToken.getRefresh_token());
+                    vcs.setTokenExpiration(
+                            new Date(System.currentTimeMillis() + gitHubToken.getExpires_in() * 1000));
                     break;
                 case BITBUCKET:
                     BitBucketToken bitBucketToken = bitbucketTokenService.getAccessToken(vcs.getClientId(),
@@ -76,8 +76,6 @@ public class TokenService {
                     vcs.setRefreshToken(bitBucketToken.getRefresh_token());
                     vcs.setTokenExpiration(
                             new Date(System.currentTimeMillis() + bitBucketToken.getExpires_in() * 1000));
-                    // Refresh token every hour, Bitbucket Token expire after 2 hours (7200 seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
                     break;
                 case GITLAB:
                     GitLabToken gitLabToken = gitLabTokenService.getAccessToken(vcs.getId().toString(),
@@ -85,8 +83,6 @@ public class TokenService {
                     vcs.setAccessToken(gitLabToken.getAccess_token());
                     vcs.setRefreshToken(gitLabToken.getRefresh_token());
                     vcs.setTokenExpiration(new Date(System.currentTimeMillis() + gitLabToken.getExpires_in() * 1000));
-                    // Refresh token every hour, GitLab Token expire after 2 hours (7200 seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
                     break;
                 case AZURE_DEVOPS:
                     AzDevOpsToken azDevOpsToken = azDevOpsTokenService.getAccessToken(vcs.getId().toString(),
@@ -94,18 +90,12 @@ public class TokenService {
                     vcs.setAccessToken(azDevOpsToken.getAccess_token());
                     vcs.setRefreshToken(azDevOpsToken.getRefresh_token());
                     vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsToken.getExpires_in() * 1000));
-                    // Refresh token every 30 minutes, Azure DevOps Token expire after 1 hour (3599
-                    // seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_30_MINUTES, minutes), vcsId);
                     break;
                 case AZURE_SP_MI:
                     AzDevOpsToken azDevOpsTokenDynamic = azDevOpsTokenService.getAzureDefaultToken();
                     vcs.setAccessToken(azDevOpsTokenDynamic.getAccess_token());
                     vcs.setRefreshToken(azDevOpsTokenDynamic.getRefresh_token());
-                    //AZURE DYNAMIC SERVICE PRINCIPAL TOKEN EXPIRES IN 15 MINUTES BY DEFAULT
                     vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsTokenDynamic.getExpires_in() * 1000));
-                    //TERRAKUBE WILL REFRESH THE MANAGE IDENTITY TOKEN EVERY HOUR
-                    scheduleVcsService.createTask(3600, vcsId);
                     break;
                 default:
                     break;
@@ -117,73 +107,51 @@ public class TokenService {
             log.error(e.getMessage());
             vcs.setStatus(VcsStatus.ERROR);
             vcsRepository.save(vcs);
-        } catch (SchedulerException e) {
-            log.error(e.getMessage());
-        } catch (ParseException e) {
-            log.error(e.getMessage());
         }
 
         return result;
     }
 
-    public Map refreshAccessToken(String vcsId, VcsType vcsType, Date tokenExpiration, String clientId,
-            String clientSecret, String refreshToken, String callback, String endpoint) {
-        Map<String, Object> tokenInformation = new HashMap<>();
-        log.info("Renew Token before: {} {}", tokenExpiration, vcsId);
+    private void refreshAccessToken(Vcs vcs) throws TokenException {
+        String vcsId = vcs.getId().toString();
+        String clientId = vcs.getClientId();
+        String clientSecret = vcs.getClientSecret();
+        String refreshToken = vcs.getRefreshToken();
+        String endpoint = vcs.getEndpoint();
+        String callback = vcs.getCallback();
 
-        switch (vcsType) {
+        switch (vcs.getVcsType()) {
             case BITBUCKET:
-                try {
                     BitBucketToken bitBucketToken = bitbucketTokenService.refreshAccessToken(clientId, clientSecret,
                             refreshToken, endpoint);
-                    tokenInformation.put("accessToken", bitBucketToken.getAccess_token());
-                    tokenInformation.put("refreshToken", bitBucketToken.getRefresh_token());
-                    tokenInformation.put("tokenExpiration",
-                            new Date(System.currentTimeMillis() + bitBucketToken.getExpires_in() * 1000));
-                } catch (TokenException e) {
-                    log.error(e.getMessage());
-                }
+                    vcs.setAccessToken(bitBucketToken.getAccess_token());
+                    vcs.setRefreshToken(bitBucketToken.getRefresh_token());
+                    vcs.setTokenExpiration(new Date(System.currentTimeMillis() + bitBucketToken.getExpires_in() * 1000));
                 break;
             case GITLAB:
-                try {
                     GitLabToken gitLabToken = gitLabTokenService.refreshAccessToken(vcsId, clientId, clientSecret,
                             refreshToken, callback, endpoint);
-                    tokenInformation.put("accessToken", gitLabToken.getAccess_token());
-                    tokenInformation.put("refreshToken", gitLabToken.getRefresh_token());
-                    tokenInformation.put("tokenExpiration",
-                            new Date(System.currentTimeMillis() + gitLabToken.getExpires_in() * 1000));
-                } catch (TokenException e) {
-                    log.error(e.getMessage());
-                }
+                    vcs.setAccessToken(gitLabToken.getAccess_token());
+                    vcs.setRefreshToken(gitLabToken.getRefresh_token());
+                    vcs.setTokenExpiration(new Date(System.currentTimeMillis() + gitLabToken.getExpires_in() * 1000));
                 break;
             case AZURE_DEVOPS:
-                try {
                     AzDevOpsToken azDevOpsToken = azDevOpsTokenService.refreshAccessToken(vcsId, clientSecret,
                             refreshToken, callback, endpoint);
-                    tokenInformation.put("accessToken", azDevOpsToken.getAccess_token());
-                    tokenInformation.put("refreshToken", azDevOpsToken.getRefresh_token());
-                    tokenInformation.put("tokenExpiration",
-                            new Date(System.currentTimeMillis() + azDevOpsToken.getExpires_in() * 1000));
-                } catch (TokenException e) {
-                    log.error(e.getMessage());
-                }
+                    vcs.setAccessToken(azDevOpsToken.getAccess_token());
+                    vcs.setRefreshToken(azDevOpsToken.getRefresh_token());
+                    vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsToken.getExpires_in() * 1000));
                 break;
             case AZURE_SP_MI:
                 AzDevOpsToken azDevOpsTokenDynamic = null;
-                try {
                     azDevOpsTokenDynamic = azDevOpsTokenService.getAzureDefaultToken();
-                    tokenInformation.put("accessToken", azDevOpsTokenDynamic.getAccess_token());
-                    tokenInformation.put("refreshToken", azDevOpsTokenDynamic.getRefresh_token());
-                    //AZURE DYNAMIC SERVICE PRINCIPAL TOKEN EXPIRES IN 15 MINUTES BY DEFAULT
-                    tokenInformation.put("tokenExpiration", new Date(System.currentTimeMillis() + azDevOpsTokenDynamic.getExpires_in() * 1000));
-                } catch (TokenException e) {
-                    log.error(e.getMessage());
-                }
+                    vcs.setAccessToken(azDevOpsTokenDynamic.getAccess_token());
+                    vcs.setRefreshToken(azDevOpsTokenDynamic.getRefresh_token());
+                    vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsTokenDynamic.getExpires_in() * 1000));
                 break;
             default:
                 break;
         }
-        return tokenInformation;
     }
     
     // Get the access token for access to the supplied repository, ownerAndRepo is
@@ -202,12 +170,15 @@ public class TokenService {
     public String getAccessToken(String gitPath, Vcs vcs) throws URISyntaxException, JsonMappingException,
             JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
         String token = vcs.getAccessToken();
+        Date expiry = vcs.getTokenExpiration();
         // If the token is already set, return it, normally this is oAuth token
-        if (token!=null && !token.isEmpty()) return token;
-
-        URI uri = new URI(gitPath);
-        String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
-        // Otherwise, get the token from other table, currently only Github is supported.
-        return  gitHubTokenService.getAccessToken(vcs, ownerAndRepo);
+        if (token!=null && !token.isEmpty() && expiry!=null && expiry.before(Date.from(Instant.now()))) return token;
+        try {
+            refreshAccessToken(vcs);
+        } catch (TokenException e) {
+            // TODO This error should be propagated
+            e.printStackTrace();
+        }
+        return vcs.getAccessToken();
     }
 }
