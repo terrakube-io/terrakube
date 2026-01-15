@@ -694,40 +694,43 @@ public class RemoteTfeService {
     }
 
     private int getHistoryLimit(Job job) {
-        AtomicInteger workspaceHistory = new AtomicInteger();
-        workspaceHistory.set(0);
+        Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
 
-        var variables = variableRepository.findByWorkspace(job.getWorkspace());
-        variables.ifPresent(variableList -> variableList.forEach(variable -> {
-            if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
-                workspaceHistory.set(Integer.parseInt(variable.getValue()));
-            }
-        }));
-
-        return workspaceHistory.get();
+        return variables.map(list -> list.stream()
+                        .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
+                        .findFirst()
+                        .map(v -> {
+                            try {
+                                log.info("Found KEEP_JOB_HISTORY variable with value {}", v.getValue());
+                                return Integer.parseInt(v.getValue());
+                            } catch (NumberFormatException exception) {
+                                log.error("Failed to parse KEEP_JOB_HISTORY variable value: {}", v.getValue());
+                                return 0;
+                            }
+                        })
+                        .orElse(0))
+                .orElse(0);
     }
 
     private void deleteOldJobs(Job job) {
-        AtomicInteger workspaceHistory = new AtomicInteger();
-        workspaceHistory.set(getHistoryLimit(job));
+        int workspaceHistory = getHistoryLimit(job);
 
-        if (workspaceHistory.get() > 0) {
+        if (workspaceHistory > 0) {
             log.info("Keeping workspace history of {} jobs", workspaceHistory);
             Optional<List<Job>> previousList = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
                     job.getWorkspace(),
                     Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
                     job.getId()
             );
-            if (previousList.isPresent()) {
-                for (int i = 0; i < previousList.get().size(); i++) {
-                    if (i >= workspaceHistory.get()) {
-                        Job previousJob = previousList.get().get(i);
-                        log.info("Deleting olds Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
-                        stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
-                        jobRepository.delete(previousJob);
-                    }
-                }
-            }
+
+            previousList.stream().skip(workspaceHistory).forEach(jobList -> {
+                jobList.forEach(oldJob -> {
+                    log.info("Deleting olds Job {} with Status {}", oldJob.getId(), oldJob.getStatus());
+                    stepRepository.deleteAll(stepRepository.findByJobId(oldJob.getId()));
+                    jobRepository.delete(oldJob);
+                });
+            });
+
         } else {
             log.info("Keeping history for local runs {}", job.getWorkspace().getName());
         }
