@@ -35,7 +35,7 @@ import static com.diogonunes.jcolor.Attribute.*;
 public class BashEngine implements CommandExecution {
     private static final String USER_BASH_SCRIPT = "/userScript.sh";
     private static final String TERRAFORM_DIRECTORY="/.terraform-spring-boot/terraform/";
-    private static final String TOFU_DIRECTORY="/.terraform-spring-boot/tofu/";
+    private static final String TOFU_DIRECTORY="/.terraform-spring-boot/tofu/v";
 
     private final ExecutorService executor = Executors.newWorkStealingPool();
 
