@@ -693,27 +693,26 @@ public class RemoteTfeService {
         return getWorkspaceState(history.getId().toString());
     }
 
-    private int getHistoryLimit(Job job) {
+    private Optional<Integer> getHistoryLimit(Job job) {
         Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
 
-        return variables.map(list -> list.stream()
-                        .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
-                        .findFirst()
-                        .map(v -> {
-                            try {
-                                log.info("Found KEEP_JOB_HISTORY variable with value {}", v.getValue());
-                                return Integer.parseInt(v.getValue());
-                            } catch (NumberFormatException exception) {
-                                log.error("Failed to parse KEEP_JOB_HISTORY variable value: {}", v.getValue());
-                                return 0;
-                            }
-                        })
-                        .orElse(0))
-                .orElse(0);
+        return variables.stream()
+                .flatMap(List::stream)
+                .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
+                .findFirst()
+                .map(v -> {
+                    try {
+                        log.info("Found KEEP_JOB_HISTORY variable with value {}", v.getValue());
+                        return Integer.parseInt(v.getValue());
+                    } catch (NumberFormatException exception) {
+                        log.error("Failed to parse KEEP_JOB_HISTORY variable value: {}", v.getValue());
+                        return 0;
+                    }
+                });
     }
 
     private void deleteOldJobs(Job job) {
-        int workspaceHistory = getHistoryLimit(job);
+        int workspaceHistory = getHistoryLimit(job).orElse(0);
 
         if (workspaceHistory > 0) {
             log.info("Keeping workspace history of {} jobs", workspaceHistory);
