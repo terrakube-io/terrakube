@@ -723,8 +723,10 @@ public class RemoteTfeService {
                     job.getId()
             );
 
-            previousList.stream().skip(workspaceHistory).forEach(jobList -> {
-                jobList.forEach(oldJob -> {
+            log.info("Previous List Size: {}", previousList.get().size());
+
+            previousList.ifPresent(jobList -> {
+                jobList.stream().skip(workspaceHistory).forEach(oldJob -> {
                     log.info("Deleting olds Job {} with Status {}", oldJob.getId(), oldJob.getStatus());
                     stepRepository.deleteAll(stepRepository.findByJobId(oldJob.getId()));
                     jobRepository.delete(oldJob);
