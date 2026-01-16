@@ -351,9 +351,6 @@ class TfcApiTests extends ServerApplicationTests {
         Optional<Job> firstJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(firstJob).isPresent();
         assertThat(firstJob.get().getStatus()).isEqualTo(JobStatus.completed);
-        System.out.println("------------------------");
-        System.out.println(firstJob.get().getId());
-        System.out.println("------------------------");
 
         //create second workspace state, internally it will create a job
         given()
@@ -391,13 +388,9 @@ class TfcApiTests extends ServerApplicationTests {
         Optional<Job> secondJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(secondJob).isPresent();
         assertThat(secondJob.get().getStatus()).isEqualTo(JobStatus.completed);
-        System.out.println("------------------------");
-        System.out.println(secondJob.get().getId());
-        System.out.println("------------------------");
 
         List<Job> remainingJobs = jobRepository.findAllById(Arrays.asList(firstJob.get().getId(), secondJob.get().getId()));
 
-        System.out.println(remainingJobs);
         // Verify that we can found 2 jobs inside the database
         assertThat(remainingJobs.size()).isEqualTo(2);
 
