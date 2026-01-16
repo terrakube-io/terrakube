@@ -101,6 +101,9 @@ class ServerApplicationTests {
     VcsRepository vcsRepository;
 
     @Autowired
+    VariableRepository variableRepository;
+
+    @Autowired
     Scheduler scheduler;
 
     private static final String ISSUER = "Terrakube";

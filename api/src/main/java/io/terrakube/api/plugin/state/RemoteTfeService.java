@@ -37,6 +37,7 @@ import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.address.Address;
@@ -51,6 +52,8 @@ import io.terrakube.api.rs.workspace.content.Content;
 import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.history.archive.Archive;
 import io.terrakube.api.rs.workspace.history.archive.ArchiveType;
+import io.terrakube.api.rs.workspace.parameters.Category;
+import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
@@ -67,6 +70,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -100,6 +104,8 @@ public class RemoteTfeService {
 
     private EncryptionService encryptionService;
 
+    private VariableRepository variableRepository;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -117,7 +123,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -138,6 +144,7 @@ public class RemoteTfeService {
         this.encryptionService = encryptionService;
         this.addressRepository = addressRepository;
         this.projectRepository = projectRepository;
+        this.variableRepository = variableRepository;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -680,7 +687,54 @@ public class RemoteTfeService {
         storageTypeService.uploadTerraformStateJson(workspace.getOrganization().getId().toString(),
                 workspace.getId().toString(), terraformStateJson, history.getId().toString());
 
+        // validate KEEP_JOB_HISTORY for local runs
+        deleteOldJobs(job);
+
         return getWorkspaceState(history.getId().toString());
+    }
+
+    private Optional<Integer> getHistoryLimit(Job job) {
+        Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
+
+        return variables.stream()
+                .flatMap(List::stream)
+                .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
+                .findFirst()
+                .map(v -> {
+                    try {
+                        log.info("Found KEEP_JOB_HISTORY variable with value {}", v.getValue());
+                        return Integer.parseInt(v.getValue());
+                    } catch (NumberFormatException exception) {
+                        log.error("Failed to parse KEEP_JOB_HISTORY variable value: {}", v.getValue());
+                        return 0;
+                    }
+                });
+    }
+
+    private void deleteOldJobs(Job job) {
+        int workspaceHistory = getHistoryLimit(job).orElse(0);
+
+        if (workspaceHistory > 0) {
+            log.info("Keeping workspace history of {} jobs", workspaceHistory);
+            Optional<List<Job>> previousList = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
+                    job.getWorkspace(),
+                    Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
+                    job.getId()
+            );
+
+            log.info("Previous List Size: {}", previousList.get().size());
+
+            previousList.ifPresent(jobList -> {
+                jobList.stream().skip(workspaceHistory).forEach(oldJob -> {
+                    log.info("Deleting olds Job {} with Status {}", oldJob.getId(), oldJob.getStatus());
+                    stepRepository.deleteAll(stepRepository.findByJobId(oldJob.getId()));
+                    jobRepository.delete(oldJob);
+                });
+            });
+
+        } else {
+            log.info("Keeping history for local runs {}", job.getWorkspace().getName());
+        }
     }
 
     StateData getWorkspaceState(String historyId) {

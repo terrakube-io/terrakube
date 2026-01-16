@@ -1,5 +1,10 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.parameters.Category;
+import io.terrakube.api.rs.workspace.parameters.Variable;
 import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,9 +12,15 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 import io.terrakube.api.rs.team.Team;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.throwable;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TfcApiTests extends ServerApplicationTests {
@@ -299,5 +310,140 @@ class TfcApiTests extends ServerApplicationTests {
         team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
         team.setManageJob(false);
         teamRepository.save(team);
+    }
+
+    @Test
+    void createWorkspaceState() {
+        //create first workspace state, internally it will create a job
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .header("Content-Type", "application/vnd.api+json")
+                .when()
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\":\"state-versions\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"serial\": 1,\n" +
+                        "      \"md5\": \"random\",\n" +
+                        "      \"lineage\": \"871d1b4a-e579-fb7c-ffdb-f0c858a647a7\",\n" +
+                        "      \"state\": \"MTIzNDU2Nzg5MA==\",\n" +
+                        "      \"json-state\": \"MTIzNDU2Nzg5MA==\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"run\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"runs\",\n" +
+                        "          \"id\": \"run-bWSq4YeYpfrW4mx7\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n")
+                .post("/remote/tfe/v2/workspaces/24480d33-2649-4c34-aabd-cbc988eb6265/state-versions")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+
+        //check the job was created
+        Workspace workspace = workspaceRepository.findById(UUID.fromString("24480d33-2649-4c34-aabd-cbc988eb6265")).get();
+        Optional<Job> firstJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        assertThat(firstJob).isPresent();
+        assertThat(firstJob.get().getStatus()).isEqualTo(JobStatus.completed);
+
+        //create second workspace state, internally it will create a job
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .header("Content-Type", "application/vnd.api+json")
+                .when()
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\":\"state-versions\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"serial\": 1,\n" +
+                        "      \"md5\": \"random\",\n" +
+                        "      \"lineage\": \"871d1b4a-e579-fb7c-ffdb-f0c858a647a7\",\n" +
+                        "      \"state\": \"MTIzNDU2Nzg5MA==\",\n" +
+                        "      \"json-state\": \"MTIzNDU2Nzg5MA==\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"run\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"runs\",\n" +
+                        "          \"id\": \"run-bWSq4YeYpfrW4mx7\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n")
+                .post("/remote/tfe/v2/workspaces/24480d33-2649-4c34-aabd-cbc988eb6265/state-versions")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+
+        //check the job was created
+        Optional<Job> secondJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        assertThat(secondJob).isPresent();
+        assertThat(secondJob.get().getStatus()).isEqualTo(JobStatus.completed);
+
+        List<Job> remainingJobs = jobRepository.findAllById(Arrays.asList(firstJob.get().getId(), secondJob.get().getId()));
+
+        // Verify that we can found 2 jobs inside the database
+        assertThat(remainingJobs.size()).isEqualTo(2);
+
+        //Add variable to change job history
+        Variable variable = new Variable();
+        variable.setKey("KEEP_JOB_HISTORY");
+        variable.setCategory(Category.ENV);
+        variable.setValue("1");
+        variable.setHcl(false);
+        variable.setWorkspace(workspace);
+
+        variableRepository.save(variable);
+
+        //create a third workspace state
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .header("Content-Type", "application/vnd.api+json")
+                .when()
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\":\"state-versions\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"serial\": 1,\n" +
+                        "      \"md5\": \"random\",\n" +
+                        "      \"lineage\": \"871d1b4a-e579-fb7c-ffdb-f0c858a647a7\",\n" +
+                        "      \"state\": \"MTIzNDU2Nzg5MA==\",\n" +
+                        "      \"json-state\": \"MTIzNDU2Nzg5MA==\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"run\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"runs\",\n" +
+                        "          \"id\": \"run-bWSq4YeYpfrW4mx7\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n")
+                .post("/remote/tfe/v2/workspaces/24480d33-2649-4c34-aabd-cbc988eb6265/state-versions")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+
+        //check the job was created
+        Optional<Job> thirdJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        assertThat(thirdJob).isPresent();
+        assertThat(thirdJob.get().getStatus()).isEqualTo(JobStatus.completed);
+
+        remainingJobs = jobRepository.findAllById(Arrays.asList(firstJob.get().getId(), secondJob.get().getId(), thirdJob.get().getId()));
+
+        // Verify that some jobs were deleted due to KEEP_JOB_HISTORY limit, firstJob should have been deleted only secondJOb and thirdJob should exists
+        assertThat(remainingJobs.size()).isEqualTo(2);
     }
 }
