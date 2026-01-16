@@ -443,7 +443,7 @@ class TfcApiTests extends ServerApplicationTests {
 
         remainingJobs = jobRepository.findAllById(Arrays.asList(firstJob.get().getId(), secondJob.get().getId(), thirdJob.get().getId()));
 
-        // Verify that some jobs were deleted due to KEEP_JOB_HISTORY limit
+        // Verify that some jobs were deleted due to KEEP_JOB_HISTORY limit, firstJob should have been deleted only secondJOb and thirdJob should exists
         assertThat(remainingJobs.size()).isEqualTo(2);
     }
 }
