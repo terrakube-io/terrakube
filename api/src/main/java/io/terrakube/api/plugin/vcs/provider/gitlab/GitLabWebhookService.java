@@ -5,7 +5,9 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,12 +43,16 @@ public class GitLabWebhookService extends WebhookServiceBase {
     private String hostname;
     private WebClient.Builder webClientBuilder;
     private String uiUrl;
+    private int pagesize = 25;
+    private int timeout = 30;
 
-    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder) {
+    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
         this.objectMapper = objectMapper;
         this.hostname = hostname;
         this.webClientBuilder = webClientBuilder;
         this.uiUrl = uiUrl;
+        this.pagesize = pageSize;
+        this.timeout = timeout;
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Workspace workspace) {
@@ -393,7 +399,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                         .uri(uriBuilder -> uriBuilder
                                 .path("/projects")
                                 .queryParam("membership", "true")
-                                .queryParam("per_page", "25")
+                                .queryParam("per_page", pagesize)
                                 .queryParam("page", currentPage)
                                 .build())
                         .exchangeToMono(response -> {
@@ -432,8 +438,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                 hasMorePages.set(false);
                                 return Mono.empty();
                             }
-                        })
-                        .block();
+                        }).block(Duration.ofSeconds(timeout));
             
             } catch (Exception e) {
                 log.error("Failed to retrieve project ID. Error: {}", e.getMessage());

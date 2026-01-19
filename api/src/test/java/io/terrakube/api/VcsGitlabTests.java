@@ -49,7 +49,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                         .withStatus(HttpStatus.OK.value())
                         .withBody(simpleSearch)));
 
-        GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder());
+        GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder(), 30, 25);
 
         Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:"+ wireMockServer.port())), "Gitlab project id not found");
 
@@ -283,7 +283,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                         .withHeader("x-total", "1")
                         .withBody(mergeRequestDiffPayload)));
 
-        GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder());
+        GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder(), 30, 25);
 
         Vcs vcs = new Vcs();
         vcs.setAccessToken("1234567890");
