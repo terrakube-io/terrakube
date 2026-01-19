@@ -21,7 +21,7 @@
         <mssql-jdbc.version>13.2.1.jre11</mssql-jdbc.version>
         <msal4j.version>1.23.1</msal4j.version>
         <lombok.version>1.18.42</lombok.version>
-        <wiremock.version>4.0.8</wiremock.version>
+        <wiremock.version>4.0.9</wiremock.version>
         <jgit.version>7.5.0.202512021534-r</jgit.version>
         <bouncy.castle>1.83</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
