@@ -123,6 +123,9 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 // Fetch file changes for the PR
                 List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
                 result.setFileChanges(prFileChanges);
+            } else {
+                result.setValid(false);
+                log.error("No valid github pull request event " + result.getEvent());
             }
         } else if ("release".equals(event)) {
             String action = rootNode.path("action").asText();
