@@ -125,7 +125,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setFileChanges(prFileChanges);
             } else {
                 result.setValid(false);
-                log.error("No valid github pull request event " + result.getEvent());
+                log.error("No valid github pull request event: {} ", action);
             }
         } else if ("release".equals(event)) {
             String action = rootNode.path("action").asText();
@@ -136,7 +136,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setBranch(rootNode.path("release").path("tag_name").asText());
             } else {
                 result.setValid(false);
-                log.error("No valid github release event " + result.getEvent());
+                log.error("No valid github release event: {}", action);
             }
         } else {
             result.setValid(false);
