@@ -105,7 +105,7 @@ public class ModuleServiceImpl implements ModuleService {
                     module.getRelationships().getVcs().getData().getId());
             vcsType = vcsInformation.getAttributes().getVcsType();
             vcsConnectionType = vcsInformation.getAttributes().getConnectionType();
-            accessToken = getAccessToken(organizationId, vcsInformation.getId(), moduleSource);
+            accessToken = terrakubeClient.getAccessToken(vcsInformation.getId(), moduleSource);
         }
 
         if (module.getRelationships().getSsh().getData() != null) {
@@ -138,33 +138,11 @@ public class ModuleServiceImpl implements ModuleService {
         terrakubeClient.updateModule(moduleRequest, organizationId, module.getId());
     }
 
-    private String getAccessToken(String organizationId, String vcsId, String repository_source) {
-        Vcs vcs = getVcsInformation(organizationId, vcsId);
-        if (vcs == null)
-            return null;
-        String token = vcs.getAttributes().getAccessToken();
-        if (token == null && vcs.getAttributes().getConnectionType().equals("STANDALONE")) {
-            log.info("The VCS connection is on a standalone app, getting the GitHub App token");
-            GitHubAppToken gitHubAppToken = getGitHubAppTokenInformation(vcs.getAttributes().getClientId(), repository_source);
-            token = gitHubAppToken.getAttributes().getToken();
-        }
-        return token;
-    }
-
     private Vcs getVcsInformation(String organizationId, String vcsId) {
         return terrakubeClient.getVcsById(organizationId, vcsId).getData();
     }
 
     private Ssh getSshInformation(String organizationId, String sshId) {
         return terrakubeClient.getSshById(organizationId, sshId).getData();
-    }
-    
-    private GitHubAppToken getGitHubAppTokenInformation(String vcsClientId, String repository_source) {
-        URI uri = URI.create(repository_source);
-        String owner = uri.getPath().split("/")[1];
-        List<GitHubAppToken> gitHubAppTokens = terrakubeClient.getGitHubAppTokenByVcsIdAndOwner(owner, vcsClientId).getData();
-        if (gitHubAppTokens.isEmpty())  return null;
-
-        return gitHubAppTokens.get(0);
     }
 }
