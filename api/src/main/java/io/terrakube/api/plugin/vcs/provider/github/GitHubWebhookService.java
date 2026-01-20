@@ -134,6 +134,9 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setValid(true);
                 result.setRelease(true);
                 result.setBranch(rootNode.path("release").path("tag_name").asText());
+            } else {
+                result.setValid(false);
+                log.error("No valid github release event " + result.getEvent());
             }
         } else {
             result.setValid(false);
