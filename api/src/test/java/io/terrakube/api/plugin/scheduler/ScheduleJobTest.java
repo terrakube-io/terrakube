@@ -664,4 +664,130 @@ public class ScheduleJobTest {
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
+
+    @Test
+    public void bypassQueueJob_bypassesWaitingApproval() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setBypassQueue(true);
+
+        Job previousJob = job(JobStatus.waitingApproval);
+        previousJob.setId(4710);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
+    }
+
+    @Test
+    public void bypassQueueJob_waitsForActiveApply() {
+        Job job = job(JobStatus.pending);
+        job.setBypassQueue(true);
+
+        Job runningJob = job(JobStatus.running);
+        runningJob.setId(4710);
+        runningJob.setTcl(java.util.Base64.getEncoder().encodeToString(
+            "flow:\n  - type: terraformApply\n    step: 100".getBytes()));
+
+        Step runningStep = new Step();
+        runningStep.setId(UUID.randomUUID());
+        runningStep.setStatus(JobStatus.running);
+        runningStep.setStepNumber(100);
+
+        doReturn(Optional.of(Collections.singletonList(runningJob)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(Collections.singletonList(runningStep))
+                .when(stepRepository)
+                .findByJobId(runningJob.getId());
+        doReturn(FlowType.terraformApply.name())
+                .when(tclService)
+                .getFlowTypeForStep(any(Job.class), anyInt());
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void bypassQueueJob_proceedsWhenPreviousJobRunningPlan() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setBypassQueue(true);
+
+        Job runningJob = job(JobStatus.running);
+        runningJob.setId(4710);
+        runningJob.setTcl(java.util.Base64.getEncoder().encodeToString(
+            "flow:\n  - type: terraformPlan\n    step: 100".getBytes()));
+
+        Step runningStep = new Step();
+        runningStep.setId(UUID.randomUUID());
+        runningStep.setStatus(JobStatus.running);
+        runningStep.setStepNumber(100);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(Optional.of(Collections.singletonList(runningJob)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(Collections.singletonList(runningStep))
+                .when(stepRepository)
+                .findByJobId(runningJob.getId());
+        doReturn(FlowType.terraformPlan.name())
+                .when(tclService)
+                .getFlowTypeForStep(any(Job.class), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
+    }
+
+    @Test
+    public void nonBypassQueueJob_usesNormalQueueLogic() {
+        Job job = job(JobStatus.pending);
+        job.setBypassQueue(false);
+
+        Job previousJob = job(JobStatus.waitingApproval);
+        previousJob.setId(4710);
+
+        doReturn(Optional.of(Collections.singletonList(previousJob)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
 }

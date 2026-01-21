@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -42,6 +43,7 @@ public class WebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     ObjectMapper objectMapper;
+    TclService tclService;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -91,6 +93,7 @@ public class WebhookService {
                     webhook.getWorkspace().getName(), templateId);
             Job job = new Job();
             job.setTemplateReference(templateId);
+            job.setBypassQueue(tclService.isTemplatePlanOnly(templateId));
             job.setRefresh(true);
             job.setPlanChanges(true);
             job.setRefreshOnly(false);

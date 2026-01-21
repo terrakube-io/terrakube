@@ -91,4 +91,5 @@
     <include file="/db/changelog/local/changelog-2.28.0-project-support.xml" />
     <include file="/db/changelog/local/changelog-2.29.0-branch-size.xml" />
     <include file="/db/changelog/local/changelog-2.29.0-execution-mode.xml" />
+    <include file="/db/changelog/local/changelog-2.30.0-bypass-queue-job.xml" />
 </databaseChangeLog>

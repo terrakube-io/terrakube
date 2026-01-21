@@ -115,14 +115,28 @@ public class ScheduleJob implements org.quartz.Job {
 
         log.info("Checking Job {} Status {}", job.getId(), job.getStatus());
         log.info("Checking previous jobs....");
-        Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusNotInAndIdLessThan(job.getWorkspace(),
-                Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
-                job.getId()
-        );
-        boolean deschedule = false;
-        if (previousJobs.isPresent() && !previousJobs.get().isEmpty()) {
-            log.warn("Job {} is waiting for previous jobs to be completed...", jobId);
+
+        boolean canProceed;
+        if (job.isBypassQueue()) {
+            log.info("Job {} has bypassQueue enabled, checking for active apply/destroy", jobId);
+            canProceed = !isActiveApplyOrDestroyRunning(job.getWorkspace(), job.getId());
+            if (!canProceed) {
+                log.info("Job {} waiting for active apply/destroy to complete", jobId);
+            }
         } else {
+            Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusNotInAndIdLessThan(
+                    job.getWorkspace(),
+                    Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
+                    job.getId()
+            );
+            canProceed = !previousJobs.isPresent() || previousJobs.get().isEmpty();
+            if (!canProceed) {
+                log.warn("Job {} is waiting for previous jobs to be completed...", jobId);
+            }
+        }
+
+        boolean deschedule = false;
+        if (canProceed) {
 
             switch (job.getStatus()) {
                 case pending:
@@ -409,5 +423,34 @@ public class ScheduleJob implements org.quartz.Job {
             default:
                 break;
         }
+    }
+
+    private boolean isActiveApplyOrDestroyRunning(Workspace workspace, int currentJobId) {
+        Optional<List<Job>> runningJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThan(
+                workspace, Arrays.asList(JobStatus.running), currentJobId);
+
+        if (!runningJobs.isPresent() || runningJobs.get().isEmpty()) {
+            return false;
+        }
+
+        for (Job runningJob : runningJobs.get()) {
+            Optional<Step> runningStep = stepRepository.findByJobId(runningJob.getId()).stream()
+                    .filter(step -> step.getStatus().equals(JobStatus.running))
+                    .findFirst();
+
+            if (runningStep.isPresent()) {
+                String flowType = tclService.getFlowTypeForStep(runningJob, runningStep.get().getStepNumber());
+                if (flowType != null && (
+                        flowType.equals(FlowType.terraformApply.toString()) ||
+                        flowType.equals(FlowType.terraformDestroy.toString()) ||
+                        flowType.equals(FlowType.customScripts.toString())
+                )) {
+                    log.info("Job {} has active apply/destroy/customScripts step running in job {}",
+                            currentJobId, runningJob.getId());
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
