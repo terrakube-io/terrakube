@@ -153,6 +153,18 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     navigate(`/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`);
   };
 
+  const getOutputValueFromState = (outputName: string): string => {
+    const outputValue = (contextState as any)?.values?.outputs?.[outputName];
+    if (outputValue) {
+      if (typeof outputValue.type === "string") {
+        return outputValue.value;
+      } else {
+        return JSON.stringify(outputValue.value);
+      }
+    }
+    return "";
+  };
+
   const outputColumns = [
     {
       title: "Name",
@@ -170,8 +182,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
       title: "Value",
       dataIndex: "value",
       key: "value",
-      render: (text: string) => (
-        <Paragraph style={{ margin: "0px" }} copyable={{ tooltips: false }}>
+      render: (text: string, record: StateOutputVariableWithName) => (
+        <Paragraph style={{ margin: "0px" }} copyable={{ tooltips: false, text: getOutputValueFromState(record.name) }}>
           {text}
         </Paragraph>
       ),
