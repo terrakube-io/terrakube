@@ -102,7 +102,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       label: "Gitlab Enterprise Edition",
       key: "3",
       onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
+        handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
       },
     },
   ];
