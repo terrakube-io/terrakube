@@ -84,6 +84,26 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
     }
 
+        @Test
+        void gitlabDirectLookup() throws IOException, InterruptedException {
+                String directProjectResponse = "{\n" +
+                                "  \"id\": 5397249,\n" +
+                                "  \"path_with_namespace\": \"alfespa17/simple-terraform\"\n" +
+                                "}";
+
+                // WireMock will receive the path with percent-encoded characters; WebClient
+                // in the service double-encodes the value, so encode the slash as %252F
+                stubFor(get(urlPathEqualTo("/projects/alfespa17%252Fsimple-terraform"))
+                                .withPort(wireMockServer.port())
+                                .willReturn(aResponse()
+                                                .withStatus(HttpStatus.OK.value())
+                                                .withBody(directProjectResponse)));
+
+                GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder(), 30, 25);
+
+                Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "Direct Gitlab project id not found");
+        }
+
     @Test
     void gitlabWebhookMergeRequest() throws IOException, InterruptedException {
         String mergeRequestPayload="{\n" +

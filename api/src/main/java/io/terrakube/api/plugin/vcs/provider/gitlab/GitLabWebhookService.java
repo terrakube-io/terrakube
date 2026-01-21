@@ -6,6 +6,7 @@ import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.net.URLEncoder;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -392,7 +393,38 @@ public class GitLabWebhookService extends WebhookServiceBase {
         AtomicInteger currentPage = new AtomicInteger(1);
         AtomicBoolean projectFound = new AtomicBoolean(false);
         AtomicBoolean hasMorePages = new AtomicBoolean(true);
-        
+
+        // First, try to get the project directly
+        try {
+            String encodedPath = URLEncoder.encode(ownerAndRepo, StandardCharsets.UTF_8.toString()).replace("/", "%2F");
+            String directResponse = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/projects/{projectPath}").build(encodedPath))
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return response.bodyToMono(String.class);
+                        } else if (response.statusCode().value() == 404) {
+                            log.debug("Direct lookup returned 404 for {}", ownerAndRepo);
+                            return Mono.empty();
+                        } else {
+                            log.debug("Direct lookup returned status {} for {}", response.statusCode(), ownerAndRepo);
+                            return Mono.empty();
+                        }
+                    })
+                    .block(Duration.ofSeconds(timeout));
+
+            if (directResponse != null && !directResponse.isEmpty()) {
+                JsonNode node = objectMapper.readTree(directResponse);
+                if (node.has("id")) {
+                    projectId.set(node.get("id").asText());
+                    projectFound.set(true);
+                    log.info("Direct lookup found project id {} for {}", projectId, ownerAndRepo);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Direct project lookup failed for {}: {}", ownerAndRepo, e.getMessage());
+        }
+
+        // If direct lookup failed, paginate through projects
         while (hasMorePages.get() && !projectFound.get()) {
             try {
                 webClient.get()
@@ -401,6 +433,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                 .queryParam("membership", "true")
                                 .queryParam("per_page", pagesize)
                                 .queryParam("page", currentPage)
+                                .queryParam("simple", "true") // Optimize the result set
                                 .build())
                         .exchangeToMono(response -> {
                             if (response.statusCode().is2xxSuccessful()) {
