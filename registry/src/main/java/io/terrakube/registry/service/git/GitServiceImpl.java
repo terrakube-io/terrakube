@@ -1,5 +1,11 @@
 package io.terrakube.registry.service.git;
 
+import com.azure.core.credential.AccessToken;
+import com.azure.core.credential.TokenRequestContext;
+import com.azure.core.http.ProxyOptions;
+import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
+import com.azure.identity.DefaultAzureCredential;
+import com.azure.identity.DefaultAzureCredentialBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -85,8 +91,12 @@ public class GitServiceImpl implements GitService {
             case "GITLAB":
                 credentialsProvider = new UsernamePasswordCredentialsProvider("oauth2", accessToken);
                 break;
-            case "AZURE_DEVOPS", "AZURE_SP_MI":
+            case "AZURE_DEVOPS":
                 credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", accessToken);
+                log.info(accessToken);
+                break;
+            case "AZURE_SP_MI":
+                credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", getAzureDefaultToken());
                 log.info(accessToken);
                 break;
             default:
@@ -94,6 +104,52 @@ public class GitServiceImpl implements GitService {
                 break;
         }
         return credentialsProvider;
+    }
+
+    public String getAzureDefaultToken() {
+        log.info("Getting Azure Default Token");
+        String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
+        try {
+            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+
+            String proxyHost = System.getProperty("http.proxyHost");
+            String proxyPort = System.getProperty("http.proxyPort");
+            if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
+                ProxyOptions proxyOptions = new ProxyOptions(
+                        ProxyOptions.Type.HTTP,
+                        new InetSocketAddress(
+                                proxyHost,
+                                Integer.parseInt(proxyPort)
+                        )
+                );
+
+                String proxyUser = System.getProperty("http.proxyUser");
+                String proxyPassword = System.getProperty("http.proxyPassword");
+                if (proxyUser != null && !proxyUser.isEmpty() && proxyPassword != null && !proxyPassword.isEmpty()) {
+
+                    proxyOptions.setCredentials(
+                            proxyUser,
+                            proxyPassword
+                    );
+                }
+                credentialBuilder.httpClient(
+                        new NettyAsyncHttpClientBuilder().proxy(proxyOptions).build()
+                );
+            }
+
+            DefaultAzureCredential credential = credentialBuilder.build();
+            TokenRequestContext requestContext = new TokenRequestContext()
+                    .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
+            AccessToken accessToken = credential.getToken(requestContext).block();
+            if (accessToken == null || accessToken.getToken() == null) {
+                throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+            }
+            log.info("Azure Default Token: {}", accessToken.getToken());
+            return accessToken.getToken();
+        } catch (Exception ex) {
+            log.error("Error getting Azure Default Token: {}", ex.getMessage());
+            return "";
+        }
     }
 
     private String validateCorrectTag(String originalTag, String repository, String vcsType, String vcsConnectionType, String accessToken,

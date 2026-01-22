@@ -40,7 +40,6 @@ public class AzDevOpsTokenService {
     private static final String DEFAULT_ENDPOINT="https://app.vssps.visualstudio.com";
     private static final String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
 
-
     public AzDevOpsToken getAccessToken(String vcsId, String clientSecret, String tempCode, String callback, String endpoint) throws TokenException {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
@@ -77,8 +76,8 @@ public class AzDevOpsTokenService {
         return validateNewToken(azDevOpsToken);
     }
 
-    public AzDevOpsToken getAzureDefaultToken() throws TokenException {
-        AzDevOpsToken azDevOpsToken = new AzDevOpsToken();
+    public String getAzureDefaultToken() {
+        String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
         try {
             DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
 
@@ -112,22 +111,15 @@ public class AzDevOpsTokenService {
                     .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
             AccessToken accessToken = credential.getToken(requestContext).block();
             if (accessToken == null || accessToken.getToken() == null) {
-                throw new TokenException("500", "Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+                throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
             }
-            azDevOpsToken.setAccess_token(accessToken.getToken());
-            log.debug("Azure Default Token: {}", azDevOpsToken.getAccess_token());
+            log.debug("Azure Default Token: {}", accessToken.getToken());
+            return accessToken.getToken();
         } catch (Exception ex) {
             log.error("Error getting Azure Default Token: {}", ex.getMessage());
-            throw new TokenException("500", "Error getting Azure Default Token: " + ex.getMessage());
+            return "";
         }
-
-        azDevOpsToken.setRefresh_token("n/a");
-        azDevOpsToken.setToken_type("azure");
-        azDevOpsToken.setExpires_in(3600);
-        return validateNewToken(azDevOpsToken);
     }
-
-
 
     private WebClient getWebClient(String endpoint){
         return webClientBuilder
