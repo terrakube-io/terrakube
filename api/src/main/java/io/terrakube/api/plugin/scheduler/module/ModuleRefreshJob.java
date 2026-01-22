@@ -165,11 +165,7 @@ public class ModuleRefreshJob implements Job {
                     credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
                     break;
                 case AZURE_SP_MI:
-                    try {
-                        credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken().getAccess_token());
-                    } catch (TokenException e) {
-                        log.error("Error getting Azure Default Token: {}", e.getMessage());
-                    }
+                    credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken());
                     break;
                 default:
                     credentialsProvider = null;
