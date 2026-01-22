@@ -93,9 +93,6 @@ public class Job extends GenericAuditFields {
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 
-    @Column(name = "bypass_queue")
-    private boolean bypassQueue = false;
-
     @ManyToOne
     private Organization organization;
 

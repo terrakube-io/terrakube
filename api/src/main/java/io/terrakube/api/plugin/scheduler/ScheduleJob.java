@@ -117,8 +117,8 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Checking previous jobs....");
 
         boolean canProceed;
-        if (job.isBypassQueue()) {
-            log.info("Job {} has bypassQueue enabled, checking for active apply/destroy", jobId);
+        if (tclService.isTemplatePlanOnly(job.getTemplateReference())) {
+            log.info("Job {} is plan-only (bypassQueue), checking for active apply/destroy", jobId);
             canProceed = !isActiveApplyOrDestroyRunning(job.getWorkspace(), job.getId());
             if (!canProceed) {
                 log.info("Job {} waiting for active apply/destroy to complete", jobId);

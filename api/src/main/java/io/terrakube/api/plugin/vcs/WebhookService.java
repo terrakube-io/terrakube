@@ -93,7 +93,6 @@ public class WebhookService {
                     webhook.getWorkspace().getName(), templateId);
             Job job = new Job();
             job.setTemplateReference(templateId);
-            job.setBypassQueue(tclService.isTemplatePlanOnly(templateId));
             job.setRefresh(true);
             job.setPlanChanges(true);
             job.setRefreshOnly(false);
