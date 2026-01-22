@@ -25,14 +25,12 @@ import jakarta.persistence.Temporal;
 import jakarta.persistence.TemporalType;
 import lombok.Getter;
 import lombok.Setter;
-import io.terrakube.api.rs.hooks.vcs.VcsManageHook;
 import io.terrakube.api.rs.workspace.Workspace;
 
 @ReadPermission(expression = "team view vcs")
 @CreatePermission(expression = "team manage vcs")
 @UpdatePermission(expression = "team manage vcs")
 @DeletePermission(expression = "team manage vcs")
-@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = VcsManageHook.class)
 @Include(rootLevel = false)
 @Getter
 @Setter

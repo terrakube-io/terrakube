@@ -5,8 +5,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.terrakube.api.rs.vcs.VcsType;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
+import org.quartz.JobKey;
+import org.quartz.SchedulerException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.vcs.TokenService;
@@ -19,6 +22,8 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+
+import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
 @AllArgsConstructor
 @Component
@@ -53,6 +58,17 @@ public class ScheduleVcs implements org.quartz.Job {
             }
             log.info("VCS found with custom callback");
         }
+
+        // Special case Azure Managed Identity does not require refreshing the token, if anything exists here, we could be safely deleted is no longer need it
+        if (vcs.getVcsType().equals(VcsType.AZURE_SP_MI)) {
+            try {
+                jobExecutionContext.getScheduler().deleteJob(new JobKey("TerrakubeV2_Vcs_" + vcs.getId()));
+                return;
+            } catch (SchedulerException e) {
+                log.error(e.getMessage());
+            }
+        }
+
         if (vcs.getStatus().equals(VcsStatus.COMPLETED)) {
             @SuppressWarnings("unchecked")
             Map<String, Object> newTokenInformation = tokenService.refreshAccessToken(

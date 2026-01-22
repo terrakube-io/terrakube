@@ -98,15 +98,6 @@ public class TokenService {
                     // seconds)
                     scheduleVcsService.createTask(String.format(QUARTZ_EVERY_30_MINUTES, minutes), vcsId);
                     break;
-                case AZURE_SP_MI:
-                    AzDevOpsToken azDevOpsTokenDynamic = azDevOpsTokenService.getAzureDefaultToken();
-                    vcs.setAccessToken(azDevOpsTokenDynamic.getAccess_token());
-                    vcs.setRefreshToken(azDevOpsTokenDynamic.getRefresh_token());
-                    //AZURE DYNAMIC SERVICE PRINCIPAL TOKEN EXPIRES IN 15 MINUTES BY DEFAULT
-                    vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsTokenDynamic.getExpires_in() * 1000));
-                    //TERRAKUBE WILL REFRESH THE MANAGE IDENTITY TOKEN EVERY HOUR
-                    scheduleVcsService.createTask(3600, vcsId);
-                    break;
                 default:
                     break;
             }
@@ -168,18 +159,6 @@ public class TokenService {
                     log.error(e.getMessage());
                 }
                 break;
-            case AZURE_SP_MI:
-                AzDevOpsToken azDevOpsTokenDynamic = null;
-                try {
-                    azDevOpsTokenDynamic = azDevOpsTokenService.getAzureDefaultToken();
-                    tokenInformation.put("accessToken", azDevOpsTokenDynamic.getAccess_token());
-                    tokenInformation.put("refreshToken", azDevOpsTokenDynamic.getRefresh_token());
-                    //AZURE DYNAMIC SERVICE PRINCIPAL TOKEN EXPIRES IN 15 MINUTES BY DEFAULT
-                    tokenInformation.put("tokenExpiration", new Date(System.currentTimeMillis() + azDevOpsTokenDynamic.getExpires_in() * 1000));
-                } catch (TokenException e) {
-                    log.error(e.getMessage());
-                }
-                break;
             default:
                 break;
         }
@@ -204,6 +183,9 @@ public class TokenService {
         String token = vcs.getAccessToken();
         // If the token is already set, return it, normally this is oAuth token
         if (token!=null && !token.isEmpty()) return token;
+
+        // this is a special case for Azure DevOps with Managed Identity
+        if (vcs.getVcsType().equals(VcsType.AZURE_SP_MI)) return "";
 
         URI uri = new URI(gitPath);
         String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
