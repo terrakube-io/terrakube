@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.scheduler.module;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
 import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
+import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.rs.module.Module;
@@ -42,6 +44,8 @@ public class ModuleRefreshJob implements Job {
     private ModuleRepository moduleRepository;
     @Autowired
     private ModuleVersionRepository moduleVersionRepository;
+    @Autowired
+    private AzDevOpsTokenService azDevOpsTokenService;
 
     @Override
     @Transactional
@@ -157,8 +161,15 @@ public class ModuleRefreshJob implements Job {
                 case GITLAB:
                     credentialsProvider = new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
                     break;
-                case AZURE_DEVOPS, AZURE_SP_MI:
+                case AZURE_DEVOPS:
                     credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
+                    break;
+                case AZURE_SP_MI:
+                    try {
+                        credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken().getAccess_token());
+                    } catch (TokenException e) {
+                        log.error("Error getting Azure Default Token: {}", e.getMessage());
+                    }
                     break;
                 default:
                     credentialsProvider = null;

@@ -38,6 +38,7 @@ public class AzDevOpsTokenService {
     private WebClient.Builder webClientBuilder;
 
     private static final String DEFAULT_ENDPOINT="https://app.vssps.visualstudio.com";
+    private static final String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
 
     public AzDevOpsToken getAccessToken(String vcsId, String clientSecret, String tempCode, String callback, String endpoint) throws TokenException {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -74,6 +75,58 @@ public class AzDevOpsTokenService {
 
         return validateNewToken(azDevOpsToken);
     }
+
+    public AzDevOpsToken getAzureDefaultToken() throws TokenException {
+        AzDevOpsToken azDevOpsToken = new AzDevOpsToken();
+        try {
+            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+
+            String proxyHost = System.getProperty("http.proxyHost");
+            String proxyPort = System.getProperty("http.proxyPort");
+            if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
+                ProxyOptions proxyOptions = new ProxyOptions(
+                        ProxyOptions.Type.HTTP,
+                        new InetSocketAddress(
+                                proxyHost,
+                                Integer.parseInt(proxyPort)
+                        )
+                );
+
+                String proxyUser = System.getProperty("http.proxyUser");
+                String proxyPassword = System.getProperty("http.proxyPassword");
+                if (proxyUser != null && !proxyUser.isEmpty() && proxyPassword != null && !proxyPassword.isEmpty()) {
+
+                    proxyOptions.setCredentials(
+                            proxyUser,
+                            proxyPassword
+                    );
+                }
+                credentialBuilder.httpClient(
+                        new NettyAsyncHttpClientBuilder().proxy(proxyOptions).build()
+                );
+            }
+
+            DefaultAzureCredential credential = credentialBuilder.build();
+            TokenRequestContext requestContext = new TokenRequestContext()
+                    .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
+            AccessToken accessToken = credential.getToken(requestContext).block();
+            if (accessToken == null || accessToken.getToken() == null) {
+                throw new TokenException("500", "Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+            }
+            azDevOpsToken.setAccess_token(accessToken.getToken());
+            log.debug("Azure Default Token: {}", azDevOpsToken.getAccess_token());
+        } catch (Exception ex) {
+            log.error("Error getting Azure Default Token: {}", ex.getMessage());
+            throw new TokenException("500", "Error getting Azure Default Token: " + ex.getMessage());
+        }
+
+        azDevOpsToken.setRefresh_token("n/a");
+        azDevOpsToken.setToken_type("azure");
+        azDevOpsToken.setExpires_in(3600);
+        return validateNewToken(azDevOpsToken);
+    }
+
+
 
     private WebClient getWebClient(String endpoint){
         return webClientBuilder

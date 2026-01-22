@@ -107,6 +107,7 @@ public class GitServiceImpl implements GitService {
     }
 
     public String getAzureDefaultToken() {
+        log.info("Getting Azure Default Token");
         String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
         try {
             DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
@@ -143,7 +144,7 @@ public class GitServiceImpl implements GitService {
             if (accessToken == null || accessToken.getToken() == null) {
                 throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
             }
-            log.debug("Azure Default Token: {}", accessToken.getToken());
+            log.info("Azure Default Token: {}", accessToken.getToken());
             return accessToken.getToken();
         } catch (Exception ex) {
             log.error("Error getting Azure Default Token: {}", ex.getMessage());
