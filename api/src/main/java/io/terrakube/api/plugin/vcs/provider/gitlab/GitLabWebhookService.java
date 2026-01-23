@@ -396,21 +396,19 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         // First, try to get the project directly
         try {
-            String encodedPath = URLEncoder.encode(ownerAndRepo, StandardCharsets.UTF_8.toString()).replace("/", "%2F");
             String directResponse = webClient.get()
-                    .uri(uriBuilder -> uriBuilder.path("/projects/{projectPath}").build(encodedPath))
-                    .exchangeToMono(response -> {
-                        if (response.statusCode().is2xxSuccessful()) {
-                            return response.bodyToMono(String.class);
-                        } else if (response.statusCode().value() == 404) {
-                            log.debug("Direct lookup returned 404 for {}", ownerAndRepo);
-                            return Mono.empty();
-                        } else {
-                            log.debug("Direct lookup returned status {} for {}", response.statusCode(), ownerAndRepo);
-                            return Mono.empty();
-                        }
-                    })
-                    .block(Duration.ofSeconds(timeout));
+                .uri(uriBuilder -> uriBuilder
+                    .path("/projects/{encodedPath}")
+                    .build(Map.of("encodedPath", ownerAndRepo)))
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        return response.bodyToMono(String.class);
+                    } else {
+                        log.info("Direct lookup returned status {} for URL: {}", response.statusCode(), response.request().getURI());
+                        return Mono.empty();
+                    }
+                })
+                .block(Duration.ofSeconds(timeout));
 
             if (directResponse != null && !directResponse.isEmpty()) {
                 JsonNode node = objectMapper.readTree(directResponse);
