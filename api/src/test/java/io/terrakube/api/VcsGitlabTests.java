@@ -93,7 +93,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
                 // WireMock will receive the path with percent-encoded characters; WebClient
                 // in the service double-encodes the value, so encode the slash as %252F
-                stubFor(get(urlPathEqualTo("/projects/alfespa17%252Fsimple-terraform"))
+                stubFor(get(urlPathEqualTo("/projects/alfespa17%2Fsimple-terraform"))
                                 .withPort(wireMockServer.port())
                                 .willReturn(aResponse()
                                                 .withStatus(HttpStatus.OK.value())
