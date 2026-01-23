@@ -42,6 +42,12 @@ public class VcsGitlabTests extends ServerApplicationTests {
                 "    }\n" +
                 "]";
 
+        // Stub for direct lookup that returns 404
+        stubFor(get(urlPathEqualTo("/projects/alfespa17%2Fsimple-terraform"))
+                .withPort(wireMockServer.port())
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.NOT_FOUND.value())));
+
         stubFor(get(urlPathEqualTo("/projects"))
                 .withPort(wireMockServer.port())
                 .withQueryParam("membership", equalTo("true"))
@@ -64,6 +70,13 @@ public class VcsGitlabTests extends ServerApplicationTests {
                 "        \"path_with_namespace\": \"terraform2745926/test/simple-terraform\"\n" +
                 "    }\n" +
                 "]";
+        
+        // Stub for direct lookup that returns 404
+        stubFor(get(urlPathEqualTo("/projects/terraform2745926%2Ftest%2Fsimple-terraform"))
+                .withPort(wireMockServer.port())
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.NOT_FOUND.value())));
+        
         stubFor(get(urlPathEqualTo("/projects"))
                 .withPort(wireMockServer.port())
                 .withQueryParam("membership", equalTo("true"))
@@ -72,6 +85,12 @@ public class VcsGitlabTests extends ServerApplicationTests {
                         .withBody(projectSearch)));
 
         Assert.isTrue(("7107040".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/test/simple-terraform", "12345", "http://localhost:" + wireMockServer.port()))), "Gitlab project id not found");
+
+        // Stub for direct lookup that returns 404
+        stubFor(get(urlPathEqualTo("/projects/terraform2745926%2Fsimple-terraform"))
+                .withPort(wireMockServer.port())
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.NOT_FOUND.value())));
 
         stubFor(get(urlPathEqualTo("/projects"))
                 .withPort(wireMockServer.port())
@@ -91,8 +110,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                                 "  \"path_with_namespace\": \"alfespa17/simple-terraform\"\n" +
                                 "}";
 
-                // WireMock will receive the path with percent-encoded characters; WebClient
-                // in the service double-encodes the value, so encode the slash as %252F
+                // URI builder properly encodes the path variable, so we expect single-encoded slashes
                 stubFor(get(urlPathEqualTo("/projects/alfespa17%2Fsimple-terraform"))
                                 .withPort(wireMockServer.port())
                                 .willReturn(aResponse()
