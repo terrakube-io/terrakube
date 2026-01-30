@@ -77,46 +77,49 @@ public class AzDevOpsTokenService {
     }
 
     public String getAzureDefaultToken() {
-        String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
         try {
-            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+            log.debug("Getting Azure Default Token");
+            DefaultAzureCredentialBuilder credBuilder = new DefaultAzureCredentialBuilder();
 
-            String proxyHost = System.getProperty("http.proxyHost");
-            String proxyPort = System.getProperty("http.proxyPort");
-            if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
+            String proxyHostname = System.getProperty("http.proxyHost");
+            String proxyPortNumber = System.getProperty("http.proxyPort");
+            if (proxyHostname != null && !proxyHostname.isEmpty() && proxyPortNumber != null && !proxyPortNumber.isEmpty()) {
                 ProxyOptions proxyOptions = new ProxyOptions(
                         ProxyOptions.Type.HTTP,
                         new InetSocketAddress(
-                                proxyHost,
-                                Integer.parseInt(proxyPort)
+                                proxyHostname,
+                                Integer.parseInt(proxyPortNumber)
                         )
                 );
+                log.debug("Using proxy host: {} port: {}", proxyHostname, proxyPortNumber);
 
-                String proxyUser = System.getProperty("http.proxyUser");
-                String proxyPassword = System.getProperty("http.proxyPassword");
-                if (proxyUser != null && !proxyUser.isEmpty() && proxyPassword != null && !proxyPassword.isEmpty()) {
+                String proxyUsername = System.getProperty("http.proxyUser");
+                String proxyPass = System.getProperty("http.proxyPassword");
+                if (proxyUsername != null && !proxyUsername.isEmpty() && proxyPass != null && !proxyPass.isEmpty()) {
 
                     proxyOptions.setCredentials(
-                            proxyUser,
-                            proxyPassword
+                            proxyUsername,
+                            proxyPass
                     );
                 }
-                credentialBuilder.httpClient(
+                log.debug("Using proxy credentials: {}:{}", proxyUsername, proxyPass);
+                credBuilder.httpClient(
                         new NettyAsyncHttpClientBuilder().proxy(proxyOptions).build()
                 );
             }
 
-            DefaultAzureCredential credential = credentialBuilder.build();
-            TokenRequestContext requestContext = new TokenRequestContext()
+            log.debug("Using Scope {}", AZURE_DEVOPS_SCOPE);
+            DefaultAzureCredential credential = credBuilder.build();
+            TokenRequestContext context = new TokenRequestContext()
                     .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
-            AccessToken accessToken = credential.getToken(requestContext).block();
+            AccessToken accessToken = credential.getToken(context).block();
             if (accessToken == null || accessToken.getToken() == null) {
-                throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+                throw new Exception("Failed to acquire Managed Identity token. Check your environment configuration in Azure.");
             }
             log.debug("Azure Default Token: {}", accessToken.getToken());
             return accessToken.getToken();
         } catch (Exception ex) {
-            log.error("Error getting Azure Default Token: {}", ex.getMessage());
+            log.error("Error getting Azure Default Managed Identity Token: {}", ex.getMessage());
             return "";
         }
     }
