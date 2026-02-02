@@ -427,7 +427,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     private boolean isActiveApplyOrDestroyRunning(Workspace workspace, int currentJobId) {
         Optional<List<Job>> runningJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThan(
-                workspace, Arrays.asList(JobStatus.running), currentJobId);
+                workspace, Arrays.asList(JobStatus.running, JobStatus.queue), currentJobId);
 
         if (!runningJobs.isPresent() || runningJobs.get().isEmpty()) {
             return false;
