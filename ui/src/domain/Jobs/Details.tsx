@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { Job, JobStep } from "../types";
+import { parsePlanLogs, parseApplyLogs, getStepType } from "../../utils/terraformLogParser";
 
 type Props = {
   jobId: string;
@@ -330,68 +331,128 @@ export const DetailsJob = ({ jobId }: Props) => {
             ]}
           />
           {steps.length > 0 ? (
-            steps.map((item) => (
-              <>
-                <style>
-                  {`
+            steps.map((item) => {
+              // Determine the step type and parse the logs accordingly
+              const stepType = getStepType(item.name, item.stepNumber);
+              const parsedLogs =
+                stepType === "plan"
+                  ? parsePlanLogs(item.outputLog)
+                  : stepType === "apply"
+                    ? parseApplyLogs(item.outputLog)
+                    : null;
+
+              // Use sections if available, otherwise fall back to original display
+              const useSections = parsedLogs && parsedLogs.sections.length > 1;
+
+              return (
+                <>
+                  <style>
+                    {`
                 .ant-collapse .ant-collapse-content > .ant-collapse-content-box {
                   padding: 0 !important;
                 }
               `}
-                </style>
-                <Collapse
-                  style={{ width: "100%" }}
-                  defaultActiveKey={item.status === "running" ? ["2"] : []}
-                  items={[
-                    {
-                      key: "2",
-                      label: (
-                        <span>
-                          {getIconStatus(item)}
-                          <h3 style={{ display: "inline" }}>
-                            &nbsp; {item.name} {item.status}
-                          </h3>
-                        </span>
-                      ),
-                      children: (
-                        <>
-                          {uiTemplates.hasOwnProperty(item.stepNumber) ? (
-                            <>
-                              <div
-                                style={{
-                                  textAlign: "right",
-                                  padding: "5px",
-                                }}
-                              >
-                                <Radio.Group onChange={onChange} value={uiType} size="small">
-                                  <Radio.Button value="structured">Structured</Radio.Button>
-                                  <Radio.Button value="console">Console</Radio.Button>
-                                </Radio.Group>
-                              </div>
-                              {uiType === "structured" ? (
-                                <div>{parse(uiTemplates[item.stepNumber])}</div>
-                              ) : (
-                                <div id="code-container">
-                                  <div id="code-content">
-                                    <Ansi>{item.outputLog}</Ansi>
-                                  </div>
+                  </style>
+                  <Collapse
+                    style={{ width: "100%" }}
+                    defaultActiveKey={item.status === "running" ? ["2"] : []}
+                    items={[
+                      {
+                        key: "2",
+                        label: (
+                          <span>
+                            {getIconStatus(item)}
+                            <h3 style={{ display: "inline" }}>
+                              &nbsp; {item.name} {item.status}
+                            </h3>
+                          </span>
+                        ),
+                        children: (
+                          <>
+                            {uiTemplates.hasOwnProperty(item.stepNumber) ? (
+                              <>
+                                <div
+                                  style={{
+                                    textAlign: "right",
+                                    padding: "5px",
+                                  }}
+                                >
+                                  <Radio.Group onChange={onChange} value={uiType} size="small">
+                                    <Radio.Button value="structured">Structured</Radio.Button>
+                                    <Radio.Button value="console">Console</Radio.Button>
+                                  </Radio.Group>
                                 </div>
-                              )}
-                            </>
-                          ) : (
-                            <div id="code-container">
-                              <div id="code-content">
-                                <Ansi>{item.outputLog}</Ansi>
+                                {uiType === "structured" ? (
+                                  <div>{parse(uiTemplates[item.stepNumber])}</div>
+                                ) : useSections ? (
+                                  // Show split sections in console mode for plan/apply steps
+                                  <Space direction="vertical" style={{ width: "100%" }}>
+                                    {parsedLogs.sections.map((section, idx) => (
+                                      <Collapse
+                                        key={section.id}
+                                        defaultActiveKey={idx === parsedLogs.sections.length - 1 ? ["1"] : []}
+                                        items={[
+                                          {
+                                            key: "1",
+                                            label: <b>{section.title}</b>,
+                                            children: (
+                                              <div id="code-container">
+                                                <div id="code-content">
+                                                  <Ansi>{section.content}</Ansi>
+                                                </div>
+                                              </div>
+                                            ),
+                                          },
+                                        ]}
+                                      />
+                                    ))}
+                                  </Space>
+                                ) : (
+                                  <div id="code-container">
+                                    <div id="code-content">
+                                      <Ansi>{item.outputLog}</Ansi>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : useSections ? (
+                              // Show split sections for plan/apply steps when no structured template
+                              <Space direction="vertical" style={{ width: "100%" }}>
+                                {parsedLogs.sections.map((section, idx) => (
+                                  <Collapse
+                                    key={section.id}
+                                    defaultActiveKey={idx === parsedLogs.sections.length - 1 ? ["1"] : []}
+                                    items={[
+                                      {
+                                        key: "1",
+                                        label: <b>{section.title}</b>,
+                                        children: (
+                                          <div id="code-container">
+                                            <div id="code-content">
+                                              <Ansi>{section.content}</Ansi>
+                                            </div>
+                                          </div>
+                                        ),
+                                      },
+                                    ]}
+                                  />
+                                ))}
+                              </Space>
+                            ) : (
+                              <div id="code-container">
+                                <div id="code-content">
+                                  <Ansi>{item.outputLog}</Ansi>
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </>
-                      ),
-                    },
-                  ]}
-                />
-              </>
-            ))
+                            )}
+                          </>
+                        ),
+                      },
+                    ]}
+                  />
+                </>
+              );
+            })
           ) : (
             <span />
           )}
