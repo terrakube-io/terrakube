@@ -1064,10 +1064,10 @@
   resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.28.4.tgz#a70226016fabe25c5783b2f22d3e1c9bc5ca3326"
   integrity sha512-Q/N6JNWvIvPnLDvjlE1OUBLPQHH6l3CltCEsHIujp45zQUSSh8K+gHnaEX45yAT1nyngnINhvWtzN+Nb9D8RAQ==
 
-"@babel/standalone@^7.28.6":
-  version "7.28.6"
-  resolved "https://registry.yarnpkg.com/@babel/standalone/-/standalone-7.28.6.tgz#d7e9c0465496fe0c5f4c3f7a128a69acdef292e9"
-  integrity sha512-l/vUUfIKWdKHbHLqISTekuOaMuxNrnk7qlxFmhAKCayRXhkbBMB6zaJW+9oo0eLFgZLQEpG43LH4sxcEuy1M5g==
+"@babel/standalone@^7.29.0":
+  version "7.29.0"
+  resolved "https://registry.yarnpkg.com/@babel/standalone/-/standalone-7.29.0.tgz#910b5ddbab5a3b1ea0b9f1853b1c928c7519f5c5"
+  integrity sha512-ZbVDXDodISaxYugID/OCXRv6kMnADgTnHqNtSm2oBq4vHI81uFkbxXtdlSlguYe3BB4HiFwZ5kxa1kjrLMOuWg==
 
 "@babel/template@^7.27.1", "@babel/template@^7.28.6":
   version "7.28.6"
