@@ -19,6 +19,8 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -470,7 +472,181 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         }
 
         Thread.sleep(5000);
+        
+        // Execute workspace select/create after init
+        if (terraformJob.isShowHeader()) {
+            executeTerraformWorkspaceSelect(terraformJob, workingDirectory, output);
+        }
+        
         return terraformProcessData.getTerraformBackendConfigFileName();
+    }
+
+    private void executeTerraformWorkspaceSelect(TerraformJob terraformJob, File workingDirectory,
+                                                  Consumer<String> output)
+            throws IOException, InterruptedException {
+        String workspaceName = terraformJob.getEnvironmentVariables().get("workspaceName");
+
+        if (workspaceName != null && !workspaceName.isEmpty() && !"default".equals(workspaceName)) {
+            AnsiFormat colorMessage = enableColorOutput ?
+                    new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD()) :
+                    new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
+
+            output.accept(colorize(STEP_SEPARATOR, colorMessage));
+            output.accept(colorize("Managing Terraform Workspace: " + workspaceName, colorMessage));
+            output.accept(colorize(STEP_SEPARATOR, colorMessage));
+
+            // Step 1: Check if workspace exists
+            boolean workspaceExists = checkWorkspaceExists(workspaceName, workingDirectory, terraformJob, output);
+
+            if (workspaceExists) {
+                // Workspace exists, just select it
+                output.accept(colorize("→ Workspace '" + workspaceName + "' exists, selecting it...", colorMessage));
+                executeCommand("terraform workspace select " + workspaceName, workingDirectory, terraformJob, output);
+                output.accept(colorize("✓ Workspace '" + workspaceName + "' selected successfully", colorMessage));
+            } else {
+                // Workspace doesn't exist, check if default has resources
+                output.accept(colorize("→ Workspace '" + workspaceName + "' does not exist", colorMessage));
+                output.accept(colorize("→ Checking default workspace for existing resources...", colorMessage));
+
+                boolean defaultHasResources = checkDefaultWorkspaceHasResources(workingDirectory, terraformJob, output);
+
+                if (defaultHasResources) {
+                    output.accept(colorize("→ Default workspace contains resources, migrating to new workspace...", colorMessage));
+                    migrateDefaultStateToNewWorkspace(workspaceName, workingDirectory, terraformJob, output, colorMessage);
+                } else {
+                    output.accept(colorize("→ Default workspace is empty, creating new workspace...", colorMessage));
+                    executeCommand("terraform workspace new " + workspaceName, workingDirectory, terraformJob, output);
+                    output.accept(colorize("✓ Workspace '" + workspaceName + "' created successfully", colorMessage));
+                }
+            }
+
+            output.accept(colorize(STEP_SEPARATOR, colorMessage));
+            Thread.sleep(1000);
+        } else {
+            if ("default".equals(workspaceName)) {
+                log.debug("Workspace is 'default', skipping workspace selection");
+            } else {
+                log.debug("No workspaceName environment variable found, skipping workspace selection");
+            }
+        }
+    }
+
+    private boolean checkWorkspaceExists(String workspaceName, File workingDirectory,
+                                         TerraformJob terraformJob, Consumer<String> output)
+            throws IOException, InterruptedException {
+        String command = "terraform workspace list";
+        String workspaceList = executeCommandWithOutput(command, workingDirectory, terraformJob);
+        
+        // Check if workspace name appears in the list
+        // Format is usually: "  default", "* current", "  workspace-name"
+        for (String line : workspaceList.split("\n")) {
+            String cleanLine = line.trim().replaceFirst("^\\*\\s+", "");
+            if (cleanLine.equals(workspaceName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean checkDefaultWorkspaceHasResources(File workingDirectory, TerraformJob terraformJob,
+                                                       Consumer<String> output)
+            throws IOException, InterruptedException {
+        // Ensure we're on default workspace
+        executeCommand("terraform workspace select default", workingDirectory, terraformJob, output);
+        
+        // Check if default workspace has any resources
+        String stateList = executeCommandWithOutput("terraform state list", workingDirectory, terraformJob);
+        
+        // If state list is not empty (excluding whitespace), it has resources
+        return stateList != null && !stateList.trim().isEmpty();
+    }
+
+    private void migrateDefaultStateToNewWorkspace(String workspaceName, File workingDirectory,
+                                                    TerraformJob terraformJob, Consumer<String> output,
+                                                    AnsiFormat colorMessage)
+            throws IOException, InterruptedException {
+        File tempStateFile = new File(workingDirectory, ".terrakube_temp_state.json");
+        
+        try {
+            // Step 1: Ensure we're on default workspace
+            executeCommand("terraform workspace select default", workingDirectory, terraformJob, output);
+            output.accept(colorize("  → Pulling state from default workspace...", colorMessage));
+            
+            // Step 2: Pull state from default workspace
+            String pullCommand = "terraform state pull > " + tempStateFile.getAbsolutePath();
+            executeCommand(pullCommand, workingDirectory, terraformJob, output);
+            
+            // Step 3: Create new workspace
+            output.accept(colorize("  → Creating new workspace '" + workspaceName + "'...", colorMessage));
+            executeCommand("terraform workspace new " + workspaceName, workingDirectory, terraformJob, output);
+            
+            // Step 4: Push state to new workspace with -force to override lineage check
+            // The -force flag is necessary because the new workspace has a different lineage UUID
+            // than the state we're pushing from the default workspace
+            output.accept(colorize("  → Migrating state to '" + workspaceName + "' (forcing lineage update)...", colorMessage));
+            String pushCommand = "terraform state push -force " + tempStateFile.getAbsolutePath();
+            executeCommand(pushCommand, workingDirectory, terraformJob, output);
+            
+            output.accept(colorize("✓ State successfully migrated from default to '" + workspaceName + "'", colorMessage));
+            output.accept(colorize("  Note: State lineage was updated for the new workspace", colorMessage));
+            
+        } finally {
+            // Clean up temp state file
+            if (tempStateFile.exists()) {
+                try {
+                    Files.delete(tempStateFile.toPath());
+                    log.debug("Cleaned up temporary state file");
+                } catch (IOException e) {
+                    log.warn("Failed to delete temporary state file: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void executeCommand(String command, File workingDirectory, TerraformJob terraformJob,
+                                Consumer<String> output) throws IOException, InterruptedException {
+        ProcessBuilder processBuilder = new ProcessBuilder("/bin/sh", "-c", command);
+        processBuilder.directory(workingDirectory);
+        processBuilder.environment().putAll(terraformJob.getEnvironmentVariables());
+        processBuilder.redirectErrorStream(true);
+
+        Process process = processBuilder.start();
+
+        // Read and output the command results
+        try (InputStream inputStream = process.getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.accept("  " + line);
+            }
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            log.warn("Command '{}' exited with code: {}", command, exitCode);
+        }
+    }
+
+    private String executeCommandWithOutput(String command, File workingDirectory, TerraformJob terraformJob)
+            throws IOException, InterruptedException {
+        ProcessBuilder processBuilder = new ProcessBuilder("/bin/sh", "-c", command);
+        processBuilder.directory(workingDirectory);
+        processBuilder.environment().putAll(terraformJob.getEnvironmentVariables());
+        processBuilder.redirectErrorStream(true);
+
+        Process process = processBuilder.start();
+        StringBuilder outputBuilder = new StringBuilder();
+
+        try (InputStream inputStream = process.getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                outputBuilder.append(line).append("\n");
+            }
+        }
+
+        process.waitFor();
+        return outputBuilder.toString();
     }
 
     private HashMap<String, String> getWorkspaceParameters(HashMap<String, String> parameters) {
