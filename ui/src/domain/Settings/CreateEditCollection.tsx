@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import "./Settings.css";
-import { DeleteOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
 
 // Type definitions
 type Collection = {
@@ -53,6 +53,8 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
   const [variableForm] = Form.useForm();
   const [collectionForm] = Form.useForm();
   const [addingVariable, setAddingVariable] = useState(false);
+  const [variableMode, setVariableMode] = useState<"create" | "edit">("create");
+  const [editingVariableId, setEditingVariableId] = useState<string>("");
 
   // Use either the prop or URL parameter for collection ID
   const collectionid = propCollectionId || urlCollectionId;
@@ -232,6 +234,75 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
     }
   };
 
+  const handleUpdateVariable = async () => {
+    try {
+      setVariableLoading(true);
+      const values = await variableForm.validateFields();
+
+      // Update local state for temp variables
+      if (editingVariableId.startsWith("temp-")) {
+        setVariables(
+          variables.map((v) =>
+            v.id === editingVariableId
+              ? {
+                  ...v,
+                  attributes: {
+                    key: values.key,
+                    value: values.value,
+                    category: values.category,
+                    description: values.description,
+                    hcl: values.hcl,
+                    sensitive: values.sensitive,
+                  },
+                }
+              : v
+          )
+        );
+        message.success("Variable updated");
+      } else if (mode === "edit" && collectionid) {
+        // Update variable in collection via API
+        try {
+          await axiosInstance.patch(
+            `organization/${orgid}/collection/${collectionid}/item/${editingVariableId}`,
+            {
+              data: {
+                type: "item",
+                id: editingVariableId,
+                attributes: {
+                  key: values.key,
+                  value: values.value,
+                  sensitive: values.sensitive,
+                  description: values.description,
+                  hcl: values.hcl,
+                  category: values.category,
+                },
+              },
+            },
+            { headers: { "Content-Type": "application/vnd.api+json" } }
+          );
+
+          // Refresh variables
+          const response = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`);
+          setVariables(response.data.data);
+          message.success("Variable updated successfully");
+        } catch (error) {
+          console.error("Failed to update variable:", error);
+          message.error("Failed to update variable");
+        }
+      }
+
+      variableForm.resetFields();
+      setAddingVariable(false);
+      setVariableMode("create");
+      setEditingVariableId("");
+    } catch (error) {
+      console.error("Failed to update variable:", error);
+      message.error("Failed to update variable");
+    } finally {
+      setVariableLoading(false);
+    }
+  };
+
   const handleAddVariable = async () => {
     try {
       setVariableLoading(true);
@@ -287,12 +358,28 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
 
       variableForm.resetFields();
       setAddingVariable(false);
+      setVariableMode("create");
+      setEditingVariableId("");
     } catch (error) {
       console.error("Failed to add variable:", error);
       message.error("Failed to add variable");
     } finally {
       setVariableLoading(false);
     }
+  };
+
+  const handleEditVariable = (record: any) => {
+    setVariableMode("edit");
+    setEditingVariableId(record.id);
+    setAddingVariable(true);
+    variableForm.setFieldsValue({
+      key: record.attributes.key,
+      value: record.attributes.value,
+      category: record.attributes.category,
+      description: record.attributes.description,
+      hcl: record.attributes.hcl,
+      sensitive: record.attributes.sensitive,
+    });
   };
 
   const handleRemoveVariable = async (variableId: string) => {
@@ -360,9 +447,14 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
       title: "Actions",
       key: "actions",
       render: (_: any, record: any) => (
-        <Button icon={<DeleteOutlined />} type="link" danger onClick={() => handleRemoveVariable(record.id)}>
-          Delete
-        </Button>
+        <Space>
+          <Button icon={<EditOutlined />} type="link" onClick={() => handleEditVariable(record)}>
+            Edit
+          </Button>
+          <Button icon={<DeleteOutlined />} type="link" danger onClick={() => handleRemoveVariable(record.id)}>
+            Delete
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -370,15 +462,33 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
   // Replace the Card for adding a variable with a Modal
   const addVariableModal = (
     <Modal
-      title="Add variable"
+      title={variableMode === "edit" ? "Edit variable" : "Add variable"}
       open={addingVariable}
-      onCancel={() => setAddingVariable(false)}
+      onCancel={() => {
+        setAddingVariable(false);
+        setVariableMode("create");
+        setEditingVariableId("");
+        variableForm.resetFields();
+      }}
       footer={[
-        <Button key="cancel" onClick={() => setAddingVariable(false)}>
+        <Button
+          key="cancel"
+          onClick={() => {
+            setAddingVariable(false);
+            setVariableMode("create");
+            setEditingVariableId("");
+            variableForm.resetFields();
+          }}
+        >
           Cancel
         </Button>,
-        <Button key="submit" type="primary" onClick={handleAddVariable} loading={variableLoading}>
-          Add variable
+        <Button
+          key="submit"
+          type="primary"
+          onClick={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
+          loading={variableLoading}
+        >
+          {variableMode === "edit" ? "Save changes" : "Add variable"}
         </Button>,
       ]}
       width={600}
@@ -483,7 +593,16 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
           bordered
         />
 
-        <Button icon={<PlusOutlined />} onClick={() => setAddingVariable(true)} style={{ marginBottom: "20px" }}>
+        <Button
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setVariableMode("create");
+            setEditingVariableId("");
+            variableForm.resetFields();
+            setAddingVariable(true);
+          }}
+          style={{ marginBottom: "20px" }}
+        >
           Add variable
         </Button>
 
