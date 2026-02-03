@@ -435,7 +435,7 @@ public class ScheduleJob implements org.quartz.Job {
 
         for (Job runningJob : runningJobs.get()) {
             Optional<Step> runningStep = stepRepository.findByJobId(runningJob.getId()).stream()
-                    .filter(step -> step.getStatus().equals(JobStatus.running))
+                    .filter(step -> step.getStatus().equals(JobStatus.running) || step.getStatus().equals(JobStatus.queue))
                     .findFirst();
 
             if (runningStep.isPresent()) {
