@@ -117,7 +117,7 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Checking previous jobs....");
 
         boolean canProceed;
-        if (tclService.isTemplatePlanOnly(job.getTemplateReference())) {
+        if (tclService.isTemplatePlanOnly(job.getTemplateReference()) && !tclService.isCliTemplate(job.getTemplateReference())) {
             log.info("Job {} is plan-only (bypassQueue), checking for active apply/destroy", jobId);
             canProceed = !isActiveApplyOrDestroyRunning(job.getWorkspace(), job.getId());
             if (!canProceed) {

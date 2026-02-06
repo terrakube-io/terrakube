@@ -8,6 +8,7 @@ import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
 import lombok.AllArgsConstructor;
@@ -313,5 +314,21 @@ public class TclService {
             log.warn("Error checking if template {} is plan-only: {}", templateId, e.getMessage());
             return false;
         }
+    }
+
+    public boolean isCliTemplate(String templateReference) {
+        try {
+            Optional<Template> template = templateRepository.findById(UUID.fromString(templateReference));
+
+            if (template.isPresent()) {
+                Template temp = template.get();
+                return temp.getName().equals("Terraform-Plan/Apply-Cli") || temp.getName().equals("Terraform-Plan/Destroy-Cli");
+            }
+            else return false;
+        } catch(Exception e) {
+            log.warn("Error checking if template {} is cli: {}", templateReference, e.getMessage());
+        }
+
+        return false;
     }
 }

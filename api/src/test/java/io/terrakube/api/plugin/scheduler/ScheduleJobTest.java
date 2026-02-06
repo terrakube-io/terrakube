@@ -693,6 +693,7 @@ public class ScheduleJobTest {
         flow.setType(FlowType.terraformPlan.name());
 
         doReturn(true).when(tclService).isTemplatePlanOnly("plan-only-template");
+        doReturn(false).when(tclService).isCliTemplate("plan-only-template");
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusInAndIdLessThan(
@@ -728,6 +729,7 @@ public class ScheduleJobTest {
         runningStep.setStepNumber(100);
 
         doReturn(true).when(tclService).isTemplatePlanOnly("plan-only-template");
+        doReturn(false).when(tclService).isCliTemplate("plan-only-template");
         doReturn(Optional.of(Collections.singletonList(runningJob)))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusInAndIdLessThan(
@@ -765,6 +767,7 @@ public class ScheduleJobTest {
         flow.setType(FlowType.terraformPlan.name());
 
         doReturn(true).when(tclService).isTemplatePlanOnly("plan-only-template");
+        doReturn(false).when(tclService).isCliTemplate("plan-only-template");
         doReturn(Optional.of(Collections.singletonList(runningJob)))
                 .when(jobRepository)
                 .findByWorkspaceAndStatusInAndIdLessThan(
