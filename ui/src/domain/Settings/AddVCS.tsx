@@ -79,6 +79,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "Azure Devops Server";
       case "GITHUB_ENTERPRISE":
         return "GitHub Enterprise";
+      case "GITHUB_APP":
+        return "Github App";
       default:
         return "GitHub";
     }
@@ -112,7 +114,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       label: "Github.com (GitHub App)",
       key: "1",
       onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB, VcsConnectionType.STANDALONE);
+        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
       },
     },
     {
@@ -174,6 +176,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "https://docs.terrakube.io/user-guide/vcs-providers/azure-devops";
       case "GITHUB_ENTERPRISE":
         return "https://docs.terrakube.io/user-guide/vcs-providers/github-enterprise";
+      case "GITHUB_APP":
+        return "https://docs.terrakube.io/user-guide/vcs-providers/github-app";
       default:
         return "https://docs.terrakube.io/user-guide/vcs-providers/github.com";
     }
