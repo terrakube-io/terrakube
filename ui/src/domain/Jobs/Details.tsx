@@ -17,10 +17,11 @@ import { Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
 import { DateTime } from "luxon";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { Job, JobStep } from "../types";
+import { parsePlanLogs, parseApplyLogs, getStepType } from "../../utils/terraformLogParser";
 
 type Props = {
   jobId: string;
@@ -37,6 +38,9 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [uiType, setUIType] = useState("structured");
   const [uiTemplates, setUITemplates] = useState<Record<number, string>>({});
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState<{ [key: string]: boolean }>({});
+  const logEndRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const logContainerRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const outputLog = async (output: string, status: string) => {
     if (output != null) {
       const apiDomain = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname;
@@ -62,6 +66,20 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const onChange = (e: RadioChangeEvent) => {
     setUIType(e.target.value);
+  };
+
+  const isScrolledToBottom = (element: HTMLDivElement | null): boolean => {
+    if (!element) return true;
+    const threshold = 50; // pixels from bottom to consider "at bottom"
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+  };
+
+  const handleScrollToBottom = (stepId: string, sectionId: string) => {
+    const refKey = `${stepId}-${sectionId}`;
+    setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+    if (logEndRefs.current[refKey]) {
+      logEndRefs.current[refKey]?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   };
 
   const handleCancel = () => {
@@ -176,6 +194,50 @@ export const DetailsJob = ({ jobId }: Props) => {
     }, 5000);
     return () => clearInterval(interval);
   }, [jobId]);
+
+  // Auto-scroll to bottom of running step logs (only if autoscroll is enabled)
+  useEffect(() => {
+    steps.forEach((step) => {
+      if (step.status === "running") {
+        const stepType = getStepType(step.name, step.stepNumber);
+        const parsedLogs =
+          stepType === "plan"
+            ? parsePlanLogs(step.outputLog)
+            : stepType === "apply"
+              ? parseApplyLogs(step.outputLog)
+              : null;
+
+        if (parsedLogs && parsedLogs.sections.length > 0) {
+          // Scroll to the last section
+          const lastSection = parsedLogs.sections[parsedLogs.sections.length - 1];
+          const refKey = `${step.id}-${lastSection.id}`;
+          
+          // Initialize autoscroll for new steps
+          if (autoScrollEnabled[refKey] === undefined) {
+            setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+          }
+          
+          // Only autoscroll if enabled for this section
+          if (autoScrollEnabled[refKey] && logEndRefs.current[refKey]) {
+            logEndRefs.current[refKey]?.scrollIntoView({ behavior: "smooth", block: "end" });
+          }
+        } else {
+          // Scroll to the full log
+          const refKey = `${step.id}-full`;
+          
+          // Initialize autoscroll for new steps
+          if (autoScrollEnabled[refKey] === undefined) {
+            setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+          }
+          
+          // Only autoscroll if enabled for this section
+          if (autoScrollEnabled[refKey] && logEndRefs.current[refKey]) {
+            logEndRefs.current[refKey]?.scrollIntoView({ behavior: "smooth", block: "end" });
+          }
+        }
+      }
+    });
+  }, [steps, autoScrollEnabled]);
 
   const loadJob = () => {
     const jobSteps: JobStep[] = [];
@@ -330,68 +392,250 @@ export const DetailsJob = ({ jobId }: Props) => {
             ]}
           />
           {steps.length > 0 ? (
-            steps.map((item) => (
-              <>
-                <style>
-                  {`
+            steps.map((item) => {
+              // Determine the step type and parse the logs accordingly
+              const stepType = getStepType(item.name, item.stepNumber);
+              const parsedLogs =
+                stepType === "plan"
+                  ? parsePlanLogs(item.outputLog)
+                  : stepType === "apply"
+                    ? parseApplyLogs(item.outputLog)
+                    : null;
+
+              // Use sections if available, otherwise fall back to original display
+              const useSections = parsedLogs && parsedLogs.sections.length > 1;
+
+              return (
+                <>
+                  <style>
+                    {`
                 .ant-collapse .ant-collapse-content > .ant-collapse-content-box {
                   padding: 0 !important;
                 }
               `}
-                </style>
-                <Collapse
-                  style={{ width: "100%" }}
-                  defaultActiveKey={item.status === "running" ? ["2"] : []}
-                  items={[
-                    {
-                      key: "2",
-                      label: (
-                        <span>
-                          {getIconStatus(item)}
-                          <h3 style={{ display: "inline" }}>
-                            &nbsp; {item.name} {item.status}
-                          </h3>
-                        </span>
-                      ),
-                      children: (
-                        <>
-                          {uiTemplates.hasOwnProperty(item.stepNumber) ? (
-                            <>
-                              <div
-                                style={{
-                                  textAlign: "right",
-                                  padding: "5px",
-                                }}
-                              >
-                                <Radio.Group onChange={onChange} value={uiType} size="small">
-                                  <Radio.Button value="structured">Structured</Radio.Button>
-                                  <Radio.Button value="console">Console</Radio.Button>
-                                </Radio.Group>
-                              </div>
-                              {uiType === "structured" ? (
-                                <div>{parse(uiTemplates[item.stepNumber])}</div>
-                              ) : (
-                                <div id="code-container">
+                  </style>
+                  <Collapse
+                    style={{ width: "100%" }}
+                    defaultActiveKey={item.status === "running" ? ["2"] : []}
+                    items={[
+                      {
+                        key: "2",
+                        label: (
+                          <span>
+                            {getIconStatus(item)}
+                            <h3 style={{ display: "inline" }}>
+                              &nbsp; {item.name} {item.status}
+                            </h3>
+                          </span>
+                        ),
+                        children: (
+                          <>
+                            {uiTemplates.hasOwnProperty(item.stepNumber) ? (
+                              <>
+                                <div
+                                  style={{
+                                    textAlign: "right",
+                                    padding: "5px",
+                                  }}
+                                >
+                                  <Radio.Group onChange={onChange} value={uiType} size="small">
+                                    <Radio.Button value="structured">Structured</Radio.Button>
+                                    <Radio.Button value="console">Console</Radio.Button>
+                                  </Radio.Group>
+                                </div>
+                                {uiType === "structured" ? (
+                                  <div>{parse(uiTemplates[item.stepNumber])}</div>
+                                ) : useSections ? (
+                                  // Show split sections in console mode for plan/apply steps
+                                  <Space direction="vertical" style={{ width: "100%" }}>
+                                    {parsedLogs.sections.map((section, idx) => {
+                                      const refKey = `${item.id}-${section.id}`;
+                                      const isLastSection = idx === parsedLogs.sections.length - 1;
+                                      const showJumpButton = item.status === "running" && isLastSection && autoScrollEnabled[refKey] === false;
+                                      
+                                      return (
+                                        <Collapse
+                                          key={section.id}
+                                          defaultActiveKey={isLastSection ? ["1"] : []}
+                                          items={[
+                                            {
+                                              key: "1",
+                                              label: <b>{section.title}</b>,
+                                              children: (
+                                                <div style={{ position: "relative" }}>
+                                                  {showJumpButton && (
+                                                    <div style={{ position: "sticky", top: 0, zIndex: 10, padding: "8px", background: "#fff", borderBottom: "1px solid #d9d9d9" }}>
+                                                      <Button 
+                                                        size="small" 
+                                                        type="primary"
+                                                        onClick={() => handleScrollToBottom(item.id, section.id)}
+                                                      >
+                                                        ↓ Jump to Bottom (Auto-scroll disabled)
+                                                      </Button>
+                                                    </div>
+                                                  )}
+                                                  <div 
+                                                    id="code-container"
+                                                    ref={(el) => (logContainerRefs.current[refKey] = el)}
+                                                    onScroll={(e) => {
+                                                      const target = e.currentTarget;
+                                                      const atBottom = isScrolledToBottom(target);
+                                                      if (!atBottom && autoScrollEnabled[refKey]) {
+                                                        setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: false }));
+                                                      } else if (atBottom && !autoScrollEnabled[refKey]) {
+                                                        setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+                                                      }
+                                                    }}
+                                                    style={{ maxHeight: "600px", overflow: "auto" }}
+                                                  >
+                                                    <div id="code-content">
+                                                      <Ansi>{section.content}</Ansi>
+                                                      <div ref={(el) => (logEndRefs.current[refKey] = el)} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ),
+                                            },
+                                          ]}
+                                        />
+                                      );
+                                    })}
+                                  </Space>
+                                ) : (
+                                  <div style={{ position: "relative" }}>
+                                    {item.status === "running" && autoScrollEnabled[`${item.id}-full`] === false && (
+                                      <div style={{ position: "sticky", top: 0, zIndex: 10, padding: "8px", background: "#fff", borderBottom: "1px solid #d9d9d9" }}>
+                                        <Button 
+                                          size="small" 
+                                          type="primary"
+                                          onClick={() => handleScrollToBottom(item.id, "full")}
+                                        >
+                                          ↓ Jump to Bottom (Auto-scroll disabled)
+                                        </Button>
+                                      </div>
+                                    )}
+                                    <div 
+                                      id="code-container"
+                                      ref={(el) => (logContainerRefs.current[`${item.id}-full`] = el)}
+                                      onScroll={(e) => {
+                                        const target = e.currentTarget;
+                                        const refKey = `${item.id}-full`;
+                                        const atBottom = isScrolledToBottom(target);
+                                        if (!atBottom && autoScrollEnabled[refKey]) {
+                                          setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: false }));
+                                        } else if (atBottom && !autoScrollEnabled[refKey]) {
+                                          setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+                                        }
+                                      }}
+                                      style={{ maxHeight: "600px", overflow: "auto" }}
+                                    >
+                                      <div id="code-content">
+                                        <Ansi>{item.outputLog}</Ansi>
+                                        <div ref={(el) => (logEndRefs.current[`${item.id}-full`] = el)} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : useSections ? (
+                              // Show split sections for plan/apply steps when no structured template
+                              <Space direction="vertical" style={{ width: "100%" }}>
+                                {parsedLogs.sections.map((section, idx) => {
+                                  const refKey = `${item.id}-${section.id}`;
+                                  const isLastSection = idx === parsedLogs.sections.length - 1;
+                                  const showJumpButton = item.status === "running" && isLastSection && autoScrollEnabled[refKey] === false;
+                                  
+                                  return (
+                                    <Collapse
+                                      key={section.id}
+                                      defaultActiveKey={isLastSection ? ["1"] : []}
+                                      items={[
+                                        {
+                                          key: "1",
+                                          label: <b>{section.title}</b>,
+                                          children: (
+                                            <div style={{ position: "relative" }}>
+                                              {showJumpButton && (
+                                                <div style={{ position: "sticky", top: 0, zIndex: 10, padding: "8px", background: "#fff", borderBottom: "1px solid #d9d9d9" }}>
+                                                  <Button 
+                                                    size="small" 
+                                                    type="primary"
+                                                    onClick={() => handleScrollToBottom(item.id, section.id)}
+                                                  >
+                                                    ↓ Jump to Bottom (Auto-scroll disabled)
+                                                  </Button>
+                                                </div>
+                                              )}
+                                              <div 
+                                                id="code-container"
+                                                ref={(el) => (logContainerRefs.current[refKey] = el)}
+                                                onScroll={(e) => {
+                                                  const target = e.currentTarget;
+                                                  const atBottom = isScrolledToBottom(target);
+                                                  if (!atBottom && autoScrollEnabled[refKey]) {
+                                                    setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: false }));
+                                                  } else if (atBottom && !autoScrollEnabled[refKey]) {
+                                                    setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+                                                  }
+                                                }}
+                                                style={{ maxHeight: "600px", overflow: "auto" }}
+                                              >
+                                                <div id="code-content">
+                                                  <Ansi>{section.content}</Ansi>
+                                                  <div ref={(el) => (logEndRefs.current[refKey] = el)} />
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ),
+                                        },
+                                      ]}
+                                    />
+                                  );
+                                })}
+                              </Space>
+                            ) : (
+                              <div style={{ position: "relative" }}>
+                                {item.status === "running" && autoScrollEnabled[`${item.id}-full`] === false && (
+                                  <div style={{ position: "sticky", top: 0, zIndex: 10, padding: "8px", background: "#fff", borderBottom: "1px solid #d9d9d9" }}>
+                                    <Button 
+                                      size="small" 
+                                      type="primary"
+                                      onClick={() => handleScrollToBottom(item.id, "full")}
+                                    >
+                                      ↓ Jump to Bottom (Auto-scroll disabled)
+                                    </Button>
+                                  </div>
+                                )}
+                                <div 
+                                  id="code-container"
+                                  ref={(el) => (logContainerRefs.current[`${item.id}-full`] = el)}
+                                  onScroll={(e) => {
+                                    const target = e.currentTarget;
+                                    const refKey = `${item.id}-full`;
+                                    const atBottom = isScrolledToBottom(target);
+                                    if (!atBottom && autoScrollEnabled[refKey]) {
+                                      setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: false }));
+                                    } else if (atBottom && !autoScrollEnabled[refKey]) {
+                                      setAutoScrollEnabled((prev) => ({ ...prev, [refKey]: true }));
+                                    }
+                                  }}
+                                  style={{ maxHeight: "600px", overflow: "auto" }}
+                                >
                                   <div id="code-content">
                                     <Ansi>{item.outputLog}</Ansi>
+                                    <div ref={(el) => (logEndRefs.current[`${item.id}-full`] = el)} />
                                   </div>
                                 </div>
-                              )}
-                            </>
-                          ) : (
-                            <div id="code-container">
-                              <div id="code-content">
-                                <Ansi>{item.outputLog}</Ansi>
                               </div>
-                            </div>
-                          )}
-                        </>
-                      ),
-                    },
-                  ]}
-                />
-              </>
-            ))
+                            )}
+                          </>
+                        ),
+                      },
+                    ]}
+                  />
+                </>
+              );
+            })
           ) : (
             <span />
           )}
