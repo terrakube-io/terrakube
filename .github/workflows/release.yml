@@ -71,7 +71,7 @@ jobs:
       - name: Build Registry Go Image
         working-directory: ./registry-go
         run: |
-          docker build -t open-registry:${{ env.VERSION }} .
+          docker build -t open-registry-go:${{ env.VERSION }} .
 
       - name: Tag and Push Executor Images
         run: |
