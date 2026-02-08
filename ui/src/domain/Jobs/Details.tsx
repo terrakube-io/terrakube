@@ -12,7 +12,6 @@ import {
   SyncOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import Ansi from "ansi-to-react";
 import { Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag } from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
@@ -21,6 +20,7 @@ import { useEffect, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { Job, JobStep } from "../types";
+import { TerminalOutput } from "./TerminalOutput";
 
 type Props = {
   jobId: string;
@@ -332,13 +332,6 @@ export const DetailsJob = ({ jobId }: Props) => {
           {steps.length > 0 ? (
             steps.map((item) => (
               <>
-                <style>
-                  {`
-                .ant-collapse .ant-collapse-content > .ant-collapse-content-box {
-                  padding: 0 !important;
-                }
-              `}
-                </style>
                 <Collapse
                   style={{ width: "100%" }}
                   defaultActiveKey={item.status === "running" ? ["2"] : []}
@@ -371,19 +364,19 @@ export const DetailsJob = ({ jobId }: Props) => {
                               {uiType === "structured" ? (
                                 <div>{parse(uiTemplates[item.stepNumber])}</div>
                               ) : (
-                                <div id="code-container">
-                                  <div id="code-content">
-                                    <Ansi>{item.outputLog}</Ansi>
-                                  </div>
-                                </div>
+                                <TerminalOutput
+                                  outputLog={item.outputLog}
+                                  stepName={item.name}
+                                  isRunning={item.status === "running"}
+                                />
                               )}
                             </>
                           ) : (
-                            <div id="code-container">
-                              <div id="code-content">
-                                <Ansi>{item.outputLog}</Ansi>
-                              </div>
-                            </div>
+                            <TerminalOutput
+                              outputLog={item.outputLog}
+                              stepName={item.name}
+                              isRunning={item.status === "running"}
+                            />
                           )}
                         </>
                       ),
