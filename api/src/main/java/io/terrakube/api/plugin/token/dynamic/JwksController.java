@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
@@ -42,6 +43,18 @@ public class JwksController {
 
     }
 
+    private String toUnsignedBase64(BigInteger value) {
+        byte[] array = value.toByteArray();
+
+        if (array.length > 1 && array[0] == 0) {
+            byte[] unsignedArray = new byte[array.length - 1];
+            System.arraycopy(array, 1, unsignedArray, 0, unsignedArray.length);
+            array = unsignedArray;
+        }
+
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(array);
+    }
+
     private JwkData getJwkData() throws NoSuchAlgorithmException, InvalidKeySpecException {
         String publicKey = dynamicCredentialsService.getPublicKey();
 
@@ -53,8 +66,8 @@ public class JwksController {
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
 
             RSAPublicKey rsa = (RSAPublicKey) keyFactory.generatePublic(keySpec);
-            String exponent = Base64.getUrlEncoder().encodeToString(rsa.getPublicExponent().toByteArray());
-            String modulus = Base64.getUrlEncoder().withoutPadding().encodeToString(rsa.getModulus().toByteArray());
+            String exponent = toUnsignedBase64(rsa.getPublicExponent());
+            String modulus = toUnsignedBase64(rsa.getModulus());
             log.info("RSA Exponent: {}", exponent);
             log.info("RSA Modulus: {}", modulus);
 
