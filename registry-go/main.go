@@ -143,6 +143,66 @@ func main() {
 		c.Status(http.StatusNoContent)
 	})
 
+	// Download Module Zip (Actual File)
+	r.GET("/terraform/modules/v1/download/:org/:name/:provider/:version/module.zip", func(c *gin.Context) {
+		org := c.Param("org")
+		name := c.Param("name")
+		provider := c.Param("provider")
+		version := c.Param("version")
+
+		reader, err := storageService.DownloadModule(org, name, provider, version)
+		if err != nil {
+			log.Printf("Error downloading module zip: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to download module zip"})
+			return
+		}
+		defer reader.Close()
+
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-%s-%s-%s.zip\"", org, name, provider, version))
+
+		extraHeaders := map[string]string{
+			"X-Terraform-Get": "", // Clear this if it was set
+		}
+
+		c.DataFromReader(http.StatusOK, -1, "application/zip", reader, extraHeaders)
+	})
+
+	// Terraform Provider Registry Service Discovery
+	// Providers endpoints
+	r.GET("/terraform/providers/v1/:org/:provider/versions", func(c *gin.Context) {
+		org := c.Param("org")
+		provider := c.Param("provider")
+
+		versions, err := apiClient.GetProviderVersions(org, provider)
+		if err != nil {
+			log.Printf("Error fetching provider versions: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch provider versions"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"versions": versions,
+		})
+	})
+
+	r.GET("/terraform/providers/v1/:org/:provider/:version/download/:os/:arch", func(c *gin.Context) {
+		org := c.Param("org")
+		provider := c.Param("provider")
+		version := c.Param("version")
+		os := c.Param("os")
+		arch := c.Param("arch")
+
+		fileData, err := apiClient.GetProviderFile(org, provider, version, os, arch)
+		if err != nil {
+			log.Printf("Error fetching provider file info: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch provider file info"})
+			return
+		}
+
+		c.JSON(http.StatusOK, fileData)
+	})
+
 	log.Printf("Starting Registry Service on port %s", cfg.Port)
 	if err := r.Run(fmt.Sprintf(":%s", cfg.Port)); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

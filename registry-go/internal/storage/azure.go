@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -84,4 +85,16 @@ func (s *AzureStorageService) SearchModule(org, module, provider, version, sourc
 
 	log.Printf("Uploaded module to Azure: %s", key)
 	return path, nil
+}
+
+func (s *AzureStorageService) DownloadModule(org, module, provider, version string) (io.ReadCloser, error) {
+	key := fmt.Sprintf("registry/%s/%s/%s/%s/module.zip", org, module, provider, version)
+
+	// DownloadStream returns a DownloadStreamResponse which contains Body (io.ReadCloser)
+	resp, err := s.Client.DownloadStream(context.TODO(), s.ContainerName, key, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download module from Azure: %w", err)
+	}
+
+	return resp.Body, nil
 }

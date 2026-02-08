@@ -100,3 +100,13 @@ func (s *GCPStorageService) SearchModule(org, module, provider, version, source,
 	log.Printf("Uploaded module to GCP: %s", key)
 	return path, nil
 }
+
+func (s *GCPStorageService) DownloadModule(org, module, provider, version string) (io.ReadCloser, error) {
+	key := fmt.Sprintf("registry/%s/%s/%s/%s/module.zip", org, module, provider, version)
+
+	rc, err := s.Client.Bucket(s.BucketName).Object(key).NewReader(context.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to download module from GCP: %w", err)
+	}
+	return rc, nil
+}

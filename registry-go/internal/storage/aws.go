@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -114,4 +115,18 @@ func (s *AWSStorageService) SearchModule(org, module, provider, version, source,
 
 	log.Printf("Uploaded module to S3: %s", key)
 	return path, nil
+}
+
+func (s *AWSStorageService) DownloadModule(org, module, provider, version string) (io.ReadCloser, error) {
+	key := fmt.Sprintf("registry/%s/%s/%s/%s/module.zip", org, module, provider, version)
+
+	output, err := s.Client.GetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download module from S3: %w", err)
+	}
+
+	return output.Body, nil
 }
