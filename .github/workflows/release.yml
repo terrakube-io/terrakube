@@ -111,9 +111,9 @@ jobs:
       - name: Tag and Push Registry Go Images
         run: |
           IMAGE_ID=$(docker images open-registry-go:${{ env.VERSION }} -q)
-          docker tag $IMAGE_ID azbuilder/open-registry-go:${{ env.VERSION }}
-          docker tag $IMAGE_ID azbuilder/open-registry-go:latest
-          docker push azbuilder/open-registry-go:${{ env.VERSION }}
+          docker tag $IMAGE_ID azbuilder/open-registry:${{ env.VERSION }}-go
+          docker tag $IMAGE_ID azbuilder/open-registry:latest-go
+          docker push azbuilder/open-registry:${{ env.VERSION }}-go
 
   merge:
     needs: build
@@ -147,10 +147,10 @@ jobs:
 
           # Registry Go
           docker buildx imagetools create \
-            --tag azbuilder/open-registry-go:${{ env.VERSION }} \
-            --tag azbuilder/open-registry-go:latest \
-            azbuilder/open-registry-go:${{ env.VERSION }} \
-            azbuilder/open-registry-go:${{ env.VERSION }}-arm
+            --tag azbuilder/open-registry:${{ env.VERSION }}-go \
+            --tag azbuilder/open-registry:latest-go \
+            azbuilder/open-registry:${{ env.VERSION }}-go \
+            azbuilder/open-registry:${{ env.VERSION }}-go-arm
 
           # Executor
           docker buildx imagetools create \
@@ -171,8 +171,9 @@ jobs:
           USERNAME="${{ secrets.DOCKER_USER }}"
           PASSWORD="${{ secrets.DOCKER_PASSWORD }}"
           ORGANIZATION="azbuilder"
-          IMAGES=("api-server" "open-registry" "open-registry-go" "executor" "terrakube-ui")
+          IMAGES=("api-server" "open-registry" "executor" "terrakube-ui")
           TAG="${{ env.VERSION }}-arm"
+          TAG_GO="${{ env.VERSION }}-go-arm"
 
           login_data() {
           cat <<EOF
@@ -194,5 +195,18 @@ jobs:
               echo "Successfully deleted ${ORGANIZATION}/${IMAGE}:${TAG} from Docker Hub."
             else
               echo "Failed to delete ${ORGANIZATION}/${IMAGE}:${TAG}. HTTP status code: $DELETE_RESPONSE"
+            fi
+
+            # Special handling for registry-go tag
+            if [ "$IMAGE" == "open-registry" ]; then
+                DELETE_RESPONSE_GO=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${ORGANIZATION}/${IMAGE}/tags/${TAG_GO}/" \
+                -X DELETE \
+                -H "Authorization: JWT ${TOKEN}")
+                
+                if [ "$DELETE_RESPONSE_GO" -eq 204 ]; then
+                  echo "Successfully deleted ${ORGANIZATION}/${IMAGE}:${TAG_GO} from Docker Hub."
+                else
+                  echo "Failed to delete ${ORGANIZATION}/${IMAGE}:${TAG_GO}. HTTP status code: $DELETE_RESPONSE_GO"
+                fi
             fi
           done
