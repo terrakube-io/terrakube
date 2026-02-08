@@ -13,12 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
-          distribution: 'liberica'
+          java-version: "25"
+          distribution: "liberica"
       - name: Cache SonarCloud packages
         uses: actions/cache@v3
         with:
@@ -43,18 +43,32 @@ jobs:
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: mvn clean install
 
+  build-registry-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+      - name: Build and Test Registry
+        working-directory: ./registry-go
+        run: |
+          go mod download
+          go test ./...
+          go build -v ./...
   build-alpaquita:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
-          distribution: 'liberica'
+          java-version: "25"
+          distribution: "liberica"
       - name: Cache Maven packages
         uses: actions/cache@v3
         with:

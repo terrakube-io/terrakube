@@ -1,6 +1,6 @@
 name: Release Terrakube
 
-on: 
+on:
   release:
     types: [created]
 
@@ -13,65 +13,70 @@ jobs:
       VERSION: ${{ github.event.release.tag_name }}
     runs-on: ${{ matrix.os == 'jammy-arm' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Cache Maven packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-m2
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
 
-    - name: Set up JDK 25
-      uses: actions/setup-java@v4
-      with:
-        java-version: '25'
-        distribution: 'liberica'
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: "liberica"
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 22
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-    - name: Set up Docker config
-      run: |
-        mkdir -p ~/.docker
-        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"'$(echo -n "${{ secrets.DOCKER_USER }}:${{ secrets.DOCKER_PASSWORD }}" | base64 )'"}}}' > ~/.docker/config.json
+      - name: Set up Docker config
+        run: |
+          mkdir -p ~/.docker
+          echo '{"auths":{"https://index.docker.io/v1/":{"auth":"'$(echo -n "${{ secrets.DOCKER_USER }}:${{ secrets.DOCKER_PASSWORD }}" | base64 )'"}}}' > ~/.docker/config.json
 
-    - name: Set environment label for Alpaquita
-      if: matrix.os == 'alpaquita'
-      run: echo "VERSION=${{ env.VERSION }}-alpaquita" >> $GITHUB_ENV
+      - name: Set environment label for Alpaquita
+        if: matrix.os == 'alpaquita'
+        run: echo "VERSION=${{ env.VERSION }}-alpaquita" >> $GITHUB_ENV
 
-    - name: Set environment label for Jammy-ARM
-      if: matrix.os == 'jammy-arm'
-      run: echo "VERSION=${{ env.VERSION }}-arm" >> $GITHUB_ENV
+      - name: Set environment label for Jammy-ARM
+        if: matrix.os == 'jammy-arm'
+        run: echo "VERSION=${{ env.VERSION }}-arm" >> $GITHUB_ENV
 
-    - name: Build and Push UI Images
-      if: matrix.os == 'jammy' || matrix.os == 'jammy-arm'
-      working-directory: ./ui
-      run: |
-        docker build --build-arg REACT_APP_TERRAKUBE_VERSION=v${{ env.VERSION }} -t azbuilder/terrakube-ui:${{ env.VERSION }} --push .
+      - name: Build and Push UI Images
+        if: matrix.os == 'jammy' || matrix.os == 'jammy-arm'
+        working-directory: ./ui
+        run: |
+          docker build --build-arg REACT_APP_TERRAKUBE_VERSION=v${{ env.VERSION }} -t azbuilder/terrakube-ui:${{ env.VERSION }} --push .
 
-    - name: Update POM Version
-      run: mvn versions:set-property -Dproperty=revision -DnewVersion=${{ env.VERSION }} -DgenerateBackupPoms=false
+      - name: Update POM Version
+        run: mvn versions:set-property -Dproperty=revision -DnewVersion=${{ env.VERSION }} -DgenerateBackupPoms=false
 
-    - name: Build Image with Maven
-      run: |
-        if [ "${{ matrix.os }}" == "alpaquita" ]; then
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=bellsoft/buildpacks.builder:glibc
-        elif [ "${{ matrix.os }}" == "jammy-arm" ]; then
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=heroku/builder:24
-        else
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true
-        fi
-      env:
-        USER_NAME: ${{ secrets.USER_NAME }}
-        ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      - name: Build Image with Maven
+        run: |
+          if [ "${{ matrix.os }}" == "alpaquita" ]; then
+            mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=bellsoft/buildpacks.builder:glibc
+          elif [ "${{ matrix.os }}" == "jammy-arm" ]; then
+            mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=heroku/builder:24
+          else
+            mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true
+          fi
+        env:
+          USER_NAME: ${{ secrets.USER_NAME }}
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
 
-    - name: Tag and Push Executor Images
-      run: |
+      - name: Build Registry Go Image
+        working-directory: ./registry-go
+        run: |
+          docker build -t open-registry:${{ env.VERSION }} .
+
+      - name: Tag and Push Executor Images
+        run: |
           IMAGE_ID=$(docker images executor:${{ env.VERSION }} -q)
-      
+
           # Install Git
           if [ "${{ matrix.os }}" == "alpaquita" ]; then
             docker tag $IMAGE_ID executortemp
@@ -83,25 +88,32 @@ jobs:
               docker commit --change='ENTRYPOINT ["/cnb/process/web"]' --change='USER cnb' $(docker ps -lq) executortemp
             fi
           fi
-      
+
           IMAGE_ID=$(docker images executortemp -q)
           docker tag $IMAGE_ID azbuilder/executor:${{ env.VERSION }}
           docker tag $IMAGE_ID azbuilder/executor:latest
           docker push azbuilder/executor:${{ env.VERSION }}
 
-    - name: Tag and Push API Images
-      run: |
-        IMAGE_ID=$(docker images api-server:${{ env.VERSION }} -q)
-        docker tag $IMAGE_ID azbuilder/api-server:${{ env.VERSION }}
-        docker tag $IMAGE_ID azbuilder/api-server:latest
-        docker push azbuilder/api-server:${{ env.VERSION }}
+      - name: Tag and Push API Images
+        run: |
+          IMAGE_ID=$(docker images api-server:${{ env.VERSION }} -q)
+          docker tag $IMAGE_ID azbuilder/api-server:${{ env.VERSION }}
+          docker tag $IMAGE_ID azbuilder/api-server:latest
+          docker push azbuilder/api-server:${{ env.VERSION }}
 
-    - name: Tag and Push Registry Images
-      run: |
-        IMAGE_ID=$(docker images open-registry:${{ env.VERSION }} -q)
-        docker tag $IMAGE_ID azbuilder/open-registry:${{ env.VERSION }}
-        docker tag $IMAGE_ID azbuilder/open-registry:latest
-        docker push azbuilder/open-registry:${{ env.VERSION }}
+      - name: Tag and Push Registry Images
+        run: |
+          IMAGE_ID=$(docker images open-registry:${{ env.VERSION }} -q)
+          docker tag $IMAGE_ID azbuilder/open-registry:${{ env.VERSION }}
+          docker tag $IMAGE_ID azbuilder/open-registry:latest
+          docker push azbuilder/open-registry:${{ env.VERSION }}
+
+      - name: Tag and Push Registry Go Images
+        run: |
+          IMAGE_ID=$(docker images open-registry-go:${{ env.VERSION }} -q)
+          docker tag $IMAGE_ID azbuilder/open-registry-go:${{ env.VERSION }}
+          docker tag $IMAGE_ID azbuilder/open-registry-go:latest
+          docker push azbuilder/open-registry-go:${{ env.VERSION }}
 
   merge:
     needs: build
@@ -109,50 +121,57 @@ jobs:
     env:
       VERSION: ${{ github.event.release.tag_name }}
     steps:
-    - name: Set up Docker config
-      run: |
-        mkdir -p ~/.docker
-        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"'$(echo -n "${{ secrets.DOCKER_USER }}:${{ secrets.DOCKER_PASSWORD }}" | base64 )'"}}}' > ~/.docker/config.json
+      - name: Set up Docker config
+        run: |
+          mkdir -p ~/.docker
+          echo '{"auths":{"https://index.docker.io/v1/":{"auth":"'$(echo -n "${{ secrets.DOCKER_USER }}:${{ secrets.DOCKER_PASSWORD }}" | base64 )'"}}}' > ~/.docker/config.json
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Create and Push Multi-Platform Images
-      run: |
-        # API
-        docker buildx imagetools create \
-          --tag azbuilder/api-server:${{ env.VERSION }} \
-          --tag azbuilder/api-server:latest \
-          azbuilder/api-server:${{ env.VERSION }} \
-          azbuilder/api-server:${{ env.VERSION }}-arm
+      - name: Create and Push Multi-Platform Images
+        run: |
+          # API
+          docker buildx imagetools create \
+            --tag azbuilder/api-server:${{ env.VERSION }} \
+            --tag azbuilder/api-server:latest \
+            azbuilder/api-server:${{ env.VERSION }} \
+            azbuilder/api-server:${{ env.VERSION }}-arm
 
-        # Registry
-        docker buildx imagetools create \
-          --tag azbuilder/open-registry:${{ env.VERSION }} \
-          --tag azbuilder/open-registry:latest \
-          azbuilder/open-registry:${{ env.VERSION }} \
-          azbuilder/open-registry:${{ env.VERSION }}-arm
+          # Registry
+          docker buildx imagetools create \
+            --tag azbuilder/open-registry:${{ env.VERSION }} \
+            --tag azbuilder/open-registry:latest \
+            azbuilder/open-registry:${{ env.VERSION }} \
+            azbuilder/open-registry:${{ env.VERSION }}-arm
 
-        # Executor
-        docker buildx imagetools create \
-          --tag azbuilder/executor:${{ env.VERSION }} \
-          --tag azbuilder/executor:latest \
-          azbuilder/executor:${{ env.VERSION }} \
-          azbuilder/executor:${{ env.VERSION }}-arm
+          # Registry Go
+          docker buildx imagetools create \
+            --tag azbuilder/open-registry-go:${{ env.VERSION }} \
+            --tag azbuilder/open-registry-go:latest \
+            azbuilder/open-registry-go:${{ env.VERSION }} \
+            azbuilder/open-registry-go:${{ env.VERSION }}-arm
 
-        # UI
-        docker buildx imagetools create \
-          --tag azbuilder/terrakube-ui:${{ env.VERSION }} \
-          --tag azbuilder/terrakube-ui:latest \
-          azbuilder/terrakube-ui:${{ env.VERSION }} \
-          azbuilder/terrakube-ui:${{ env.VERSION }}-arm
+          # Executor
+          docker buildx imagetools create \
+            --tag azbuilder/executor:${{ env.VERSION }} \
+            --tag azbuilder/executor:latest \
+            azbuilder/executor:${{ env.VERSION }} \
+            azbuilder/executor:${{ env.VERSION }}-arm
 
-    - name: Delete ARM Images
-      run: |
+          # UI
+          docker buildx imagetools create \
+            --tag azbuilder/terrakube-ui:${{ env.VERSION }} \
+            --tag azbuilder/terrakube-ui:latest \
+            azbuilder/terrakube-ui:${{ env.VERSION }} \
+            azbuilder/terrakube-ui:${{ env.VERSION }}-arm
+
+      - name: Delete ARM Images
+        run: |
           USERNAME="${{ secrets.DOCKER_USER }}"
           PASSWORD="${{ secrets.DOCKER_PASSWORD }}"
           ORGANIZATION="azbuilder"
-          IMAGES=("api-server" "open-registry" "executor" "terrakube-ui")
+          IMAGES=("api-server" "open-registry" "open-registry-go" "executor" "terrakube-ui")
           TAG="${{ env.VERSION }}-arm"
 
           login_data() {
