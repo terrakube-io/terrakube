@@ -15,6 +15,14 @@ type Config struct {
 	AwsAccessKey        string
 	AwsSecretKey        string
 	AwsEndpoint         string
+	// Azure
+	AzureStorageAccountName   string
+	AzureStorageAccountKey    string
+	AzureStorageContainerName string
+	// GCP
+	GcpStorageProjectId   string
+	GcpStorageBucketName  string
+	GcpStorageCredentials string
 }
 
 func LoadConfig() *Config {
@@ -28,6 +36,14 @@ func LoadConfig() *Config {
 		AwsAccessKey:        getEnv("AwsStorageAccessKey", ""),
 		AwsSecretKey:        getEnv("AwsStorageSecretKey", ""),
 		AwsEndpoint:         getEnv("AwsEndpoint", ""),
+		// Azure
+		AzureStorageAccountName:   getEnv("AzureStorageAccountName", ""),
+		AzureStorageAccountKey:    getEnv("AzureStorageAccountKey", ""),
+		AzureStorageContainerName: getEnv("AzureStorageContainerName", ""),
+		// GCP
+		GcpStorageProjectId:   getEnv("GcpStorageProjectId", ""),
+		GcpStorageBucketName:  getEnv("GcpStorageBucketName", ""),
+		GcpStorageCredentials: getEnv("GcpStorageCredentials", ""), // JSON content or path
 	}
 }
 

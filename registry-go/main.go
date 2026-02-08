@@ -35,20 +35,41 @@ func main() {
 	apiClient := client.NewClient(cfg.AzBuilderApiUrl)
 
 	// Initialize Storage Service
-	storageService, err := storage.NewAWSStorageService(
-		context.TODO(), // TODO: Use proper context
-		cfg.AwsRegion,
-		cfg.AwsBucketName,
-		// Hostname for registry itself to form download links?
-		// In Docker Compose it's like https://terrakube-registry...
-		// But here we might just use cfg.AzBuilderRegistry
-		cfg.AzBuilderRegistry,
-		cfg.AwsEndpoint,
-		cfg.AwsAccessKey,
-		cfg.AwsSecretKey,
-	)
+	var storageService storage.StorageService
+	var err error
+
+	switch cfg.RegistryStorageType {
+	case "AWS", "AwsStorageImpl":
+		storageService, err = storage.NewAWSStorageService(
+			context.TODO(), // TODO: Use proper context
+			cfg.AwsRegion,
+			cfg.AwsBucketName,
+			cfg.AzBuilderRegistry,
+			cfg.AwsEndpoint,
+			cfg.AwsAccessKey,
+			cfg.AwsSecretKey,
+		)
+	case "AZURE", "AzureStorageImpl":
+		storageService, err = storage.NewAzureStorageService(
+			cfg.AzureStorageAccountName,
+			cfg.AzureStorageAccountKey,
+			cfg.AzureStorageContainerName,
+			cfg.AzBuilderRegistry,
+		)
+	case "GCP", "GcpStorageImpl":
+		storageService, err = storage.NewGCPStorageService(
+			context.TODO(),
+			cfg.GcpStorageProjectId,
+			cfg.GcpStorageBucketName,
+			cfg.GcpStorageCredentials,
+			cfg.AzBuilderRegistry,
+		)
+	default:
+		log.Fatalf("Unknown RegistryStorageType: %s. Supported values: AWS, AZURE, GCP", cfg.RegistryStorageType)
+	}
+
 	if err != nil {
-		log.Fatalf("Failed to initialize storage service: %v", err)
+		log.Fatalf("Failed to initialize storage service (%s): %v", cfg.RegistryStorageType, err)
 	}
 
 	// List Module Versions
