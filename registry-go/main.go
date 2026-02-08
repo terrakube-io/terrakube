@@ -1,0 +1,129 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/terrakube-io/terrakube/registry-go/internal/client"
+	"github.com/terrakube-io/terrakube/registry-go/internal/config"
+	"github.com/terrakube-io/terrakube/registry-go/internal/storage"
+)
+
+func main() {
+	cfg := config.LoadConfig()
+
+	r := gin.Default()
+
+	// Health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "UP",
+		})
+	})
+
+	// Terraform Registry Service Discovery
+	r.GET("/.well-known/terraform.json", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"modules.v1":   "/terraform/modules/v1/",
+			"providers.v1": "/terraform/providers/v1/",
+		})
+	})
+
+	apiClient := client.NewClient(cfg.AzBuilderApiUrl)
+
+	// Initialize Storage Service
+	storageService, err := storage.NewAWSStorageService(
+		context.TODO(), // TODO: Use proper context
+		cfg.AwsRegion,
+		cfg.AwsBucketName,
+		// Hostname for registry itself to form download links?
+		// In Docker Compose it's like https://terrakube-registry...
+		// But here we might just use cfg.AzBuilderRegistry
+		cfg.AzBuilderRegistry,
+		cfg.AwsEndpoint,
+		cfg.AwsAccessKey,
+		cfg.AwsSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize storage service: %v", err)
+	}
+
+	// List Module Versions
+	r.GET("/terraform/modules/v1/:org/:name/:provider/versions", func(c *gin.Context) {
+		org := c.Param("org")
+		name := c.Param("name")
+		provider := c.Param("provider")
+
+		versions, err := apiClient.GetModuleVersions(org, name, provider)
+		if err != nil {
+			log.Printf("Error fetching versions: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch versions"})
+			return
+		}
+
+		var versionDTOs []gin.H
+		for _, v := range versions {
+			versionDTOs = append(versionDTOs, gin.H{"version": v})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"modules": []gin.H{
+				{
+					"versions": versionDTOs,
+				},
+			},
+		})
+	})
+
+	// Download Module Version
+	r.GET("/terraform/modules/v1/:org/:name/:provider/:version/download", func(c *gin.Context) {
+		org := c.Param("org")
+		name := c.Param("name")
+		provider := c.Param("provider")
+		version := c.Param("version")
+
+		// Get Module Details for Source/VCS info
+		moduleDetails, err := apiClient.GetModule(org, name, provider)
+		if err != nil {
+			log.Printf("Error fetching module details: %v", err)
+			c.JSON(http.StatusNotFound, gin.H{"error": "Module not found"})
+			return
+		}
+
+		// Prepare args for SearchModule
+		source := moduleDetails.Source
+		folder := moduleDetails.Folder
+		tagPrefix := moduleDetails.TagPrefix
+		vcsType := "PUBLIC"
+		accessToken := ""
+
+		if moduleDetails.Vcs != nil {
+			vcsType = moduleDetails.Vcs.VcsType
+			accessToken = moduleDetails.Vcs.AccessToken
+			// TODO: Handle OAuth/App Token logic if accessToken is empty but clientId present?
+			// The original Java code has complex logic for GitHub App tokens.
+			// For this MVP, we use what we get.
+		} else if moduleDetails.Ssh != nil {
+			vcsType = "SSH~" + moduleDetails.Ssh.SshType
+			accessToken = moduleDetails.Ssh.PrivateKey
+		}
+
+		path, err := storageService.SearchModule(org, name, provider, version, source, vcsType, accessToken, tagPrefix, folder)
+		if err != nil {
+			log.Printf("Error searching/processing module: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process module download"})
+			return
+		}
+
+		c.Header("X-Terraform-Get", path)
+		c.Status(http.StatusNoContent)
+	})
+
+	log.Printf("Starting Registry Service on port %s", cfg.Port)
+	if err := r.Run(fmt.Sprintf(":%s", cfg.Port)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
