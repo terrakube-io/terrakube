@@ -5107,10 +5107,10 @@ get-tsconfig@^4.10.1:
   dependencies:
     resolve-pkg-maps "^1.0.0"
 
-github-markdown-css@^5.8.1:
-  version "5.8.1"
-  resolved "https://registry.npmjs.org/github-markdown-css/-/github-markdown-css-5.8.1.tgz"
-  integrity sha512-8G+PFvqigBQSWLQjyzgpa2ThD9bo7+kDsriUIidGcRhXgmcaAWUIpCZf8DavJgc+xifjbCG+GvMyWr0XMXmc7g==
+github-markdown-css@^5.9.0:
+  version "5.9.0"
+  resolved "https://registry.yarnpkg.com/github-markdown-css/-/github-markdown-css-5.9.0.tgz#bf2a7d8f2cbad3bc89840aca7a4ebd5d6c2d23e3"
+  integrity sha512-tmT5sY+zvg2302XLYEfH2mtkViIM1SWf2nvYoF5N1ZsO0V6B2qZTiw3GOzw4vpjLygK/KG35qRlPFweHqfzz5w==
 
 glob-parent@^5.1.2:
   version "5.1.2"
