@@ -15,7 +15,7 @@
 	<description>Terrakube Spring Boot Executor</description>
 	<properties>
 		<java.version>25</java.version>
-		<azure.version>6.1.0</azure.version>
+		<azure.version>7.0.0</azure.version>
 		<msal4j.version>1.24.0</msal4j.version>
 		<commons-text.version>1.15.0</commons-text.version>
 		<terraform-spring-boot-starter.version>1.3.0</terraform-spring-boot-starter.version>
