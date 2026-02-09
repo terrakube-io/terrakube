@@ -79,6 +79,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "Azure Devops Server";
       case "GITHUB_ENTERPRISE":
         return "GitHub Enterprise";
+      case "GITHUB_APP":
+        return "Github App";
       default:
         return "GitHub";
     }
@@ -112,7 +114,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       label: "Github.com (GitHub App)",
       key: "1",
       onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB, VcsConnectionType.STANDALONE);
+        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
       },
     },
     {
@@ -174,6 +176,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         return "https://docs.terrakube.io/user-guide/vcs-providers/azure-devops";
       case "GITHUB_ENTERPRISE":
         return "https://docs.terrakube.io/user-guide/vcs-providers/github-enterprise";
+      case "GITHUB_APP":
+        return "https://docs.terrakube.io/user-guide/vcs-providers/github-app";
       default:
         return "https://docs.terrakube.io/user-guide/vcs-providers/github.com";
     }
@@ -222,6 +226,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "AZURE_DEVOPS":
         return "https://dev.azure.com";
       case "GITHUB":
+      case "GITHUB_APP":
         return "https://api.github.com";
       default:
         return "";
@@ -265,6 +270,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "GITLAB":
       case "BITBUCKET":
       case "AZURE_DEVOPS":
+      case "GITHUB_APP":
+        return true;
       case "GITHUB":
         return true;
       default:
@@ -277,6 +284,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "GITLAB":
       case "BITBUCKET":
       case "AZURE_DEVOPS":
+      case "GITHUB_APP":
+        return true;
       case "GITHUB":
         return true;
       default:
@@ -676,6 +685,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "AZURE_DEVOPS":
         return `https://app.vssps.visualstudio.com`;
       case "GITHUB":
+      case "GITHUB_APP":
         return `https://github.com`;
       default:
         return ``;
@@ -824,10 +834,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             >
               <Input placeholder={renderVCSType(vcsType)} />
             </Form.Item>
-            <Form.Item name="endpoint" label="HTTPS URL" rules={[{ required: true }]} hidden={httpsHidden(vcsType)}>
+            <Form.Item name="endpoint" label="HTTPS URL" rules={[{ required: !httpsHidden(vcsType) }]} hidden={httpsHidden(vcsType)}>
               <Input placeholder={getHttpsPlaceholder(vcsType)} />
             </Form.Item>
-            <Form.Item name="apiUrl" label="API URL" rules={[{ required: true }]} hidden={apiUrlHidden(vcsType)}>
+            <Form.Item name="apiUrl" label="API URL" rules={[{ required: !apiUrlHidden(vcsType) }]} hidden={apiUrlHidden(vcsType)}>
               <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
             </Form.Item>
             <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
