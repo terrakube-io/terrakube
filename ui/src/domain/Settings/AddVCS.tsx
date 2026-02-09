@@ -226,6 +226,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "AZURE_DEVOPS":
         return "https://dev.azure.com";
       case "GITHUB":
+      case "GITHUB_APP":
         return "https://api.github.com";
       default:
         return "";
@@ -684,6 +685,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "AZURE_DEVOPS":
         return `https://app.vssps.visualstudio.com`;
       case "GITHUB":
+      case "GITHUB_APP":
         return `https://github.com`;
       default:
         return ``;
