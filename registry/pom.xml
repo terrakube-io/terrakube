@@ -16,7 +16,7 @@
     <properties>
         <java.version>25</java.version>
         <azure.version>6.1.0</azure.version>
-        <msal4j.version>1.23.1</msal4j.version>
+        <msal4j.version>1.24.0</msal4j.version>
         <lombok.version>1.18.42</lombok.version>
         <terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
         <jgit.version>7.5.0.202512021534-r</jgit.version>

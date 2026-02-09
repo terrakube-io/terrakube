@@ -19,7 +19,7 @@
         <handlebars.version>4.3.1</handlebars.version>
         <azure.version>6.1.0</azure.version>
         <mssql-jdbc.version>13.2.1.jre11</mssql-jdbc.version>
-        <msal4j.version>1.23.1</msal4j.version>
+        <msal4j.version>1.24.0</msal4j.version>
         <lombok.version>1.18.42</lombok.version>
         <wiremock.version>4.1.0</wiremock.version>
         <jgit.version>7.5.0.202512021534-r</jgit.version>
