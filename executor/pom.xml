@@ -22,7 +22,7 @@
 		<terrakube-client-starter.version>1.4.0</terrakube-client-starter.version>
 		<commons-io.version>2.21.0</commons-io.version>
 		<commons-codec>1.21.0</commons-codec>
-		<azure-storage-blob.version>12.33.1</azure-storage-blob.version>
+		<azure-storage-blob.version>12.33.2</azure-storage-blob.version>
 		<jgit.version>7.5.0.202512021534-r</jgit.version>
 		<bouncy.castle>1.83</bouncy.castle>
 		<lombok.version>1.18.42</lombok.version>
