@@ -269,6 +269,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "GITLAB":
       case "BITBUCKET":
       case "AZURE_DEVOPS":
+      case "GITHUB_APP":
+        return true;
       case "GITHUB":
         return true;
       default:
@@ -281,6 +283,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "GITLAB":
       case "BITBUCKET":
       case "AZURE_DEVOPS":
+      case "GITHUB_APP":
+        return true;
       case "GITHUB":
         return true;
       default:
