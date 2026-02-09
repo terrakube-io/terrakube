@@ -832,10 +832,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             >
               <Input placeholder={renderVCSType(vcsType)} />
             </Form.Item>
-            <Form.Item name="endpoint" label="HTTPS URL" rules={[{ required: true }]} hidden={httpsHidden(vcsType)}>
+            <Form.Item name="endpoint" label="HTTPS URL" rules={[{ required: !httpsHidden(vcsType) }]} hidden={httpsHidden(vcsType)}>
               <Input placeholder={getHttpsPlaceholder(vcsType)} />
             </Form.Item>
-            <Form.Item name="apiUrl" label="API URL" rules={[{ required: true }]} hidden={apiUrlHidden(vcsType)}>
+            <Form.Item name="apiUrl" label="API URL" rules={[{ required: !apiUrlHidden(vcsType) }]} hidden={apiUrlHidden(vcsType)}>
               <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
             </Form.Item>
             <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
