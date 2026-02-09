@@ -247,7 +247,7 @@ export const VCSSettings = ({ vcsMode }: Props) => {
                           )}
                         </Col>
                         <Col span={6}>
-                          {item.attributes.status !== "COMPLETED" ? (
+                          {item.attributes.status !== "COMPLETED" && item.attributes.connectionType === "OAUTH" ? (
                             <Button
                               type="primary"
                               target="_blank"
