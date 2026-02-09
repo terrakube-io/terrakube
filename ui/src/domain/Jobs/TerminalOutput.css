@@ -1,0 +1,68 @@
+.terminal-wrapper {
+  position: relative;
+}
+
+.terminal-container {
+  max-height: calc(100vh - 280px);
+  min-height: 400px;
+  overflow-y: auto;
+  background-color: #1e1e1e;
+  width: 100%;
+}
+
+.terminal-content {
+  color: #ffffff;
+  font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
+  padding: 20px;
+  font-size: 0.875em;
+  white-space: pre-wrap;
+}
+
+.terminal-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: none;
+}
+
+.terminal-wrapper:hover .terminal-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.terminal-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: #d4d4d4;
+  background: rgba(30, 30, 30, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.terminal-toolbar-btn:hover {
+  background: rgba(60, 60, 60, 0.9);
+}
+
+.terminal-toolbar-btn--active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.terminal-toolbar-btn--active:hover {
+  background: #1d4ed8;
+}
