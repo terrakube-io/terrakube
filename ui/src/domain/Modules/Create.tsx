@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate } from "react-router-dom";
-import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
 const { Content } = Layout;
@@ -27,16 +27,20 @@ type CreateVcsForm = {
   sshKey?: string;
 };
 
+type Params = {
+  orgid: string;
+};
+
 export const CreateModule = () => {
+  const { orgid } = useParams<Params>();
   const {
     token: { colorBgContainer },
   } = theme.useToken();
   const [current, setCurrent] = useState(0);
   const [step3Hidden, setStep3Hidden] = useState(true);
   const [step2Hidden, setStep2Hidden] = useState(true);
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [vcsId, setVcsId] = useState("");
   const [vcsButtonsVisible, setVCSButtonsVisible] = useState(true);
@@ -44,9 +48,11 @@ export const CreateModule = () => {
   const [sshKeysVisible, setSSHKeysVisible] = useState(false);
 
   useEffect(() => {
-    loadSSHKeys();
-    loadVCSProviders();
-  }, [organizationId]);
+    if (orgid) {
+      loadSSHKeys();
+      loadVCSProviders();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGitClick = (id: string) => {
     if (id === "git") {
@@ -78,7 +84,7 @@ export const CreateModule = () => {
   };
 
   const handleVCSClick = (vcsType: VcsType) => {
-    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}`);
+    navigate(`/organizations/${orgid}/settings/vcs/new/${vcsType}`);
   };
 
   const handleDifferent = () => {
@@ -120,14 +126,14 @@ export const CreateModule = () => {
   };
 
   const loadVCSProviders = () => {
-    axiosInstance.get(`organization/${organizationId}/vcs`).then((response) => {
+    axiosInstance.get(`organization/${orgid}/vcs`).then((response) => {
       setVCS(response.data.data);
       setLoading(false);
     });
   };
 
   const loadSSHKeys = () => {
-    axiosInstance.get(`organization/${organizationId}/ssh`).then((response) => {
+    axiosInstance.get(`organization/${orgid}/ssh`).then((response) => {
       setSSHKeys(response.data.data);
     });
   };
@@ -196,14 +202,14 @@ export const CreateModule = () => {
     }
 
     axiosInstance
-      .post(`organization/${organizationId}/module`, body, {
+      .post(`organization/${orgid}/module`, body, {
         headers: {
           "Content-Type": "application/vnd.api+json",
         },
       })
       .then((response) => {
         if (response.status === 201) {
-          navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+          navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
         }
       })
       .catch((error) => {
@@ -252,7 +258,7 @@ export const CreateModule = () => {
             title: sessionStorage.getItem(ORGANIZATION_NAME),
           },
           {
-            title: <Link to={`/organizations/${organizationId}/registry`}>Modules</Link>,
+            title: <Link to={`/organizations/${orgid}/registry`}>Modules</Link>,
           },
           {
             title: "New Module",
@@ -290,7 +296,7 @@ export const CreateModule = () => {
                     >
                       &nbsp;Git
                     </Button>
-                    {loading || vcs.length === 0 ? (
+                    {loading ? (
                       <p>Data loading...</p>
                     ) : (
                       vcs.map(function (item) {

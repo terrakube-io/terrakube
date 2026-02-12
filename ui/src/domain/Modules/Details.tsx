@@ -3,24 +3,21 @@ import {
   ClockCircleOutlined,
   CloudOutlined,
   DeleteOutlined,
-  DownloadOutlined,
   DownOutlined,
   GithubOutlined,
   GitlabOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import {
-  Breadcrumb,
   Button,
   Card,
   Col,
   Divider,
   Dropdown,
-  Layout,
   message,
   Popconfirm,
   Row,
   Space,
-  Spin,
   Tabs,
   Tag,
   theme,
@@ -31,14 +28,12 @@ import * as hcl from "hcl2-parser";
 import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
-import { BiBookBookmark } from "react-icons/bi";
 import { FaAws } from "react-icons/fa";
-import { MdBusiness } from "react-icons/md";
-import { RiFolderHistoryLine } from "react-icons/ri";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzure, VscAzureDevops } from "react-icons/vsc";
 import Markdown from "react-markdown";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import remarkGfm from "remark-gfm";
 import { unzip } from "unzipit";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
@@ -46,7 +41,6 @@ import axiosInstance from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
-const { Content } = Layout;
 
 type Props = {
   organizationName: string;
@@ -286,131 +280,82 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   };
 
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: organizationName,
-          },
-          {
-            title: <Link to={`/organizations/${orgid}/registry`}>Modules</Link>,
-          },
-          {
-            title: moduleName,
-          },
-        ]}
-      />
-
-      <div className="site-layout-content" style={{ background: colorBgContainer }}>
-        {loading || !module ? (
-          <Spin spinning={loading} tip="Loading Module...">
-            <p style={{ marginTop: "50px" }}></p>
-          </Spin>
-        ) : (
+    <PageWrapper
+      title={moduleName}
+      subTitle={module?.attributes.description}
+      loading={loading}
+      loadingText="Loading Module..."
+      breadcrumbs={[
+        { label: organizationName, path: "/" },
+        { label: "Registry", path: `/organizations/${orgid}/registry` },
+        { label: moduleName, path: `/organizations/${orgid}/registry/${id}` },
+      ]}
+      fluid
+      innerClassName="registry-centered"
+      contentClassName="registry-centered"
+    >
+      {module && (
           <div>
             <Row>
-              <Col span={17}>
+              <Col span={16}>
                 <Space direction="vertical" style={{ marginTop: "10px", width: "95%" }}>
                   {submodule === "" && (
                     <>
-                      <Tag color="blue">
-                        <span>
-                          <MdBusiness /> Private
-                        </span>
-                      </Tag>
-                      <div>
-                        <h2 className="moduleTitle">{module.attributes.name}</h2>
-                        <span className="moduleDescription">{module.attributes.description}</span>
-                      </div>
-                      <Space className="moduleProvider" size="large" direction="horizontal">
-                        <Typography.Text type="secondary">Published by {organizationName}</Typography.Text>
+                      <Space size="large" wrap>
+                        <Typography.Text type="secondary">
+                          Published by {organizationName}
+                        </Typography.Text>
                         <Typography.Text type="secondary">
                           Provider {renderLogo(module.attributes.provider)} {module.attributes.provider}
                         </Typography.Text>
+                        <Typography.Text type="secondary">
+                          Version {version}{" "}
+                          <Dropdown
+                            menu={{
+                              items: allVersions
+                                .sort((a, b) => compareVersions(a.version, b.version))
+                                .reverse()
+                                .map((v) => ({ key: v.version, label: v.version })),
+                              onClick: handleClick,
+                            }}
+                            trigger={["click"]}
+                          >
+                            <button
+                              type="button"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                padding: 0,
+                                color: "#1677ff",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Change <DownOutlined />
+                            </button>
+                          </Dropdown>
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          <ClockCircleOutlined /> Published {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          Source{" "}
+                          {renderVCSLogo(vcsProvider)}{" "}
+                          {module.attributes.source && (
+                            <a
+                              href={fixSshURL(module.attributes.source)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {new URL(fixSshURL(module.attributes.source)).pathname
+                                .replace(".git", "")
+                                .substring(1)}
+                            </a>
+                          )}
+                        </Typography.Text>
                       </Space>
-                      <IconContext.Provider value={{ size: "1.3em" }}>
-                        <table className="moduleDetails">
-                          <tbody>
-                            <tr>
-                              <td>
-                                <Typography.Text type="secondary">
-                                  <RiFolderHistoryLine /> Version
-                                </Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text type="secondary">
-                                  <ClockCircleOutlined /> Published
-                                </Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text type="secondary">
-                                  <DownloadOutlined /> Provisions
-                                </Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text type="secondary">
-                                  <BiBookBookmark /> Source
-                                </Typography.Text>
-                              </td>
-                            </tr>
-                            <tr className="black">
-                              <td>
-                                <Typography.Text>
-                                  {version}{" "}
-                                  <Dropdown
-                                    menu={{
-                                      items: allVersions
-                                        .sort((a, b) => compareVersions(a.version, b.version))
-                                        .reverse()
-                                        .map((v) => ({ key: v.version, label: v.version })),
-                                      onClick: handleClick,
-                                    }}
-                                    trigger={["click"]}
-                                  >
-                                    <button
-                                      type="button"
-                                      style={{
-                                        background: "none",
-                                        border: "none",
-                                        padding: 0,
-                                        color: "#1677ff",
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      Change <DownOutlined />
-                                    </button>
-                                  </Dropdown>
-                                </Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text>
-                                  {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
-                                </Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text>&nbsp; {module.attributes.downloadQuantity}</Typography.Text>
-                              </td>
-                              <td>
-                                <Typography.Text>
-                                  {renderVCSLogo(vcsProvider)}{" "}
-                                  {module.attributes.source && (
-                                    <a
-                                      href={fixSshURL(module.attributes.source)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      {new URL(fixSshURL(module.attributes.source)).pathname
-                                        .replace(".git", "")
-                                        .substring(1)}
-                                    </a>
-                                  )}
-                                </Typography.Text>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </IconContext.Provider>
+                      <Divider style={{ margin: "16px 0" }} />
+                      <Typography.Title level={4} style={{ margin: 0 }}>Module Details</Typography.Title>
+                      <Typography.Text type="secondary">Explore relevant submodules and examples</Typography.Text>
                       {submodules.length > 0 && (
                         <Dropdown
                           menu={{
@@ -419,7 +364,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                           }}
                           trigger={["click"]}
                         >
-                          <Button style={{ marginTop: "20px", fontSize: ".75rem" }}>
+                          <Button style={{ marginTop: "10px", fontSize: ".75rem" }}>
                             <Space>
                               Submodules
                               <DownOutlined />
@@ -738,33 +683,46 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                   />
                 </Space>
               </Col>
-              <Col span={7}>
+              <Col span={8}>
                 <Card>
                   <Space style={{ paddingRight: "10px", width: "100%" }} direction="vertical">
                     <div style={{ width: "100%" }}>
-                      <Popconfirm
-                        onConfirm={() => {
-                          onDelete(id!);
+                      <Dropdown
+                        menu={{
+                          items: [
+                            {
+                              key: "delete",
+                              label: (
+                                <Popconfirm
+                                  title={
+                                    <p>
+                                      Module <b>{module.attributes.name}</b> will be permanently deleted.
+                                      <br />
+                                      Are you sure?
+                                    </p>
+                                  }
+                                  onConfirm={() => {
+                                    onDelete(id!);
+                                  }}
+                                  okText="Yes"
+                                  cancelText="No"
+                                  placement="left"
+                                >
+                                  <Space>
+                                    <DeleteOutlined style={{ color: "#ff4d4f" }} />
+                                    <span style={{ color: "#ff4d4f" }}>Remove from organization</span>
+                                  </Space>
+                                </Popconfirm>
+                              ),
+                            },
+                          ],
                         }}
-                        style={{ width: "100%" }}
-                        title={
-                          <p>
-                            Module <b>{module.attributes.name}</b> will be permanently deleted from this organization.
-                            <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                        placement="bottom"
+                        trigger={["click"]}
                       >
-                        <Button type="default" danger style={{ width: "100%" }}>
-                          <Space>
-                            <DeleteOutlined />
-                            Delete Module
-                          </Space>
+                        <Button style={{ width: "100%" }} icon={<SettingOutlined />}>
+                          Manage Module <DownOutlined />
                         </Button>
-                      </Popconfirm>
+                      </Dropdown>
                       <Divider />
                     </div>
                     <p className="moduleSubtitles">Usage Instructions</p>
@@ -804,12 +762,11 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                   </Space>
                 </Card>
               </Col>
-              <Col span={1}></Col>
+
             </Row>
           </div>
-        )}
-      </div>
-    </Content>
+      )}
+    </PageWrapper>
   );
 };
 

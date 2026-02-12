@@ -2,8 +2,7 @@
 
 This directory contains the configuration for a development container that provides a consistent environment for working with Terrakube. The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
 
-> Make sure 
-> The below was tested using Ubuntu-based distribution, not sure if this will work with macos, windows or codespaces
+> **Note:** This setup has been tested on Ubuntu-based distributions and macOS (including Apple Silicon). Windows and GitHub Codespaces support may vary.
 
 ## Features
 

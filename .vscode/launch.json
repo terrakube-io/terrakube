@@ -8,6 +8,7 @@
             "mainClass": "io.terrakube.api.ServerApplication",
             "projectName": "api-server",
             "args": "-Xmx512m -Xms256m -Dcom.sun.net.ssl.checkRevocation=false",
+            "vmArgs": "-Dcom.sun.management.jmxremote.port=45556 -Dcom.sun.management.jmxremote.rmi.port=45556 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false",
             "envFile": "${workspaceFolder}/.envApi",
             "preLaunchTask": "setup-java"
         },
@@ -19,6 +20,7 @@
             "mainClass": "io.terrakube.registry.OpenRegistryApplication",
             "projectName": "open-registry",
             "args": "-Xmx512m -Xms256m",
+            "vmArgs": "-Dcom.sun.management.jmxremote.port=45558 -Dcom.sun.management.jmxremote.rmi.port=45558 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false",
             "envFile": "${workspaceFolder}/.envRegistry",
             "preLaunchTask": "setup-java"
         },
@@ -30,6 +32,7 @@
             "mainClass": "io.terrakube.executor.ExecutorApplication",
             "projectName": "executor",
             "args": "-Xmx512m -Xms256m",
+            "vmArgs": "-Dcom.sun.management.jmxremote.port=45557 -Dcom.sun.management.jmxremote.rmi.port=45557 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false",
             "envFile": "${workspaceFolder}/.envExecutor",
             "preLaunchTask": "setup-java"
         },
@@ -39,9 +42,8 @@
             "name": "Run UI",
             "runtimeExecutable": "yarn",
             "cwd": "${workspaceFolder}/ui",
-            "runtimeArgs": ["start"],
-            "envFile": "${workspaceFolder}/.envUi",
-            "preLaunchTask": "yarn-install"
+            "runtimeArgs": ["start", "--force"],
+            "envFile": "${workspaceFolder}/.envUi"
         }
     ],
     "compounds": [

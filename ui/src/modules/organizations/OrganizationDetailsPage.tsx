@@ -80,10 +80,8 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
           dataSource={filteredWorkspaces}
           pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
           renderItem={(item) => (
-            <List.Item>
-              <Link to={`/organizations/${id}/workspaces/${item.id}`} style={{ width: "100%" }}>
-                <WorkspaceCard tags={tags} item={item} />
-              </Link>
+            <List.Item style={{ cursor: "pointer" }} onClick={() => navigate(`/organizations/${id}/workspaces/${item.id}`)}>
+              <WorkspaceCard tags={tags} item={item} />
             </List.Item>
           )}
         />
