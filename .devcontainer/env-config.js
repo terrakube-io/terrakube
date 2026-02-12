@@ -5,4 +5,5 @@ window._env_ = {
     REACT_APP_REDIRECT_URI: "https://terrakube.platform.local",
     REACT_APP_REGISTRY_URI: "https://terrakube-registry.platform.local",
     REACT_APP_SCOPE: "email openid profile offline_access groups",
+    REACT_APP_TERRAKUBE_VERSION: "devcontainer",
 }

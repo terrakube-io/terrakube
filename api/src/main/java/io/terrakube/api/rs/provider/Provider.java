@@ -6,6 +6,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.hooks.provider.ProviderManageHook;
 import io.terrakube.api.rs.provider.implementation.Version;
 
 import jakarta.persistence.*;
@@ -18,6 +19,8 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage provider")
 @UpdatePermission(expression = "team manage provider")
 @DeletePermission(expression = "team manage provider")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ProviderManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, hook = ProviderManageHook.class)
 @Include(rootLevel = false)
 @Getter
 @Setter

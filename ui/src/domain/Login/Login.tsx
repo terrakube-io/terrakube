@@ -8,7 +8,7 @@ const Login = () => {
     <div className="login-container">
       <div className="login-wrapper">
         <Card title={<img alt="logo" className="loginLogo" src={logo} />}>
-          <Space direction="vertical">
+          <Space orientation="vertical">
             Sign in to Terrakube
             <Button type="primary" onClick={() => App()}>
               Login
