@@ -117,10 +117,15 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     public GitHubAppToken getGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
             throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+        log.info("Getting access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
         GitHubAppToken gitHubAppToken = gitHubAppTokenRepository.findByAppIdAndOwner(vcs.getClientId(), ownerAndRepo[0]);
         if (gitHubAppToken == null) {
+            log.info("No token found in GitHubAppToken table, fetching new token");
             gitHubAppToken = fetchGitHubAppInstallationToken(vcs, ownerAndRepo);
         }
+
+        log.info("Token fetched for user/organization {}", ownerAndRepo[0]);
+        log.debug("Token: {}", gitHubAppToken.getToken());
 
         return gitHubAppToken;
     }
@@ -132,11 +137,12 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         GitHubAppToken gitHubAppToken = new GitHubAppToken();
 
         String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-
+        log.info("Generated JWT token for GitHub App");
         String url = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/installation";
-        log.debug("Getting access token for user/organization {}", ownerAndRepo[0]);
+        log.info("Getting access token for user/organization {} using url {}", ownerAndRepo[0], url);
         ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.GET, jws);
         if (tokenResponse.getStatusCode().value() == 200) {
+            log.info("Successfully fetched access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
             JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
             String installationId = rootNode.path("id").asText();
             //gitHubAppToken.setId(UUID.randomUUID());
@@ -145,13 +151,16 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             gitHubAppToken.setAppId(vcs.getClientId());
             gitHubAppToken
                     .setToken(fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(), jws, ownerAndRepo[0]));
+
         }
 
         gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
+        log.info("Successfully saved token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
         // Schedule a job to refresh the token every 55 minutes
         try {
+            log.info("Scheduling task to refresh GitHub App token for owner/organization {}", gitHubAppToken.getOwner());
             scheduleGitHubAppTokenService.createTask(3300, gitHubAppToken.getId().toString());
-            log.debug("Successfully created schedule task to refresh GitHub App token for owner/organization {}",
+            log.info("Successfully created schedule task to refresh GitHub App token for owner/organization {}",
                     gitHubAppToken.getOwner());
         } catch (SchedulerException e) {
             log.error("Failed to create schedule task to refresh GitHub App token for owner/organization {}, error {}",
