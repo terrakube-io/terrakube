@@ -36,7 +36,6 @@ import io.terrakube.api.rs.vcs.VcsStatus;
 import io.terrakube.api.rs.vcs.VcsType;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +53,7 @@ public class TokenService {
     BitbucketTokenService bitbucketTokenService;
     GitLabTokenService gitLabTokenService;
     AzDevOpsTokenService azDevOpsTokenService;
-    ScheduleVcsService scheduleVcsService;
+    //ScheduleVcsService scheduleVcsService;
     GitService gitService;
 
     @Transactional
@@ -83,7 +82,7 @@ public class TokenService {
                     vcs.setTokenExpiration(
                             new Date(System.currentTimeMillis() + bitBucketToken.getExpires_in() * 1000));
                     // Refresh token every hour, Bitbucket Token expire after 2 hours (7200 seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
+                    // scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
                     break;
                 case GITLAB:
                     GitLabToken gitLabToken = gitLabTokenService.getAccessToken(vcs.getId().toString(),
@@ -92,7 +91,7 @@ public class TokenService {
                     vcs.setRefreshToken(gitLabToken.getRefresh_token());
                     vcs.setTokenExpiration(new Date(System.currentTimeMillis() + gitLabToken.getExpires_in() * 1000));
                     // Refresh token every hour, GitLab Token expire after 2 hours (7200 seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
+                    // scheduleVcsService.createTask(String.format(QUARTZ_EVERY_60_MINUTES, minutes), vcsId);
                     break;
                 case AZURE_DEVOPS:
                     AzDevOpsToken azDevOpsToken = azDevOpsTokenService.getAccessToken(vcs.getId().toString(),
@@ -102,7 +101,7 @@ public class TokenService {
                     vcs.setTokenExpiration(new Date(System.currentTimeMillis() + azDevOpsToken.getExpires_in() * 1000));
                     // Refresh token every 30 minutes, Azure DevOps Token expire after 1 hour (3599
                     // seconds)
-                    scheduleVcsService.createTask(String.format(QUARTZ_EVERY_30_MINUTES, minutes), vcsId);
+                    // scheduleVcsService.createTask(String.format(QUARTZ_EVERY_30_MINUTES, minutes), vcsId);
                     break;
                 default:
                     break;
@@ -114,8 +113,6 @@ public class TokenService {
             log.error(e.getMessage());
             vcs.setStatus(VcsStatus.ERROR);
             vcsRepository.save(vcs);
-        } catch (SchedulerException | ParseException e) {
-            log.error(e.getMessage());
         }
 
         return result;

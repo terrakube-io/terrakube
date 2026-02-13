@@ -169,7 +169,6 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
                 log.error("Failed to parse expiration date: {}", e.getMessage());
             }
 
-
         }
 
         gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
