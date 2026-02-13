@@ -3,27 +3,27 @@ export default function (source: string): string {
     source = source.replace(".git", "");
   }
 
-  if (source.startsWith("git@")) {
-    source = source.replace("git@", "https://");
-  }
-
+  // Azure DevOps SSH urls have a special format: git@ssh.dev.azure.com:v3/org/project/repo
   if (source.includes("dev.azure.com")) {
     source = source.replace(":v3", "").replace("ssh.", "");
     source = stripUserFromHost(source);
     source = source.replace("/_git", "");
+    if (source.startsWith("git@")) {
+      source = source.replace("git@", "https://");
+    }
+    return source;
   }
 
-  if (source.includes("github.com") || source.includes("ghe.com")) {
-    source = source.replace(".com:", ".com/");
+  // Generic SSH url handling: git@host:path → https://host/path
+  // Works for github.com, gitlab.com, bitbucket.org, and any self-hosted instance
+  if (source.startsWith("git@")) {
+    source = source.replace(/^git@([^:]+):(.*)$/, "https://$1/$2");
+    return source;
   }
 
-  if (source.includes("bitbucket.org")) {
-    source = source.replace(".org:", ".org/");
+  // HTTPS urls with embedded credentials: https://user@host/path → https://host/path
+  if (source.includes("@") && source.startsWith("https://")) {
     source = stripUserFromHost(source);
-  }
-
-  if (source.includes("gitlab.com")) {
-    source = source.replace(".com:", ".com/");
   }
 
   return source;
