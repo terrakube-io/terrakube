@@ -294,7 +294,9 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
   const fetchActions = async () => {
     try {
-      const response = await axiosInstance.get(`action?filter[action]=active==true;type=in=('Workspace/Action')`);
+      const response = await axiosInstance.get('action', {
+        params: { 'filter[action]': "active==true;type=in=('Workspace/Action')" },
+      });
 
       const fetchedActions = response.data.data || [];
       setActions(fetchedActions);
