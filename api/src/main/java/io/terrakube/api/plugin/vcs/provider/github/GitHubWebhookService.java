@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.vcs.provider.github;
 
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -102,8 +104,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
             // Handle pull request event (opened, synchronize, reopened)
         } else if ("pull_request".equals(event)) {
             // Extract repository owner and name from the payload
-            String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
-            String repoName = rootNode.path("repository").path("name").asText();
+            String gitPath = rootNode.path("repository").path("clone_url").asText();
             String action = rootNode.path("action").asText();
             if ("opened".equals(action) || "synchronize".equals(action) || "reopened".equals(action)) {
                 int prNumber = rootNode.path("number").asInt();
@@ -121,7 +122,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 
                 String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
                 // Fetch file changes for the PR
-                List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
+                List<String> prFileChanges = getPrFileChanges(vcs, gitPath, prFilesUrl);
                 result.setFileChanges(prFileChanges);
             } else {
                 result.setValid(false);
@@ -188,7 +189,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 + "\",\"description\":\"" + commitStatusDescription + "\",\"target_url\":\""
                 + jobUrl + "\",\"context\":\"" + commitStatusContext + "\"}";
 
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, apiUrl,
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), workspace.getSource(), body, apiUrl,
                 HttpMethod.POST);
 
         // Handle the response
@@ -213,7 +214,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                         + "/pulls/" + prNumber + "/statuses";
 
                 // Send the status to the pull request
-                ResponseEntity<String> prResponse = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, prApiUrl,
+                ResponseEntity<String> prResponse = callGitHubApi(workspace.getVcs(), workspace.getSource(), body, prApiUrl,
                         HttpMethod.POST);
                 if (prResponse == null) {
                     log.error("Failed to send job status on PR #{} in workspace {} to GitHub", prNumber,
@@ -239,7 +240,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
                 + "/commits/" + commitId + "/pulls";
 
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, null, apiUrl,
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), workspace.getSource(), null, apiUrl,
                 HttpMethod.GET);
 
         if (response != null && response.getStatusCode().value() == 200) {
@@ -259,10 +260,10 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return prNumbers;
     }
 
-    private List<String> getPrFileChanges(Vcs vcs, String[] ownerAndRepo, String apiUrl) {
+    private List<String> getPrFileChanges(Vcs vcs, String gitPath, String apiUrl) {
         List<String> changedFiles = new ArrayList<>();
 
-        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", apiUrl, HttpMethod.GET);
+        ResponseEntity<String> response = callGitHubApi(vcs, gitPath, "", apiUrl, HttpMethod.GET);
         if(response == null || response.getStatusCode().value() != 200) {
             log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
             return changedFiles;
@@ -304,7 +305,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                     + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
         }
 
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl,
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), workspace.getSource(), body, apiUrl,
                 httpMethod);
         // Extract the id from the response
         if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
@@ -337,7 +338,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                     + webhookRemoteId;
         }
 
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, "", apiUrl,
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), workspace.getSource(), "", apiUrl,
                 HttpMethod.DELETE);
         if (response == null) {
             log.error("Failed to delete webhook with remote hook id {} on repository {}/{}", webhookRemoteId,
@@ -354,13 +355,13 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
     }
 
-    private ResponseEntity<String> callGitHubApi(Vcs vcs, String[] ownerAndRepo, String body, String apiUrl,
+    private ResponseEntity<String> callGitHubApi(Vcs vcs, String gitPath, String body, String apiUrl,
             HttpMethod httpMethod) {
         String token = "";
         try {
-            token = tokenService.getAccessToken(ownerAndRepo, vcs);
-        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
-            log.error("Error retrieving tokens for access to owner/organization {}, error {}", ownerAndRepo[0], e);
+            token = tokenService.getAccessToken(gitPath, vcs);
+        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException | GitAPIException | URISyntaxException e) {
+            log.error("Error retrieving tokens for access to owner/organization {}, error {}", gitPath, e);
             return null;
         }
 

@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.vcs.provider.github;
 
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
@@ -9,9 +11,12 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 
+import io.terrakube.api.plugin.vcs.GitService;
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
@@ -58,6 +63,9 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     @Autowired
     ScheduleGitHubAppTokenService scheduleGitHubAppTokenService;
 
+    @Autowired
+    GitService gitService;
+
     public GitHubToken getAccessToken(String clientId, String clientSecret, String tempCode, String callback,
                                       String endpoint) throws TokenException {
         HttpClient httpClient;
@@ -100,9 +108,9 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         }
     }
 
-    public String getAccessToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
-        return getGitHubAppToken(vcs, ownerAndRepo).getToken();
+    public String getAccessToken(Vcs vcs, String gitPath)
+            throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException, URISyntaxException, GitAPIException {
+        return getGitHubAppToken(vcs, gitPath).getToken();
     }
 
     // Refreshes the access token for a specific installation of the app that's
@@ -115,8 +123,12 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
                 gitHubAppToken.getOwner());
     }
 
-    public GitHubAppToken getGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+    public GitHubAppToken getGitHubAppToken(Vcs vcs, String gitPath)
+            throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException, URISyntaxException, GitAPIException {
+
+        URI uri = new URI(gitPath);
+        String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
+
         log.info("Getting access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
         GitHubAppToken gitHubAppToken = gitHubAppTokenRepository.findByAppIdAndOwner(vcs.getClientId(), ownerAndRepo[0]);
         if (gitHubAppToken == null) {
@@ -124,10 +136,15 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             gitHubAppToken = fetchGitHubAppInstallationToken(vcs, ownerAndRepo);
         }
 
-        log.info("Token fetched for user/organization {}", ownerAndRepo[0]);
-        log.debug("Token: {}", gitHubAppToken.getToken());
+        if(gitService.isAccessTokenValid(gitPath, vcs)){
+            log.info("Token fetched for user/organization {}", ownerAndRepo[0]);
+            log.debug("Token: {}", gitHubAppToken.getToken());
 
-        return gitHubAppToken;
+            return gitHubAppToken;
+        } else {
+            log.info("Token fetched for user/organization {} is invalid, fetching new token", ownerAndRepo[0]);
+            return fetchGitHubAppInstallationToken(vcs, ownerAndRepo);
+        }
     }
 
     // Generates a new access token for a specific installation of the app that
