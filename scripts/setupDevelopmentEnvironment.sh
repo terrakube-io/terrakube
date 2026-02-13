@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Helper function to get Codespaces URL for a given port
+function getCodespacesUrl() {
+  local port=$1
+  echo "https://${CODESPACE_NAME}-${port}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+}
+
 while getopts 'd:s:' OPTION; do
   echo $OPTION
   case "$OPTION" in
@@ -20,7 +26,13 @@ done
 
 function generateApiVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ]; then
+    TerrakubeHostname=$(getCodespacesUrl 8080 | sed "s+https://++g")
+    AzBuilderExecutorUrl="$(getCodespacesUrl 8090)/api/v1/terraform-rs"
+    DexIssuerUri="$(getCodespacesUrl 5556)/dex"
+    TerrakubeUiURL=$(getCodespacesUrl 3000)
+    TerrakubeRedisHostname=localhost
+  elif [ "$USER" = "gitpod" ]; then
     TerrakubeHostname=$(gp url 8080 | sed "s+https://++g")
     AzBuilderExecutorUrl="$(gp url 8090)/api/v1/terraform-rs"
     DexIssuerUri="$(gp url 5556)/dex"
@@ -62,7 +74,7 @@ function generateApiVars(){
     DatasourceDatabase="terrakubedb"
     DatasourceUser="terrakube"
     DatasourceSchema="public"
-    if [ "$USER" = "gitpod" ]; then
+    if [ "$CODESPACES" = "true" ] || [ "$USER" = "gitpod" ]; then
       DatasourceHostname="localhost"
     else
       DatasourceHostname="postgresql-service"
@@ -85,7 +97,7 @@ function generateApiVars(){
     AwsStorageSecretKey="minioadmin"
     AwsStorageBucketName="sample"
     AwsStorageRegion="us-east-1"
-    if [ "$USER" = "gitpod" ]; then
+    if [ "$CODESPACES" = "true" ] || [ "$USER" = "gitpod" ]; then
       AwsEndpoint="http://localhost:9000"
     else
       AwsEndpoint="http://minio:9000"
@@ -146,7 +158,12 @@ function generateApiVars(){
 
 function generateExecutorVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ]; then
+    AzBuilderApiUrl=$(getCodespacesUrl 8080)
+    TerrakubeRegistryDomain=$(getCodespacesUrl 8075 | sed "s+https://++g")
+    TerrakubeApiUrl=$(getCodespacesUrl 8080)
+    TerrakubeRedisHostname=localhost
+  elif [ "$USER" = "gitpod" ]; then
     AzBuilderApiUrl=$(gp url 8080)
     TerrakubeRegistryDomain=$(gp url 8075 | sed "s+https://++g")
     TerrakubeApiUrl=$(gp url 8080)
@@ -176,7 +193,7 @@ function generateExecutorVars(){
     AwsTerraformOutputBucketName="sample"
     AwsTerraformOutputRegion="us-east-1"
 
-    if [ "$USER" = "gitpod" ]; then
+    if [ "$CODESPACES" = "true" ] || [ "$USER" = "gitpod" ]; then
       AwsEndpoint="http://localhost:9000"
     else
       AwsEndpoint="http://minio:9000"
@@ -252,7 +269,13 @@ function generateExecutorVars(){
 
 function generateRegistryVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ]; then
+    AzBuilderRegistry=$(getCodespacesUrl 8075)
+    AzBuilderApiUrl=$(getCodespacesUrl 8080)
+    DexIssuerUri="$(getCodespacesUrl 5556)/dex"
+    TerrakubeUiURL=$(getCodespacesUrl 3000)
+    AppIssuerUri="$(getCodespacesUrl 5556)/dex"
+  elif [ "$USER" = "gitpod" ]; then
     AzBuilderRegistry=$(gp url 8075)
     AzBuilderApiUrl=$(gp url 8080)
     DexIssuerUri="$(gp url 5556)/dex"
@@ -279,7 +302,7 @@ function generateRegistryVars(){
     AwsStorageBucketName="sample"
     AwsStorageRegion="us-east-1"
 
-      if [ "$USER" = "gitpod" ]; then
+      if [ "$CODESPACES" = "true" ] || [ "$USER" = "gitpod" ]; then
         AwsEndpoint="http://localhost:9000"
       else
         AwsEndpoint="http://minio:9000"
@@ -328,7 +351,12 @@ function generateRegistryVars(){
 
 function generateUiVars(){
   USER=$(whoami)
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ]; then
+    REACT_CONFIG_TERRAKUBE_URL="$(getCodespacesUrl 8080)/api/v1/"
+    REACT_CONFIG_REDIRECT=$(getCodespacesUrl 3000)
+    REACT_CONFIG_REGISTRY_URI=$(getCodespacesUrl 8075)
+    REACT_CONFIG_AUTHORITY="$(getCodespacesUrl 5556)/dex"
+  elif [ "$USER" = "gitpod" ]; then
     REACT_CONFIG_TERRAKUBE_URL="$(gp url 8080)/api/v1/"
     REACT_CONFIG_REDIRECT=$(gp url 3000)
     REACT_CONFIG_REGISTRY_URI=$(gp url 8075)
@@ -342,7 +370,7 @@ function generateUiVars(){
 
   REACT_CONFIG_CLIENT_ID="example-app"
   REACT_CONFIG_SCOPE="email openid profile offline_access groups"
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ] || [ "$USER" = "gitpod" ]; then
     REACT_APP_TERRAKUBE_VERSION=v$(git describe --tags --abbrev=0)
   else
     REACT_APP_TERRAKUBE_VERSION="devcontainer"
@@ -467,7 +495,33 @@ function generateDexConfiguration(){
       touch .devcontainer/.env-dex
   fi
 
-  if [ "$USER" = "gitpod" ]; then
+  if [ "$CODESPACES" = "true" ]; then
+    UI_URL=$(getCodespacesUrl 3000)
+    API_URL=$(getCodespacesUrl 8080)
+    REGISTRY_URL=$(getCodespacesUrl 8075)
+    DEX_URL=$(getCodespacesUrl 5556)
+
+    # Generate static client YAML and base64 encode
+    TK_DEX_STATIC_CLIENT=$(cat <<EOF | base64 -w 0
+staticClients:
+  - id: example-app
+    redirectURIs:
+      - '${UI_URL}'
+      - '${API_URL}'
+      - '${REGISTRY_URL}'
+      - /device/callback
+      - 'http://localhost:10000/login'
+      - 'http://localhost:10001/login'
+    name: Example App
+    public: true
+EOF
+)
+
+    touch .devcontainer/.env-dex
+    echo "TK_DEX_VERSION=v2.42.0" >> .devcontainer/.env-dex
+    echo "TK_DEX_ISSUER=${DEX_URL}/dex" >> .devcontainer/.env-dex
+    echo "TK_DEX_STATIC_CLIENT=${TK_DEX_STATIC_CLIENT}" >> .devcontainer/.env-dex
+  elif [ "$USER" = "gitpod" ]; then
     TK_DEX_ISSUER="$(gp url 5556)/dex"
     TK_DEX_API=$(gp url 8080)
     TK_DEX_REGISTRY=$(gp url 8075)
@@ -479,7 +533,8 @@ function generateDexConfiguration(){
   fi
 }
 
-if [ "$USER" != "gitpod" ] && [ "$USER" == "vscode" ]; then
+# Skip certificate import in Codespaces and Gitpod (only needed for local VS Code)
+if [ "$CODESPACES" != "true" ] && [ "$USER" != "gitpod" ] && [ "$USER" == "vscode" ]; then
   openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
 
   if keytool -list -cacerts -storepass "changeit" | grep -q "custom-ca"; then

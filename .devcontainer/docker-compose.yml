@@ -210,6 +210,8 @@ services:
   traefik:
     image: traefik:v2
     container_name: terrakube-traefik
+    profiles:
+      - ${TRAEFIK_PROFILE:-default}
     # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
     networks:
       default:
@@ -295,8 +297,8 @@ volumes:
   redis_data:
   postgresql_data:
     driver: local
-# External network is required, import its name below
+# External network is required for local dev, Codespaces uses internal network
 networks:
   default:
-    name: $EXTERNAL_NETWORK_NAME
-    external: true
+    name: ${DOCKER_NETWORK_NAME:-terrakube-network}
+    external: ${DOCKER_NETWORK_EXTERNAL:-true}

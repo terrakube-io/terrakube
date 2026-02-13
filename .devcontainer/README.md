@@ -2,8 +2,7 @@
 
 This directory contains the configuration for a development container that provides a consistent environment for working with Terrakube. The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
 
-> Make sure 
-> The below was tested using Ubuntu-based distribution, not sure if this will work with macos, windows or codespaces
+> Note: The local VS Code setup below was tested using Ubuntu-based distribution. For macOS and Windows users, GitHub Codespaces is recommended.
 
 ## Features
 
@@ -12,7 +11,35 @@ This directory contains the configuration for a development container that provi
 - Node.js 20.x with Yarn
 - VS Code extensions for Java, JavaScript/TypeScript
 
-## Getting Started
+## GitHub Codespaces (Recommended)
+
+The easiest way to get started with Terrakube development is using GitHub Codespaces.
+
+### Getting Started with Codespaces
+
+1. Open the [Terrakube repository](https://github.com/AzBuilder/terrakube) in GitHub
+2. Click "Code" → "Codespaces" → "Create codespace on main"
+3. Wait for the container to build and start (this may take a few minutes the first time)
+4. Services are auto-configured via `postStartCommand`
+5. Start all Terrakube components using the VS Code launch configuration
+
+### Codespaces URLs
+
+Once the services are running, access them at:
+- **UI**: `https://{codespace-name}-3000.app.github.dev`
+- **API**: `https://{codespace-name}-8080.app.github.dev`
+- **Registry**: `https://{codespace-name}-8075.app.github.dev`
+- **DEX Auth**: `https://{codespace-name}-5556.app.github.dev`
+
+The Codespaces port forwarding panel will show all available ports with their labels.
+
+### Login Credentials
+
+Use the following credentials to log in:
+- **Email**: `admin@example.com`
+- **Password**: `admin`
+
+## Local VS Code Development
 
 ### Prerequisites
 
