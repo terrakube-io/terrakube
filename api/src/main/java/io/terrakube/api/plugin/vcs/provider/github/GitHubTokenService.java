@@ -14,8 +14,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 
 import io.terrakube.api.plugin.vcs.GitService;
+import lombok.Data;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,16 +116,6 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         return getGitHubAppToken(vcs, gitPath).getToken();
     }
 
-    // Refreshes the access token for a specific installation of the app that's
-    // already been saved in the GitHubAppToken table
-    public String refreshAccessToken(GitHubAppToken gitHubAppToken)
-            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonMappingException, JsonProcessingException {
-        Vcs vcs = vcsRepository.findFirstByClientId(gitHubAppToken.getAppId());
-        String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-        return fetchGitHubAppInstallationToken(gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws,
-                gitHubAppToken.getOwner());
-    }
-
     public GitHubAppToken getGitHubAppToken(Vcs vcs, String gitPath)
             throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException, URISyntaxException, GitAPIException {
 
@@ -166,8 +159,16 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             gitHubAppToken.setInstallationId(installationId);
             gitHubAppToken.setOwner(ownerAndRepo[0]);
             gitHubAppToken.setAppId(vcs.getClientId());
-            gitHubAppToken
-                    .setToken(fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(), jws, ownerAndRepo[0]));
+            TokenResult tokenResult = fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(), jws, ownerAndRepo[0]);
+            gitHubAppToken.setToken(tokenResult.getToken());
+            try {
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+                dateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                gitHubAppToken.setTokenExpiration(dateFormat.parse(tokenResult.getExpiresAt()));
+            } catch (ParseException e) {
+                log.error("Failed to parse expiration date: {}", e.getMessage());
+            }
+
 
         }
 
@@ -188,16 +189,18 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     // Gets the access token with app installation ID for a specific installation of
     // the app
-    private String fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl, String jws, String owner)
+    private TokenResult fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl, String jws, String owner)
             throws JsonMappingException, JsonProcessingException {
-        String token = null;
+        TokenResult tokenResult = new TokenResult();
         String url = vcsApiUrl + "/app/installations/" + installationId + "/access_tokens";
         log.debug("Getting access token for installation {} on user/organization {}", installationId, owner);
         ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.POST, jws);
         if (tokenResponse.getStatusCode().value() == 201) {
-            token = objectMapper.readTree(tokenResponse.getBody()).path("token").asText();
+
+            tokenResult.setToken(objectMapper.readTree(tokenResponse.getBody()).path("token").asText());
+            tokenResult.setExpiresAt(objectMapper.readTree(tokenResponse.getBody()).path("expires_at").asText());
         }
-        return token;
+        return tokenResult;
     }
 
     // Generates a JWT token for the GitHub App
@@ -248,4 +251,10 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             return new RestTemplate();
         }
     }
+}
+
+@Data
+class TokenResult {
+    String token;
+    String expiresAt;
 }
