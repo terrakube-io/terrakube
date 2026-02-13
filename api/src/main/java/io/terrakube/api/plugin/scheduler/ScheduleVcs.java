@@ -1,7 +1,5 @@
 package io.terrakube.api.plugin.scheduler;
 
-import java.util.Date;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,15 +14,13 @@ import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.vcs.Vcs;
-import io.terrakube.api.rs.vcs.VcsStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
-import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
-
+@Deprecated
 @AllArgsConstructor
 @Component
 @Getter
@@ -69,25 +65,6 @@ public class ScheduleVcs implements org.quartz.Job {
             }
         }
 
-        if (vcs.getStatus().equals(VcsStatus.COMPLETED)) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> newTokenInformation = tokenService.refreshAccessToken(
-                    vcs.getId().toString(),
-                    vcs.getVcsType(),
-                    vcs.getTokenExpiration(),
-                    vcs.getClientId(),
-                    vcs.getClientSecret(),
-                    vcs.getRefreshToken(),
-                    vcs.getCallback(),
-                    vcs.getEndpoint());
-
-            if (!newTokenInformation.isEmpty()) {
-                Vcs tempVcs = vcsRepository.getReferenceById(vcs.getId());
-                tempVcs.setAccessToken((String) newTokenInformation.get("accessToken"));
-                tempVcs.setRefreshToken((String) newTokenInformation.get("refreshToken"));
-                tempVcs.setTokenExpiration((Date) newTokenInformation.get("tokenExpiration"));
-                vcsRepository.save(tempVcs);
-            }
-        }
+        log.warn("Quartz job no longer need it to refresh credentials {}", vcs.getId());
     }
 }

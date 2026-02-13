@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.module;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
+import io.terrakube.api.plugin.vcs.GitService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
@@ -46,6 +47,8 @@ public class ModuleRefreshJob implements Job {
     private ModuleVersionRepository moduleVersionRepository;
     @Autowired
     private AzDevOpsTokenService azDevOpsTokenService;
+    @Autowired
+    private GitService gitService;
 
     @Override
     @Transactional
@@ -135,7 +138,7 @@ public class ModuleRefreshJob implements Job {
         }
     }
 
-    private Map<String, Ref> getVersionFromRepository(String source, String tagPrefix, Vcs vcs, Ssh ssh)
+    private Map<String, Ref> getVersionFromRepository(String gitPath, String tagPrefix, Vcs vcs, Ssh ssh)
             throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
             URISyntaxException, GitAPIException {
         List<String> versionList = new ArrayList<>();
@@ -145,37 +148,11 @@ public class ModuleRefreshJob implements Job {
         Map<String, Ref> tags = new HashMap<>(), originalTags = new HashMap<>();
         if (vcs != null) {
             log.info("vcs using {}", vcs.getVcsType().toString());
-            switch (vcs.getVcsType()) {
-                case GITHUB:
-                    if (vcs.getConnectionType() == VcsConnectionType.OAUTH) {
-                        credentialsProvider = new UsernamePasswordCredentialsProvider(vcs.getAccessToken(), "");
-                    } else {
-                        credentialsProvider = new UsernamePasswordCredentialsProvider("x-access-token",
-                                tokenService.getAccessToken(source, vcs));
-                    }
-                    break;
-                case BITBUCKET:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("x-token-auth",
-                            vcs.getAccessToken());
-                    break;
-                case GITLAB:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
-                    break;
-                case AZURE_DEVOPS:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
-                    break;
-                case AZURE_SP_MI:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken());
-                    break;
-                default:
-                    credentialsProvider = null;
-                    break;
-            }
 
             originalTags = Git.lsRemoteRepository()
                     .setTags(true)
-                    .setRemote(source)
-                    .setCredentialsProvider(credentialsProvider)
+                    .setRemote(gitPath)
+                    .setCredentialsProvider(gitService.getCredentialsProvider(gitPath, vcs))
                     .callAsMap();
         }
 
@@ -199,7 +176,7 @@ public class ModuleRefreshJob implements Job {
 
             originalTags = Git.lsRemoteRepository()
                     .setTags(true)
-                    .setRemote(source)
+                    .setRemote(gitPath)
                     .setTransportConfigCallback(transportConfigCallback)
                     .callAsMap();
         }
@@ -207,7 +184,7 @@ public class ModuleRefreshJob implements Job {
         if (ssh == null && vcs == null) {
             originalTags = Git.lsRemoteRepository()
                     .setTags(true)
-                    .setRemote(source)
+                    .setRemote(gitPath)
                     .callAsMap();
         }
 
