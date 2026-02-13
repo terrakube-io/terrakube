@@ -201,9 +201,18 @@ public class TokenService {
     // Get the access token for access to the supplied repository in full URL
     public String getAccessToken(String gitPath, Vcs vcs) throws URISyntaxException, JsonMappingException,
             JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+        log.info("Getting access token for repository {} using vcs id: {}", gitPath, vcs.getId());
+
         String token = vcs.getAccessToken();
         // If the token is already set, return it, normally this is oAuth token
         if (token!=null && !token.isEmpty()) return token;
+        
+        log.info("No token found in VCS table, checking azure managed identity");
+
+        // this is a special case for Azure DevOps with Managed Identity
+        if (vcs.getVcsType().equals(VcsType.AZURE_SP_MI)) return "";
+
+        log.info("No azure manage identity token, generating github app token by default");
 
         URI uri = new URI(gitPath);
         String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
