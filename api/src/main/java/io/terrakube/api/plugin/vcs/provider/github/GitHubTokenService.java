@@ -173,16 +173,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
         gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
         log.info("Successfully saved token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
-        // Schedule a job to refresh the token every 55 minutes
-        try {
-            log.info("Scheduling task to refresh GitHub App token for owner/organization {}", gitHubAppToken.getOwner());
-            scheduleGitHubAppTokenService.createTask(3300, gitHubAppToken.getId().toString());
-            log.info("Successfully created schedule task to refresh GitHub App token for owner/organization {}",
-                    gitHubAppToken.getOwner());
-        } catch (SchedulerException e) {
-            log.error("Failed to create schedule task to refresh GitHub App token for owner/organization {}, error {}",
-                    gitHubAppToken.getOwner(), e);
-        }
+
         return gitHubAppToken;
     }
 
