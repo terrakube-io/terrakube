@@ -57,7 +57,19 @@ const VARIABLES_COLUMS = (
           overlayClassName="tooltip"
           trigger={["hover"]}
         >
-          <div style={{ maxWidth: 2000, maxHeight: 100, overflow: "auto" }}>{record.value}</div>
+          <div
+            style={{
+              maxWidth: 2000,
+              maxHeight: 100,
+              overflow: "auto",
+              cursor: manageWorkspace ? "pointer" : "default",
+            }}
+            onClick={() => {
+              if (manageWorkspace) onEdit(record);
+            }}
+          >
+            {record.value}
+          </div>
         </Tooltip>
       );
     },
