@@ -339,13 +339,13 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
         .get(
           `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference`
         )
-        .then((response) => {
+        .then(async (response) => {
           if (_loadPermissionSet) loadPermissionSet();
 
           setWorkspace(response.data.data);
 
           if (response.data.included) {
-            setupWorkspaceIncludes(
+            await setupWorkspaceIncludes(
               response.data,
               setVariables,
               setJobs,
@@ -370,7 +370,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
             );
           }
 
-          const organization: Organization | undefined = response.data.included.find(
+          const organization: Organization | undefined = response.data.included?.find(
             (item: IncludedItem<Organization>) => item.type === "organization"
           );
           if (organization) {
@@ -770,7 +770,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   );
 };
 
-function setupWorkspaceIncludes(
+async function setupWorkspaceIncludes(
   data: any,
   setVariables: (val: any[]) => void,
   setJobs: (val: any[]) => void,
@@ -792,7 +792,7 @@ function setupWorkspaceIncludes(
   setCollectionEnvVariables: (val: any[]) => void,
   setGlobalVariables: (val: FlatVariable[]) => void,
   setGlobalEnvVariables: (val: FlatVariable[]) => void
-) {
+): Promise<void> {
   const variables: FlatVariable[] = [];
   const jobs: FlatJob[] = [];
   const webhooks: any = {};
@@ -804,29 +804,33 @@ function setupWorkspaceIncludes(
   const globalVariables: FlatVariable[] = [];
   const globalEnvVariables: FlatVariable[] = [];
   const includes = data.included;
+  const asyncPromises: Promise<void>[] = [];
+
   includes.forEach((element: any) => {
     switch (element.type) {
       case include.ORGANIZATION:
-        axiosInstance.get(`/organization/${element.id}/globalvar`).then((response: any) => {
-          const globalVar = response.data.data;
-          if (globalVar != null) {
-            globalVar.forEach((variableItem: any) => {
-              if (variableItem.attributes.category === "ENV") {
-                globalEnvVariables.push({
-                  id: variableItem.id,
-                  type: variableItem.type,
-                  ...variableItem.attributes,
-                });
-              } else {
-                globalVariables.push({
-                  id: variableItem.id,
-                  type: variableItem.type,
-                  ...variableItem.attributes,
-                });
-              }
-            });
-          }
-        });
+        asyncPromises.push(
+          axiosInstance.get(`/organization/${element.id}/globalvar`).then((response: any) => {
+            const globalVar = response.data.data;
+            if (globalVar != null) {
+              globalVar.forEach((variableItem: any) => {
+                if (variableItem.attributes.category === "ENV") {
+                  globalEnvVariables.push({
+                    id: variableItem.id,
+                    type: variableItem.type,
+                    ...variableItem.attributes,
+                  });
+                } else {
+                  globalVariables.push({
+                    id: variableItem.id,
+                    type: variableItem.type,
+                    ...variableItem.attributes,
+                  });
+                }
+              });
+            }
+          })
+        );
         break;
       case include.JOB:
         let finalColor = "";
@@ -912,42 +916,49 @@ function setupWorkspaceIncludes(
         };
         break;
       case include.REFERENCE:
-        axiosInstance.get(`/reference/${element.id}/collection?include=item`).then((response: any) => {
-          const collectionInfo = response.data.data;
-          if (response.data.included != null) {
-            const items = response.data.included;
-            items.forEach((item: any) => {
-              item.attributes.priority = collectionInfo.attributes.priority;
-              item.attributes.collectionName = collectionInfo.attributes.name;
-              if (item.attributes.category === "ENV") {
-                collectionEnvVariables.push({
-                  id: item.id,
-                  type: item.type,
-                  ...item.attributes,
-                });
-              } else {
-                collectionVariables.push({
-                  id: item.id,
-                  type: item.type,
-                  ...item.attributes,
-                });
-              }
-            });
-          }
-        });
+        asyncPromises.push(
+          axiosInstance.get(`/reference/${element.id}/collection?include=item`).then((response: any) => {
+            const collectionInfo = response.data.data;
+            if (response.data.included != null) {
+              const items = response.data.included;
+              items.forEach((item: any) => {
+                item.attributes.priority = collectionInfo.attributes.priority;
+                item.attributes.collectionName = collectionInfo.attributes.name;
+                if (item.attributes.category === "ENV") {
+                  collectionEnvVariables.push({
+                    id: item.id,
+                    type: item.type,
+                    ...item.attributes,
+                  });
+                } else {
+                  collectionVariables.push({
+                    id: item.id,
+                    type: item.type,
+                    ...item.attributes,
+                  });
+                }
+              });
+            }
+          })
+        );
         break;
     }
   });
 
-  setVariables(variables);
-  setEnvVariables(envVariables);
+  await Promise.all(asyncPromises);
+
+  const byKey = (a: { key?: string }, b: { key?: string }) =>
+    (a.key ?? "").localeCompare(b.key ?? "", undefined, { sensitivity: "base" });
+
+  setVariables([...variables].sort(byKey));
+  setEnvVariables([...envVariables].sort(byKey));
   setJobs(jobs);
   setHistory(history);
   setSchedule(schedule);
-  setCollectionVariables(collectionVariables);
-  setCollectionEnvVariables(collectionEnvVariables);
-  setGlobalVariables(globalVariables);
-  setGlobalEnvVariables(globalEnvVariables);
+  setCollectionVariables([...collectionVariables].sort(byKey));
+  setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
+  setGlobalVariables([...globalVariables].sort(byKey));
+  setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
 
   // set state data
   const lastState = history
