@@ -41,7 +41,11 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
 
     //search for existing tag if you type the name and hit enter
     let existingTagId;
-    axiosInstance.get(`organization/${organizationId}/tag?filter[tag]=name==${tagName}`).then((oldTag) => {
+    axiosInstance
+      .get(`organization/${organizationId}/tag`, {
+        params: { 'filter[tag]': `name==${tagName}` },
+      })
+      .then((oldTag) => {
       existingTagId = oldTag.data?.data[0]?.id;
 
       if (existingTagId === undefined) {
