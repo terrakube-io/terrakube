@@ -16,6 +16,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ public class ModuleServiceImpl implements ModuleService {
     TerrakubeClient terrakubeClient;
     StorageService storageService;
     CommonSearchService commonSearchService;
+    RestClient restClient;
 
     public static final String SEARCH_ORGANIZATION_MODULE_VERSION="{ \n" +
             "  organization(filter: \"name==%s\") {\n" +
@@ -139,6 +141,7 @@ public class ModuleServiceImpl implements ModuleService {
     }
 
     private String getAccessToken(String organizationId, String vcsId, String repository_source) {
+
         Vcs vcs = getVcsInformation(organizationId, vcsId);
         if (vcs == null)
             return null;
@@ -149,6 +152,19 @@ public class ModuleServiceImpl implements ModuleService {
             token = gitHubAppToken.getAttributes().getToken();
         }
         return token;
+    }
+
+    private void refreshVcsToken(String vcsId, String gitPath) {
+        try {
+            restClient.get()
+                    .uri("/refresh-token/v1/vcs/{vcsId}?gitPath={gitPath}", vcsId, gitPath)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Successfully refreshed token for VCS: {}", vcsId);
+        } catch (Exception e) {
+            log.error("Error refreshing VCS token for vcsId: {}", vcsId, e);
+            throw new RuntimeException(e);
+        }
     }
 
     private Vcs getVcsInformation(String organizationId, String vcsId) {

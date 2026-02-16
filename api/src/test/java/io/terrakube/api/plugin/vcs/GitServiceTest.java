@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.net.URI;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -154,6 +155,7 @@ class GitServiceTest {
         vcs.setVcsType(VcsType.GITHUB);
         vcs.setConnectionType(VcsConnectionType.OAUTH);
         vcs.setAccessToken("gh_token");
+        vcs.setTokenExpiration(new Date(System.currentTimeMillis() + 60L * 1000));
 
         String gitPath = "https://github.com/org/repo.git";
 
@@ -178,6 +180,7 @@ class GitServiceTest {
         vcs.setVcsType(VcsType.GITHUB);
         vcs.setConnectionType(VcsConnectionType.OAUTH);
         vcs.setAccessToken("gh_token");
+        vcs.setTokenExpiration(new Date(System.currentTimeMillis() + 60L * 1000));
 
         String gitPath = "https://github.com/org/repo.git";
 

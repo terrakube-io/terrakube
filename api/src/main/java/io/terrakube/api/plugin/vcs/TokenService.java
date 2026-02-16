@@ -1,11 +1,8 @@
 package io.terrakube.api.plugin.vcs;
 
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
-import java.text.ParseException;
-import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
@@ -13,14 +10,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import io.terrakube.api.rs.vcs.VcsConnectionType;
-import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.transport.CredentialsProvider;
-import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
-import org.quartz.SchedulerException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import io.terrakube.api.plugin.scheduler.ScheduleVcsService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsToken;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketToken;
@@ -118,7 +110,7 @@ public class TokenService {
         return result;
     }
 
-    public String refreshAccessToken(Vcs vcs) {
+    public String refreshOauthAccessToken(Vcs vcs) {
         Map<String, Object> tokenInformation = new HashMap<>();
         log.info("Renew Token before: {} {}", vcs.getTokenExpiration(), vcs.getId());
 
@@ -197,7 +189,7 @@ public class TokenService {
             }
             else{
                 log.info("Token is expired, generating new token");
-                return refreshAccessToken(vcs);
+                return refreshOauthAccessToken(vcs);
             }
         }
 

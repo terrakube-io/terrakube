@@ -161,10 +161,13 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             gitHubAppToken.setAppId(vcs.getClientId());
             TokenResult tokenResult = fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(), jws, ownerAndRepo[0]);
             gitHubAppToken.setToken(tokenResult.getToken());
+
             try {
                 SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
                 dateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
                 gitHubAppToken.setTokenExpiration(dateFormat.parse(tokenResult.getExpiresAt()));
+                vcs.setTokenExpiration(dateFormat.parse(tokenResult.getExpiresAt()));
+                vcsRepository.save(vcs);
             } catch (ParseException e) {
                 log.error("Failed to parse expiration date: {}", e.getMessage());
             }

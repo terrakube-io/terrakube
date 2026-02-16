@@ -2,7 +2,6 @@ package io.terrakube.api.plugin.vcs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
-import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
@@ -21,10 +20,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -100,7 +96,7 @@ public class GitService {
     }
 
     /**
-     * Return if a token is valid for a given repository using a VCS connection
+     * Return if a token is valid for a given repository using a VCS connection and validate the token wont be expired in the next 30 seconds
      * @param gitPath
      * @param vcs
      * @return
@@ -112,7 +108,7 @@ public class GitService {
      */
     public boolean isAccessTokenValid(String gitPath, Vcs vcs) throws NoSuchAlgorithmException, InvalidKeySpecException, URISyntaxException, JsonProcessingException, GitAPIException {
         List<String> branches = getRepositoryBranches(gitPath, vcs);
-        if (branches.isEmpty()) {
+        if (branches.isEmpty() || (vcs.getTokenExpiration() != null && vcs.getTokenExpiration().before(new Date(System.currentTimeMillis() - 30L * 1000)))) {
             log.error("Token no longer valid for repository {}", gitPath);
             return false;
         } else {
