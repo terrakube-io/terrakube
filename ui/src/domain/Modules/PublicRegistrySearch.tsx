@@ -191,11 +191,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     fetchExistingItems();
   }, [orgid]);
 
-  // Check if a provider already exists
+  // Check if a provider already exists (name is now stored as just the short name)
   const isProviderImported = (provider: TerraformRegistryProvider): boolean => {
-    // Check both "namespace/name" format and just "name"
-    const fullName = `${provider.namespace}/${provider.name}`.toLowerCase();
-    return existingProviders.has(fullName) || existingProviders.has(provider.name.toLowerCase());
+    return existingProviders.has(provider.name.toLowerCase());
   };
 
   // Check if a module already exists
@@ -393,8 +391,8 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         `Provider ${provider.namespace}/${provider.name} v${selectedVersion} added successfully`
       );
       
-      // Update existing providers set
-      setExistingProviders(prev => new Set([...prev, `${provider.namespace}/${provider.name}`.toLowerCase()]));
+      // Update existing providers set (name is now stored as just the short name)
+      setExistingProviders(prev => new Set([...prev, provider.name.toLowerCase()]));
       
       // Small delay to show completion
       setTimeout(() => {

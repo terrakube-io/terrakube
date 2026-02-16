@@ -38,6 +38,12 @@ public class Provider {
     @Column(name = "description")
     private String description;
 
+    @Column(name = "imported")
+    private boolean imported;
+
+    @Column(name = "registry_namespace")
+    private String registryNamespace;
+
     @ManyToOne
     private Organization organization;
 

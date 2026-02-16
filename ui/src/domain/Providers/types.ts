@@ -10,6 +10,8 @@ export type ProviderAttributes = {
   name: string;
   namespace: string;
   description: string;
+  imported?: boolean;
+  registryNamespace?: string;
   latestVersion?: string;
 } & AuditFieldBase;
 

@@ -66,9 +66,9 @@ public class ProviderRefreshService extends ScheduleServiceBase {
                 continue;
             }
 
-            // Provider has no versions — only valid for namespace/name format providers
-            if (!provider.getName().contains("/")) {
-                log.debug("Provider '{}' is not in namespace/name format, skipping refresh",
+            // Only refresh imported providers that have a registryNamespace
+            if (!provider.isImported() || provider.getRegistryNamespace() == null || provider.getRegistryNamespace().isEmpty()) {
+                log.debug("Provider '{}' is not an imported provider, skipping refresh",
                         provider.getName());
                 continue;
             }

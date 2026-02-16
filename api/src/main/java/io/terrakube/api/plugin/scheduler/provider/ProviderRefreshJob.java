@@ -97,16 +97,14 @@ public class ProviderRefreshJob implements Job {
      * compares with existing versions in the DB, and imports any new ones.
      */
     private void refreshProvider(Provider provider) {
-        // Parse namespace/name from the provider name (e.g. "goharbor/harbor")
-        String providerName = provider.getName();
-        if (!providerName.contains("/")) {
-            log.warn("Provider name '{}' does not contain namespace/name format, skipping", providerName);
+        // Use the dedicated registryNamespace field for imported providers
+        if (!provider.isImported() || provider.getRegistryNamespace() == null || provider.getRegistryNamespace().isEmpty()) {
+            log.warn("Provider '{}' is not an imported provider or has no registryNamespace, skipping refresh", provider.getName());
             return;
         }
 
-        String[] parts = providerName.split("/", 2);
-        String namespace = parts[0];
-        String name = parts[1];
+        String namespace = provider.getRegistryNamespace();
+        String name = provider.getName();
 
         log.info("Checking registry for new versions of {}/{}", namespace, name);
 

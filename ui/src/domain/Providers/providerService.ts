@@ -37,17 +37,26 @@ export const getProvider = async (
 export const createProvider = async (
   orgId: string,
   name: string,
-  description: string
+  description: string,
+  options?: { imported?: boolean; registryNamespace?: string }
 ): Promise<{ data: ProviderModel }> => {
+  const attributes: Record<string, unknown> = {
+    name,
+    description,
+  };
+  if (options?.imported !== undefined) {
+    attributes.imported = options.imported;
+  }
+  if (options?.registryNamespace) {
+    attributes.registryNamespace = options.registryNamespace;
+  }
+
   const response = await axiosInstance.post(
     `organization/${orgId}/provider`,
     {
       data: {
         type: "provider",
-        attributes: {
-          name,
-          description,
-        },
+        attributes,
       },
     },
     {
@@ -231,12 +240,13 @@ export const importProvider = async (
     throw new Error(`Version ${version} not found for provider ${namespace}/${name}`);
   }
 
-  // 2. Create provider in Terrakube
+  // 2. Create provider in Terrakube (use only the short name, not namespace/name)
   const desc = description || `${namespace}/${name}`;
   const providerResult = await createProvider(
     orgId,
-    `${namespace}/${name}`,
-    desc.substring(0, 256)
+    name,
+    desc.substring(0, 256),
+    { imported: true, registryNamespace: namespace }
   );
   const providerId = providerResult.data.id;
 

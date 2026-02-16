@@ -93,11 +93,8 @@ export const ProviderDetails = ({ organizationName }: Props) => {
 
   // Derive provider short name and namespace
   const providerName = provider?.attributes.name || "";
-  const nameParts = providerName.includes("/")
-    ? providerName.split("/")
-    : ["", providerName];
-  const namespace = nameParts[0];
-  const shortName = nameParts[nameParts.length - 1];
+  const namespace = provider?.attributes.registryNamespace || "";
+  const shortName = providerName;
 
   // Extract source URL from description (stored as "Source: https://...")
   const sourceUrl = useMemo(() => {
