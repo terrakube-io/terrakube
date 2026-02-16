@@ -39,7 +39,7 @@ public class Provider {
     private String description;
 
     @Column(name = "imported")
-    private boolean imported;
+    private boolean imported = false;
 
     @Column(name = "registry_namespace")
     private String registryNamespace;

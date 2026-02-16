@@ -14,4 +14,10 @@
             </column>
         </addColumn>
     </changeSet>
+    <changeSet id="provider-imported-field-update-existing" author="p2pdkivenko">
+        <update tableName="provider">
+            <column name="imported" valueBoolean="false"/>
+            <where>imported IS NULL</where>
+        </update>
+    </changeSet>
 </databaseChangeLog>
