@@ -43,7 +43,8 @@
             "runtimeExecutable": "yarn",
             "cwd": "${workspaceFolder}/ui",
             "runtimeArgs": ["start", "--force"],
-            "envFile": "${workspaceFolder}/.envUi"
+            "envFile": "${workspaceFolder}/.envUi",
+            "preLaunchTask": "yarn-install"
         }
     ],
     "compounds": [

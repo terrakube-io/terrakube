@@ -24,7 +24,7 @@ import java.util.List;
  * On startup, creates a refresh job for every provider that has no versions yet.
  * The ProviderManageHook also calls createTask() when a new provider is created.
  *
- * Each job runs every 300 seconds (5 minutes) and checks registry.terraform.io
+ * Each job runs every 86400 seconds (24 hours) and checks registry.terraform.io
  * for new versions, importing any that are missing from the local database.
  */
 @Service
@@ -75,7 +75,7 @@ public class ProviderRefreshService extends ScheduleServiceBase {
 
             log.info("Provider {} has no versions, scheduling refresh job", provider.getName());
             try {
-                createTask(300, provider.getId().toString(), true);
+                createTask(86400, provider.getId().toString(), true);
             } catch (SchedulerException e) {
                 log.error("Failed to create provider refresh task for {}: {}",
                         provider.getName(), e.getMessage());
