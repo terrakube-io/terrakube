@@ -38,6 +38,7 @@
     "reactflow": "^11.11.3",
     "redux": "^5.0.1",
     "remark-gfm": "4.0.1",
+    "rehype-raw": "^7.0.0",
     "unzipit": "^1.4.3",
     "uuid": "^13.0.0",
     "web-vitals": "^5.1.0"
