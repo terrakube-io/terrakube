@@ -23,3 +23,7 @@ body,
 .mh-100 {
   min-height: 100%;
 }
+
+.workspaceFilterSegmentedWrapper .ant-segmented-group {
+  flex-wrap: wrap;
+}
