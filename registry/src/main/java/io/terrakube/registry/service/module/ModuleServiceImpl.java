@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.module.ModuleRequest;
 import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
+import io.terrakube.client.model.refresh.RefreshTokenRequest;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
@@ -31,7 +32,6 @@ public class ModuleServiceImpl implements ModuleService {
     TerrakubeClient terrakubeClient;
     StorageService storageService;
     CommonSearchService commonSearchService;
-    RestClient restClient;
 
     public static final String SEARCH_ORGANIZATION_MODULE_VERSION="{ \n" +
             "  organization(filter: \"name==%s\") {\n" +
@@ -91,7 +91,6 @@ public class ModuleServiceImpl implements ModuleService {
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
         String moduleVersionPath = "";
-
         String organizationId = commonSearchService.getOrganizationId(organizationName);
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
@@ -142,6 +141,9 @@ public class ModuleServiceImpl implements ModuleService {
 
     private String getAccessToken(String organizationId, String vcsId, String repository_source) {
 
+        RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest();
+        refreshTokenRequest.setGitPath(repository_source);
+        terrakubeClient.refreshToken(vcsId, refreshTokenRequest);
         Vcs vcs = getVcsInformation(organizationId, vcsId);
         if (vcs == null)
             return null;
@@ -155,16 +157,7 @@ public class ModuleServiceImpl implements ModuleService {
     }
 
     private void refreshVcsToken(String vcsId, String gitPath) {
-        try {
-            restClient.get()
-                    .uri("/refresh-token/v1/vcs/{vcsId}?gitPath={gitPath}", vcsId, gitPath)
-                    .retrieve()
-                    .toBodilessEntity();
-            log.info("Successfully refreshed token for VCS: {}", vcsId);
-        } catch (Exception e) {
-            log.error("Error refreshing VCS token for vcsId: {}", vcsId, e);
-            throw new RuntimeException(e);
-        }
+        //pending
     }
 
     private Vcs getVcsInformation(String organizationId, String vcsId) {

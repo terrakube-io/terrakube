@@ -108,13 +108,15 @@ public class GitService {
      */
     public boolean isAccessTokenValid(String gitPath, Vcs vcs) throws NoSuchAlgorithmException, InvalidKeySpecException, URISyntaxException, JsonProcessingException, GitAPIException {
         List<String> branches = getRepositoryBranches(gitPath, vcs);
-        if (branches.isEmpty() || (vcs.getTokenExpiration() != null && vcs.getTokenExpiration().before(new Date(System.currentTimeMillis() - 30L * 1000)))) {
-            log.error("Token no longer valid for repository {}", gitPath);
-            return false;
-        } else {
-            log.info("Token still valid for repository {}", gitPath);
-            return true;
-        }
+        if ((vcs.getTokenExpiration() != null && vcs.getTokenExpiration().before(new Date(System.currentTimeMillis() - 30L * 1000))))
+            if (branches.isEmpty()) {
+                log.error("Token no longer valid for repository {}", gitPath);
+                return false;
+            } else {
+                log.info("Token still valid for repository {}", gitPath);
+                return true;
+            }
+        return false;
     }
 
     /**
