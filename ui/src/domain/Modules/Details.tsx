@@ -37,7 +37,7 @@ import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import remarkGfm from "remark-gfm";
 import { unzip } from "unzipit";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
@@ -59,6 +59,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const [allVersions, setAllVersions] = useState<ModuleVersionAttributes[]>([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState("loading...");
   const [hclObject, setHclObject] = useState<any>(null);
   const [inputs, setInputs] = useState("Inputs");
@@ -223,16 +224,20 @@ export const ModuleDetails = ({ organizationName }: Props) => {
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid!);
     axiosInstance.get(`organization/${orgid}/module/${id}?include=vcs,version`).then((response) => {
       setModule(response.data.data);
-      setLoading(false);
       setModuleName(response.data.data.attributes.name);
       const latestVersion = response.data.data.attributes.latestVersion;
       setVersion(latestVersion);
       loadReadme(response.data.data.attributes.registryPath, latestVersion);
       loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
       setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
+    }).catch((err) => {
+      setError(getErrorMessage(err));
+    }).finally(() => {
+      setLoading(false);
     });
   }, [orgid, id]);
 
@@ -245,6 +250,12 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/modules/v1/${path}/${version}/download`)
       .then((resp) => {
         readFiles(resp.headers["x-terraform-get"], submodule);
+      })
+      .catch((err) => {
+        console.error("Error loading module details:", err);
+        setLoadingInputs("Failed to load");
+        setLoadingOutputs("Failed to load");
+        setLoadingResources("Failed to load");
       });
   };
 
@@ -253,6 +264,9 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/readme/v1/${path}/${version}/download`)
       .then((resp) => {
         loadReadmeFile(resp.data.content);
+      })
+      .catch(() => {
+        setMarkdown("");
       });
   };
 
@@ -285,6 +299,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       subTitle={module?.attributes.description}
       loading={loading}
       loadingText="Loading Module..."
+      error={error ? { title: error.includes("permission") ? "Access Denied" : "Error", message: error } : undefined}
       breadcrumbs={[
         { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },

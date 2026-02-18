@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- Add plan_job and approve_job columns to team table -->
+    <changeSet id="add-plan-approve-to-team" author="terrakube">
+        <addColumn tableName="team">
+            <column name="plan_job" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="team">
+            <column name="approve_job" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Backfill: teams that had manage_job=true get both plan_job and approve_job set to true -->
+    <changeSet id="backfill-plan-approve-from-manage-job" author="terrakube">
+        <update tableName="team">
+            <column name="plan_job" valueBoolean="true"/>
+            <column name="approve_job" valueBoolean="true"/>
+            <where>manage_job = true</where>
+        </update>
+    </changeSet>
+
+    <!-- Add plan_job, approve_job, and role columns to access table -->
+    <changeSet id="add-plan-approve-role-to-access" author="terrakube">
+        <addColumn tableName="access">
+            <column name="plan_job" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="access">
+            <column name="approve_job" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="access">
+            <column name="role" type="varchar(32)" defaultValue="custom">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Backfill: access entries that had manage_job=true get both plan_job and approve_job set to true -->
+    <changeSet id="backfill-access-plan-approve-from-manage-job" author="terrakube">
+        <update tableName="access">
+            <column name="plan_job" valueBoolean="true"/>
+            <column name="approve_job" valueBoolean="true"/>
+            <where>manage_job = true</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>

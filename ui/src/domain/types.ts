@@ -211,6 +211,8 @@ export type Team = {
   attributes: TeamAttributes;
 };
 
+export type TeamRole = "admin" | "write" | "plan" | "read" | "custom";
+
 export type TeamAttributes = {
   manageCollection: boolean;
   manageJob: boolean;
@@ -221,6 +223,9 @@ export type TeamAttributes = {
   manageVcs: boolean;
   manageWorkspace: boolean;
   name: string;
+  role?: TeamRole;
+  planJob?: boolean;
+  approveJob?: boolean;
 };
 
 // Token

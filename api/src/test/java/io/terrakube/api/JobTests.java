@@ -64,6 +64,10 @@ class JobTests extends ServerApplicationTests {
     private Team devsManageJobs(boolean canManage) {
         Team team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
         team.setManageJob(canManage);
+        team.setPlanJob(canManage);
+        team.setApproveJob(canManage);
+        // Set role to "custom" so that boolean flags are respected by RbacV2Service
+        team.setRole("custom");
         return teamRepository.save(team);
     }
 

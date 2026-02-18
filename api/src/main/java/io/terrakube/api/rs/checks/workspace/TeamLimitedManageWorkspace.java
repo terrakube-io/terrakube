@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -28,6 +29,9 @@ public class TeamLimitedManageWorkspace extends OperationCheck<Workspace> {
     GroupService groupService;
 
     @Autowired
+    RbacService rbacService;
+
+    @Autowired
     MembershipService membershipService;
 
     @Override
@@ -38,11 +42,11 @@ public class TeamLimitedManageWorkspace extends OperationCheck<Workspace> {
         if (!teamsWithLimitedAccess.isEmpty())
             for (Access team : teamsWithLimitedAccess) {
                 if (isService) {
-                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageWorkspace()) {
+                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team)) {
                         return true;
                     }
                 } else {
-                    if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageWorkspace())
+                    if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
                         return true;
                 }
             }

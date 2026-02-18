@@ -15,10 +15,21 @@ import io.terrakube.api.rs.team.Team;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Organization-level RBAC check for approve/apply permission.
+ * <p>
+ * Unlike {@link TeamApproveJob} which checks membership in a specific
+ * approval team (set by the TCL flow), this check validates whether
+ * the user's team has the general "approve job" RBAC permission.
+ * <p>
+ * Requires the "approve" permission specifically (admin/write roles,
+ * or custom with approveJob=true). The "plan" role does NOT have
+ * approve permission — this is the key separation from plan-only access.
+ */
 @Slf4j
-@SecurityCheck(TeamManageJob.RULE)
-public class TeamManageJob extends OperationCheck<Job> {
-    public static final String RULE = "team manage job";
+@SecurityCheck(TeamApproveJobRbac.RULE)
+public class TeamApproveJobRbac extends OperationCheck<Job> {
+    public static final String RULE = "team approve job rbac";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -31,16 +42,16 @@ public class TeamManageJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team manage job {}", job.getId());
+        log.debug("team approve job rbac {}", job.getId());
         List<Team> teamList = job.getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         for (Team team : teamList) {
-            if (isServiceAccount){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team)){
+            if (isServiceAccount) {
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canApproveJob(team)) {
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team))
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canApproveJob(team))
                     return true;
             }
         }

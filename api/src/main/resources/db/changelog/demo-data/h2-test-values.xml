@@ -9,6 +9,9 @@
             <column name="manage_collection" valueBoolean="true"/>
             <column name="manage_job" valueBoolean="true"/>
             <column name="manage_state" valueBoolean="true"/>
+            <column name="plan_job" valueBoolean="true"/>
+            <column name="approve_job" valueBoolean="true"/>
+            <column name="role" value="admin"/>
             <where>id='58529721-425e-44d7-8b0d-1d515043c2f7'</where>
         </update>
     </changeSet>

@@ -31,7 +31,7 @@ import lombok.Setter;
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team limited view job")
-@CreatePermission(expression = "team manage job OR team limited manage job")
+@CreatePermission(expression = "team manage job OR team limited manage job OR team plan job OR team limited plan job")
 @UpdatePermission(expression = "team manage job OR team limited manage job OR user is a super service")
 @Include(rootLevel = false)
 @Getter
@@ -46,7 +46,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "comments")
     private String comments;
 
-    @UpdatePermission(expression = "team approve job OR team limited manage job OR team manage job OR user is a super service")
+    @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR user is a super service")
     @Enumerated(EnumType.STRING)
     private JobStatus status = JobStatus.pending;
 

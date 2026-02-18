@@ -1,15 +1,20 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, Spin } from "antd";
+import { Alert, Button, Form, Input, message, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
 import "./Settings.css";
 
-export const GlobalVariablesSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [globalVariables, setGlobalVariables] = useState<Variable[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
   const [variableKey, setVariableKey] = useState<string>();
   const [mode, setMode] = useState("create");
@@ -63,7 +68,7 @@ export const GlobalVariablesSettings = () => {
       render: (_: any, record: Variable) => {
         return (
           <div>
-            <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)}>
+            <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)} disabled={!managePermission}>
               Edit
             </Button>
             <Popconfirm
@@ -81,7 +86,7 @@ export const GlobalVariablesSettings = () => {
               cancelText="No"
             >
               {" "}
-              <Button danger type="link" icon={<DeleteOutlined />}>
+              <Button danger type="link" icon={<DeleteOutlined />} disabled={!managePermission}>
                 Delete
               </Button>
             </Popconfirm>
@@ -120,6 +125,8 @@ export const GlobalVariablesSettings = () => {
   const onDelete = (id: string) => {
     axiosInstance.delete(`organization/${orgid}/globalvar/${id}`).then((response) => {
       loadGlobalVariables();
+    }).catch((err) => {
+      message.error(getErrorMessage(err));
     });
   };
 
@@ -148,6 +155,9 @@ export const GlobalVariablesSettings = () => {
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -176,14 +186,27 @@ export const GlobalVariablesSettings = () => {
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadGlobalVariables = () => {
-    axiosInstance.get(`organization/${orgid}/globalvar`).then((response) => {
-      setGlobalVariables(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/globalvar`)
+      .then((response) => {
+        setGlobalVariables(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load global variables");
+        }
+        setLoading(false);
+      });
   };
   useEffect(() => {
     setLoading(true);
@@ -192,6 +215,10 @@ export const GlobalVariablesSettings = () => {
 
   return (
     <div className="setting">
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : (
+      <>
       <h1>Global Variables</h1>
       <div>
         <Typography.Text type="secondary" className="App-text">
@@ -199,7 +226,7 @@ export const GlobalVariablesSettings = () => {
           organization.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
         Create global variable
       </Button>
       <br></br>
@@ -276,6 +303,8 @@ export const GlobalVariablesSettings = () => {
           </Form>
         </Space>
       </Modal>
+      </>
+      )}
     </div>
   );
 };

@@ -1,8 +1,8 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
+import { Alert, Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Organization } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import "./Settings.css";
@@ -17,11 +17,16 @@ type GeneralSettingsForm = {
   icon?: string;
 };
 
-export const GeneralSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const GeneralSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [organization, setOrganization] = useState<Organization>();
   const [loading, setLoading] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState<string>();
   const [form] = Form.useForm();
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
@@ -55,6 +60,10 @@ export const GeneralSettings = () => {
           message.error("Organization update failed");
         }
         setWaiting(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setWaiting(false);
       });
   };
 
@@ -81,6 +90,9 @@ export const GeneralSettings = () => {
         } else {
           message.error("Organization deletion failed");
         }
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -106,8 +118,12 @@ export const GeneralSettings = () => {
         });
         setLoading(false);
       })
-      .catch((error) => {
-        message.error("Failed to load organization settings");
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load organization settings");
+        }
         setLoading(false);
       });
   }, [orgid, form]);
@@ -115,7 +131,9 @@ export const GeneralSettings = () => {
   return (
     <div className="setting">
       <h1>General Settings</h1>
-      {loading || organization === undefined ? (
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : loading || organization === undefined ? (
         <Spin tip="Loading Organization Settings..." />
       ) : (
         <Spin spinning={waiting}>
@@ -176,7 +194,7 @@ export const GeneralSettings = () => {
               </Space>
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
+              <Button type="primary" htmlType="submit" disabled={!managePermission}>
                 Update organization
               </Button>
             </Form.Item>
@@ -206,7 +224,7 @@ export const GeneralSettings = () => {
         cancelText="No"
         placement="bottom"
       >
-        <Button type="default" danger style={{ width: "100%" }}>
+        <Button type="default" danger style={{ width: "100%" }} disabled={!managePermission}>
           <Space>
             <DeleteOutlined />
             Delete from Terrakube

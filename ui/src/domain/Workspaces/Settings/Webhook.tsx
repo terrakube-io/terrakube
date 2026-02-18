@@ -1,5 +1,5 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Button, Col, Flex, Form, Input, Popconfirm, Row, Select, Space, Spin, Switch, Table, message } from "antd";
+import { Button, Col, Flex, Form, Input, Popconfirm, Row, Select, Space, Spin, Switch, Table, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { v7 as uuid } from "uuid";
 import axiosInstance from "../../../config/axiosConfig";
@@ -340,10 +340,11 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
   return (
     <div>
       <h1>Webhook</h1>
-      <p>
+      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
         Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works
         with VCS flow workspace.
-      </p>
+      </Typography.Text>
+      <h2>VCS Webhook Configuration</h2>
       <Spin spinning={waiting}>
         <Form onFinish={onFinish}>
           <Form.Item

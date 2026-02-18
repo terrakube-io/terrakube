@@ -7,10 +7,10 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Editor, type OnMount } from "@monaco-editor/react";
-import { Button, Form, Input, Popconfirm, Select, Space, Switch, Table, Tooltip, Typography, theme } from "antd";
+import { Alert, Button, Form, Input, message, Popconfirm, Select, Space, Switch, Table, Tooltip, Typography, theme } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
 import "./Settings.css";
@@ -42,9 +42,14 @@ type EditActionForm = {
   version: string;
 };
 
-export const ActionSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const ActionSettings = ({ managePermission = true }: Props) => {
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [mode, setMode] = useState("create");
   const [actionId, setActionId] = useState<string>();
@@ -88,7 +93,7 @@ export const ActionSettings = () => {
       key: "action",
       render: (_: string, record: Action) => (
         <div>
-          <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)}>
+          <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)} disabled={!managePermission}>
             Edit
           </Button>
           <Popconfirm
@@ -97,7 +102,7 @@ export const ActionSettings = () => {
             okText="Yes"
             cancelText="No"
           >
-            <Button danger type="link" icon={<DeleteOutlined />}>
+            <Button danger type="link" icon={<DeleteOutlined />} disabled={!managePermission}>
               Delete
             </Button>
           </Popconfirm>
@@ -133,6 +138,9 @@ export const ActionSettings = () => {
       });
       const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
       editorRef.current.setValue(actionDecoded);
+    }).catch((err) => {
+      message.error(getErrorMessage(err));
+      setIsEditing(false);
     });
   };
 
@@ -144,7 +152,10 @@ export const ActionSettings = () => {
 
   const onDelete = (id: string) => {
     axiosInstance.delete(`action/${id}`).then(() => {
+      message.success("Action deleted successfully");
       loadActions();
+    }).catch((err) => {
+      message.error(getErrorMessage(err));
     });
   };
 
@@ -165,9 +176,13 @@ export const ActionSettings = () => {
         },
       })
       .then(() => {
+        message.success("Action created successfully");
         loadActions();
         setIsEditing(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -188,15 +203,23 @@ export const ActionSettings = () => {
         },
       })
       .then(() => {
+        message.success("Action updated successfully");
         loadActions();
         setIsEditing(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadActions = () => {
     axiosInstance.get(`action`).then((response) => {
       setActions(response.data.data);
+      setError(null);
+    }).catch((err) => {
+      setError(getErrorMessage(err));
+    }).finally(() => {
       setLoading(false);
     });
   };
@@ -219,9 +242,17 @@ export const ActionSettings = () => {
           from Terrakube.
         </Typography.Text>
       </div>
-      {!isEditing ? (
+      {error ? (
+        <Alert
+          message={error.includes("permission") ? "Access Denied" : "Error"}
+          description={error}
+          type="error"
+          showIcon
+          style={{ marginTop: "20px" }}
+        />
+      ) : !isEditing ? (
         <>
-          <Button type="primary" icon={<PlusOutlined />} onClick={onNew}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={onNew} disabled={!managePermission}>
             Create Action
           </Button>
           <h3 style={{ marginTop: "30px" }}>Actions</h3>
@@ -434,7 +465,7 @@ export const ActionSettings = () => {
               <Switch />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
+              <Button type="primary" htmlType="submit" disabled={!managePermission}>
                 Save
               </Button>
               <Button type="default" onClick={onCancel} style={{ marginLeft: "10px" }}>
