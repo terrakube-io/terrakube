@@ -62,7 +62,6 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
   const includes = tempData.data.organization.edges[0].node.workspace.edges;
 
   const workspaces = includes.map((element: any) => {
-    console.log(element.node.name + " " + element.node.lastJobStatus + " " + element.node.lastJobDate);
     const lastStatus = element.node.lastJobStatus;
     const lastJobDate = element.node.lastJobDate;
     const ws: WorkspaceListItem = {
