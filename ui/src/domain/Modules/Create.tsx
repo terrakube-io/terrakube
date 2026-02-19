@@ -219,7 +219,7 @@ export const CreateModule = () => {
                   title: "Module Created",
                   content: "The modules has been created successfully",
                   onOk: () => {
-                    navigate(`/organizations/${orgId}/registry/${response.data.data.id}`);
+                    navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
                   },
                 });
               })
@@ -228,7 +228,7 @@ export const CreateModule = () => {
                   title: "Module Created",
                   content: "The modules has been created successfully",
                   onOk: () => {
-                    navigate(`/organizations/${orgId}/registry/${response.data.data.id}`);
+                    navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
                   },
                 });
               });
@@ -237,7 +237,7 @@ export const CreateModule = () => {
               title: "Module Created",
               content: "The modules has been created successfully",
               onOk: () => {
-                navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+                navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
               },
             });
           }
@@ -304,21 +304,21 @@ export const CreateModule = () => {
           <div className="App-text">
             This module will be created under the current organization, {sessionStorage.getItem(ORGANIZATION_NAME)}.
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
+          <Steps orientation="horizontal" size="small" current={current} onChange={handleChange}>
             <Step title="Connect to VCS" />
             <Step title="Choose a repository" />
             <Step title="Confirm selection" />
           </Steps>
 
           {current === 0 && (
-            <Space className="chooseType" direction="vertical">
+            <Space className="chooseType" orientation="vertical">
               <h3>Connect to a version control provider</h3>
               <div className="workflowDescription2 App-text">
                 Choose the version control provider that hosts your module source code.
               </div>
               {vcsButtonsVisible ? (
                 <div>
-                  <Space direction="horizontal">
+                  <Space orientation="horizontal">
                     <Button
                       icon={<SiGit />}
                       onClick={() => {
