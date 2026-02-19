@@ -17,8 +17,6 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
-
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -143,7 +141,7 @@ public class ModuleServiceImpl implements ModuleService {
 
         RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest();
         refreshTokenRequest.setGitPath(repository_source);
-        terrakubeClient.refreshToken(vcsId, refreshTokenRequest);
+        refreshVcsToken(vcsId, repository_source);
         Vcs vcs = getVcsInformation(organizationId, vcsId);
         if (vcs == null)
             return null;
@@ -157,7 +155,13 @@ public class ModuleServiceImpl implements ModuleService {
     }
 
     private void refreshVcsToken(String vcsId, String gitPath) {
-        //pending
+        try {
+            RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest();
+            refreshTokenRequest.setGitPath(gitPath);
+            terrakubeClient.refreshToken(vcsId, refreshTokenRequest);
+        } catch (Exception e){
+            log.error("Error refreshing VCS token for {} {}", gitPath, e.getMessage());
+        }
     }
 
     private Vcs getVcsInformation(String organizationId, String vcsId) {
