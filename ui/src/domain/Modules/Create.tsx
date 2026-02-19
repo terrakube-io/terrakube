@@ -1,5 +1,5 @@
 import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Breadcrumb, Button, Form, Input, Layout, Select, Space, Steps, message, theme } from "antd";
+import { Breadcrumb, Button, Form, Input, Layout, Modal, Select, Space, Steps, message, theme } from "antd";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
@@ -203,7 +203,38 @@ export const CreateModule = () => {
       })
       .then((response) => {
         if (response.status === 201) {
-          navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+          if (vcsId !== "") {
+            axiosInstance
+              .post(`refresh-token/v1/vcs/${vcsId}`, {
+                gitPath: values.source,
+              })
+              .then(() => {
+                Modal.success({
+                  title: "Module Created",
+                  content: "The modules has been created successfully",
+                  onOk: () => {
+                    navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+                  },
+                });
+              })
+              .catch(() => {
+                Modal.success({
+                  title: "Module Created",
+                  content: "The modules has been created successfully",
+                  onOk: () => {
+                    navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+                  },
+                });
+              });
+          } else {
+            Modal.success({
+              title: "Module Created",
+              content: "The modules has been created successfully",
+              onOk: () => {
+                navigate(`/organizations/${organizationId}/registry/${response.data.data.id}`);
+              },
+            });
+          }
         }
       })
       .catch((error) => {

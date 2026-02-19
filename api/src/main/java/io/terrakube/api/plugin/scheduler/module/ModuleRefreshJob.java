@@ -46,8 +46,6 @@ public class ModuleRefreshJob implements Job {
     @Autowired
     private ModuleVersionRepository moduleVersionRepository;
     @Autowired
-    private AzDevOpsTokenService azDevOpsTokenService;
-    @Autowired
     private GitService gitService;
 
     @Override
@@ -60,6 +58,8 @@ public class ModuleRefreshJob implements Job {
         Module module = search.get();
         log.info("Refreshing module {} on {}", module.getName(), module.getOrganization().getName());
         Map<String, Ref> currentRepoTags = null;
+
+        refreshModuleAccessToken(module);
 
         try {
             currentRepoTags = getVersionFromRepository(module.getSource(), module.getTagPrefix(),
@@ -115,6 +115,15 @@ public class ModuleRefreshJob implements Job {
 
         calculateLatestModuleVersion(module);
 
+    }
+
+    private void refreshModuleAccessToken(Module module) {
+        try {
+            if (module.getVcs() != null)
+                tokenService.getAccessToken(module.getSource(), module.getVcs());
+        } catch (Exception e) {
+            log.error("Error ");
+        }
     }
 
     private void calculateLatestModuleVersion(Module module) {
