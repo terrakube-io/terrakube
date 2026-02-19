@@ -61,7 +61,7 @@ export default function PageWrapper({
             innerClassName
           )}
         >
-          <Flex justify="space-between" flex={1}>
+          <Flex justify="space-between" flex={1} wrap>
             <div>
               <Typography.Title className="page-wrapper-title">{title}</Typography.Title>
               {subTitle && <Typography.Text type="secondary">{subTitle}</Typography.Text>}

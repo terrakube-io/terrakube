@@ -18,7 +18,7 @@ type Props = {
 };
 export default function WorkspaceCard({ item, tags }: Props) {
   return (
-    <Card hoverable>
+    <Card hoverable style={{ width: "100%" }}>
       <Space style={{ width: "100%" }} orientation="vertical">
         <Row>
           <Col span={12}>
@@ -37,7 +37,7 @@ export default function WorkspaceCard({ item, tags }: Props) {
             </Row>
           </Col>
         </Row>
-        <Space size={40} style={{ marginTop: "25px" }}>
+        <Space size={40} style={{ marginTop: "25px" }} wrap>
           <Space>
             <WorkspaceStatusTag status={item.lastStatus} /> <br />
           </Space>
