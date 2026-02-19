@@ -12,7 +12,9 @@ import {
 import Login from "../Login/Login";
 import { CreateModule } from "../Modules/Create";
 import { ModuleDetails } from "../Modules/Details";
-import { ModuleList } from "../Modules/List";
+import { PublicRegistrySearch } from "../Modules/PublicRegistrySearch";
+import { ProviderDetails } from "../Providers/ProviderDetails";
+import { Registry } from "../Modules/Registry";
 import { CreateOrganization } from "../Organizations/Create";
 import { OrganizationSettings } from "../Settings/Settings";
 import { CreateWorkspace } from "../Workspaces/Create";
@@ -210,12 +212,20 @@ const App = () => {
           element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="6" />,
         },
         {
+          path: "/organizations/:orgid/registry",
+          element: <Registry setOrganizationName={setOrganizationName} organizationName={organizationName} />,
+        },
+        {
+          path: "/organizations/:orgid/registry/search",
+          element: <PublicRegistrySearch organizationName={organizationName} />,
+        },
+        {
           path: "/organizations/:orgid/registry/create",
           element: <CreateModule />,
         },
         {
-          path: "/organizations/:orgid/registry",
-          element: <ModuleList setOrganizationName={setOrganizationName} organizationName={organizationName} />,
+          path: "/organizations/:orgid/registry/providers/:providerid",
+          element: <ProviderDetails organizationName={organizationName} />,
         },
         {
           path: "/organizations/:orgid/registry/:id",

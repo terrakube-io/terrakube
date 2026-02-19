@@ -28,12 +28,62 @@
   // "forwardPorts": [3000, 5432],
 
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postStartCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh",
+  "postCreateCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh -d POSTGRESQL -s MINIO",
 
   // Configure tool-specific properties.
-  // "customizations": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vmware.vscode-spring-boot",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "hashicorp.terraform",
+        "rangav.vscode-thunder-client"
+      ],
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.compile.nullAnalysis.mode": "automatic",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[java]": {
+          "editor.defaultFormatter": "redhat.java"
+        }
+      }
+    }
+  },
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   "remoteUser": "vscode",
-  "forwardPorts": [8080, 3000, 8075, 8090, 5556]
+  "forwardPorts": [8080, 3000, 8075, 8090, 5556, 9000, 9001],
+  "portsAttributes": {
+    "8080": {
+      "label": "Terrakube API",
+      "onAutoForward": "notify"
+    },
+    "3000": {
+      "label": "Terrakube UI",
+      "onAutoForward": "notify"
+    },
+    "8075": {
+      "label": "Terrakube Registry",
+      "onAutoForward": "silent"
+    },
+    "8090": {
+      "label": "Terrakube Executor",
+      "onAutoForward": "silent"
+    },
+    "5556": {
+      "label": "Dex OIDC",
+      "onAutoForward": "silent"
+    },
+    "9000": {
+      "label": "MinIO API",
+      "onAutoForward": "silent"
+    },
+    "9001": {
+      "label": "MinIO Console",
+      "onAutoForward": "silent"
+    }
+  }
 }

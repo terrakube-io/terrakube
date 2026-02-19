@@ -18,6 +18,8 @@ type Props = {
   }[];
   actions?: React.ReactNode;
   fluid?: boolean;
+  innerClassName?: string;
+  contentClassName?: string;
 };
 
 export default function PageWrapper({
@@ -30,6 +32,8 @@ export default function PageWrapper({
   breadcrumbs,
   actions,
   fluid,
+  innerClassName,
+  contentClassName,
 }: Props) {
   const {
     token: { colorBgContainer },
@@ -46,17 +50,18 @@ export default function PageWrapper({
           }))}
         />
       )}
-      <div className="page-wrapper-content" style={{ background: colorBgContainer }}>
+      <div className={clsx("page-wrapper-content", contentClassName)} style={{ background: colorBgContainer }}>
         <div
           className={clsx(
             "page-wrapper-inner",
             { "page-wrapper-inner-contained": !fluid },
             {
               "page-wrapper-inner-fluid": fluid,
-            }
+            },
+            innerClassName
           )}
         >
-          <Flex justify="space-between" flex={1}>
+          <Flex justify="space-between" flex={1} wrap>
             <div>
               <Typography.Title className="page-wrapper-title">{title}</Typography.Title>
               {subTitle && <Typography.Text type="secondary">{subTitle}</Typography.Text>}

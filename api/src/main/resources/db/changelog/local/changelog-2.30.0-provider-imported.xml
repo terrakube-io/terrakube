@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="provider-imported-field" author="p2pdkivenko">
+        <addColumn tableName="provider">
+            <column name="imported" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="true"/>
+            </column>
+            <column name="registry_namespace" type="varchar(64)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+    <changeSet id="provider-imported-field-update-existing" author="p2pdkivenko">
+        <update tableName="provider">
+            <column name="imported" valueBoolean="false"/>
+            <where>imported IS NULL</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

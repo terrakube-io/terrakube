@@ -2,7 +2,7 @@ import { Button, Flex, List, Space } from "antd";
 import "antd/dist/reset.css";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -11,6 +11,12 @@ import useApiRequest from "@/modules/api/useApiRequest";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
+import {
+  getStoredWorkspaceSortOption,
+  setStoredWorkspaceSortOption,
+  sortWorkspaces,
+  WorkspaceSortOption,
+} from "@/modules/workspaces/utils/workspaceSort";
 
 type Props = {
   organizationName: string;
@@ -22,7 +28,18 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [filteredWorkspaces, setFilteredWorkspaces] = useState<WorkspaceListItem[]>([]);
+  const [sortOption, setSortOption] = useState<WorkspaceSortOption>(() => getStoredWorkspaceSortOption());
   const [tags, setTags] = useState<TagModel[]>([]);
+
+  const sortedWorkspaces = useMemo(
+    () => sortWorkspaces(filteredWorkspaces, sortOption),
+    [filteredWorkspaces, sortOption]
+  );
+
+  const handleSortChange = (option: WorkspaceSortOption) => {
+    setSortOption(option);
+    setStoredWorkspaceSortOption(option);
+  };
 
   const { loading, execute, error } = useApiRequest({
     action: () => workspaceService.listWorkspaces(id!),
@@ -73,17 +90,20 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onFiltered={(filtered) => setFilteredWorkspaces(filtered)}
             organizationId={id}
             onTagsLoaded={(t) => setTags(t)}
+            sortOption={sortOption}
+            onSortChange={handleSortChange}
           />
         )}
         <List
           split={false}
-          dataSource={filteredWorkspaces}
+          dataSource={sortedWorkspaces}
           pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
           renderItem={(item) => (
-            <List.Item>
-              <Link to={`/organizations/${id}/workspaces/${item.id}`} style={{ width: "100%" }}>
-                <WorkspaceCard tags={tags} item={item} />
-              </Link>
+            <List.Item
+              style={{ cursor: "pointer" }}
+              onClick={() => navigate(`/organizations/${id}/workspaces/${item.id}`)}
+            >
+              <WorkspaceCard tags={tags} item={item} />
             </List.Item>
           )}
         />

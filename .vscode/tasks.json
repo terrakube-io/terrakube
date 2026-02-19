@@ -10,15 +10,15 @@
                 "isDefault": true
             }
         },
-        {
-            "label": "yarn-install",
-            "type": "shell",
-            "command": "  if [ \"$USER\" = \"gitpod\" ]; then cd ui && yarn install; else echo \"Using Node from devcontainer setup\"; fi ",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
+{
+        "label": "yarn-install",
+        "type": "shell",
+        "command": "  if [ \"$USER\" = \"gitpod\" ]; then cd ui && yarn install; else echo \"Using Node from devcontainer setup\"; fi ",
+        "group": {
+            "kind": "build",
+            "isDefault": true
+        }
+    },
         {
             "label": "setup-env",
             "type": "shell",

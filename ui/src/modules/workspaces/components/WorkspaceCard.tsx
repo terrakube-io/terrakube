@@ -18,8 +18,8 @@ type Props = {
 };
 export default function WorkspaceCard({ item, tags }: Props) {
   return (
-    <Card hoverable>
-      <Space style={{ width: "100%" }} direction="vertical">
+    <Card hoverable style={{ width: "100%" }}>
+      <Space style={{ width: "100%" }} orientation="vertical">
         <Row>
           <Col span={12}>
             <Typography.Title level={3}>{item.name}</Typography.Title>
@@ -37,7 +37,7 @@ export default function WorkspaceCard({ item, tags }: Props) {
             </Row>
           </Col>
         </Row>
-        <Space size={40} style={{ marginTop: "25px" }}>
+        <Space size={40} style={{ marginTop: "25px" }} wrap>
           <Space>
             <WorkspaceStatusTag status={item.lastStatus} /> <br />
           </Space>
@@ -54,9 +54,14 @@ export default function WorkspaceCard({ item, tags }: Props) {
           {item.branch !== "remote-content" && item.normalizedSource ? (
             <Space>
               <VcsLogo type={getVcsTypeFromUrl(item.normalizedSource)} />
-              <a href={item.normalizedSource} target="_blank" rel="noreferrer">
+              <Typography.Link
+                href={item.normalizedSource}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
-              </a>
+              </Typography.Link>
             </Space>
           ) : (
             <Typography.Text
