@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -94,8 +95,8 @@ public class ScheduleJobTest {
         globalVarRepository = mock(GlobalVarRepository.class, new FailUnkownMethod<GlobalVarRepository>());
         variableRepository = mock(VariableRepository.class, new FailUnkownMethod<VariableRepository>());
         workspaceLockService = mock(WorkspaceLockService.class);
-        // Default: workspace is not locked by a user/CLI
-        doReturn(false).when(workspaceLockService).isLocked(any());
+        // Default: workspace is not locked by a user/CLI (lenient: not all tests hit the lock check)
+        lenient().doReturn(false).when(workspaceLockService).isLocked(any());
     }
 
     private ScheduleJob subject() {
@@ -125,6 +126,7 @@ public class ScheduleJobTest {
         org.setName("ze-org");
 
         Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
         workspace.setLocked(false);
         workspace.setVcs(vcs);
 
