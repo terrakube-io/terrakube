@@ -652,7 +652,8 @@ public class RemoteTfeService {
      * Get workspace data response with lock info included.
      */
     WorkspaceData getWorkspaceWithLockInfo(String workspaceId, JwtAuthenticationToken currentUser) {
-        Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId))
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         String organizationName = workspace.getOrganization().getName();
         Map<String, Object> otherAttributes = new HashMap<>();
 

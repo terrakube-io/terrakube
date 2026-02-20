@@ -263,23 +263,20 @@ public class RemoteTfeController {
     }
 
     /**
-     * Create a new state version. Requires the workspace to be locked.
+     * Create a new state version.
      *
-     * Returns 423 Locked if workspace is not locked (state push requires lock).
-     * Returns 201 on success.
+     * Note: Unlike HCP Terraform, we do NOT enforce that the workspace must be locked
+     * before pushing state. This allows direct state uploads (e.g., terraform state push)
+     * without requiring a lock. Lock enforcement happens at the plan/apply level via the
+     * scheduler's lock check.
+     *
+     * Returns 200 on success.
      */
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/state-versions")
     public ResponseEntity<StateData> createWorkspaceState(@PathVariable("workspaceId") String workspaceId,
             @RequestBody StateData stateData) {
         log.info("Create State /remote/tfe/v2/ {}", workspaceId);
-
-        // Enforce locking: workspace must be locked before pushing state
-        if (!remoteTfeService.isWorkspaceLocked(workspaceId)) {
-            log.warn("State push rejected for workspace {}: workspace is not locked", workspaceId);
-            return ResponseEntity.status(423).build();
-        }
-
         log.info("Body: {}", stateData.toString());
         return ResponseEntity.of(Optional.of(remoteTfeService.createWorkspaceState(workspaceId, stateData)));
     }
