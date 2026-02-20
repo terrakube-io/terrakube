@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.state;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
 import io.terrakube.api.plugin.state.model.entitlement.EntitlementData;
@@ -162,10 +164,10 @@ public class RemoteTfeController {
      * Returns 409 Conflict if already locked by another user.
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/lock")
+    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/lock")
     public ResponseEntity<WorkspaceData> lockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
-            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request,
             Principal principal) {
         JwtAuthenticationToken currentUser = (JwtAuthenticationToken) principal;
         // Use email or name claim for friendly display; fall back to sub claim
@@ -174,6 +176,7 @@ public class RemoteTfeController {
                 : currentUser.getTokenAttributes().get("name") != null
                         ? (String) currentUser.getTokenAttributes().get("name")
                         : currentUser.getName();
+        Map<String, String> body = readOptionalJsonBody(request);
         String reason = (body != null) ? body.getOrDefault("reason", null) : null;
 
         log.info("Lock request for workspace {} by user {}", workspaceId, userId);
@@ -203,12 +206,13 @@ public class RemoteTfeController {
      * Returns 409 if lock-id doesn't match (locked by someone else).
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/unlock")
+    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/unlock")
     public ResponseEntity<WorkspaceData> unlockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
-            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request,
             Principal principal) {
         JwtAuthenticationToken currentUser = (JwtAuthenticationToken) principal;
+        Map<String, String> body = readOptionalJsonBody(request);
         String lockId = (body != null) ? body.getOrDefault("lock-id", null) : null;
 
         log.info("Unlock request for workspace {} with lockId={}", workspaceId, lockId);
@@ -237,7 +241,7 @@ public class RemoteTfeController {
      * Returns 200 on success.
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/force-unlock")
+    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/force-unlock")
     public ResponseEntity<WorkspaceData> forceUnlockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
             Principal principal) {
@@ -436,6 +440,26 @@ public class RemoteTfeController {
           return ResponseEntity.status(201).body(projectDataResponse);
         } else
           return ResponseEntity.status(403).body(null);
+    }
+
+    /**
+     * Safely read an optional JSON body from the request.
+     * Returns null if the body is empty or not valid JSON.
+     * This avoids HttpMediaTypeNotSupportedException when clients send
+     * POST requests with no body (defaults to application/x-www-form-urlencoded).
+     */
+    private Map<String, String> readOptionalJsonBody(HttpServletRequest request) {
+        try {
+            byte[] bytes = request.getInputStream().readAllBytes();
+            if (bytes.length == 0) {
+                return null;
+            }
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(bytes, new TypeReference<Map<String, String>>() {});
+        } catch (Exception e) {
+            log.debug("Could not parse request body as JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
 }
