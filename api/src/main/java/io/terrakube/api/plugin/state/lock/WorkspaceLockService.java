@@ -243,7 +243,8 @@ public class WorkspaceLockService {
     // --- Private helpers ---
 
     private void persistLockToDb(String workspaceId, String lockId, String userId, String reason) {
-        Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId))
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         workspace.setLocked(true);
         workspace.setLockId(lockId);
         workspace.setLockedBy(userId);

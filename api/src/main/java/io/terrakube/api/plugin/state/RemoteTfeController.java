@@ -162,7 +162,7 @@ public class RemoteTfeController {
      * Returns 409 Conflict if already locked by another user.
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/lock")
+    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/lock")
     public ResponseEntity<WorkspaceData> lockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
             @RequestBody(required = false) Map<String, String> body,
@@ -203,7 +203,7 @@ public class RemoteTfeController {
      * Returns 409 if lock-id doesn't match (locked by someone else).
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/unlock")
+    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/unlock")
     public ResponseEntity<WorkspaceData> unlockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
             @RequestBody(required = false) Map<String, String> body,
@@ -237,7 +237,7 @@ public class RemoteTfeController {
      * Returns 200 on success.
      */
     @Transactional
-    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/force-unlock")
+    @PostMapping(produces = "application/vnd.api+json", consumes = MediaType.ALL_VALUE, path = "/workspaces/{workspaceId}/actions/force-unlock")
     public ResponseEntity<WorkspaceData> forceUnlockWorkspace(
             @PathVariable("workspaceId") String workspaceId,
             Principal principal) {
