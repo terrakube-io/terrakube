@@ -1,7 +1,7 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Select, Spin, Switch, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { axiosRegistry } from "../../../config/axiosConfig";
 import { Agent, SshKey, Template, TofuRelease, Workspace } from "../../types";
 import { atomicHeader, compareVersions, genericHeader, getIaCIconById, getIaCNameById, iacTypes } from "../Workspaces";
 
@@ -16,7 +16,6 @@ type UpdateWorkspaceForm = {
   description?: string;
   folder?: string;
   locked: boolean;
-  lockDescription?: string;
   executionMode: string;
   moduleSshKey?: string;
   terraformVersion: string;
@@ -77,6 +76,24 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
   };
   const onFinish = (values: UpdateWorkspaceForm) => {
     setWaiting(true);
+
+    // Handle lock/unlock separately via TFE endpoint
+    const currentlyLocked = workspaceData.attributes.locked;
+    const wantsLocked = values.locked;
+    if (wantsLocked !== currentlyLocked) {
+      const action = wantsLocked ? "lock" : "unlock";
+      const tfeHeaders = { "Content-Type": "application/vnd.api+json" };
+      axiosRegistry
+        .post(`/remote/tfe/v2/workspaces/${id}/actions/${action}`, {}, { headers: tfeHeaders })
+        .then(() => {
+          message.success(`Workspace ${wantsLocked ? "locked" : "unlocked"} successfully`);
+        })
+        .catch((error) => {
+          const detail = error.response?.data?.errors?.[0]?.detail || error.message;
+          message.error(`Workspace ${action} failed: ${detail}`);
+        });
+    }
+
     const body = {
       "atomic:operations": [
         {
@@ -89,8 +106,6 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
               name: values.name,
               description: values.description,
               folder: values.folder,
-              locked: values.locked,
-              lockDescription: values.lockDescription,
               executionMode: values.executionMode,
               moduleSshKey: values.moduleSshKey,
               terraformVersion: values.terraformVersion,
@@ -155,7 +170,6 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
             description: workspaceData.attributes?.description,
             folder: workspaceData.attributes?.folder,
             locked: workspaceData.attributes?.locked,
-            lockDescription: workspaceData.attributes.lockDescription,
             moduleSshKey: workspaceData.attributes?.moduleSshKey,
             executionMode: workspaceData.attributes?.executionMode,
             iacType: workspaceData.attributes?.iacType,
@@ -229,14 +243,11 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
             valuePropName="checked"
             label="Lock Workspace"
             tooltip={{
-              title: "Lock Workspace",
+              title: "Lock or unlock the workspace. A locked workspace prevents new runs and state changes.",
               icon: <InfoCircleOutlined />,
             }}
           >
             <Switch disabled={!manageWorkspace} />
-          </Form.Item>
-          <Form.Item valuePropName="value" name="lockDescription" label="Setup custom lock description message">
-            <Input.TextArea placeholder="Lock description details" disabled={!manageWorkspace} />
           </Form.Item>
           <Form.Item
             name="iacType"

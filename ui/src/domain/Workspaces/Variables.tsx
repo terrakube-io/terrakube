@@ -6,20 +6,18 @@ import {
   Modal,
   Popconfirm,
   Radio,
-  Space,
-  Switch,
   Table,
   Tag,
   Tooltip,
   Typography,
   Checkbox,
 } from "antd";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable } from "../types";
 
-const VARIABLES_COLUMS = (
+const VARIABLES_COLUMNS = (
   organizationId: string,
   workspaceId: string,
   onEdit: (variable: FlatVariable) => void,
@@ -119,7 +117,7 @@ const VARIABLES_COLUMS = (
   },
 ];
 
-const COLLECTION_VARIABLES_COLUMNS = () => [
+const VARIABLE_SET_COLUMNS = () => [
   {
     title: "Key",
     dataIndex: "key",
@@ -168,71 +166,12 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     },
   },
   {
-    title: "Priority",
-    dataIndex: "priority",
-    width: "10%",
-    key: "priority",
-    render: (_: string, record: any) => {
-      return <div>{record.priority}</div>;
-    },
-  },
-  {
-    title: "Collection",
+    title: "Source",
     dataIndex: "collectionName",
-    width: "25%",
-    key: "collectionName",
-    render: (_: string, record: any) => {
-      return <div>{record.collectionName}</div>;
-    },
-  },
-];
-
-const GLOBAL_VARIABLES_COLUMNS = () => [
-  {
-    title: "Key",
-    dataIndex: "key",
-    width: "40%",
-    key: "key",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.key.localeCompare(b.key),
-    defaultSortOrder: "ascend" as const,
-    render: (_: string, record: FlatVariable) => {
-      return (
-        <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
-        </div>
-      );
-    },
-  },
-  {
-    title: "Value",
-    dataIndex: "value",
-    key: "value",
-    width: "40%",
-    render: (_: string, record: FlatVariable) => {
-      return record.sensitive ? (
-        <i>Sensitive - write only</i>
-      ) : (
-        <Tooltip
-          title={record.description}
-          placement="topLeft"
-          overlayStyle={{ width: 400, wordBreak: "break-word" }}
-          overlayClassName="tooltip"
-          trigger={["hover"]}
-        >
-          <div style={{ maxWidth: 2000, maxHeight: 100, overflow: "auto" }}>{record.value}</div>
-        </Tooltip>
-      );
-    },
-  },
-  {
-    title: "Category",
-    dataIndex: "category",
     width: "20%",
-    key: "category",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
-    render: (_: string, record: FlatVariable) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
+    key: "source",
+    render: (_: string, record: any) => {
+      return <Tag>{record.collectionName || "Global"}</Tag>;
     },
   },
 ];
@@ -343,50 +282,68 @@ export const Variables = ({
   };
 
   // Combine Terraform and Environment variables
-  const workspaceVariables = [...vars, ...env];
+  const workspaceVariables = useMemo(() => [...vars, ...env], [vars, env]);
 
-  // Combine Collection Terraform and Environment variables
-  const collectionVariables = [...collectionVars, ...collectionEnvVars];
-
-  // Combine Global Terraform and Environment variables
-  const globalVars = [...globalVariables, ...globalEnvVariables];
+  // Combine all variable sets (collections + global) for unified display
+  const variableSets = useMemo(
+    () => [...collectionVars, ...collectionEnvVars, ...globalVariables, ...globalEnvVariables],
+    [collectionVars, collectionEnvVars, globalVariables, globalEnvVariables]
+  );
 
   return (
     <div>
       <h1>Variables</h1>
       <div>
         <Typography.Text type="secondary" className="App-text">
-          <p>
-            These variables are used for all plans and applies in this workspace. Workspaces using Terraform 0.10.0 or
-            later can also load default values from any *.auto.tfvars files in the configuration.
-          </p>
-          <p>
-            Sensitive variables are hidden from view in the UI and API, and can't be edited. (To change a sensitive
-            variable, delete and replace it.) Sensitive variables can still appear in Terraform logs if your
-            configuration is designed to output them.
-          </p>
+          Terraform uses all{" "}
+          <a href="https://developer.hashicorp.com/terraform/language/values/variables" target="_blank" rel="noopener noreferrer">
+            Terraform variables
+          </a>{" "}
+          and{" "}
+          <a href="https://developer.hashicorp.com/terraform/cli/config/environment-variables" target="_blank" rel="noopener noreferrer">
+            Environment variables
+          </a>{" "}
+          for all plans and applies in this workspace. Workspaces using Terraform 0.10.0 or later can also load default
+          values from any <code>*.auto.tfvars</code> files in the configuration. You may want to use the HCP Terraform
+          Provider or the variables API to add multiple variables at once.
         </Typography.Text>
       </div>
-      <h2>Workspace variables ({workspaceVariables.length})</h2>
+
+      <h2 style={{ marginTop: 32 }}>Sensitive variables</h2>
       <div>
         <Typography.Text type="secondary" className="App-text">
-          These Terraform variables are set using a terraform.tfvars file. To use interpolation or set a non-string
-          value for a variable, click its HCL checkbox.
+          Sensitive variables are never shown in the UI or API, and can't be edited. They may appear in Terraform logs
+          if your configuration is designed to output them. To change a sensitive variable, delete and replace it.
+        </Typography.Text>
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>Workspace variables ({workspaceVariables.length})</h2>
+      <div style={{ marginBottom: 16 }}>
+        <Typography.Text type="secondary" className="App-text">
+          Variables defined within a workspace always overwrite variables from variable sets that have the same type and
+          the same key. Learn more about variable set{" "}
+          <a href="https://developer.hashicorp.com/terraform/cloud-docs/workspaces/variables/managing-variables#variable-precedence" target="_blank" rel="noopener noreferrer">
+            precedence
+          </a>
+          .
         </Typography.Text>
       </div>
 
       <Table
         dataSource={workspaceVariables}
-        columns={VARIABLES_COLUMS(organizationId!, workspaceId!, onEdit, manageWorkspace)}
+        columns={VARIABLES_COLUMNS(organizationId!, workspaceId!, onEdit, manageWorkspace)}
         rowKey="key"
+        pagination={false}
+        locale={{ emptyText: "There are no variables added." }}
       />
       <Button
-        type="primary"
+        type="default"
         htmlType="button"
+        style={{ marginTop: 16 }}
         onClick={() => {
           setMode("create");
           form.resetFields();
-          setCategory("TERRAFORM"); // Default to Terraform
+          setCategory("TERRAFORM");
           setVisible(true);
         }}
         disabled={!manageWorkspace}
@@ -395,37 +352,48 @@ export const Variables = ({
         Add variable
       </Button>
 
-      <div className="envVariables">
-        <h2>Collection Variables ({collectionVariables.length})</h2>
-        <div>
+      <div style={{ marginTop: 48 }}>
+        <h2>Variable sets ({variableSets.length})</h2>
+        <div style={{ marginBottom: 16 }}>
           <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the collection used by this workspace, these values are injected
-              inside the Terrakube remote jobs.
-            </p>
+            <a href="https://developer.hashicorp.com/terraform/cloud-docs/workspaces/variables/managing-variables#variable-sets" target="_blank" rel="noopener noreferrer">
+              Variable sets
+            </a>{" "}
+            allow you to reuse variables across multiple workspaces within your organization. We recommend creating a
+            variable set for variables used in more than one workspace.
           </Typography.Text>
         </div>
-        <Table dataSource={collectionVariables} columns={COLLECTION_VARIABLES_COLUMNS()} rowKey="key" />
-      </div>
 
-      <div className="envVariables">
-        <h2>Global Variables ({globalVars.length})</h2>
-        <div>
-          <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the organization global variables, these values are injected inside
-              the Terrakube remote jobs.
-            </p>
-          </Typography.Text>
-        </div>
-        <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
+        {variableSets.length === 0 ? (
+          <div
+            style={{
+              background: "#fafafa",
+              borderRadius: 8,
+              padding: "40px 24px",
+              textAlign: "center",
+            }}
+          >
+            <Typography.Text strong>No variable sets have been applied to this workspace.</Typography.Text>
+            <br />
+            <Button type="primary" style={{ marginTop: 16 }} href={`/organizations/${organizationId}/settings/variableSets`}>
+              Apply variable set
+            </Button>
+          </div>
+        ) : (
+          <Table
+            dataSource={variableSets}
+            columns={VARIABLE_SET_COLUMNS()}
+            rowKey={(record) => `${record.collectionName || "global"}-${record.key}`}
+            pagination={false}
+          />
+        )}
       </div>
 
       <Modal
         width="600px"
         open={visible}
         title={mode === "edit" ? "Edit variable " + variableName : "Add variable"}
-        okText="Save variable"
+        okText={mode === "edit" ? "Save variable" : "Add variable"}
         cancelText="Cancel"
         onCancel={onCancel}
         onOk={() => {
@@ -440,78 +408,77 @@ export const Variables = ({
             });
         }}
       >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="create-org" form={form} layout="vertical" validateMessages={validateMessages}>
-            <Typography.Title level={5} style={{ margin: "0 0 15px 0" }}>
-              Select variable category
-            </Typography.Title>
+        <Form name="create-var" form={form} layout="vertical" validateMessages={validateMessages}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Select variable category</div>
 
-            <Form.Item name="category">
-              <Radio.Group value={category} onChange={(e) => setCategory(e.target.value)}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                  <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
-                    <div>
-                      <div>Terraform variable</div>
-                      <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                        These variables should match the declarations in your configuration. Click the HCL box to use
-                        interpolation or set a non-string value.
-                      </div>
+          <Form.Item name="category" style={{ marginBottom: 16 }}>
+            <Radio.Group value={category} onChange={(e) => setCategory(e.target.value)}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>Terraform variable</div>
+                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 13 }}>
+                      These variables should match the declarations in your configuration. Click the HCL box to use
+                      interpolation or set a non-string value.
                     </div>
-                  </Radio>
+                  </div>
+                </Radio>
 
-                  <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
-                    <div>
-                      <div>Environment variable</div>
-                      <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                        These variables are available in the Terraform runtime environment.
-                      </div>
+                <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>Environment variable</div>
+                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 13 }}>
+                      These variables are available in the Terraform runtime environment.
                     </div>
-                  </Radio>
-                </div>
-              </Radio.Group>
+                  </div>
+                </Radio>
+              </div>
+            </Radio.Group>
+          </Form.Item>
+
+          <Form.Item name="key" label="Key" rules={[{ required: true }]} style={{ marginBottom: 8 }}>
+            <Input placeholder="key" />
+          </Form.Item>
+
+          <Form.Item name="value" label="Value" rules={[{ required: true }]} style={{ marginBottom: 8 }}>
+            <Input.TextArea placeholder="value" rows={1} autoSize={{ minRows: 1, maxRows: 6 }} />
+          </Form.Item>
+
+          <div style={{ display: "flex", gap: "24px", marginBottom: 16 }}>
+            <Form.Item
+              name="hcl"
+              valuePropName="checked"
+              style={{ marginBottom: 0 }}
+              tooltip={{
+                title:
+                  "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
+                icon: <InfoCircleOutlined />,
+              }}
+            >
+              <Checkbox>HCL</Checkbox>
             </Form.Item>
 
-            <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-              <Input />
+            <Form.Item
+              name="sensitive"
+              valuePropName="checked"
+              style={{ marginBottom: 0 }}
+              tooltip={{
+                title:
+                  "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
+                icon: <InfoCircleOutlined />,
+              }}
+            >
+              <Checkbox>Sensitive</Checkbox>
             </Form.Item>
+          </div>
 
-            <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-              <Input.TextArea rows={3} autoSize={{ minRows: 3, maxRows: 6 }} />
-            </Form.Item>
-
-            <div style={{ display: "flex", gap: "30px", marginBottom: "15px" }}>
-              <Form.Item
-                name="hcl"
-                valuePropName="checked"
-                style={{ marginBottom: 0 }}
-                tooltip={{
-                  title:
-                    "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Checkbox>HCL</Checkbox>
-              </Form.Item>
-
-              <Form.Item
-                name="sensitive"
-                valuePropName="checked"
-                style={{ marginBottom: 0 }}
-                tooltip={{
-                  title:
-                    "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Checkbox>Sensitive</Checkbox>
-              </Form.Item>
-            </div>
-
-            <Form.Item name="description" label="Description">
-              <Input.TextArea placeholder="Description (optional)" style={{ width: "100%" }} rows={3} />
-            </Form.Item>
-          </Form>
-        </Space>
+          <Form.Item
+            name="description"
+            label={<span>Description <span style={{ fontWeight: 400, color: "rgba(0,0,0,0.45)" }}>(Optional)</span></span>}
+          >
+            <Input.TextArea placeholder="description (optional)" style={{ width: "100%" }} rows={3} />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

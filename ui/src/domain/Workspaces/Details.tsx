@@ -12,7 +12,6 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import {
-  Alert,
   Avatar,
   Breadcrumb,
   Button,
@@ -21,6 +20,7 @@ import {
   Layout,
   List,
   message,
+  Modal,
   Row,
   Space,
   Spin,
@@ -45,7 +45,7 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ActionLoader from "../../ActionLoader.js";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { axiosRegistry } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
 import { DetailsJob } from "../Jobs/Details";
 import {
@@ -405,31 +405,35 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     switchKey("6");
   };
 
-  const handleLockButton = (locked: boolean) => {
-    const body = {
-      data: {
-        type: "workspace",
-        id: id,
-        attributes: {
-          locked: !locked,
-        },
-      },
-    };
-    axiosInstance
-      .patch(`organization/${organizationId}/workspace/${id}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
-      .then((response) => {
+  const executeLockAction = (action: "lock" | "unlock") => {
+    const tfeHeaders = { "Content-Type": "application/vnd.api+json" };
+    axiosRegistry
+      .post(`/remote/tfe/v2/workspaces/${id}/actions/${action}`, {}, { headers: tfeHeaders })
+      .then(() => {
         loadWorkspace(true);
-        var newstatus = locked ? "unlocked" : "locked";
-        message.success("Workspace " + newstatus + " successfully");
+        message.success(`Workspace ${action === "unlock" ? "unlocked" : "locked"} successfully`);
       })
       .catch((error) => {
-        var newstatus = locked ? "unlock" : "lock";
-        message.error("Workspace " + newstatus + " failed: " + error.response.data.errors[0].detail);
-      })
+        const detail = error.response?.data?.errors?.[0]?.detail || error.message;
+        message.error(`Workspace ${action} failed: ${detail}`);
+      });
+  };
+
+  const handleLockButton = (locked: boolean) => {
+    if (locked) {
+      Modal.confirm({
+        title: `Unlock workspace ${workspaceName}`,
+        icon: <ExclamationCircleOutlined style={{ color: "#cf1322" }} />,
+        content:
+          "Unlock this workspace to let others execute Terraform runs. To prevent corrupting state, wait for runs to complete before unlocking.",
+        okText: "Unlock",
+        okButtonProps: { danger: true },
+        cancelText: "Cancel",
+        onOk: () => executeLockAction("unlock"),
+      });
+    } else {
+      executeLockAction("lock");
+    }
   };
 
   return (
@@ -475,7 +479,18 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                   <Typography.Text>
                     {workspace.attributes.locked ? (
                       <>
-                        <LockOutlined /> Locked
+                        <LockOutlined /> Locked by{" "}
+                        <span style={{ fontWeight: "500" }}>
+                          {(() => {
+                            const lockedBy = workspace.attributes.lockedBy || "unknown";
+                            // Extract friendly name from LDAP DN (cn=name,...) or email (name@domain)
+                            const cnMatch = lockedBy.match(/cn=([^,]+)/i);
+                            if (cnMatch) return cnMatch[1];
+                            const emailMatch = lockedBy.match(/^([^@]+)@/);
+                            if (emailMatch) return emailMatch[1];
+                            return lockedBy;
+                          })()}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -502,21 +517,6 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                       {DateTime.fromISO(lastRun).toRelative() ?? "never executed"}
                     </span>
                   </Typography.Text>
-
-                  <span>
-                    {workspace.attributes.locked ? (
-                      <>
-                        <Alert
-                          message="Lock Description"
-                          description={workspace.attributes.lockDescription}
-                          type="warning"
-                          showIcon
-                        />
-                      </>
-                    ) : (
-                      <></>
-                    )}
-                  </span>
                 </Space>
               </Space>
 

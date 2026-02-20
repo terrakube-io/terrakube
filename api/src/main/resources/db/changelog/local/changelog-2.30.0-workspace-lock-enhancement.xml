@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="workspace-lock-enhancement" author="terrakube">
+        <comment>Enhance workspace locking with lock ID, owner tracking, and timestamp for HCP-compatible state locking</comment>
+        <addColumn tableName="workspace">
+            <column name="lock_id" type="varchar(36)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="locked_by" type="varchar(255)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="locked_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
