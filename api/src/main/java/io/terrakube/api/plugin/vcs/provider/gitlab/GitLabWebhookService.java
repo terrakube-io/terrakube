@@ -119,6 +119,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             } else if (event.equals("merge_request")) {
                 return handleMergeRequestEvent(result, jsonPayload, workspace);
+            } else if (event.equals("note")) {
+                return handleNoteEvent(result, jsonPayload, workspace);
             } else if (event.equals("release")) {
                 return handleReleaseEvent(result, jsonPayload);
             }
@@ -173,6 +175,54 @@ public class GitLabWebhookService extends WebhookServiceBase {
             log.error("Error parsing merge request event payload: {}", e.getMessage());
         }
 
+        return result;
+    }
+
+    private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
+        try {
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            JsonNode noteNode = rootNode.path("object_attributes");
+            String noteableType = noteNode.path("noteable_type").asText();
+
+            if (!"MergeRequest".equals(noteableType)) {
+                result.setValid(false);
+                return result;
+            }
+
+            String commentBody = noteNode.path("note").asText().trim();
+            String command = parseTerrakubeCommand(commentBody);
+            if (command == null) {
+                result.setValid(false);
+                return result;
+            }
+
+            result.setPrComment(true);
+            result.setCommentBody(commentBody);
+            result.setCommentCommand(command);
+            result.setEvent("note");
+            result.setCreatedBy(rootNode.path("user").path("username").asText());
+
+            JsonNode mrNode = rootNode.path("merge_request");
+            result.setBranch(mrNode.path("source_branch").asText());
+            result.setPrNumber(mrNode.path("iid").asInt());
+
+            if (mrNode.has("last_commit")) {
+                result.setCommit(mrNode.path("last_commit").path("id").asText());
+            }
+
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
+            result.setFileChanges(getFileChanges(
+                    String.valueOf(mrNode.path("iid").asInt()),
+                    projectId,
+                    workspace.getVcs().getAccessToken(),
+                    workspace.getVcs().getApiUrl()
+            ));
+
+        } catch (Exception e) {
+            log.error("Error handling note event", e);
+            result.setValid(false);
+        }
         return result;
     }
 
@@ -335,9 +385,14 @@ public class GitLabWebhookService extends WebhookServiceBase {
         headers.set("Content-Type", "application/json");
         headers.set("Authorization", "Bearer " + workspace.getVcs().getAccessToken());
 
+        // Check if any event has PR workflow enabled
+        boolean hasPrWorkflow = webhook.getEvents() != null && webhook.getEvents().stream()
+                .anyMatch(e -> e.isPrWorkflowEnabled());
+        String noteEvents = hasPrWorkflow ? ", \"note_events\": true" : "";
+
         // Create the body
         String body = "{\"url\":\"" + webhookUrl
-                + "\",\"push_events\":\"true\", \"merge_requests_events\": \"true\", \"releases_events\": true, \"enable_ssl_verification\":\"false\",\"token\":\"" + secret + "\"}";
+                + "\",\"push_events\":\"true\", \"merge_requests_events\": \"true\", \"releases_events\": true" + noteEvents + ", \"enable_ssl_verification\":\"false\",\"token\":\"" + secret + "\"}";
 
         log.info(body);
         // Create the entity
@@ -515,6 +570,48 @@ public class GitLabWebhookService extends WebhookServiceBase {
         ResponseEntity<String> response = makeApiRequest(headers, body, apiUrl, httpMethod);
 
         return response;
+    }
+
+    public String postMergeRequestNote(Job job, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
+
+            WebClient webClient = webClientBuilder
+                    .baseUrl(workspace.getVcs().getApiUrl())
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
+                    .build();
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("body", markdownBody);
+
+            String response = webClient.post()
+                    .uri("/projects/{id}/merge_requests/{iid}/notes", projectId, job.getPrNumber())
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response != null) {
+                JsonNode node = objectMapper.readTree(response);
+                String noteId = node.path("id").asText();
+                log.info("MR note posted successfully on MR !{} in workspace {}", job.getPrNumber(), workspace.getName());
+                return noteId;
+            }
+        } catch (Exception e) {
+            log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
+        }
+        return null;
+    }
+
+    private String parseTerrakubeCommand(String commentBody) {
+        if (commentBody == null) return null;
+        String lower = commentBody.trim().toLowerCase();
+        if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
+        if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
+        return null;
     }
 
     public void sendCommitStatus(Job job, JobStatus jobStatus) {

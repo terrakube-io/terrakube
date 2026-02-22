@@ -86,32 +86,105 @@ public class WebhookService {
             return result;
 
         try {
-            String templateId = webhookResult.isRelease() ? findTemplateIdRelease(webhookResult, webhook) : findTemplateId(webhookResult, webhook);
-            log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
-                    webhook.getWorkspace().getName(), templateId);
-            Job job = new Job();
-            job.setTemplateReference(templateId);
-            job.setRefresh(true);
-            job.setPlanChanges(true);
-            job.setRefreshOnly(false);
-            job.setOverrideBranch(webhookResult.isRelease() ? "refs/tags/" + webhookResult.getBranch() : webhookResult.getBranch());
-            job.setOrganization(workspace.getOrganization());
-            job.setWorkspace(workspace);
-            job.setCreatedBy(webhookResult.getCreatedBy());
-            job.setUpdatedBy(webhookResult.getCreatedBy());
-            Date triggerDate = new Date(System.currentTimeMillis());
-            job.setCreatedDate(triggerDate);
-            job.setUpdatedDate(triggerDate);
-            job.setVia(webhookResult.getVia());
-            job.setCommitId(webhookResult.getCommit());
-            Job savedJob = jobRepository.save(job);
-            if (!webhookResult.isRelease())
-                sendCommitStatus(savedJob);
-            scheduleJobService.createJobContext(savedJob);
+            if (webhookResult.isPrComment()) {
+                handlePrCommentCommand(webhookResult, webhook, workspace);
+            } else if (isPrWorkflowEvent(webhookResult, webhook)) {
+                handlePrWorkflowPlanTrigger(webhookResult, webhook, workspace);
+            } else {
+                String templateId = webhookResult.isRelease() ? findTemplateIdRelease(webhookResult, webhook) : findTemplateId(webhookResult, webhook);
+                log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
+                        webhook.getWorkspace().getName(), templateId);
+                Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
+                if (!webhookResult.isRelease())
+                    sendCommitStatus(savedJob);
+            }
         } catch (Exception e) {
             log.error("Error creating the job", e);
         }
         return result;
+    }
+
+    private boolean isPrWorkflowEvent(WebhookResult webhookResult, Webhook webhook) {
+        if (!"pull_request".equals(webhookResult.getNormalizedEvent())) {
+            return false;
+        }
+        return webhookEventRepository
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
+                .stream()
+                .filter(e -> checkBranch(webhookResult.getBranch(), e)
+                        && checkFileChanges(webhookResult.getFileChanges(), e))
+                .findFirst()
+                .map(WebhookEvent::isPrWorkflowEnabled)
+                .orElse(false);
+    }
+
+    private void handlePrWorkflowPlanTrigger(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
+        String templateId = findTemplateId(webhookResult, webhook);
+        log.info("PR workflow plan trigger for workspace {}, using template with id {}", workspace.getName(), templateId);
+        Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
+        savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
+        jobRepository.save(savedJob);
+        sendCommitStatus(savedJob);
+    }
+
+    private void handlePrCommentCommand(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
+        String command = webhookResult.getCommentCommand();
+        log.info("PR comment command '{}' received for workspace {}", command, workspace.getName());
+
+        if ("plan".equals(command)) {
+            String templateId = findTemplateIdForPrComment(webhookResult, webhook);
+            log.info("PR comment plan command for workspace {}, using template with id {}", workspace.getName(), templateId);
+            Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
+            savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
+            jobRepository.save(savedJob);
+            sendCommitStatus(savedJob);
+        } else if ("apply".equals(command)) {
+            String templateId = workspace.getDefaultTemplate();
+            if (templateId == null || templateId.isEmpty()) {
+                log.error("No default template configured for apply in PR workflow on workspace {}", workspace.getName());
+                return;
+            }
+            log.info("PR comment apply command for workspace {}, using default template {}", workspace.getName(), templateId);
+            Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
+            savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
+            savedJob.setAutoApply(true);
+            jobRepository.save(savedJob);
+            sendCommitStatus(savedJob);
+        }
+    }
+
+    private Job createAndScheduleJob(String templateId, WebhookResult webhookResult, Workspace workspace) throws Exception {
+        Job job = new Job();
+        job.setTemplateReference(templateId);
+        job.setRefresh(true);
+        job.setPlanChanges(true);
+        job.setRefreshOnly(false);
+        job.setOverrideBranch(webhookResult.isRelease() ? "refs/tags/" + webhookResult.getBranch() : webhookResult.getBranch());
+        job.setOrganization(workspace.getOrganization());
+        job.setWorkspace(workspace);
+        job.setCreatedBy(webhookResult.getCreatedBy());
+        job.setUpdatedBy(webhookResult.getCreatedBy());
+        Date triggerDate = new Date(System.currentTimeMillis());
+        job.setCreatedDate(triggerDate);
+        job.setUpdatedDate(triggerDate);
+        job.setVia(webhookResult.getVia());
+        job.setCommitId(webhookResult.getCommit());
+        Job savedJob = jobRepository.save(job);
+        scheduleJobService.createJobContext(savedJob);
+        return savedJob;
+    }
+
+    private String findTemplateIdForPrComment(WebhookResult result, Webhook webhook) {
+        // For PR comments, look up the PULL_REQUEST event configuration
+        return webhookEventRepository
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
+                .stream()
+                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
+                        && checkFileChanges(result.getFileChanges(), webhookEvent))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No valid template found for PR comment on branch " + result.getBranch()))
+                .getTemplateId();
     }
 
     @Transactional
