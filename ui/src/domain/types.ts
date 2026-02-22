@@ -356,6 +356,7 @@ export type WebhookAttributes = {
 export enum WebhookEventType {
   PUSH = "PUSH",
   PULL_REQUEST = "PULL_REQUEST",
+  PR_COMMENT = "PR_COMMENT",
   PING = "PING",
 }
 export type WebhookEvent = {
@@ -368,6 +369,7 @@ export type WebhookEventAttributes = {
   templateId: string;
   priority: number;
   event: WebhookEventType;
+  prWorkflowEnabled: boolean;
 };
 
 // Agent

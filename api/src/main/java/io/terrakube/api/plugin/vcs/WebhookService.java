@@ -16,6 +16,7 @@ import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WebhookRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
@@ -42,6 +43,7 @@ public class WebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     ObjectMapper objectMapper;
+    WorkspaceRepository workspaceRepository;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -145,6 +147,9 @@ public class WebhookService {
                 return;
             }
             log.info("PR comment apply command for workspace {}, using default template {}", workspace.getName(), templateId);
+            workspace.setLocked(true);
+            workspace.setLockDescription("Locked by PR #" + webhookResult.getPrNumber() + " apply");
+            workspaceRepository.save(workspace);
             Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
             savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
             savedJob.setAutoApply(true);

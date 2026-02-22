@@ -421,6 +421,11 @@ public class ScheduleJob implements org.quartz.Job {
                 prCommentService.postPlanResult(job);
             } else {
                 prCommentService.postApplyResult(job);
+                Workspace workspace = job.getWorkspace();
+                workspace.setLocked(false);
+                workspace.setLockDescription(null);
+                workspaceRepository.save(workspace);
+                log.info("Unlocked workspace {} after PR #{} apply completed", workspace.getName(), job.getPrNumber());
             }
         } catch (Exception e) {
             log.error("Error posting PR comment for job {}: {}", job.getId(), e.getMessage());
