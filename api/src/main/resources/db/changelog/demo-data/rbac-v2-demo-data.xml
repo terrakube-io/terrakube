@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Update demo data limited-access record with RBAC v2 column values -->
+    <changeSet id="demo-rbac-v2-limited-access" author="terrakube">
+        <update tableName="access">
+            <column name="plan_job" valueBoolean="true"/>
+            <column name="approve_job" valueBoolean="true"/>
+            <column name="role" value="write"/>
+            <where>id = 'e33fb414-b659-4950-a00e-e69b3f774f8c'</where>
+        </update>
+    </changeSet>
+
+    <!-- Update demo data h2-test team record with RBAC v2 column values -->
+    <changeSet id="demo-rbac-v2-h2-team" author="terrakube" dbms="h2">
+        <update tableName="team">
+            <column name="plan_job" valueBoolean="true"/>
+            <column name="approve_job" valueBoolean="true"/>
+            <column name="role" value="admin"/>
+            <where>id = '58529721-425e-44d7-8b0d-1d515043c2f7'</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>
