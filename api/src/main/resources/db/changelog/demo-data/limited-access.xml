@@ -8,9 +8,6 @@
             <column name="manage_workspace" value="true" />
             <column name="manage_job"       value="true" />
             <column name="manage_state"     value="true" />
-            <column name="plan_job"         value="true" />
-            <column name="approve_job"      value="true" />
-            <column name="role"             value="write" />
             <column name="workspace_id"     value="5ed411ca-7ab8-4d2f-b591-02d0d5788afc" />
         </insert>
 
