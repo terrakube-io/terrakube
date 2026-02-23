@@ -6,6 +6,7 @@ import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.checks.OperationCheck;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
@@ -26,6 +27,9 @@ public class TeamManageTemplate extends OperationCheck<Template> {
     @Autowired
     GroupService groupService;
 
+    @Autowired
+    RbacService rbacService;
+
     @Override
     public boolean ok(Template template, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team manage template {}", template.getId());
@@ -33,11 +37,11 @@ public class TeamManageTemplate extends OperationCheck<Template> {
         List<Team> teamList = template.getOrganization().getTeam();
         for (Team team : teamList) {
             if (isServiceAccount){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageTemplate() ){
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageTemplate(team) ){
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageTemplate())
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageTemplate(team))
                     return true;
             }
         }

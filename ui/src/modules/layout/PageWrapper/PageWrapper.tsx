@@ -69,7 +69,16 @@ export default function PageWrapper({
             {actions}
           </Flex>
 
-          {error && <Alert className="page-wrapper-alert" message={error.title} type="error" showIcon banner />}
+          {error && (
+            <Alert
+              className="page-wrapper-alert"
+              message={error.title}
+              description={error.message}
+              type="error"
+              showIcon
+              banner
+            />
+          )}
 
           {loading ? (
             <Flex align="center" className="page-wrapper-loader" vertical gap="middle">
@@ -77,7 +86,7 @@ export default function PageWrapper({
               <Typography.Text>{loadingText || "Loading..."}</Typography.Text>
             </Flex>
           ) : (
-            children
+            !error && children
           )}
         </div>
       </div>

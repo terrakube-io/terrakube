@@ -138,6 +138,7 @@ x-traefik_dev_labels: &traefik_dev_labels
   ## Terrakube API HTTPS
   traefik.http.routers.terrakube-api-http.rule: Host(`terrakube-api.${DOMAIN}`)
   traefik.http.routers.terrakube-api-http.entrypoints: web
+  traefik.http.routers.terrakube-api-http.service: terrakube-api-https
   traefik.http.routers.terrakube-api-http.middlewares: terrakube-api-redirect-https
   traefik.http.middlewares.terrakube-api-redirect-https.redirectscheme.scheme: https
 
@@ -164,6 +165,7 @@ x-traefik_dev_labels: &traefik_dev_labels
   ## Redirect to HTTPS
   traefik.http.routers.terrakube-ui-http.rule: Host(`terrakube.${DOMAIN}`)
   traefik.http.routers.terrakube-ui-http.entrypoints: web
+  traefik.http.routers.terrakube-ui-http.service: terrakube-ui-https
   traefik.http.routers.terrakube-ui-http.middlewares: terrakube-ui-redirect-https
   traefik.http.middlewares.terrakube-ui-redirect-https.redirectscheme.scheme: https
   ## Terrakube registry
@@ -177,6 +179,7 @@ x-traefik_dev_labels: &traefik_dev_labels
   ## Redirect to HTTPS
   traefik.http.routers.terrakube-registry-http.rule: Host(`terrakube-registry.${DOMAIN}`)
   traefik.http.routers.terrakube-registry-http.entrypoints: web
+  traefik.http.routers.terrakube-registry-http.service: terrakube-registry-https
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
 

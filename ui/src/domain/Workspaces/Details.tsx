@@ -45,7 +45,7 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ActionLoader from "../../ActionLoader.js";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
 import { DetailsJob } from "../Jobs/Details";
 import {
@@ -115,6 +115,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [workspace, setWorkspace] = useState<Workspace>();
   const [manageWorkspace, setManageWorkspace] = useState(false);
   const [manageState, setManageState] = useState(false);
+  const [planJob, setPlanJob] = useState(false);
+  const [approveJob, setApproveJob] = useState(false);
   const [variables, setVariables] = useState<FlatVariable[]>([]);
   const [collectionVariables, setCollectionVariables] = useState<any[]>([]);
   const [collectionEnvVariables, setCollectionEnvVariables] = useState<any[]>([]);
@@ -129,6 +131,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [stateDetailsVisible, setStateDetailsVisible] = useState(false);
   const [jobId, setJobId] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [jobVisible, setJobVisible] = useState(false);
   const [organizationNameLocal, setOrganizationNameLocal] = useState<string>();
   const [workspaceName, setWorkspaceName] = useState("...");
@@ -237,6 +240,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const loadOrgTemplates = () => {
     axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
       setOrgTemplates(response.data.data);
+    }).catch((err) => {
+      console.error("Failed to load org templates:", err);
     });
   };
 
@@ -307,9 +312,9 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
     loadWorkspace(true, true, true);
     loadPermissionSet();
-    setLoading(false);
     loadOrgTemplates();
     const interval = setInterval(() => {
       loadWorkspace(false, false, false);
@@ -331,6 +336,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     axiosInstance.get(url).then((response) => {
       setManageState(response.data.manageState);
       setManageWorkspace(response.data.manageWorkspace);
+      setPlanJob(response.data.planJob);
+      setApproveJob(response.data.approveJob);
 
       if (id !== undefined && id !== null) {
         const urlWorkspaceAccess = `${
@@ -339,8 +346,14 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
         axiosInstance.get(urlWorkspaceAccess).then((response) => {
           setManageState(response.data.manageState);
           setManageWorkspace(response.data.manageWorkspace);
+          setPlanJob(response.data.planJob);
+          setApproveJob(response.data.approveJob);
+        }).catch((err) => {
+          console.error("Failed to load workspace permissions:", err);
         });
       }
+    }).catch((err) => {
+      console.error("Failed to load org permissions:", err);
     });
   };
 
@@ -397,7 +410,17 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
           setExecutionMode(response.data.data.attributes.executionMode);
           if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
           fetchActions();
+          setLoadError(null);
+        })
+        .catch((err) => {
+          setLoadError(getErrorMessage(err));
+        })
+        .finally(() => {
+          setLoading(false);
         });
+    }).catch((err) => {
+      setLoadError(getErrorMessage(err));
+      setLoading(false);
     });
   };
 
@@ -451,7 +474,15 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
       <div className="site-layout-content" style={{ background: colorBgContainer }}>
         <div className="workspaceDisplay">
-          {loading || !workspace || !variables || !jobs ? (
+          {loadError ? (
+            <Alert
+              message={loadError.includes("permission") ? "Access Denied" : "Error"}
+              description={loadError}
+              type="error"
+              showIcon
+              style={{ margin: "20px 0" }}
+            />
+          ) : loading || !workspace || !variables || !jobs ? (
             <Spin spinning={true} tip="Loading Workspace...">
               <p style={{ marginTop: "50px" }}></p>
             </Spin>
@@ -583,7 +614,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                       >
                         {workspace.attributes.locked ? "Unlock" : "Lock"}
                       </Button>
-                      <CreateJob changeJob={changeJob} />
+                      <CreateJob changeJob={changeJob} planJob={planJob} />
                     </Space>
                   </>
                 }
@@ -705,7 +736,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                       <Space direction="vertical">
                         <br />
                         <span>
-                          {workspace.attributes.branch !== "remote-content" ? (
+                          {workspace.attributes.branch !== "remote-content" && isValidUrl(fixSshURL(workspace.attributes.source)) ? (
                             <>
                               {" "}
                               {renderVCSLogo(vcsProvider)}{" "}
@@ -769,6 +800,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                     vcsProvider={vcsProvider}
                     orgTemplates={orgTemplates}
                     manageWorkspace={manageWorkspace}
+                    onWorkspaceUpdate={() => loadWorkspace(false)}
                   />
                 </TabPane>
               </Tabs>
@@ -955,7 +987,9 @@ async function setupWorkspaceIncludes(
     }
   });
 
-  await Promise.all(asyncPromises);
+  await Promise.all(asyncPromises).catch((err) => {
+    console.error("Error loading workspace includes:", err);
+  });
 
   const byKey = (a: { key?: string }, b: { key?: string }) =>
     (a.key ?? "").localeCompare(b.key ?? "", undefined, { sensitivity: "base" });
@@ -992,6 +1026,8 @@ async function setupWorkspaceIncludes(
         setContextState,
         response.data.manageState
       );
+    }).catch((err: any) => {
+      console.error("Failed to load workspace permissions for state:", err);
     });
   }
   setCurrentStateId(lastState?.id);
@@ -1038,6 +1074,8 @@ function loadState(
       setResources(result.resources);
       setOutputs(result.outputs);
     }
+  }).catch((err) => {
+    console.error("Failed to load state data:", err);
   });
 }
 
@@ -1216,6 +1254,15 @@ function parseChildModules(resources: any, child_modules?: any) {
   });
 
   return resources;
+}
+
+function isValidUrl(source: string): boolean {
+  try {
+    new URL(source);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function fixSshURL(source: string) {

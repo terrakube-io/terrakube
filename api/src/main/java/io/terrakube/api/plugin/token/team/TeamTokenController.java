@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.token.team;
 
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.AccessRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -27,6 +28,7 @@ import java.util.UUID;
 public class TeamTokenController {
 
     private final WorkspaceRepository workspaceRepository;
+    private final RbacService rbacService;
     TeamTokenService teamTokenService;
     TeamRepository teamRepository;
     AccessRepository accessRepository;
@@ -62,14 +64,16 @@ public class TeamTokenController {
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
         teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || group.isManageState());
-            permissions.setManageWorkspace(permissions.manageWorkspace || group.isManageWorkspace());
-            permissions.setManageModule(permissions.manageModule || group.isManageModule());
-            permissions.setManageProvider(permissions.manageProvider || group.isManageProvider());
-            permissions.setManageTemplate(permissions.manageTemplate || group.isManageTemplate());
-            permissions.setManageVcs(permissions.manageVcs || group.isManageVcs());
-            permissions.setManageCollection(permissions.manageCollection || group.isManageCollection());
-            permissions.setManageJob(permissions.manageJob || group.isManageJob());
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
+            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
+            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
+            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
+            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
+            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
         });
 
         log.debug("Permissions: {}", permissions);
@@ -84,21 +88,25 @@ public class TeamTokenController {
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
         teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || group.isManageState());
-            permissions.setManageWorkspace(permissions.manageWorkspace || group.isManageWorkspace());
-            permissions.setManageModule(permissions.manageModule || group.isManageModule());
-            permissions.setManageProvider(permissions.manageProvider || group.isManageProvider());
-            permissions.setManageTemplate(permissions.manageTemplate || group.isManageTemplate());
-            permissions.setManageVcs(permissions.manageVcs || group.isManageVcs());
-            permissions.setManageCollection(permissions.manageCollection || group.isManageCollection());
-            permissions.setManageJob(permissions.manageJob || group.isManageJob());
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
+            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
+            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
+            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
+            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
+            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
         });
 
         workspaceRepository.findById(UUID.fromString(workspaceId)).ifPresent(workspace -> {
             workspace.getAccess().forEach(access -> {
-               permissions.setManageState(permissions.manageState || access.isManageState());
-               permissions.setManageJob(permissions.manageJob || access.isManageJob());
-               permissions.setManageWorkspace(permissions.manageWorkspace || access.isManageWorkspace());
+               permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
+               permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
+               permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
+               permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
+               permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
             });
         });
 
@@ -155,5 +163,7 @@ public class TeamTokenController {
         private boolean manageTemplate;
         private boolean manageCollection;
         private boolean manageJob;
+        private boolean planJob;
+        private boolean approveJob;
     }
 }

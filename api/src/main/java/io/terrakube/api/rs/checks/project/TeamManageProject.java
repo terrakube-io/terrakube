@@ -5,6 +5,7 @@ import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.checks.OperationCheck;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.team.Team;
@@ -26,17 +27,20 @@ public class TeamManageProject extends OperationCheck<Project> {
     @Autowired
     GroupService groupService;
 
+    @Autowired
+    RbacService rbacService;
+
     @Override
     public boolean ok(Project project, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team manage project {}", project.getId());
         List<Team> teamList = project.getOrganization().getTeam();
         for (Team team : teamList) {
             if (authenticatedUser.isServiceAccount(requestScope.getUser())){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageWorkspace() ){
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team) ){
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageWorkspace())
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
                     return true;
             }
         }

@@ -100,6 +100,10 @@ const App = () => {
     localStorage.clear();
   }
 
+  if (auth.isLoading) {
+    return null;
+  }
+
   if (!auth.isAuthenticated) {
     return <Login />;
   }

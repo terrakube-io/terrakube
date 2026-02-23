@@ -1,19 +1,24 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Avatar, Button, Form, Input, List, Modal, Popconfirm, Space, Typography, theme, Spin } from "antd";
+import { Alert, Avatar, Button, Form, Input, List, message, Modal, Popconfirm, Space, Typography, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
 import "./Settings.css";
+
+type Props = {
+  managePermission?: boolean;
+};
 
 type AddTagForm = {
   name: string;
 };
 
-export const TagsSettings = () => {
+export const TagsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
   const [tagName, setTagName] = useState<string>();
   const [mode, setMode] = useState("create");
@@ -46,6 +51,8 @@ export const TagsSettings = () => {
   const onDelete = (id: string) => {
     axiosInstance.delete(`organization/${orgid}/tag/${id}`).then((response) => {
       loadTags();
+    }).catch((err) => {
+      message.error(getErrorMessage(err));
     });
   };
 
@@ -69,6 +76,9 @@ export const TagsSettings = () => {
         loadTags();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -93,14 +103,27 @@ export const TagsSettings = () => {
         loadTags();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadTags = () => {
-    axiosInstance.get(`organization/${orgid}/tag`).then((response) => {
-      setTags(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/tag`)
+      .then((response) => {
+        setTags(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load tags");
+        }
+        setLoading(false);
+      });
   };
   useEffect(() => {
     setLoading(true);
@@ -109,13 +132,17 @@ export const TagsSettings = () => {
 
   return (
     <div className="setting">
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : (
+      <>
       <h1>Tag Management</h1>
       <div>
         <Typography.Text type="secondary" className="App-text">
           Tags are used to help identify and group together workspaces..
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
         Create tag
       </Button>
       <br></br>
@@ -134,6 +161,7 @@ export const TagsSettings = () => {
                   }}
                   icon={<EditOutlined />}
                   type="link"
+                  disabled={!managePermission}
                 >
                   Edit
                 </Button>,
@@ -155,7 +183,7 @@ export const TagsSettings = () => {
                   cancelText="No"
                 >
                   {" "}
-                  <Button icon={<DeleteOutlined />} type="link" danger>
+                  <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
                     Delete
                   </Button>
                 </Popconfirm>,
@@ -205,6 +233,8 @@ export const TagsSettings = () => {
           </Form>
         </Space>
       </Modal>
+      </>
+      )}
     </div>
   );
 };

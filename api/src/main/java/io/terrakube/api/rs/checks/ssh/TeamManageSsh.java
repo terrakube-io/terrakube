@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.team.Team;
@@ -22,6 +23,8 @@ public class TeamManageSsh extends OperationCheck<Ssh> {
     GroupService groupService;
     @Autowired
     AuthenticatedUser authenticatedUser;
+    @Autowired
+    RbacService rbacService;
 
     @Override
     public boolean ok(Ssh ssh, RequestScope requestScope, Optional<ChangeSpec> optional) {
@@ -29,11 +32,11 @@ public class TeamManageSsh extends OperationCheck<Ssh> {
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         for (Team team : ssh.getOrganization().getTeam()) {
             if (isServiceAccount){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageVcs() ){
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageVcs(team) ){
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageVcs())
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageVcs(team))
                     return true;
             }
         }

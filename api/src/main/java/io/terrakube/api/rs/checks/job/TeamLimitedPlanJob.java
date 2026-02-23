@@ -15,10 +15,14 @@ import io.terrakube.api.rs.workspace.access.Access;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Workspace-level (limited access) check for plan permission.
+ * Checks whether the user has plan permission via workspace-level Access entries.
+ */
 @Slf4j
-@SecurityCheck(TeamLimitedManageJob.RULE)
-public class TeamLimitedManageJob extends OperationCheck<Job> {
-    public static final String RULE = "team limited manage job";
+@SecurityCheck(TeamLimitedPlanJob.RULE)
+public class TeamLimitedPlanJob extends OperationCheck<Job> {
+    public static final String RULE = "team limited plan job";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -31,17 +35,17 @@ public class TeamLimitedManageJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team limited manage job {}", job.getId());
+        log.debug("team limited plan job {}", job.getId());
         List<Access> teamList = job.getWorkspace().getAccess();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         if (!teamList.isEmpty())
             for (Access team : teamList) {
                 if (isServiceAccount) {
-                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team)) {
+                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canPlanJob(team)) {
                         return true;
                     }
                 } else {
-                    if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team))
+                    if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canPlanJob(team))
                         return true;
                 }
             }
