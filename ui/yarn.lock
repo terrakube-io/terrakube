@@ -4464,10 +4464,10 @@ eslint-plugin-react-hooks@^7.0.1:
     zod "^3.25.0 || ^4.0.0"
     zod-validation-error "^3.5.0 || ^4.0.0"
 
-eslint-plugin-react-refresh@^0.5.0:
-  version "0.5.0"
-  resolved "https://registry.yarnpkg.com/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.5.0.tgz#9a9671b32871923ae8b45a30b752401a63168fef"
-  integrity sha512-ZYvmh7VfVgqR/7wR71I3Zl6hK/C5CcxdWYKZSpHawS5JCNgE4efhQWg/+/WPpgGAp9Ngp/rRZYyaIwmPQBq/lA==
+eslint-plugin-react-refresh@^0.5.1:
+  version "0.5.1"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.5.1.tgz#d13f1cfea4718a108060a41219d1849287278adc"
+  integrity sha512-Y5sJsreCUdGcF4mLD70iJNa47Z6CX4MsqJoJBARDC/fBhmacSby7k73UuValr0F9M7GfWKpEqS4NMsniWkVxQw==
 
 eslint-plugin-react@^7.37.5:
   version "7.37.5"
