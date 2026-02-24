@@ -64,6 +64,15 @@ public class Team {
     @Column(name = "manage_template")
     private boolean manageTemplate;
 
+    @Column(name = "plan_job")
+    private boolean planJob;
+
+    @Column(name = "approve_job")
+    private boolean approveJob;
+
+    @Column(name = "role")
+    private String role;
+
     @ManyToOne
     private Organization organization;
 }

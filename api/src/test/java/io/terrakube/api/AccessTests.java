@@ -13,6 +13,7 @@ import java.nio.charset.Charset;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.mockito.Mockito.when;
 
 public class AccessTests extends ServerApplicationTests {
@@ -48,7 +49,8 @@ public class AccessTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
-                .body("data.size()", equalTo(10))
+                // Use greaterThanOrEqualTo to allow for workspaces created by other tests
+                .body("data.size()", greaterThanOrEqualTo(4))
                 .statusCode(HttpStatus.OK.value());
     }
 
@@ -323,7 +325,10 @@ public class AccessTests extends ServerApplicationTests {
                         "    \"attributes\": {\n" +
                         "      \"manageWorkspace\": true,\n" +
                         "      \"manageJob\": true,\n" +
-                        "      \"manageState\": false\n" +
+                        "      \"planJob\": true,\n" +
+                        "      \"approveJob\": true,\n" +
+                        "      \"manageState\": false,\n" +
+                        "      \"role\": \"custom\"\n" +
                         "    }\n" +
                         "  }\n" +
                         "}")
@@ -756,7 +761,10 @@ public class AccessTests extends ServerApplicationTests {
                         "      \"name\": \"validateAccessTokenForWorkspace\",\n" +
                         "      \"manageWorkspace\": true,\n" +
                         "      \"manageJob\": true,\n" +
-                        "      \"manageState\": true\n" +
+                        "      \"planJob\": true,\n" +
+                        "      \"approveJob\": true,\n" +
+                        "      \"manageState\": true,\n" +
+                        "      \"role\": \"custom\"\n" +
                         "    }\n" +
                         "  }\n" +
                         "}")

@@ -39,9 +39,10 @@ type Workspace = {
 type CreateEditCollectionProps = {
   mode: "create" | "edit";
   collectionId?: string;
+  managePermission?: boolean;
 };
 
-export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: CreateEditCollectionProps) => {
+export const CreateEditCollection = ({ mode, collectionId: propCollectionId, managePermission = true }: CreateEditCollectionProps) => {
   const { orgid, collectionid: urlCollectionId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -705,7 +706,7 @@ export const CreateEditCollection = ({ mode, collectionId: propCollectionId }: C
           <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
             <Space>
               <Button onClick={handleCancel}>Cancel</Button>
-              <Button type="primary" onClick={handleSave} loading={saveLoading}>
+              <Button type="primary" onClick={handleSave} loading={saveLoading} disabled={!managePermission}>
                 {mode === "create" ? "Create variable collection" : "Save Variable Collection"}
               </Button>
             </Space>

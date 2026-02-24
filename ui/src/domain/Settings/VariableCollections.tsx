@@ -6,10 +6,10 @@ import {
   AppstoreOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Input, List, Popconfirm, Space, Spin, Typography, Pagination, message } from "antd";
+import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, Pagination, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import "./Settings.css";
 
 // Type definitions for Variable Collections
@@ -32,11 +32,16 @@ type CollectionAttributes = {
   priority: number;
 };
 
-export const VariableCollectionsSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const VariableCollectionsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const navigate = useNavigate();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -91,6 +96,10 @@ export const VariableCollectionsSettings = () => {
   const loadCollections = () => {
     axiosInstance.get(`organization/${orgid}/collection`).then((response) => {
       setCollections(response.data.data);
+      setError(null);
+    }).catch((err) => {
+      setError(getErrorMessage(err));
+    }).finally(() => {
       setLoading(false);
     });
   };
@@ -158,7 +167,7 @@ export const VariableCollectionsSettings = () => {
         </Typography.Text>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px", marginTop: "20px" }}>
-        <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />}>
+        <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />} disabled={!managePermission}>
           Create variable collection
         </Button>
       </div>
@@ -172,6 +181,15 @@ export const VariableCollectionsSettings = () => {
         />
       </div>
 
+      {error ? (
+        <Alert
+          message={error.includes("permission") ? "Access Denied" : "Error"}
+          description={error}
+          type="error"
+          showIcon
+          style={{ marginTop: "20px" }}
+        />
+      ) : (
       <Spin spinning={loading}>
         <List
           grid={{ gutter: 16, column: 1 }}
@@ -206,6 +224,7 @@ export const VariableCollectionsSettings = () => {
                         e.stopPropagation();
                         handleEditCollection(item.id);
                       }}
+                      disabled={!managePermission}
                     >
                       Edit
                     </Button>
@@ -226,6 +245,7 @@ export const VariableCollectionsSettings = () => {
                         icon={<DeleteOutlined />}
                         onClick={(e) => e.stopPropagation()}
                         loading={deleteLoading === item.id}
+                        disabled={!managePermission}
                       >
                         Delete
                       </Button>
@@ -250,6 +270,7 @@ export const VariableCollectionsSettings = () => {
           )}
         </div>
       </Spin>
+      )}
     </div>
   );
 };

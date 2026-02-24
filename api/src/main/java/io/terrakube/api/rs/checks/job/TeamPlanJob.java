@@ -1,4 +1,4 @@
-package io.terrakube.api.rs.checks.collection;
+package io.terrakube.api.rs.checks.job;
 
 import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.security.ChangeSpec;
@@ -9,16 +9,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
-import io.terrakube.api.rs.collection.Collection;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.team.Team;
 
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Checks whether the user has permission to queue/plan a job (create a run).
+ * Requires the "plan" permission (admin/write/plan roles, or custom with planJob=true),
+ * which is less restrictive than the "approve" permission needed for apply.
+ */
 @Slf4j
-@SecurityCheck(TeamManageCollection.RULE)
-public class TeamManageCollection extends OperationCheck<Collection> {
-    public static final String RULE = "team manage collection";
+@SecurityCheck(TeamPlanJob.RULE)
+public class TeamPlanJob extends OperationCheck<Job> {
+    public static final String RULE = "team plan job";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -30,17 +35,17 @@ public class TeamManageCollection extends OperationCheck<Collection> {
     RbacService rbacService;
 
     @Override
-    public boolean ok(Collection collection, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team manage collection {}", collection.getId());
+    public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        log.debug("team plan job {}", job.getId());
+        List<Team> teamList = job.getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
-        List<Team> teamList = collection.getOrganization().getTeam();
         for (Team team : teamList) {
-            if (isServiceAccount){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageCollection(team) ){
+            if (isServiceAccount) {
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canPlanJob(team)) {
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageCollection(team))
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canPlanJob(team))
                     return true;
             }
         }

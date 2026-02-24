@@ -15,6 +15,7 @@ import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import type { MenuProps } from "antd";
+import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
 
 const { Content, Sider } = Layout;
 type MenuItem = Required<MenuProps>["items"][number];
@@ -32,6 +33,7 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
   const location = useLocation();
   const [activeKey, setActiveKey] = useState(selectedTab || "1");
   const { token } = theme.useToken();
+  const { permissions, loading: permissionsLoading } = useOrgPermissions();
 
   useEffect(() => {
     if (selectedTab) {
@@ -43,39 +45,39 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
   const renderCollectionContent = () => {
     switch (collectionMode) {
       case "new":
-        return <CreateEditCollection mode="create" />;
+        return <CreateEditCollection mode="create" managePermission={permissions.manageCollection} />;
       case "edit":
-        return <CreateEditCollection mode="edit" collectionId={collectionId} />;
+        return <CreateEditCollection mode="edit" collectionId={collectionId} managePermission={permissions.manageCollection} />;
       case "list":
       default:
-        return <VariableCollectionsSettings />;
+        return <VariableCollectionsSettings managePermission={permissions.manageCollection} />;
     }
   };
 
   const renderContent = () => {
     switch (activeKey) {
       case "1":
-        return <GeneralSettings />;
+        return <GeneralSettings managePermission={permissions.manageWorkspace} />;
       case "2":
-        return <TeamSettings key={activeKey} />;
+        return <TeamSettings key={activeKey} managePermission={permissions.manageWorkspace} />;
       case "3":
-        return <GlobalVariablesSettings />;
+        return <GlobalVariablesSettings managePermission={permissions.manageWorkspace} />;
       case "4":
-        return <VCSSettings vcsMode={vcsMode} />;
+        return <VCSSettings vcsMode={vcsMode} managePermission={permissions.manageVcs} />;
       case "5":
-        return <TemplatesSettings key={activeKey} />;
+        return <TemplatesSettings key={activeKey} managePermission={permissions.manageTemplate} />;
       case "6":
-        return <SSHKeysSettings />;
+        return <SSHKeysSettings managePermission={permissions.manageVcs} />;
       case "7":
-        return <TagsSettings />;
+        return <TagsSettings managePermission={permissions.manageWorkspace} />;
       case "8":
-        return <AgentSettings />;
+        return <AgentSettings managePermission={permissions.manageWorkspace} />;
       case "9":
         return renderCollectionContent();
       case "10":
-        return <ActionSettings />;
+        return <ActionSettings managePermission={permissions.manageTemplate} />;
       default:
-        return <GeneralSettings />;
+        return <GeneralSettings managePermission={permissions.manageWorkspace} />;
     }
   };
 

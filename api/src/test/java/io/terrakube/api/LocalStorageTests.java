@@ -81,7 +81,8 @@ public class LocalStorageTests extends ServerApplicationTests {
                         "    \"type\": \"team\",\n" +
                         "    \"id\": \"58529721-425e-44d7-8b0d-1d515043c2f7\",\n" +
                         "    \"attributes\": {\n" +
-                        "      \"manageState\": false\n" +
+                        "      \"manageState\": false,\n" +
+                        "      \"role\": \"custom\"\n" +
                         "    }\n" +
                         "  }\n" +
                         "}")

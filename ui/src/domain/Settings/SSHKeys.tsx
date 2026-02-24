@@ -1,8 +1,8 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, List, Modal, Popconfirm, Select, Space, Typography, theme } from "antd";
+import { Alert, Button, Form, Input, List, message, Modal, Popconfirm, Select, Space, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { SshKey } from "../types";
 import "./Settings.css";
 const { TextArea } = Input;
@@ -21,10 +21,15 @@ type UpdateSshKeyForm = {
   privateKey: string;
 };
 
-export const SSHKeysSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const SSHKeysSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams<Params>();
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
   const [sshKeyName, setSSHKeyName] = useState<string>();
   const [mode, setMode] = useState("create");
@@ -46,6 +51,8 @@ export const SSHKeysSettings = () => {
   const onDelete = (id: string) => {
     axiosInstance.delete(`organization/${orgid}/ssh/${id}`).then(() => {
       loadSSHKeys();
+    }).catch((err) => {
+      message.error(getErrorMessage(err));
     });
   };
 
@@ -72,6 +79,9 @@ export const SSHKeysSettings = () => {
         loadSSHKeys();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -98,14 +108,27 @@ export const SSHKeysSettings = () => {
         loadSSHKeys();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadSSHKeys = () => {
-    axiosInstance.get(`organization/${orgid}/ssh`).then((response) => {
-      setSSHKeys(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/ssh`)
+      .then((response) => {
+        setSSHKeys(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load SSH keys");
+        }
+        setLoading(false);
+      });
   };
   useEffect(() => {
     setLoading(true);
@@ -114,6 +137,10 @@ export const SSHKeysSettings = () => {
 
   return (
     <div className="setting">
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : (
+      <>
       <h1>SSH Keys</h1>
       <div>
         <Typography.Text type="secondary" className="App-text">
@@ -121,7 +148,7 @@ export const SSHKeysSettings = () => {
           a Terraform run. SSH keys for downloading modules are assigned per-workspace.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
         Add a Private SSH Key
       </Button>
       <br></br>
@@ -153,7 +180,7 @@ export const SSHKeysSettings = () => {
                   cancelText="No"
                 >
                   {" "}
-                  <Button icon={<DeleteOutlined />} type="link" danger>
+                  <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
                     Delete
                   </Button>
                 </Popconfirm>,
@@ -221,6 +248,8 @@ export const SSHKeysSettings = () => {
           </Form>
         </Space>
       </Modal>
+      </>
+      )}
     </div>
   );
 };

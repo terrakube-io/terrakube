@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.team.Team;
@@ -23,6 +24,9 @@ public class StateService {
    @Autowired
    private WorkspaceRepository workspaceRepository;
 
+   @Autowired
+   private RbacService rbacService;
+
    @Transactional
    public boolean hasManageStatePermission(Authentication authentication, String organizationId, String workspaceId) {
       if (((JwtAuthenticationToken) authentication).getTokenAttributes().get("iss").equals("TerrakubeInternal")) {
@@ -35,7 +39,7 @@ public class StateService {
          @SuppressWarnings("unchecked")
          List<Team> teams = teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), (List<String>) groupNames);
          for (Team team : teams) {
-            if (team.isManageState()) {
+            if (rbacService.canManageState(team)) {
                return true;
             }
          }
@@ -46,7 +50,7 @@ public class StateService {
               List<Access> accessList = workspaceOptional.get().getAccess();
               if (!accessList.isEmpty())
                   for (Access teamAccess : accessList) {
-                      if (teamAccess.isManageState() && ((List<String>) groupNames).contains(teamAccess.getName())) {
+                      if (rbacService.canManageState(teamAccess) && ((List<String>) groupNames).contains(teamAccess.getName())) {
                           return true;
                       }
                   }

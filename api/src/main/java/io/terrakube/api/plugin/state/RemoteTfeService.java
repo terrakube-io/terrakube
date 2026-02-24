@@ -36,6 +36,7 @@ import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
@@ -111,6 +112,8 @@ public class RemoteTfeService {
 
     private WorkspaceLockService workspaceLockService;
 
+    private RbacService rbacService;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -129,7 +132,7 @@ public class RemoteTfeService {
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
                             EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository,
-                            WorkspaceLockService workspaceLockService) {
+                            WorkspaceLockService workspaceLockService, RbacService rbacService) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -152,6 +155,7 @@ public class RemoteTfeService {
         this.projectRepository = projectRepository;
         this.variableRepository = variableRepository;
         this.workspaceLockService = workspaceLockService;
+        this.rbacService = rbacService;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -190,7 +194,7 @@ public class RemoteTfeService {
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
         organization.getTeam().forEach(orgTeam -> {
             userGroups.forEach(userTeam -> {
-                if (orgTeam.getName().equals(userTeam) && orgTeam.isManageWorkspace()) {
+                if (orgTeam.getName().equals(userTeam) && rbacService.canManageWorkspace(orgTeam)) {
                     userWithManageWorkspace.set(true);
                 }
             });
@@ -204,7 +208,7 @@ public class RemoteTfeService {
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
         if (teamsWithLimitedAccess != null && !teamsWithLimitedAccess.isEmpty())
             teamsWithLimitedAccess.forEach(access -> {
-                if (access.isManageWorkspace() && userGroups.contains(access.getName())) {
+                if (rbacService.canManageWorkspace(access) && userGroups.contains(access.getName())) {
                     userWithManageWorkspace.set(true);
                 }
             });
@@ -218,7 +222,7 @@ public class RemoteTfeService {
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
         workspace.getOrganization().getTeam().forEach(orgTeam -> {
             userGroups.forEach(userTeam -> {
-                if (orgTeam.getName().equals(userTeam) && orgTeam.isManageJob()) {
+                if (orgTeam.getName().equals(userTeam) && rbacService.canManageJob(orgTeam)) {
                     userWithManageWorkspace.set(true);
                 }
             });
@@ -226,12 +230,101 @@ public class RemoteTfeService {
 
         if (workspace.getAccess() != null && !workspace.getAccess().isEmpty())
             workspace.getAccess().forEach(access -> {
-                if (access.isManageJob() && userGroups.contains(access.getName())) {
+                if (rbacService.canManageJob(access) && userGroups.contains(access.getName())) {
                     userWithManageWorkspace.set(true);
                 }
             });
 
         return userWithManageWorkspace.get();
+    }
+
+    /**
+     * Validates that the current user has state management permission for the workspace.
+     */
+    private boolean validateUserManageState(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (validateTerrakubeUser(currentUser))
+            return true;
+        List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
+        AtomicBoolean userCanManageState = new AtomicBoolean(false);
+
+        // Check org-level team permissions
+        workspace.getOrganization().getTeam().forEach(orgTeam -> {
+            userGroups.forEach(userTeam -> {
+                if (orgTeam.getName().equals(userTeam) && rbacService.canManageState(orgTeam)) {
+                    userCanManageState.set(true);
+                }
+            });
+        });
+
+        // Check workspace-level access permissions
+        if (workspace.getAccess() != null && !workspace.getAccess().isEmpty())
+            workspace.getAccess().forEach(access -> {
+                if (rbacService.canManageState(access) && userGroups.contains(access.getName())) {
+                    userCanManageState.set(true);
+                }
+            });
+
+        return userCanManageState.get();
+    }
+
+    /**
+     * Validates that the current user has permission to plan (queue) jobs
+     * in the workspace.
+     */
+    private boolean validateUserPlanJob(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (validateTerrakubeUser(currentUser))
+            return true;
+        List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
+        AtomicBoolean userCanPlan = new AtomicBoolean(false);
+
+        // Check org-level team permissions
+        workspace.getOrganization().getTeam().forEach(orgTeam -> {
+            userGroups.forEach(userTeam -> {
+                if (orgTeam.getName().equals(userTeam) && rbacService.canPlanJob(orgTeam)) {
+                    userCanPlan.set(true);
+                }
+            });
+        });
+
+        // Check workspace-level access permissions
+        if (workspace.getAccess() != null && !workspace.getAccess().isEmpty())
+            workspace.getAccess().forEach(access -> {
+                if (rbacService.canPlanJob(access) && userGroups.contains(access.getName())) {
+                    userCanPlan.set(true);
+                }
+            });
+
+        return userCanPlan.get();
+    }
+
+    /**
+     * Validates that the current user has permission to approve/apply jobs
+     * in the workspace. In RBAC V2, this is distinct from plan-only permission.
+     */
+    private boolean validateUserApproveJob(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (validateTerrakubeUser(currentUser))
+            return true;
+        List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
+        AtomicBoolean userCanApprove = new AtomicBoolean(false);
+
+        // Check org-level team permissions
+        workspace.getOrganization().getTeam().forEach(orgTeam -> {
+            userGroups.forEach(userTeam -> {
+                if (orgTeam.getName().equals(userTeam) && rbacService.canApproveJob(orgTeam)) {
+                    userCanApprove.set(true);
+                }
+            });
+        });
+
+        // Check workspace-level access permissions
+        if (workspace.getAccess() != null && !workspace.getAccess().isEmpty())
+            workspace.getAccess().forEach(access -> {
+                if (rbacService.canApproveJob(access) && userGroups.contains(access.getName())) {
+                    userCanApprove.set(true);
+                }
+            });
+
+        return userCanApprove.get();
     }
 
     EntitlementData getOrgEntitlementSet(String organizationName, JwtAuthenticationToken currentUser) {
@@ -375,21 +468,22 @@ public class RemoteTfeService {
 
             boolean isManageWorkspace = validateUserManageWorkspace(workspace.get().getOrganization(), currentUser) || validateLimitedManageWorkspace(workspace.get(), currentUser);
             boolean isManageJob = validateUserManageJob(workspace.get(), currentUser);
+            boolean isApproveJob = validateUserApproveJob(workspace.get(), currentUser);
 
             Map<String, Boolean> defaultAttributes = new HashMap<>();
             defaultAttributes.put("can-create-state-versions", isManageWorkspace);
             defaultAttributes.put("can-destroy", isManageWorkspace);
             defaultAttributes.put("can-force-unlock", isManageWorkspace);
-            defaultAttributes.put("can-lock", isManageWorkspace);
+            defaultAttributes.put("can-lock", isManageJob);
             defaultAttributes.put("can-manage-run-tasks", isManageWorkspace);
             defaultAttributes.put("can-manage-tags", isManageWorkspace);
-            defaultAttributes.put("can-queue-apply", isManageJob);
+            defaultAttributes.put("can-queue-apply", isApproveJob);
             defaultAttributes.put("can-queue-destroy", isManageWorkspace);
             defaultAttributes.put("can-queue-run", isManageJob);
             defaultAttributes.put("can-read-settings", true);
             defaultAttributes.put("can-read-state-versions", isManageWorkspace);
             defaultAttributes.put("can-read-variable", true);
-            defaultAttributes.put("can-unlock", isManageWorkspace);
+            defaultAttributes.put("can-unlock", isManageJob);
             defaultAttributes.put("can-update", isManageWorkspace);
             defaultAttributes.put("can-update-variable", isManageWorkspace);
             defaultAttributes.put("can-read-assessment-result", isManageWorkspace);
@@ -505,8 +599,17 @@ public class RemoteTfeService {
         return workspaceList;
     }
 
-    boolean updateWorkspaceTags(String workspaceId, TagDataList tagDataList) {
+    boolean updateWorkspaceTags(String workspaceId, TagDataList tagDataList, JwtAuthenticationToken currentUser) {
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+
+        // Authorize: user must have workspace management permission
+        if (!validateUserManageWorkspace(workspace.getOrganization(), currentUser)
+                && !validateLimitedManageWorkspace(workspace, currentUser)) {
+            log.warn("User does not have permission to update tags for workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to manage tags for this workspace");
+        }
+
         tagDataList.getData().forEach(tagModel -> {
             Tag tag = searchOrCreateTagOrganization(workspace, tagModel.getAttributes().get("name"));
             log.info("Updating tag {} in Workspace {}", tagModel.getAttributes().get("name"), workspace.getName());
@@ -554,6 +657,14 @@ public class RemoteTfeService {
 
         log.info("Updating existing workspace {} in {}", workspace.get().getName(),
                 workspace.get().getOrganization().getName());
+
+        // Authorize: user must have workspace management permission
+        if (!validateUserManageWorkspace(workspace.get().getOrganization(), currentUser)
+                && !validateLimitedManageWorkspace(workspace.get(), currentUser)) {
+            log.warn("User does not have permission to update workspace {}", workspace.get().getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to update this workspace");
+        }
 
         Workspace updatedWorkspace = workspace.get();
         updatedWorkspace
@@ -674,9 +785,16 @@ public class RemoteTfeService {
         return getWorkspace(organizationName, workspace.getName(), otherAttributes, currentUser);
     }
 
-    StateData createWorkspaceState(String workspaceId, StateData stateData) {
+    StateData createWorkspaceState(String workspaceId, StateData stateData, JwtAuthenticationToken currentUser) {
         log.info("Creating new workspace state for {}", workspaceId);
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+
+        // Authorize: user must have state management permission
+        if (!validateUserManageState(workspace, currentUser)) {
+            log.warn("User does not have permission to create state versions in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to manage state in this workspace");
+        }
 
         String terraformState = null;
 
@@ -915,10 +1033,18 @@ public class RemoteTfeService {
             return null;
     }
 
-    ConfigurationData createConfigurationVersion(String workspaceId, ConfigurationData configurationData) {
+    ConfigurationData createConfigurationVersion(String workspaceId, ConfigurationData configurationData, JwtAuthenticationToken currentUser) {
         log.info("Create Configuration Version {}", configurationData.toString());
         log.info("Speculative {}", configurationData.getData().getAttributes().get("speculative"));
         log.info("Auto Queue Runs {}", configurationData.getData().getAttributes().get("auto-queue-runs"));
+
+        // Authorize: user must have plan permission to upload configuration
+        Workspace authWorkspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+        if (!validateUserPlanJob(authWorkspace, currentUser)) {
+            log.warn("User does not have permission to create configuration versions in workspace {}", authWorkspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to create configuration versions in this workspace");
+        }
 
         Content content = new Content();
         content.setStatus("pending");
@@ -974,7 +1100,7 @@ public class RemoteTfeService {
         return configurationData;
     }
 
-    RunsData createRun(RunsData runsData) throws SchedulerException, ParseException {
+    RunsData createRun(RunsData runsData, JwtAuthenticationToken currentUser) throws SchedulerException, ParseException {
         String workspaceId = runsData.getData().getRelationships().getWorkspace().getData().getId();
         String configurationId = runsData.getData().getRelationships().getConfigurationVersion().getData().getId();
         boolean isDestroy = runsData.getData().getAttributes().get("is-destroy") != null
@@ -988,6 +1114,14 @@ public class RemoteTfeService {
         log.info("Creating new Terrakube Job");
         log.info("Workspace {} Configuration {}", workspaceId, configurationId);
         log.info("isDestroy {} autoApply {}", isDestroy, autoApply);
+
+        // Authorize: user must have plan permission to create a run
+        Workspace authWorkspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+        if (!validateUserPlanJob(authWorkspace, currentUser)) {
+            log.warn("User does not have permission to create runs in workspace {}", authWorkspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to create runs in this workspace");
+        }
 
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
@@ -1079,6 +1213,10 @@ public class RemoteTfeService {
     }
 
     RunsData getRun(int runId, String include) {
+        return getRun(runId, include, null);
+    }
+
+    RunsData getRun(int runId, String include, JwtAuthenticationToken currentUser) {
         log.info("Searching Run {}", runId);
         Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
 
@@ -1134,7 +1272,10 @@ public class RemoteTfeService {
             runsModel.getAttributes().put("actions", actions);
 
             HashMap<String, Object> permissions = new HashMap<>();
-            permissions.put("can-apply", true);
+            boolean canApply = currentUser != null
+                    ? validateUserApproveJob(job.getWorkspace(), currentUser)
+                    : true; // default to true for internal calls without user context
+            permissions.put("can-apply", canApply);
             runsModel.getAttributes().put("permissions", permissions);
 
             runsData.setData(runsModel);
@@ -1226,9 +1367,16 @@ public class RemoteTfeService {
         return runsDataList;
     }
 
-    RunsData runApply(int runId) {
+    RunsData runApply(int runId, JwtAuthenticationToken currentUser) {
 
         Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+
+        // Authorize: user must have approve/apply permission for this workspace
+        if (!validateUserApproveJob(job.getWorkspace(), currentUser)) {
+            log.warn("User does not have permission to apply job {} in workspace {}", runId, job.getWorkspace().getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to apply runs in this workspace");
+        }
         if (job.getStep() != null && !job.getStep().isEmpty()) {
 
             // We need to check if the run was only a plan
@@ -1282,10 +1430,17 @@ public class RemoteTfeService {
         return getRun(runId, null);
     }
 
-    RunsData runDiscard(int runId) {
+    RunsData runDiscard(int runId, JwtAuthenticationToken currentUser) {
         try {
             log.warn("Updating job status for discard: {}", runId);
             Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+
+            // Authorize: user must have manage job permission to discard
+            if (!validateUserManageJob(job.getWorkspace(), currentUser)) {
+                log.warn("User does not have permission to discard job {} in workspace {}", runId, job.getWorkspace().getName());
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "User does not have permission to discard runs in this workspace");
+            }
             job.setStatus(JobStatus.cancelled);
             jobRepository.save(job);
             scheduleJobService.deleteJobContext(job.getId());
