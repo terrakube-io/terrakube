@@ -140,7 +140,7 @@ export default function RunList({ jobs, onRunClick }: Props) {
     </Tag>
   );
 
-  const sortedJobs = filteredJobs.sort((a, b) => parseInt(a.id) - parseInt(b.id)).reverse();
+  const sortedJobs = [...filteredJobs].sort((a, b) => parseInt(b.id) - parseInt(a.id));
   const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Find the job with highest ID to mark as current
@@ -192,10 +192,15 @@ export default function RunList({ jobs, onRunClick }: Props) {
               description={
                 <span>
                   #job-{item.id} &nbsp;&nbsp;|&nbsp;&nbsp; <b>{item.createdBy}</b> triggered via{" "}
-                  <b>{item.via || "UI"}</b> using template <b>{getTemplateName(item)}</b> &nbsp;&nbsp;|&nbsp;&nbsp;{" "}
-                  <Button type="link" style={{ padding: 0 }}>
-                    #{item.commitId?.substring(0, 6)}
-                  </Button>
+                  <b>{item.via || "UI"}</b> using template <b>{getTemplateName(item)}</b>
+                  {item.commitId && item.commitId !== "000000000" && (
+                    <>
+                      &nbsp;&nbsp;|&nbsp;&nbsp;{" "}
+                      <Button type="link" style={{ padding: 0 }}>
+                        #{item.commitId.substring(0, 6)}
+                      </Button>
+                    </>
+                  )}
                 </span>
               }
             />

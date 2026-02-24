@@ -27,6 +27,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLRestriction;
 
 import java.sql.Types;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -85,6 +86,15 @@ public class Workspace extends GenericAuditFields {
 
     @Column(name = "lock_description")
     private String lockDescription;
+
+    @Column(name = "lock_id")
+    private String lockId;
+
+    @Column(name = "locked_by")
+    private String lockedBy;
+
+    @Column(name = "locked_at")
+    private Instant lockedAt;
 
     @Column(name = "iac_type")
     private String iacType = "terraform";

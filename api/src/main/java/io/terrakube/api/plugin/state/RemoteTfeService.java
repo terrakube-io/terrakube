@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
+import io.terrakube.api.plugin.state.lock.LockInfo;
+import io.terrakube.api.plugin.state.lock.LockResult;
+import io.terrakube.api.plugin.state.lock.WorkspaceLockService;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunModel;
 import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
@@ -107,6 +110,8 @@ public class RemoteTfeService {
 
     private VariableRepository variableRepository;
 
+    private WorkspaceLockService workspaceLockService;
+
     private RbacService rbacService;
 
     public RemoteTfeService(JobRepository jobRepository,
@@ -126,7 +131,8 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository,
+                            WorkspaceLockService workspaceLockService, RbacService rbacService) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -148,6 +154,7 @@ public class RemoteTfeService {
         this.addressRepository = addressRepository;
         this.projectRepository = projectRepository;
         this.variableRepository = variableRepository;
+        this.workspaceLockService = workspaceLockService;
         this.rbacService = rbacService;
     }
 
@@ -434,7 +441,21 @@ public class RemoteTfeService {
             Map<String, Object> attributes = new HashMap<>();
             attributes.put("name", workspaceName);
             attributes.put("terraform-version", workspace.get().getTerraformVersion());
-            attributes.put("locked", workspace.get().isLocked());
+            // Lock status: use Redis as source of truth, with DB metadata for API response
+            boolean isLocked = workspaceLockService.isLocked(workspace.get().getId().toString());
+            attributes.put("locked", isLocked);
+            if (isLocked) {
+                LockInfo lockInfo = workspaceLockService.getLockInfo(workspace.get().getId().toString());
+                if (lockInfo != null) {
+                    Map<String, Object> lockInfoMap = new HashMap<>();
+                    lockInfoMap.put("id", lockInfo.getLockId());
+                    lockInfoMap.put("locked-by", lockInfo.getLockedBy());
+                    lockInfoMap.put("locked-at", lockInfo.getLockedAt() != null ? lockInfo.getLockedAt().toString() : null);
+                    lockInfoMap.put("reason", lockInfo.getReason());
+                    lockInfoMap.put("expires-at", lockInfo.getExpiresAt() != null ? lockInfo.getExpiresAt().toString() : null);
+                    attributes.put("lock-info", lockInfoMap);
+                }
+            }
             attributes.put("auto-apply", false);
             attributes.put("execution-mode", workspace.get().getExecutionMode());
             attributes.put("global-remote-state", true);
@@ -698,32 +719,70 @@ public class RemoteTfeService {
                 otherAttributes, currentUser);
     }
 
-    WorkspaceData updateWorkspaceLock(String workspaceId, boolean locked, JwtAuthenticationToken currentUser) {
-        log.info("Update Lock Workspace: {} to {}", workspaceId, locked);
-        Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
-        log.info("Workspace {} Organization {} ", workspace.getId().toString(),
-                workspace.getOrganization().getId().toString());
+    /**
+     * Acquire a distributed lock on a workspace via Redis SET NX.
+     *
+     * @return LockResult with lockId on success, or conflict info on failure
+     */
+    LockResult lockWorkspace(String workspaceId, String userId, String reason) {
+        return workspaceLockService.acquireLock(workspaceId, userId, reason);
+    }
 
-        // Authorize: user must have job management permission to lock/unlock
-        if (!validateUserManageJob(workspace, currentUser)) {
-            log.warn("User does not have permission to lock/unlock workspace {}", workspace.getName());
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "User does not have permission to lock/unlock this workspace");
-        }
+    /**
+     * Release a workspace lock. Only the lock owner (matching lockId) can release,
+     * unless lockId is null (backward compat / force unlock).
+     */
+    LockResult unlockWorkspace(String workspaceId, String lockId) {
+        return workspaceLockService.releaseLock(workspaceId, lockId);
+    }
 
-        workspace.setLocked(locked);
-        workspaceRepository.save(workspace);
+    /**
+     * Force-unlock a workspace regardless of who owns the lock.
+     */
+    LockResult forceUnlockWorkspace(String workspaceId) {
+        return workspaceLockService.forceReleaseLock(workspaceId);
+    }
+
+    /**
+     * Check if a workspace is currently locked (Redis is source of truth).
+     */
+    public boolean isWorkspaceLocked(String workspaceId) {
+        boolean locked = workspaceLockService.isLocked(workspaceId);
+        log.info("Checking Lock for Workspace: {} is locked {}", workspaceId, locked);
+        return locked;
+    }
+
+    /**
+     * Get lock information for a workspace.
+     */
+    public LockInfo getWorkspaceLockInfo(String workspaceId) {
+        return workspaceLockService.getLockInfo(workspaceId);
+    }
+
+    /**
+     * Get workspace data response with lock info included.
+     */
+    WorkspaceData getWorkspaceWithLockInfo(String workspaceId, JwtAuthenticationToken currentUser) {
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId))
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         String organizationName = workspace.getOrganization().getName();
         Map<String, Object> otherAttributes = new HashMap<>();
 
-        otherAttributes.put("locked", false);
-        return getWorkspace(organizationName, workspace.getName(), otherAttributes, currentUser);
-    }
+        LockInfo lockInfo = workspaceLockService.getLockInfo(workspaceId);
+        if (lockInfo != null) {
+            otherAttributes.put("locked", true);
+            Map<String, Object> lockInfoMap = new HashMap<>();
+            lockInfoMap.put("id", lockInfo.getLockId());
+            lockInfoMap.put("locked-by", lockInfo.getLockedBy());
+            lockInfoMap.put("locked-at", lockInfo.getLockedAt() != null ? lockInfo.getLockedAt().toString() : null);
+            lockInfoMap.put("reason", lockInfo.getReason());
+            lockInfoMap.put("expires-at", lockInfo.getExpiresAt() != null ? lockInfo.getExpiresAt().toString() : null);
+            otherAttributes.put("lock-info", lockInfoMap);
+        } else {
+            otherAttributes.put("locked", false);
+        }
 
-    public boolean isWorkspaceLocked(String workspaceId) {
-        Optional<Workspace> workspace = workspaceRepository.findById(UUID.fromString(workspaceId));
-        log.info("Checking Lock for Workspace: {} is locked {}", workspaceId, workspace.get().isLocked());
-        return workspace.get().isLocked();
+        return getWorkspace(organizationName, workspace.getName(), otherAttributes, currentUser);
     }
 
     StateData createWorkspaceState(String workspaceId, StateData stateData, JwtAuthenticationToken currentUser) {

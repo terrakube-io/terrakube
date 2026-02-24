@@ -343,8 +343,10 @@ export type WorkspaceAttributes = {
   executionMode: string;
   folder?: string;
   iacType: string;
-  lockDescription?: string;
   locked: boolean;
+  lockId?: string;
+  lockedBy?: string;
+  lockedAt?: string;
   moduleSshKey?: string;
   name: string;
   source: string;

@@ -68,6 +68,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
   };
   const onFinish = (values: UpdateWorkspaceForm) => {
     setWaiting(true);
+
     const body = {
       "atomic:operations": [
         {

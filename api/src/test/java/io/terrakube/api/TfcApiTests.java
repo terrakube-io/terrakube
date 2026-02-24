@@ -12,23 +12,56 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 import io.terrakube.api.rs.team.Team;
 
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.throwable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TfcApiTests extends ServerApplicationTests {
 
+    // Simple in-memory store to simulate Redis for lock operations
+    private final Map<String, Object> redisStore = new HashMap<>();
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
+        redisStore.clear();
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        // Simulate Redis SET NX EX: store the value if key is absent
+        when(valueOperations.setIfAbsent(anyString(), any(), any(Duration.class))).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+            Object value = inv.getArgument(1);
+            return redisStore.putIfAbsent(key, value) == null;
+        });
+        // Simulate Redis GET: return stored value
+        when(valueOperations.get(anyString())).thenAnswer(inv -> redisStore.get(inv.getArgument(0)));
+        // Simulate Redis EXISTS
+        when(redisTemplate.hasKey(anyString())).thenAnswer(inv -> redisStore.containsKey(inv.getArgument(0)));
+        // Simulate Redis TTL
+        when(redisTemplate.getExpire(anyString())).thenReturn(600L);
+        // Simulate Redis DEL
+        when(redisTemplate.delete(anyString())).thenAnswer(inv -> {
+            return redisStore.remove(inv.getArgument(0)) != null;
+        });
+        // Simulate Redis EVAL (Lua script for atomic unlock)
+        when(redisTemplate.execute(any(org.springframework.data.redis.core.script.RedisScript.class), any(List.class), any())).thenAnswer(inv -> {
+            List<String> keys = inv.getArgument(1);
+            if (keys != null && !keys.isEmpty()) {
+                redisStore.remove(keys.get(0));
+            }
+            return 1L;
+        });
     }
 
     @Test

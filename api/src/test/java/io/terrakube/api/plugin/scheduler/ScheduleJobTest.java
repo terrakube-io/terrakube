@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,6 +53,7 @@ import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.plugin.state.lock.WorkspaceLockService;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
@@ -73,6 +75,7 @@ public class ScheduleJobTest {
     GitLabWebhookService gitLabWebhookService;
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
+    WorkspaceLockService workspaceLockService;
 
     UUID stepId = UUID.randomUUID();
 
@@ -91,6 +94,9 @@ public class ScheduleJobTest {
         gitLabWebhookService = mock(GitLabWebhookService.class, new FailUnkownMethod<GitLabWebhookService>());
         globalVarRepository = mock(GlobalVarRepository.class, new FailUnkownMethod<GlobalVarRepository>());
         variableRepository = mock(VariableRepository.class, new FailUnkownMethod<VariableRepository>());
+        workspaceLockService = mock(WorkspaceLockService.class);
+        // Default: workspace is not locked by a user/CLI (lenient: not all tests hit the lock check)
+        lenient().doReturn(false).when(workspaceLockService).isLocked(any());
     }
 
     private ScheduleJob subject() {
@@ -108,7 +114,8 @@ public class ScheduleJobTest {
                 null,
                 gitHubWebhookService,
                 globalVarRepository,
-                variableRepository);
+                variableRepository,
+                workspaceLockService);
     }
 
     private Job job(JobStatus status) {
@@ -119,6 +126,7 @@ public class ScheduleJobTest {
         org.setName("ze-org");
 
         Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
         workspace.setLocked(false);
         workspace.setVcs(vcs);
 

@@ -7,6 +7,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
+import io.terrakube.api.plugin.state.lock.WorkspaceLockService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
@@ -68,6 +69,7 @@ public class ScheduleJob implements org.quartz.Job {
     GitHubWebhookService gitHubWebhookService;
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
+    WorkspaceLockService workspaceLockService;
 
 
     @Transactional
@@ -108,7 +110,10 @@ public class ScheduleJob implements org.quartz.Job {
             return true;
         }
 
-        if (job.getWorkspace().isLocked()) {
+        // Check if workspace is locked by a user/CLI — only block jobs that would start new work
+        // (pending/approved). Let completed/failed/cancelled jobs finish their cleanup.
+        if ((job.getStatus() == JobStatus.pending || job.getStatus() == JobStatus.approved)
+                && workspaceLockService.isLocked(job.getWorkspace().getId().toString())) {
             log.warn("Job {}, Workspace is locked. It must be unlocked before Terrakube can execute it.", jobId);
             return false;
         }

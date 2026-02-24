@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.state;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
 import io.terrakube.api.plugin.state.model.entitlement.EntitlementData;
@@ -13,6 +15,7 @@ import io.terrakube.api.plugin.state.model.project.ProjectList;
 import io.terrakube.api.plugin.state.model.runs.RunsData;
 import io.terrakube.api.plugin.state.model.runs.RunsDataList;
 import io.terrakube.api.plugin.state.model.state.StateData;
+import io.terrakube.api.plugin.state.lock.LockResult;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceError;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
@@ -175,37 +178,126 @@ public class RemoteTfeController {
         }
     }
 
-    // Only used for local runs
+    /**
+     * Lock a workspace to prevent concurrent state operations.
+     * Uses Redis SET NX for atomic distributed lock acquisition.
+     *
+     * Returns 200 with workspace data and lock-id on success.
+     * Returns 409 Conflict if already locked by another user.
+     */
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/lock")
-    public ResponseEntity<WorkspaceData> lockWorkspace(@PathVariable("workspaceId") String workspaceId,
+    public ResponseEntity<WorkspaceData> lockWorkspace(
+            @PathVariable("workspaceId") String workspaceId,
+            HttpServletRequest request,
             Principal principal) {
-        log.info("Lock {}", workspaceId);
-        if (remoteTfeService.isWorkspaceLocked(workspaceId)) {
-            WorkspaceData workspaceData = new WorkspaceData();
-            workspaceData.setErrors(new ArrayList<WorkspaceError>());
-            WorkspaceError workspaceError = new WorkspaceError();
-            workspaceError.setStatus("409");
-            workspaceError.setTitle("conflict");
-            workspaceError.setDetail("Unable to lock workspace. The workspace is already locked.");
-            workspaceData.getErrors().add(workspaceError);
-            return ResponseEntity.status(409).body(workspaceData);
+        JwtAuthenticationToken currentUser = (JwtAuthenticationToken) principal;
+        // Use email or name claim for friendly display; fall back to sub claim
+        String userId = currentUser.getTokenAttributes().get("email") != null
+                ? (String) currentUser.getTokenAttributes().get("email")
+                : currentUser.getTokenAttributes().get("name") != null
+                        ? (String) currentUser.getTokenAttributes().get("name")
+                        : currentUser.getName();
+        Map<String, String> body = readOptionalJsonBody(request);
+        String reason = (body != null) ? body.getOrDefault("reason", null) : null;
+
+        log.info("Lock request for workspace {} by user {}", workspaceId, userId);
+
+        LockResult result = remoteTfeService.lockWorkspace(workspaceId, userId, reason);
+
+        if (result.isSuccess()) {
+            WorkspaceData workspaceData = remoteTfeService.getWorkspaceWithLockInfo(workspaceId, currentUser);
+            return ResponseEntity.ok(workspaceData);
         } else {
-            return ResponseEntity.of(Optional.ofNullable(
-                    remoteTfeService.updateWorkspaceLock(workspaceId, true, (JwtAuthenticationToken) principal)));
+            WorkspaceData workspaceData = new WorkspaceData();
+            workspaceData.setErrors(new ArrayList<>());
+            WorkspaceError error = new WorkspaceError();
+            error.setStatus("409");
+            error.setTitle("conflict");
+            error.setDetail(result.getMessage());
+            workspaceData.getErrors().add(error);
+            return ResponseEntity.status(409).body(workspaceData);
         }
     }
 
-    // Only used for local runs
+    /**
+     * Unlock a workspace. The request may include a lock-id for ownership verification.
+     * If no lock-id is provided, behaves as force-unlock (backward compatibility).
+     *
+     * Returns 200 on success.
+     * Returns 409 if lock-id doesn't match (locked by someone else).
+     */
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/unlock")
-    public ResponseEntity<WorkspaceData> unlockWorkspace(@PathVariable("workspaceId") String workspaceId,
+    public ResponseEntity<WorkspaceData> unlockWorkspace(
+            @PathVariable("workspaceId") String workspaceId,
+            HttpServletRequest request,
             Principal principal) {
-        log.info("Unlock {}", workspaceId);
-        return ResponseEntity.of(Optional.ofNullable(
-                remoteTfeService.updateWorkspaceLock(workspaceId, false, (JwtAuthenticationToken) principal)));
+        JwtAuthenticationToken currentUser = (JwtAuthenticationToken) principal;
+        Map<String, String> body = readOptionalJsonBody(request);
+        String lockId = (body != null) ? body.getOrDefault("lock-id", null) : null;
+
+        log.info("Unlock request for workspace {} with lockId={}", workspaceId, lockId);
+
+        LockResult result = remoteTfeService.unlockWorkspace(workspaceId, lockId);
+
+        if (result.isSuccess()) {
+            WorkspaceData workspaceData = remoteTfeService.getWorkspaceWithLockInfo(workspaceId, currentUser);
+            return ResponseEntity.ok(workspaceData);
+        } else {
+            WorkspaceData workspaceData = new WorkspaceData();
+            workspaceData.setErrors(new ArrayList<>());
+            WorkspaceError error = new WorkspaceError();
+            error.setStatus("409");
+            error.setTitle("conflict");
+            error.setDetail(result.getMessage());
+            workspaceData.getErrors().add(error);
+            return ResponseEntity.status(409).body(workspaceData);
+        }
     }
 
+    /**
+     * Force-unlock a workspace regardless of who holds the lock.
+     * Requires admin/manage-workspace permission.
+     *
+     * Returns 200 on success.
+     */
+    @Transactional
+    @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/actions/force-unlock")
+    public ResponseEntity<WorkspaceData> forceUnlockWorkspace(
+            @PathVariable("workspaceId") String workspaceId,
+            Principal principal) {
+        JwtAuthenticationToken currentUser = (JwtAuthenticationToken) principal;
+
+        log.warn("Force-unlock request for workspace {} by user {}", workspaceId, currentUser.getName());
+
+        LockResult result = remoteTfeService.forceUnlockWorkspace(workspaceId);
+
+        if (result.isSuccess()) {
+            WorkspaceData workspaceData = remoteTfeService.getWorkspaceWithLockInfo(workspaceId, currentUser);
+            return ResponseEntity.ok(workspaceData);
+        } else {
+            WorkspaceData workspaceData = new WorkspaceData();
+            workspaceData.setErrors(new ArrayList<>());
+            WorkspaceError error = new WorkspaceError();
+            error.setStatus("500");
+            error.setTitle("error");
+            error.setDetail(result.getMessage());
+            workspaceData.getErrors().add(error);
+            return ResponseEntity.status(500).body(workspaceData);
+        }
+    }
+
+    /**
+     * Create a new state version.
+     *
+     * Note: Unlike HCP Terraform, we do NOT enforce that the workspace must be locked
+     * before pushing state. This allows direct state uploads (e.g., terraform state push)
+     * without requiring a lock. Lock enforcement happens at the plan/apply level via the
+     * scheduler's lock check.
+     *
+     * Returns 200 on success.
+     */
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/state-versions")
     public ResponseEntity<StateData> createWorkspaceState(@PathVariable("workspaceId") String workspaceId,
@@ -370,6 +462,26 @@ public class RemoteTfeController {
           return ResponseEntity.status(201).body(projectDataResponse);
         } else
           return ResponseEntity.status(403).body(null);
+    }
+
+    /**
+     * Safely read an optional JSON body from the request.
+     * Returns null if the body is empty or not valid JSON.
+     * This avoids HttpMediaTypeNotSupportedException when clients send
+     * POST requests with no body (defaults to application/x-www-form-urlencoded).
+     */
+    private Map<String, String> readOptionalJsonBody(HttpServletRequest request) {
+        try {
+            byte[] bytes = request.getInputStream().readAllBytes();
+            if (bytes.length == 0) {
+                return null;
+            }
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(bytes, new TypeReference<Map<String, String>>() {});
+        } catch (Exception e) {
+            log.debug("Could not parse request body as JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
 }
