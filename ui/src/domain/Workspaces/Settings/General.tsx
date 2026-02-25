@@ -49,18 +49,31 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
       setTerraformVersions(tfVersions.sort(compareVersions).reverse());
     });
   };
-  const loadAgentlist = () => {
-    axiosInstance.get(`organization/${organizationId}/agent`).then((response) => {
-      setAgentList(response.data.data);
-    });
-  };
 
   useEffect(() => {
     setWaiting(true);
-    loadVersions(workspaceData.attributes?.iacType);
-    loadAgentlist();
-    setWaiting(false);
-  }, []);
+    const iacType = workspaceData.attributes?.iacType;
+    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
+
+    // Parallel load: versions and agent list
+    Promise.all([axiosInstance.get(versionsApi), axiosInstance.get(`organization/${organizationId}/agent`)]).then(
+      ([versionsRes, agentsRes]) => {
+        const tfVersions: string[] = [];
+        if (iacType === "tofu") {
+          versionsRes.data.forEach((release: TofuRelease) => {
+            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+          });
+        } else {
+          for (const version in versionsRes.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
+        }
+        setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+        setAgentList(agentsRes.data.data);
+        setWaiting(false);
+      }
+    );
+  }, [organizationId, workspaceData.attributes?.iacType]);
 
   const handleIacChange = (iac: string) => {
     setSelectedIac(iac);
@@ -136,8 +149,8 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
     <div style={{ width: "100%" }} className="generalSettings">
       <h1>General Settings</h1>
       <p>
-        Adjust the settings for this workspace. These settings control how the workspace behaves,
-        including execution mode, IaC configuration, and security options.
+        Adjust the settings for this workspace. These settings control how the workspace behaves, including execution
+        mode, IaC configuration, and security options.
       </p>
       <Spin spinning={waiting}>
         <Form
@@ -181,24 +194,23 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
           {/* Section 2: Execution Mode */}
           <h2>Execution Mode</h2>
           <Text type="secondary">
-            Select the execution mode for this workspace. Remote indicates Terrakube will run plans
-            and applies. Local indicates users should run locally with remote state.
+            Select the execution mode for this workspace. Remote indicates Terrakube will run plans and applies. Local
+            indicates users should run locally with remote state.
           </Text>
 
           <Form.Item
             name="executionMode"
             label="Execution Mode"
             extra={
-              "Local indicates users should run " + getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " " +
+              "Local indicates users should run " +
+              getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
+              " " +
               "locally with remote state/cloud block and just upload the state to Terrakube. Remote " +
               "indicates Terrakube will run plans and apply. Informational only."
             }
             style={{ marginTop: 16 }}
           >
-            <Select
-              defaultValue={workspaceData.attributes.executionMode}
-              disabled={!manageWorkspace}
-            >
+            <Select defaultValue={workspaceData.attributes.executionMode} disabled={!manageWorkspace}>
               <Option key="remote">remote</Option>
               <Option key="local">local</Option>
             </Select>
@@ -224,9 +236,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
 
           {/* Section 3: IaC Configuration */}
           <h2>IaC Configuration</h2>
-          <Text type="secondary">
-            Configure the Infrastructure as Code tool and version used for this workspace.
-          </Text>
+          <Text type="secondary">Configure the Infrastructure as Code tool and version used for this workspace.</Text>
 
           <Form.Item
             name="iacType"
@@ -257,10 +267,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
               " to use for this workspace. Upon creating this workspace, the latest version was selected and will be used until it is changed manually. It will not upgrade automatically."
             }
           >
-            <Select
-              defaultValue={workspaceData.attributes?.terraformVersion}
-              disabled={!manageWorkspace}
-            >
+            <Select defaultValue={workspaceData.attributes?.terraformVersion} disabled={!manageWorkspace}>
               {terraformVersions.map(function (name) {
                 return <Option key={name}>{name}</Option>;
               })}
@@ -290,9 +297,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
 
           {/* Section 4: Default Template */}
           <h2>Default Template</h2>
-          <Text type="secondary">
-            Configure the default template used when a git push event triggers a run.
-          </Text>
+          <Text type="secondary">Configure the default template used when a git push event triggers a run.</Text>
 
           <Form.Item
             name="defaultTemplate"

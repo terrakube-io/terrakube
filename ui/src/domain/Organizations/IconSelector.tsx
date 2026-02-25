@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Input, Popover } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
-import * as FaIcons from "react-icons/fa6";
+import { faIcons, getFaIcon } from "../../config/iconList";
 
 // Get all FontAwesome 6 icon names from react-icons/fa6
-const allFa6Icons = Object.keys(FaIcons).filter((key) => key.startsWith("Fa"));
+const allFa6Icons = Object.keys(faIcons).filter((key) => key.startsWith("Fa"));
 
 // Sort for easier browsing
 allFa6Icons.sort();
@@ -48,7 +48,7 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
         }}
       >
         {filteredIcons.map((icon) => {
-          const IconComponent = FaIcons[icon as keyof typeof FaIcons];
+          const IconComponent = faIcons[icon as keyof typeof faIcons];
           return (
             <div
               key={icon}
@@ -99,7 +99,7 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
     </div>
   );
 
-  const SelectedIconComponent = selectedIcon ? FaIcons[selectedIcon as keyof typeof FaIcons] : null;
+  const SelectedIconComponent = selectedIcon ? getFaIcon(selectedIcon) : null;
 
   return (
     <Popover content={content} trigger="click" placement="bottomLeft">

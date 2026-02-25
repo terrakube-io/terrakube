@@ -7,7 +7,21 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Editor, type OnMount } from "@monaco-editor/react";
-import { Alert, Button, Form, Input, message, Popconfirm, Select, Space, Switch, Table, Tooltip, Typography, theme } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  message,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tooltip,
+  Typography,
+  theme,
+} from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -129,19 +143,22 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
     setMode("edit");
     setActionId(id);
     setIsEditing(true);
-    axiosInstance.get(`action/${id}`).then((response) => {
-      const action = response.data.data;
-      form.setFieldsValue({
-        id: action.id,
-        ...action.attributes,
-        displayCriteria: JSON.parse(action.attributes.displayCriteria),
+    axiosInstance
+      .get(`action/${id}`)
+      .then((response) => {
+        const action = response.data.data;
+        form.setFieldsValue({
+          id: action.id,
+          ...action.attributes,
+          displayCriteria: JSON.parse(action.attributes.displayCriteria),
+        });
+        const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
+        editorRef.current.setValue(actionDecoded);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setIsEditing(false);
       });
-      const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
-      editorRef.current.setValue(actionDecoded);
-    }).catch((err) => {
-      message.error(getErrorMessage(err));
-      setIsEditing(false);
-    });
   };
 
   const onNew = () => {
@@ -151,12 +168,15 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`action/${id}`).then(() => {
-      message.success("Action deleted successfully");
-      loadActions();
-    }).catch((err) => {
-      message.error(getErrorMessage(err));
-    });
+    axiosInstance
+      .delete(`action/${id}`)
+      .then(() => {
+        message.success("Action deleted successfully");
+        loadActions();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: CreateActionForm) => {
@@ -214,14 +234,18 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   };
 
   const loadActions = () => {
-    axiosInstance.get(`action`).then((response) => {
-      setActions(response.data.data);
-      setError(null);
-    }).catch((err) => {
-      setError(getErrorMessage(err));
-    }).finally(() => {
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`action`)
+      .then((response) => {
+        setActions(response.data.data);
+        setError(null);
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   useEffect(() => {

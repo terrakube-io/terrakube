@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="240" height="48" viewBox="0 0 240 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pointy-top hexagonal cube, center (24,24), radius 22 -->
+  <!-- Upper-left face (lightest) -->
+  <polygon points="5,35 5,13 24,2 24,24" fill="#D9C7E9" />
+  <!-- Upper-right face (medium) -->
+  <polygon points="24,2 43,13 43,35 24,24" fill="#B694D7" />
+  <!-- Bottom face (darkest) -->
+  <polygon points="43,35 24,46 5,35 24,24" fill="#7A47B7" />
+  <!-- Wordmark -->
+  <text
+    x="58"
+    y="32"
+    font-family="'Montserrat', 'Barlow', system-ui, sans-serif"
+    font-weight="800"
+    font-size="22"
+    letter-spacing="1"
+    fill="currentColor"
+  >TERRAKUBE</text>
+</svg>

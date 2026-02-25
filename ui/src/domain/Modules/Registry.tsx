@@ -1,5 +1,11 @@
 import { Tabs, Button, Dropdown, Input, Space } from "antd";
-import { SearchOutlined, CloudUploadOutlined, DownOutlined, AppstoreOutlined, CloudServerOutlined } from "@ant-design/icons";
+import {
+  SearchOutlined,
+  CloudUploadOutlined,
+  DownOutlined,
+  AppstoreOutlined,
+  CloudServerOutlined,
+} from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
@@ -33,9 +39,7 @@ async function fetchModules(orgId: string): Promise<FlatModule[]> {
 }
 
 async function fetchProviders(orgId: string): Promise<FlatProvider[]> {
-  const response = await axiosInstance.get(
-    `organization/${orgId}/provider?include=version`
-  );
+  const response = await axiosInstance.get(`organization/${orgId}/provider?include=version`);
   const data = response.data.data || [];
   const included = response.data.included || [];
 
@@ -72,9 +76,7 @@ async function fetchProviders(orgId: string): Promise<FlatProvider[]> {
 }
 
 async function fetchOrgName(orgId: string): Promise<string> {
-  const response = await axiosInstance.get(
-    `organization/${orgId}?fields[organization]=name`
-  );
+  const response = await axiosInstance.get(`organization/${orgId}?fields[organization]=name`);
   return response.data.data.attributes.name;
 }
 
@@ -193,12 +195,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           Modules
         </span>
       ),
-      children: (
-        <ModuleList
-          modules={modules}
-          searchFilter={searchFilter}
-        />
-      ),
+      children: <ModuleList modules={modules} searchFilter={searchFilter} />,
     },
     {
       key: "providers",
@@ -228,11 +225,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
       contentClassName="registry-centered"
       actions={
         <Space>
-          <Button
-            type="default"
-            icon={<SearchOutlined />}
-            onClick={handleSearchPublicRegistry}
-          >
+          <Button type="default" icon={<SearchOutlined />} onClick={handleSearchPublicRegistry}>
             Search public registry
           </Button>
           <Dropdown menu={{ items: publishMenuItems }} trigger={["click"]}>
@@ -253,12 +246,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           onChange={(e) => setSearchFilter(e.target.value)}
           style={{ width: "100%", maxWidth: 500, marginBottom: 24 }}
         />
-        <Tabs
-          activeKey={activeTab}
-          onChange={handleTabChange}
-          items={tabItems}
-          size="large"
-        />
+        <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} size="large" />
       </div>
     </PageWrapper>
   );

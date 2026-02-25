@@ -109,7 +109,9 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
             message={
               <span>
                 This workspace is <Text strong>currently locked</Text>.
-                {lockDescription ? ` Reason: ${lockDescription}` : " No reason was provided for locking this workspace."}
+                {lockDescription
+                  ? ` Reason: ${lockDescription}`
+                  : " No reason was provided for locking this workspace."}
               </span>
             }
             type="info"
@@ -131,8 +133,8 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
         <>
           <p>
             <Text type="secondary">
-              This workspace is not currently locked. All operations can proceed normally. You can lock this workspace to
-              prevent Terraform runs.
+              This workspace is not currently locked. All operations can proceed normally. You can lock this workspace
+              to prevent Terraform runs.
             </Text>
           </p>
 

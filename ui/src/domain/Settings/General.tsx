@@ -155,8 +155,12 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
             <Form.Item name="name" label="Name">
               <Input />
             </Form.Item>
-            <Form.Item name="description" label="Description">
-              <Input.TextArea />
+            <Form.Item
+              name="description"
+              label="Description"
+              extra={<Typography.Text type="secondary">A brief description of this organization.</Typography.Text>}
+            >
+              <Input.TextArea rows={3} />
             </Form.Item>
             <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces (informational only)">
               <Radio.Group>
@@ -201,11 +205,14 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           </Form>
         </Spin>
       )}
-      <h1>Delete this Organization</h1>
-      <div>
+      <h1>Destruction and Deletion</h1>
+      <h3>Delete this Organization</h3>
+      <div style={{ textAlign: "left", marginBottom: "16px" }}>
         <Typography.Text type="secondary" className="App-text">
-          Deleting the organization will permanently delete all workspaces associated with it. Please be certain that
-          you understand this.
+          Deleting the <strong>{organization?.attributes?.name}</strong> organization will permanently delete all
+          workspaces associated with it.
+          <br />
+          Please be certain that you understand this. This action cannot be undone.
         </Typography.Text>
       </div>
       <Popconfirm
@@ -224,11 +231,13 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
         cancelText="No"
         placement="bottom"
       >
-        <Button type="default" danger style={{ width: "100%" }} disabled={!managePermission}>
-          <Space>
-            <DeleteOutlined />
-            Delete from Terrakube
-          </Space>
+        <Button
+          type="primary"
+          danger
+          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+          disabled={!managePermission}
+        >
+          Delete this organization
         </Button>
       </Popconfirm>
     </div>

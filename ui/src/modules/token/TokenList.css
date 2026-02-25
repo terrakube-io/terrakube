@@ -1,10 +1,9 @@
 .token-list {
-  padding: 10px;
   margin-top: 20px;
-  .title {
-    max-width: 85%;
-  }
-  .card {
-    border: 1px solid rgb(240, 242, 245);
+
+  .list-header {
+    margin-bottom: 20px !important;
+    font-size: 16px;
+    font-weight: 600;
   }
 }

@@ -50,15 +50,19 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   }
 
   const loadTemplate = (templateId: string) => {
-    axiosInstance.get(`organization/${orgid}/template/${templateId}`).then((response) => {
-      setTemplate(response.data.data);
-      const buff = Buffer.from(response.data.data.attributes.tcl, "base64");
-      setTCL(buff.toString("ascii"));
-    }).catch((err) => {
-      setError(getErrorMessage(err));
-    }).finally(() => {
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/template/${templateId}`)
+      .then((response) => {
+        setTemplate(response.data.data);
+        const buff = Buffer.from(response.data.data.attributes.tcl, "base64");
+        setTCL(buff.toString("ascii"));
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   const onFinish = (values: EditTemplateForm) => {

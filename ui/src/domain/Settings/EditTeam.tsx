@@ -1,17 +1,5 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Divider,
-  Form,
-  Input,
-  Space,
-  Spin,
-  Tooltip,
-  Typography,
-  message,
-  theme,
-} from "antd";
+import { Alert, Button, Divider, Form, Input, Space, Spin, Tooltip, Typography, message, theme } from "antd";
 import CreatePatModal from "@/modules/token/modals/CreatePatModal";
 import { CreateTokenForm } from "@/modules/user/types";
 import TokenGrid from "@/modules/token/TokenGrid";

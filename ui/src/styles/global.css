@@ -1,0 +1,476 @@
+/* Premium Dark Theme Implementation */
+/* Requires variables.css to be imported first */
+
+/* ==========================================================================
+   Base Styles & Typography
+   ========================================================================== */
+
+[data-theme="dark"] body {
+  background-color: var(--tk-bg-base);
+  color: var(--tk-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme="dark"] a {
+  color: #58a6ff;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+[data-theme="dark"] a:hover {
+  color: #79c0ff;
+  text-decoration: underline;
+}
+
+[data-theme="dark"] code,
+[data-theme="dark"] pre {
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    SF Mono,
+    Menlo,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  background-color: rgba(110, 118, 129, 0.4);
+  border-radius: 6px;
+  padding: 0.2em 0.4em;
+  font-size: 85%;
+}
+
+[data-theme="dark"] pre {
+  padding: 16px;
+  overflow: auto;
+  background-color: var(--tk-bg-container);
+  border: 1px solid var(--tk-border-primary);
+}
+
+[data-theme="dark"] pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 100%;
+  color: var(--tk-text-primary);
+}
+
+/* ==========================================================================
+   Scrollbars (Premium Look)
+   ========================================================================== */
+
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: var(--tk-scrollbar-track);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--tk-scrollbar-thumb);
+  border-radius: 4px;
+  border: 2px solid var(--tk-scrollbar-track); /* Creates padding effect */
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--tk-scrollbar-thumb-hover);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-corner {
+  background: var(--tk-scrollbar-track);
+}
+
+/* ==========================================================================
+   Ant Design Component Overrides
+   ========================================================================== */
+
+/* --- Layout & Containers --- */
+
+[data-theme="dark"] .ant-layout {
+  background: var(--tk-bg-layout);
+}
+
+[data-theme="dark"] .ant-layout-header {
+  background: var(--tk-bg-container);
+  border-bottom: 1px solid var(--tk-border-primary);
+  box-shadow: 0 1px 0 rgba(27, 31, 35, 0.04);
+}
+
+[data-theme="dark"] .ant-layout-sider {
+  background: var(--tk-bg-container);
+  border-right: 1px solid var(--tk-border-primary);
+}
+
+[data-theme="dark"] .ant-card {
+  background: var(--tk-bg-container);
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  box-shadow: var(--tk-shadow-sm);
+  transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .ant-card-head {
+  border-bottom: 1px solid var(--tk-border-primary);
+  background: linear-gradient(to bottom, var(--tk-bg-elevated), var(--tk-bg-container));
+  min-height: 48px;
+}
+
+[data-theme="dark"] .ant-card-head-title {
+  color: var(--tk-text-primary);
+  font-weight: 600;
+}
+
+/* --- Navigation --- */
+
+[data-theme="dark"] .ant-menu {
+  background: transparent;
+  color: var(--tk-text-secondary);
+  border-right: none;
+}
+
+[data-theme="dark"] .ant-menu-item,
+[data-theme="dark"] .ant-menu-submenu-title {
+  color: var(--tk-text-secondary);
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+[data-theme="dark"] .ant-menu-item:hover,
+[data-theme="dark"] .ant-menu-submenu-title:hover {
+  color: var(--tk-text-primary);
+  background-color: var(--tk-fill-primary);
+}
+
+[data-theme="dark"] .ant-menu-item-selected {
+  background-color: var(--tk-fill-secondary);
+  color: var(--tk-text-primary);
+  font-weight: 500;
+  position: relative;
+}
+
+[data-theme="dark"] .ant-menu-item-selected::after {
+  border-right: 3px solid #58a6ff; /* Accent indicator */
+}
+
+/* --- Inputs & Forms --- */
+
+[data-theme="dark"] .ant-input,
+[data-theme="dark"] .ant-input-number,
+[data-theme="dark"] .ant-input-password,
+[data-theme="dark"] .ant-input-affix-wrapper,
+[data-theme="dark"] .ant-input-textarea,
+[data-theme="dark"] textarea.ant-input,
+[data-theme="dark"] .ant-select-selector,
+[data-theme="dark"] .ant-picker {
+  background-color: var(--tk-bg-base) !important;
+  border-color: var(--tk-border-primary) !important;
+  color: var(--tk-text-primary) !important;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .ant-input::placeholder,
+[data-theme="dark"] .ant-input-textarea textarea::placeholder,
+[data-theme="dark"] textarea.ant-input::placeholder {
+  color: var(--tk-text-tertiary) !important;
+  opacity: 1;
+}
+
+[data-theme="dark"] .ant-input:hover,
+[data-theme="dark"] .ant-select-selector:hover {
+  border-color: #8b949e !important;
+}
+
+[data-theme="dark"] .ant-input:focus,
+[data-theme="dark"] .ant-input-focused,
+[data-theme="dark"] .ant-select-focused .ant-select-selector {
+  border-color: #58a6ff !important;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3) !important; /* Blue glow */
+}
+
+[data-theme="dark"] .ant-input-group-addon {
+  background-color: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+/* --- Buttons --- */
+
+[data-theme="dark"] .ant-btn {
+  border-radius: 6px;
+  box-shadow: var(--tk-shadow-sm);
+  transition: all 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+}
+
+[data-theme="dark"] .ant-btn-default {
+  background-color: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .ant-btn-default:hover {
+  background-color: var(--tk-fill-secondary);
+  border-color: #8b949e;
+  color: #fff;
+}
+
+[data-theme="dark"] .ant-btn-primary {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* --- Tables --- */
+
+[data-theme="dark"] .ant-table {
+  background: var(--tk-bg-container);
+  color: var(--tk-text-primary);
+  border-radius: 8px;
+  border: 1px solid var(--tk-border-primary);
+  overflow: hidden;
+}
+
+[data-theme="dark"] .ant-table-thead > tr > th {
+  background: var(--tk-bg-elevated);
+  border-bottom: 1px solid var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+  font-weight: 600;
+}
+
+[data-theme="dark"] .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--tk-border-secondary);
+  transition: background 0.2s;
+}
+
+[data-theme="dark"] .ant-table-tbody > tr:hover > td {
+  background: var(--tk-fill-primary) !important;
+}
+
+[data-theme="dark"] .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: rgba(56, 139, 253, 0.1); /* Subtle blue tint */
+}
+
+/* --- Modals & Drawers (Glassmorphism) --- */
+
+[data-theme="dark"] .ant-modal-content,
+[data-theme="dark"] .ant-drawer-content {
+  background-color: var(--tk-bg-elevated);
+  border: 1px solid var(--tk-border-primary);
+  box-shadow: var(--tk-shadow-lg);
+}
+
+/* Premium Glass Effect for Modals */
+[data-theme="dark"] .ant-modal-content {
+  background: var(--tk-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--tk-glass-border);
+}
+
+[data-theme="dark"] .ant-modal-header {
+  background: transparent;
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+
+[data-theme="dark"] .ant-modal-title {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .ant-modal-close {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .ant-modal-close:hover {
+  color: var(--tk-text-primary);
+  background-color: var(--tk-fill-secondary);
+}
+
+/* --- Dropdowns & Popovers --- */
+
+[data-theme="dark"] .ant-dropdown-menu,
+[data-theme="dark"] .ant-popover-inner {
+  background-color: var(--tk-bg-elevated);
+  border: 1px solid var(--tk-border-primary);
+  box-shadow: var(--tk-shadow-lg);
+  border-radius: 8px;
+}
+
+[data-theme="dark"] .ant-dropdown-menu-item {
+  color: var(--tk-text-primary);
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .ant-dropdown-menu-item:hover {
+  background-color: #1f6feb; /* GitHub blue hover */
+  color: #ffffff;
+}
+
+[data-theme="dark"] .ant-popover-title {
+  color: var(--tk-text-primary);
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+
+/* --- Tabs --- */
+
+[data-theme="dark"] .ant-tabs-tab {
+  color: var(--tk-text-secondary);
+  transition: color 0.2s;
+}
+
+[data-theme="dark"] .ant-tabs-tab:hover {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--tk-text-primary);
+  font-weight: 500;
+}
+
+[data-theme="dark"] .ant-tabs-ink-bar {
+  background: #f78166; /* Orange accent like GitHub actions or use primary */
+}
+
+/* --- Tags & Badges --- */
+
+[data-theme="dark"] .ant-tag {
+  background: var(--tk-fill-primary) !important;
+  border-color: var(--tk-border-primary) !important;
+  color: var(--tk-text-primary) !important;
+  border-radius: 2em; /* Pill shape */
+}
+
+[data-theme="dark"] .ant-tag-default,
+[data-theme="dark"] .ant-tag:not([class*="ant-tag-"]):not([class*="color"]) {
+  background: var(--tk-fill-primary) !important;
+  border-color: var(--tk-border-primary) !important;
+  color: var(--tk-text-secondary) !important;
+}
+
+[data-theme="dark"] .ant-tag-blue {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: rgba(56, 139, 253, 0.4);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .ant-tag-green {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.4);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .ant-tag-red {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.4);
+  color: #f85149;
+}
+
+/* --- Alerts & Notifications --- */
+
+[data-theme="dark"] .ant-alert {
+  background-color: var(--tk-bg-elevated);
+  border: 1px solid var(--tk-border-primary);
+}
+
+[data-theme="dark"] .ant-alert-info {
+  background-color: rgba(56, 139, 253, 0.1);
+  border-color: rgba(56, 139, 253, 0.4);
+}
+
+[data-theme="dark"] .ant-alert-success {
+  background-color: rgba(46, 160, 67, 0.1);
+  border-color: rgba(46, 160, 67, 0.4);
+}
+
+[data-theme="dark"] .ant-alert-warning {
+  background-color: rgba(210, 153, 34, 0.1);
+  border-color: rgba(210, 153, 34, 0.4);
+}
+
+[data-theme="dark"] .ant-alert-error {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
+[data-theme="dark"] .ant-notification-notice {
+  background: var(--tk-bg-elevated);
+  border: 1px solid var(--tk-border-primary);
+  box-shadow: var(--tk-shadow-lg);
+}
+
+[data-theme="dark"] .ant-notification-notice-message {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .ant-notification-notice-description {
+  color: var(--tk-text-secondary);
+}
+
+/* --- Tooltips --- */
+
+[data-theme="dark"] .ant-tooltip-inner {
+  background-color: #6e7681;
+  color: #ffffff;
+  box-shadow: var(--tk-shadow-md);
+}
+
+[data-theme="dark"] .ant-tooltip-arrow-content {
+  background-color: #6e7681;
+}
+
+/* --- Spinners --- */
+
+[data-theme="dark"] .ant-spin-dot-item {
+  background-color: #58a6ff;
+}
+
+/* --- Empty State --- */
+
+[data-theme="dark"] .ant-empty-description {
+  color: var(--tk-text-secondary);
+}
+
+/* --- Divider --- */
+
+[data-theme="dark"] .ant-divider {
+  border-top-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+/* --- Steps --- */
+
+[data-theme="dark"] .ant-steps-item-title {
+  color: var(--tk-text-primary) !important;
+}
+
+[data-theme="dark"] .ant-steps-item-description {
+  color: var(--tk-text-secondary) !important;
+}
+
+[data-theme="dark"] .ant-steps-item-wait .ant-steps-item-icon {
+  background-color: var(--tk-bg-container);
+  border-color: var(--tk-border-secondary);
+}
+
+[data-theme="dark"] .ant-steps-item-process .ant-steps-item-icon {
+  background-color: #1f6feb;
+  border-color: #1f6feb;
+}
+
+/* --- Premium Glow Effects (Specific Components) --- */
+
+/* Add a subtle glow to primary buttons on hover */
+[data-theme="dark"] .ant-btn-primary:hover {
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
+}
+
+/* Add a subtle glow to active inputs */
+[data-theme="dark"] .ant-input:focus,
+[data-theme="dark"] .ant-select-focused .ant-select-selector {
+  box-shadow:
+    0 0 0 2px rgba(88, 166, 255, 0.2),
+    0 0 8px rgba(88, 166, 255, 0.1) !important;
+}
+
+/* Card hover effect */
+[data-theme="dark"] .ant-card:hover {
+  border-color: #8b949e;
+  box-shadow: var(--tk-shadow-md);
+}

@@ -47,7 +47,13 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
       case "new":
         return <CreateEditCollection mode="create" managePermission={permissions.manageCollection} />;
       case "edit":
-        return <CreateEditCollection mode="edit" collectionId={collectionId} managePermission={permissions.manageCollection} />;
+        return (
+          <CreateEditCollection
+            mode="edit"
+            collectionId={collectionId}
+            managePermission={permissions.manageCollection}
+          />
+        );
       case "list":
       default:
         return <VariableCollectionsSettings managePermission={permissions.manageCollection} />;

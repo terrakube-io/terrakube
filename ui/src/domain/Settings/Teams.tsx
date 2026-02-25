@@ -93,9 +93,7 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
     const desc = roleDescriptions[role] || "Custom permissions";
 
     if (role !== "custom") {
-      return (
-        <Typography.Text type="secondary">{desc}</Typography.Text>
-      );
+      return <Typography.Text type="secondary">{desc}</Typography.Text>;
     }
 
     // For custom role, show which permissions are enabled
@@ -114,11 +112,7 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
       return <Typography.Text type="secondary">No permissions granted</Typography.Text>;
     }
 
-    return (
-      <Typography.Text type="secondary">
-        Can manage: {enabledPermissions.join(", ")}
-      </Typography.Text>
-    );
+    return <Typography.Text type="secondary">Can manage: {enabledPermissions.join(", ")}</Typography.Text>;
   };
 
   return (
@@ -132,8 +126,8 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
           <h1>Team Management</h1>
           <div>
             <Typography.Text type="secondary">
-              Teams let you group users into specific categories to enable finer grained access control policies.
-              Each team is assigned a role that determines what actions its members can perform within the organization.
+              Teams let you group users into specific categories to enable finer grained access control policies. Each
+              team is assigned a role that determines what actions its members can perform within the organization.
             </Typography.Text>
           </div>
           <Button
@@ -184,15 +178,11 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
                     ]}
                   >
                     <List.Item.Meta
-                      avatar={
-                        <Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />
-                      }
+                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />}
                       title={
                         <Space>
                           {item.attributes.name}
-                          <Tag color={roleColors[role] || "default"}>
-                            {roleLabels[role] || role}
-                          </Tag>
+                          <Tag color={roleColors[role] || "default"}>{roleLabels[role] || role}</Tag>
                         </Space>
                       }
                       description={getTeamDescription(item)}

@@ -1,6 +1,6 @@
 import { Card, Flex, Select, Space, Typography } from "antd";
-import { useEffect, useState } from "react";
-import { ColorSchemeOption, ThemeMode, defaultColorScheme, defaultThemeMode } from "../../../../config/themeConfig";
+import { ColorSchemeOption, ThemeMode } from "../../../../config/themeConfig";
+import { useTheme } from "../../../../context/ThemeContext";
 import "./ThemeSection.css";
 
 const ColorBox = ({ color }: { color: string }) => (
@@ -15,33 +15,14 @@ const ColorOption = ({ color, label }: { color: string; label: string }) => (
 );
 
 export const ThemeSection = () => {
-  const [colorScheme, setColorScheme] = useState<ColorSchemeOption>(defaultColorScheme);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(defaultThemeMode);
-
-  useEffect(() => {
-    // Load color scheme and theme mode preferences from localStorage
-    const savedScheme = localStorage.getItem("terrakube-color-scheme") as ColorSchemeOption;
-    const savedThemeMode = localStorage.getItem("terrakube-theme-mode") as ThemeMode;
-    if (savedScheme) {
-      setColorScheme(savedScheme);
-    }
-    if (savedThemeMode) {
-      setThemeMode(savedThemeMode);
-    }
-  }, []);
+  const { colorScheme, themeMode, setColorScheme, setThemeMode } = useTheme();
 
   const handleColorSchemeChange = (value: ColorSchemeOption) => {
     setColorScheme(value);
-    localStorage.setItem("terrakube-color-scheme", value);
-    // Automatically reload the page
-    window.location.reload();
   };
 
   const handleThemeModeChange = (value: ThemeMode) => {
     setThemeMode(value);
-    localStorage.setItem("terrakube-theme-mode", value);
-    // Automatically reload the page
-    window.location.reload();
   };
 
   const colorOptions = [

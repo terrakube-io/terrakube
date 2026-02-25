@@ -1,4 +1,4 @@
-import * as Icons from "@ant-design/icons";
+import { antdIcons, getIcon } from "./config/iconList";
 import { transform } from "@babel/standalone";
 import { Collapse, DatePicker, Typography } from "antd";
 import { DateTime } from "luxon";
@@ -77,7 +77,7 @@ const { Panel } = Collapse;
 const { Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
 // List of antd icons to consider for dynamic importing
-const antdIcons = Object.keys(Icons).filter((name) => name.endsWith("Outlined"));
+const antdIconNames = Object.keys(antdIcons).filter((name) => name.endsWith("Outlined"));
 
 // Function to identify required antd components
 const getRequiredAntdComponents = (componentString: string) => {
@@ -86,7 +86,7 @@ const getRequiredAntdComponents = (componentString: string) => {
 
 // Function to identify required antd icons
 const getRequiredAntdIcons = (componentString: string) => {
-  return antdIcons.filter((icon) => componentString.includes(icon));
+  return antdIconNames.filter((icon) => componentString.includes(icon));
 };
 
 // Function to dynamically import antd components
@@ -109,14 +109,13 @@ const importAntdComponents = async (components: string[]) => {
 
 // Function to dynamically import antd icons
 const importAntdIcons = async (icons: any) => {
-  // Use the already imported Icons from '@ant-design/icons'
   const importedIcons: Record<string, any> = {};
 
   icons.forEach((icon: string) => {
-    if (Icons[icon as keyof typeof Icons]) {
-      importedIcons[icon] = Icons[icon as keyof typeof Icons];
+    if (antdIcons[icon as keyof typeof antdIcons]) {
+      importedIcons[icon] = antdIcons[icon as keyof typeof antdIcons];
     } else {
-      console.error(`Icon ${icon} not found in @ant-design/icons`);
+      importedIcons[icon] = getIcon(icon);
     }
   });
 
@@ -148,11 +147,12 @@ const importReactIcons = async (icons: string[]) => {
 
   try {
     const siModule = await import("react-icons/si");
+    const typedSiModule = siModule as Record<string, any>;
     const importedIcons: Record<string, any> = {};
 
     icons.forEach((icon: string) => {
-      if (siModule[icon]) {
-        importedIcons[icon] = siModule[icon];
+      if (typedSiModule[icon]) {
+        importedIcons[icon] = typedSiModule[icon];
       } else {
         console.error(`Icon ${icon} not found in react-icons/si`);
       }
@@ -217,7 +217,7 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         console.debug("Required Antd Icons:", requiredAntdIcons);
         console.debug("Required React Icons:", requiredReactIcons);
 
-        const [importedComponents, importedIcons, importedReactIcons] = await Promise.all([
+        const [, importedIcons, importedReactIcons] = await Promise.all([
           importAntdComponents(requiredAntdComponents),
           importAntdIcons(requiredAntdIcons),
           importReactIcons(requiredReactIcons),

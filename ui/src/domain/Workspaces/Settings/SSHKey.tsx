@@ -67,13 +67,11 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace }: Props) => {
     <div className="generalSettings">
       <h1>SSH Key</h1>
       <Text type="secondary">
-        Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key
-        is not used for cloning the workspace VCS repository or for provisioner connections.
+        Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
+        not used for cloning the workspace VCS repository or for provisioner connections.
       </Text>
       <p style={{ marginTop: 4 }}>
-        <Link to={`/organizations/${organizationId}/settings`}>
-          Manage SSH keys for this organization.
-        </Link>
+        <Link to={`/organizations/${organizationId}/settings`}>Manage SSH keys for this organization.</Link>
       </p>
 
       <Spin spinning={waiting}>

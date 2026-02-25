@@ -47,3 +47,29 @@
 ul.disc-list {
   list-style-type: disc;
 }
+
+/* Limit form input width in settings */
+.setting .ant-form-item {
+  max-width: 500px;
+}
+
+.setting .ant-input,
+.setting .ant-input-textarea,
+.setting textarea.ant-input {
+  max-width: 500px;
+}
+
+/* Dark mode for VCS form */
+[data-theme="dark"] .editor {
+  border-color: var(--tk-border-primary);
+  background-color: var(--tk-bg-base);
+}
+
+/* Dark mode for steps in VCS form */
+[data-theme="dark"] .ant-steps-item-title {
+  color: var(--tk-text-primary) !important;
+}
+
+[data-theme="dark"] .ant-steps-item-description {
+  color: var(--tk-text-secondary) !important;
+}

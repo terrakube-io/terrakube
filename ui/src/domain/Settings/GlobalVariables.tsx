@@ -1,5 +1,20 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, message, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, Spin } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  message,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  Spin,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -123,11 +138,14 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/globalvar/${id}`).then((response) => {
-      loadGlobalVariables();
-    }).catch((err) => {
-      message.error(getErrorMessage(err));
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/globalvar/${id}`)
+      .then((response) => {
+        loadGlobalVariables();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: CreateVariableForm) => {
@@ -218,92 +236,92 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : (
-      <>
-      <h1>Global Variables</h1>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Global Variables allow you to define and apply variables one time across multiple workspaces within an
-          organization.
-        </Typography.Text>
-      </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-        Create global variable
-      </Button>
-      <br></br>
+        <>
+          <h1>Global Variables</h1>
+          <div>
+            <Typography.Text type="secondary" className="App-text">
+              Global Variables allow you to define and apply variables one time across multiple workspaces within an
+              organization.
+            </Typography.Text>
+          </div>
+          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+            Create global variable
+          </Button>
+          <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Global Variables</h3>
-      <Spin spinning={loading} tip="Loading Global Variables...">
-        <Table dataSource={globalVariables} columns={VARIABLES_COLUMS(onEdit)} rowKey="key" />
-      </Spin>
+          <h3 style={{ marginTop: "30px" }}>Global Variables</h3>
+          <Spin spinning={loading} tip="Loading Global Variables...">
+            <Table dataSource={globalVariables} columns={VARIABLES_COLUMS(onEdit)} rowKey="key" />
+          </Spin>
 
-      <Modal
-        width="600px"
-        open={visible}
-        title={mode === "edit" ? "Edit global variable " + variableKey : "Create new global variable"}
-        okText="Save global variable"
-        onCancel={onCancel}
-        cancelText="Cancel"
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
-        }}
-      >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="globalVariable" form={form} layout="vertical">
-            <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-              <Input.TextArea rows={1} autoSize={{ maxRows: 5 }} />
-            </Form.Item>
-            <Form.Item name="category" label="Category" rules={[{ required: true }]}>
-              <Select placeholder="Please select a category">
-                <Select.Option value="TERRAFORM">Terraform Variable</Select.Option>
-                <Select.Option value="ENV">Environment Variable</Select.Option>
-              </Select>
-            </Form.Item>
-            <Form.Item name="description" rules={[{ required: true }]} label="Description">
-              <Input.TextArea style={{ width: "800px" }} />
-            </Form.Item>
-            <Form.Item
-              name="hcl"
-              valuePropName="checked"
-              label="HCL"
-              tooltip={{
-                title:
-                  "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
-                icon: <InfoCircleOutlined />,
-              }}
-            >
-              <Switch />
-            </Form.Item>
-            {mode === "create" ? (
-              <Form.Item
-                name="sensitive"
-                valuePropName="checked"
-                label="Sensitive"
-                tooltip={{
-                  title:
-                    "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Switch />
-              </Form.Item>
-            ) : (
-              ""
-            )}
-          </Form>
-        </Space>
-      </Modal>
-      </>
+          <Modal
+            width="600px"
+            open={visible}
+            title={mode === "edit" ? "Edit global variable " + variableKey : "Create new global variable"}
+            okText="Save global variable"
+            onCancel={onCancel}
+            cancelText="Cancel"
+            onOk={() => {
+              form
+                .validateFields()
+                .then((values) => {
+                  if (mode === "create") onCreate(values);
+                  else onUpdate(values);
+                })
+                .catch((info) => {
+                  console.log("Validate Failed:", info);
+                });
+            }}
+          >
+            <Space style={{ width: "100%" }} direction="vertical">
+              <Form name="globalVariable" form={form} layout="vertical">
+                <Form.Item name="key" label="Key" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="value" label="Value" rules={[{ required: true }]}>
+                  <Input.TextArea rows={1} autoSize={{ maxRows: 5 }} />
+                </Form.Item>
+                <Form.Item name="category" label="Category" rules={[{ required: true }]}>
+                  <Select placeholder="Please select a category">
+                    <Select.Option value="TERRAFORM">Terraform Variable</Select.Option>
+                    <Select.Option value="ENV">Environment Variable</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="description" rules={[{ required: true }]} label="Description">
+                  <Input.TextArea style={{ width: "800px" }} />
+                </Form.Item>
+                <Form.Item
+                  name="hcl"
+                  valuePropName="checked"
+                  label="HCL"
+                  tooltip={{
+                    title:
+                      "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                >
+                  <Switch />
+                </Form.Item>
+                {mode === "create" ? (
+                  <Form.Item
+                    name="sensitive"
+                    valuePropName="checked"
+                    label="Sensitive"
+                    tooltip={{
+                      title:
+                        "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                  >
+                    <Switch />
+                  </Form.Item>
+                ) : (
+                  ""
+                )}
+              </Form>
+            </Space>
+          </Modal>
+        </>
       )}
     </div>
   );
