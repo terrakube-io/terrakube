@@ -1,5 +1,19 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, Form, Input, List, message, Modal, Popconfirm, Space, Typography, theme, Spin } from "antd";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Form,
+  Input,
+  List,
+  message,
+  Modal,
+  Popconfirm,
+  Space,
+  Typography,
+  theme,
+  Spin,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -49,11 +63,14 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/tag/${id}`).then((response) => {
-      loadTags();
-    }).catch((err) => {
-      message.error(getErrorMessage(err));
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/tag/${id}`)
+      .then((response) => {
+        loadTags();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: AddTagForm) => {
@@ -135,105 +152,105 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : (
-      <>
-      <h1>Tag Management</h1>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Tags are used to help identify and group together workspaces..
-        </Typography.Text>
-      </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-        Create tag
-      </Button>
-      <br></br>
+        <>
+          <h1>Tag Management</h1>
+          <div>
+            <Typography.Text type="secondary" className="App-text">
+              Tags are used to help identify and group together workspaces..
+            </Typography.Text>
+          </div>
+          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+            Create tag
+          </Button>
+          <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Tags</h3>
-      <Spin spinning={loading} tip="Loading Tags...">
-        <List
-          itemLayout="horizontal"
-          dataSource={tags}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                <Button
-                  onClick={() => {
-                    onEdit(item.id);
-                  }}
-                  icon={<EditOutlined />}
-                  type="link"
-                  disabled={!managePermission}
+          <h3 style={{ marginTop: "30px" }}>Tags</h3>
+          <Spin spinning={loading} tip="Loading Tags...">
+            <List
+              itemLayout="horizontal"
+              dataSource={tags}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      onClick={() => {
+                        onEdit(item.id);
+                      }}
+                      icon={<EditOutlined />}
+                      type="link"
+                      disabled={!managePermission}
+                    >
+                      Edit
+                    </Button>,
+                    <Popconfirm
+                      onConfirm={() => {
+                        onDelete(item.id);
+                      }}
+                      style={{ width: "20px" }}
+                      title={
+                        <p>
+                          Deleting this tag will also remove it <br />
+                          from all the Workspaces that use it.
+                          <br />
+                          This action cannot be undone. <br />
+                          Are you sure?
+                        </p>
+                      }
+                      okText="Yes"
+                      cancelText="No"
+                    >
+                      {" "}
+                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
                 >
-                  Edit
-                </Button>,
-                <Popconfirm
-                  onConfirm={() => {
-                    onDelete(item.id);
-                  }}
-                  style={{ width: "20px" }}
-                  title={
-                    <p>
-                      Deleting this tag will also remove it <br />
-                      from all the Workspaces that use it.
-                      <br />
-                      This action cannot be undone. <br />
-                      Are you sure?
-                    </p>
-                  }
-                  okText="Yes"
-                  cancelText="No"
-                >
-                  {" "}
-                  <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                    Delete
-                  </Button>
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta
-                avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
-                title={item.attributes.name}
-              />
-            </List.Item>
-          )}
-        />
-      </Spin>
+                  <List.Item.Meta
+                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
+                    title={item.attributes.name}
+                  />
+                </List.Item>
+              )}
+            />
+          </Spin>
 
-      <Modal
-        width="600px"
-        open={visible}
-        title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
-        okText="Save tag"
-        onCancel={onCancel}
-        cancelText="Cancel"
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
-        }}
-      >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="tag" form={form} layout="vertical">
-            <Form.Item
-              name="name"
-              tooltip={{
-                title: "Must be a valid tag name",
-                icon: <InfoCircleOutlined />,
-              }}
-              label="Name"
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-          </Form>
-        </Space>
-      </Modal>
-      </>
+          <Modal
+            width="600px"
+            open={visible}
+            title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
+            okText="Save tag"
+            onCancel={onCancel}
+            cancelText="Cancel"
+            onOk={() => {
+              form
+                .validateFields()
+                .then((values) => {
+                  if (mode === "create") onCreate(values);
+                  else onUpdate(values);
+                })
+                .catch((info) => {
+                  console.log("Validate Failed:", info);
+                });
+            }}
+          >
+            <Space style={{ width: "100%" }} direction="vertical">
+              <Form name="tag" form={form} layout="vertical">
+                <Form.Item
+                  name="name"
+                  tooltip={{
+                    title: "Must be a valid tag name",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                  label="Name"
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Form>
+            </Space>
+          </Modal>
+        </>
       )}
     </div>
   );

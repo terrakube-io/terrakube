@@ -4,7 +4,7 @@ import { Button, Card, Col, Input, List, Row, Space, Tag, Typography } from "ant
 import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
-import { FaAws } from "react-icons/fa";
+import { FaAws } from "@/config/iconList";
 import { MdBusiness } from "react-icons/md";
 import { RiFolderHistoryLine } from "react-icons/ri";
 import { VscAzure } from "react-icons/vsc";

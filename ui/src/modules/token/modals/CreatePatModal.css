@@ -1,11 +1,81 @@
 .create-pat-modal {
-  width: "600px";
-  .content {
-    width: 100%;
+  .ant-modal-content {
+    border-radius: 8px;
   }
 
-  .created-token {
-    padding: 10px 15px;
-    border-radius: 15px;
+  .ant-modal-header {
+    margin-bottom: 20px;
   }
+
+  .required-badge {
+    margin-left: 8px;
+    background: #f5f5f5;
+    border: 1px solid #d9d9d9;
+    color: #666;
+    font-size: 12px;
+    border-radius: 4px;
+  }
+
+  .expiry-text {
+    display: block;
+    margin-top: -10px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+
+  .token-display {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+
+    .created-token {
+      margin-bottom: 0;
+      font-family: monospace;
+      font-size: 14px;
+    }
+  }
+
+  .warning-banner {
+    background-color: #fff0f6; /* Light pink/purple */
+    border: 1px solid #ffadd2;
+    margin-bottom: 20px;
+
+    .ant-alert-message {
+      color: #c41d7f;
+    }
+
+    .anticon {
+      color: #c41d7f;
+    }
+  }
+}
+
+/* Dark mode styles */
+[data-theme="dark"] .create-pat-modal .token-display {
+  background: #21262d;
+  border: 1px solid #30363d;
+}
+
+[data-theme="dark"] .create-pat-modal .token-display .created-token {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .create-pat-modal .warning-banner {
+  background-color: #2d1f1f;
+  border-color: #5c3d3d;
+}
+
+[data-theme="dark"] .create-pat-modal .warning-banner .ant-alert-message {
+  color: #f8a8a8;
+}
+
+[data-theme="dark"] .create-pat-modal .warning-banner .anticon {
+  color: #f8a8a8;
+}
+
+[data-theme="dark"] .create-pat-modal .required-badge {
+  background: #21262d;
+  border-color: #30363d;
+  color: #8b949e;
 }

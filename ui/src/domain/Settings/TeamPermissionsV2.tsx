@@ -1,17 +1,5 @@
 import React, { useEffect } from "react";
-import {
-  Form,
-  Radio,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  Tooltip,
-  Alert,
-  Space,
-  Divider,
-  Card,
-} from "antd";
+import { Form, Radio, Switch, Table, Tag, Typography, Tooltip, Alert, Space, Divider, Card } from "antd";
 import {
   InfoCircleOutlined,
   CrownOutlined,
@@ -89,42 +77,41 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
   custom: {},
 };
 
-const roleDescriptions: Record<
-  TeamRole,
-  { label: string; color: string; icon: React.ReactNode; description: string }
-> = {
-  admin: {
-    label: "Admin",
-    color: "red",
-    icon: <CrownOutlined />,
-    description: "Full control over all resources including workspace settings, team permissions, and infrastructure changes.",
-  },
-  write: {
-    label: "Write",
-    color: "orange",
-    icon: <EditOutlined />,
-    description: "Can plan and apply runs, manage workspaces, and read/write state and variables.",
-  },
-  plan: {
-    label: "Plan",
-    color: "blue",
-    icon: <CodeOutlined />,
-    description:
-      "Can queue plans to propose infrastructure changes, but cannot apply them. Changes require approval from a Write or Admin user.",
-  },
-  read: {
-    label: "Read",
-    color: "default",
-    icon: <EyeOutlined />,
-    description: "Can view workspaces, runs, state, and variables. Cannot make any changes.",
-  },
-  custom: {
-    label: "Custom",
-    color: "purple",
-    icon: <SettingOutlined />,
-    description: "Fine-grained permission control. Select individual permissions below.",
-  },
-};
+const roleDescriptions: Record<TeamRole, { label: string; color: string; icon: React.ReactNode; description: string }> =
+  {
+    admin: {
+      label: "Admin",
+      color: "red",
+      icon: <CrownOutlined />,
+      description:
+        "Full control over all resources including workspace settings, team permissions, and infrastructure changes.",
+    },
+    write: {
+      label: "Write",
+      color: "orange",
+      icon: <EditOutlined />,
+      description: "Can plan and apply runs, manage workspaces, and read/write state and variables.",
+    },
+    plan: {
+      label: "Plan",
+      color: "blue",
+      icon: <CodeOutlined />,
+      description:
+        "Can queue plans to propose infrastructure changes, but cannot apply them. Changes require approval from a Write or Admin user.",
+    },
+    read: {
+      label: "Read",
+      color: "default",
+      icon: <EyeOutlined />,
+      description: "Can view workspaces, runs, state, and variables. Cannot make any changes.",
+    },
+    custom: {
+      label: "Custom",
+      color: "purple",
+      icon: <SettingOutlined />,
+      description: "Fine-grained permission control. Select individual permissions below.",
+    },
+  };
 
 const permissionCategories: PermissionCategory[] = [
   {
@@ -218,7 +205,7 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
                   size="small"
                   style={{
                     cursor: managePermissions ? "pointer" : "not-allowed",
-                    borderColor: role === key ? desc.color === "default" ? "#d9d9d9" : desc.color : undefined,
+                    borderColor: role === key ? (desc.color === "default" ? "#d9d9d9" : desc.color) : undefined,
                     borderWidth: role === key ? 2 : 1,
                   }}
                   styles={{ body: { padding: "12px 16px" } }}
@@ -250,12 +237,8 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
       <h2 style={{ marginBottom: 4 }}>
         Permissions
         {role !== "custom" && (
-          <Typography.Text
-            type="secondary"
-            style={{ fontSize: 14, marginLeft: 12, fontWeight: "normal" }}
-          >
-            Determined by the{" "}
-            <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role
+          <Typography.Text type="secondary" style={{ fontSize: 14, marginLeft: 12, fontWeight: "normal" }}>
+            Determined by the <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role
           </Typography.Text>
         )}
       </h2>

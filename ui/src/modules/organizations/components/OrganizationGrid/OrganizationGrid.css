@@ -10,3 +10,8 @@
 .org-card-title {
   font-size: 20px;
 }
+
+/* Dark mode for organization card */
+[data-theme="dark"] .org-card-title {
+  color: #58a6ff;
+}

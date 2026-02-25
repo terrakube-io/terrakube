@@ -67,7 +67,8 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
     <div className="setting">
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
-      ) : (mode === "new" && <AddTemplate setMode={setMode} loadTemplates={loadTemplates} />) ||
+      ) : (
+        (mode === "new" && <AddTemplate setMode={setMode} loadTemplates={loadTemplates} />) ||
         (mode === "edit" && (
           <EditTemplate setMode={setMode} templateId={templateID} loadTemplates={loadTemplates} />
         )) || (
@@ -75,7 +76,14 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
             {" "}
             <h1 style={{ paddingBottom: "10px" }}>
               Templates
-              <Button type="primary" onClick={onAddVCS} className="addVCS" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+              <Button
+                type="primary"
+                onClick={onAddVCS}
+                className="addVCS"
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
                 Add a Template
               </Button>{" "}
             </h1>
@@ -127,7 +135,8 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
               />
             )}
           </div>
-        )}
+        )
+      )}
     </div>
   );
 };

@@ -46,9 +46,9 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
         );
       case "AZURE_SP_MI":
         return (
-                <IconContext.Provider value={{ size: "20px" }}>
-                    <VscAzureDevops />
-                </IconContext.Provider>
+          <IconContext.Provider value={{ size: "20px" }}>
+            <VscAzureDevops />
+          </IconContext.Provider>
         );
       default:
         return <GithubOutlined style={{ fontSize: "20px" }} />;
@@ -64,7 +64,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
       case "AZURE_DEVOPS":
         return "Azure Devops";
       case "AZURE_SP_MI":
-          return "Azure Devops";
+        return "Azure Devops";
       default:
         return "GitHub";
     }
@@ -103,11 +103,14 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
             "This VCS is currently in use by one or more workspaces. Please remove the VCS from all workspaces before deleting it."
           );
         } else {
-          axiosInstance.delete(`organization/${orgid}/vcs/${id}`).then(() => {
-            loadVCS();
-          }).catch((err) => {
-            message.error(getErrorMessage(err));
-          });
+          axiosInstance
+            .delete(`organization/${orgid}/vcs/${id}`)
+            .then(() => {
+              loadVCS();
+            })
+            .catch((err) => {
+              message.error(getErrorMessage(err));
+            });
         }
       })
       .catch((err) => {
@@ -150,7 +153,14 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
           {" "}
           <h1 style={{ paddingBottom: "10px" }}>
             VCS Providers
-            <Button type="primary" onClick={onAddVCS} className="addVCS" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+            <Button
+              type="primary"
+              onClick={onAddVCS}
+              className="addVCS"
+              htmlType="button"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+            >
               Add a VCS Provider
             </Button>{" "}
           </h1>

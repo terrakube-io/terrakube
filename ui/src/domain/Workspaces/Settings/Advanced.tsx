@@ -72,24 +72,24 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
     <div className="generalSettings">
       <h1>Destruction and Deletion</h1>
       <Text type="secondary">
-        There are two independent steps for destroying this workspace and any infrastructure associated with it.
-        First, any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in
-        Terrakube, including any variables, settings, and alert history can be deleted.
+        There are two independent steps for destroying this workspace and any infrastructure associated with it. First,
+        any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube,
+        including any variables, settings, and alert history can be deleted.
       </Text>
 
-      <h2>Delete Workspace</h2>
-      <p>
-        <Text type="secondary">
-          <Text strong>Warning!</Text> Deleting this workspace permanently removes all of its variables, settings,
-          alert history, run history, and Terraform state.
-        </Text>
-      </p>
-      <p>
-        <Text type="secondary">
+      <h3 style={{ marginBottom: "16px" }}>Delete this Workspace</h3>
+      <div style={{ textAlign: "left", marginBottom: "16px" }}>
+        <Typography.Text type="secondary">
+          <Text strong>Warning!</Text> Deleting this workspace permanently removes all of its variables, settings, alert
+          history, run history, and Terraform state.
+        </Typography.Text>
+      </div>
+      <div style={{ textAlign: "left", marginBottom: "16px" }}>
+        <Typography.Text type="secondary">
           This workspace is {isLocked ? "locked" : "unlocked"} and is
           {resourceCount > 0 ? ` managing ${resourceCount} resources` : " not managing any resources"}.
-        </Text>
-      </p>
+        </Typography.Text>
+      </div>
       <Popconfirm
         onConfirm={() => {
           onDelete(workspace);
@@ -105,7 +105,12 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
         cancelText="No"
         placement="bottom"
       >
-        <Button type="default" danger disabled={!manageWorkspace}>
+        <Button
+          type="primary"
+          danger
+          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+          disabled={!manageWorkspace}
+        >
           <Space>
             <DeleteOutlined />
             Delete from Terrakube

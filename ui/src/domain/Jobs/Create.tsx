@@ -139,7 +139,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
               name="templateId"
               label="Choose job type"
               rules={[{ required: true }]}
-              initialValue={defaultTemplate}>
+              initialValue={defaultTemplate}
+            >
               {loading || !templates ? (
                 <p>Data loading...</p>
               ) : (

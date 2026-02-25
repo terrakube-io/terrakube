@@ -124,7 +124,6 @@
   margin-right: 40px;
 }
 
-
 .ant-collapse-content > .ant-collapse-content-box {
   padding: 0px;
 }
@@ -165,4 +164,44 @@
 
 .react-flow__attribution {
   display: none;
+}
+
+/* Dark theme support */
+[data-theme="dark"] .generalSettings > p {
+  color: var(--ant-color-text-secondary);
+}
+
+[data-theme="dark"] .generalSettings .ant-form-item-extra {
+  color: var(--ant-color-text-tertiary);
+}
+
+[data-theme="dark"] .generalSettings .ant-input,
+[data-theme="dark"] .generalSettings .ant-input-affix-wrapper,
+[data-theme="dark"] .generalSettings .ant-select-selector {
+  background-color: var(--ant-color-bg-container) !important;
+  border-color: var(--ant-color-border) !important;
+}
+
+[data-theme="dark"] .generalSettings .ant-input:hover,
+[data-theme="dark"] .generalSettings .ant-input-affix-wrapper:hover,
+[data-theme="dark"] .generalSettings .ant-select-selector:hover {
+  border-color: var(--ant-color-border-secondary) !important;
+}
+
+[data-theme="dark"] .metadata {
+  color: var(--ant-color-text-secondary) !important;
+}
+
+[data-theme="dark"] .states,
+[data-theme="dark"] .stateDetails {
+  color: var(--ant-color-text-secondary);
+}
+
+[data-theme="dark"] .code {
+  background-color: #21262d;
+  color: #e6edf3;
+}
+
+[data-theme="dark"] .workspace-details {
+  color: var(--ant-color-text-secondary);
 }

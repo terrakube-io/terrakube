@@ -7,23 +7,10 @@ import {
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import {
-  Button,
-  Card,
-  Input,
-  List,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Steps,
-  Tabs,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Input, List, Modal, Select, Space, Spin, Steps, Tabs, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
-import { FaAws, FaGoogle } from "react-icons/fa";
+import { FaAws, FaGoogle } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
@@ -146,7 +133,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     { step: 1, status: "waiting", message: "Create version" },
     { step: 2, status: "waiting", message: "Add platform implementations" },
   ]);
-  
+
   // Existing items in the organization's registry
   const [existingProviders, setExistingProviders] = useState<Set<string>>(new Set());
   const [existingModules, setExistingModules] = useState<Set<string>>(new Set());
@@ -156,15 +143,13 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   useEffect(() => {
     const fetchExistingItems = async () => {
       if (!orgid) return;
-      
+
       setLoadingExisting(true);
       try {
         // Fetch existing providers
         const providersResponse = await listProviders(orgid);
         const providerNames = new Set(
-          providersResponse.data.map((p: ProviderModel) => 
-            p.attributes.name.toLowerCase()
-          )
+          providersResponse.data.map((p: ProviderModel) => p.attributes.name.toLowerCase())
         );
         setExistingProviders(providerNames);
 
@@ -215,31 +200,26 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     setLoading(true);
     try {
       // Use backend proxy to avoid CORS issues
-      const response = await axiosRegistry.get<ProviderSearchResponse>(
-        "/registry/v1/providers",
-        {
-          params: {
-            q: query,
-            limit: 20,
-          },
-        }
-      );
+      const response = await axiosRegistry.get<ProviderSearchResponse>("/registry/v1/providers", {
+        params: {
+          q: query,
+          limit: 20,
+        },
+      });
 
-      const mappedProviders: TerraformRegistryProvider[] = (response.data.providers || []).map(
-        (item) => ({
-          id: item.id,
-          namespace: item.namespace,
-          name: item.name,
-          alias: item.alias || "",
-          version: item.version,
-          description: item.description,
-          source: item.source,
-          published_at: item.published_at,
-          downloads: item.downloads,
-          tier: item.tier,
-          logo_url: item.logo_url,
-        })
-      );
+      const mappedProviders: TerraformRegistryProvider[] = (response.data.providers || []).map((item) => ({
+        id: item.id,
+        namespace: item.namespace,
+        name: item.name,
+        alias: item.alias || "",
+        version: item.version,
+        description: item.description,
+        source: item.source,
+        published_at: item.published_at,
+        downloads: item.downloads,
+        tier: item.tier,
+        logo_url: item.logo_url,
+      }));
 
       setProviders(mappedProviders);
     } catch (error) {
@@ -260,15 +240,12 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     setLoading(true);
     try {
       // Use backend proxy to avoid CORS issues
-      const response = await axiosRegistry.get<ModuleSearchResponse>(
-        "/registry/v1/modules",
-        {
-          params: {
-            q: query,
-            limit: 20,
-          },
-        }
-      );
+      const response = await axiosRegistry.get<ModuleSearchResponse>("/registry/v1/modules", {
+        params: {
+          q: query,
+          limit: 20,
+        },
+      });
 
       setModules(response.data.modules || []);
     } catch (error) {
@@ -310,13 +287,13 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
       { step: 1, status: "waiting", message: "Create version" },
       { step: 2, status: "waiting", message: "Add platform implementations" },
     ]);
-    
+
     if (type === "provider") {
       const provider = item as TerraformRegistryProvider;
       setLoadingVersions(true);
       setAvailableVersions([]);
       setSelectedVersion("");
-      
+
       try {
         const versionsData = await getProviderVersions(provider.namespace, provider.name);
         setAvailableVersions(versionsData.versions || []);
@@ -345,9 +322,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   };
 
   const updateProgress = (stepIndex: number, status: "waiting" | "process" | "finish" | "error", msg?: string) => {
-    setImportProgress(prev => prev.map((p, i) => 
-      i === stepIndex ? { ...p, status, message: msg || p.message } : p
-    ));
+    setImportProgress((prev) =>
+      prev.map((p, i) => (i === stepIndex ? { ...p, status, message: msg || p.message } : p))
+    );
   };
 
   const handleAddProvider = async () => {
@@ -370,30 +347,29 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     try {
       // Step 1: Create provider
       updateProgress(0, "process", "Creating provider...");
-      
+
       // Get version info for platforms
-      const versionInfo = availableVersions.find(v => v.version === selectedVersion);
+      const versionInfo = availableVersions.find((v) => v.version === selectedVersion);
       const platformCount = versionInfo?.platforms?.length || 0;
-      
+
       // Build a meaningful description from available data
-      const desc = provider.description
-        || (provider.source ? `Source: ${provider.source}` : "")
-        || `${provider.namespace}/${provider.name}`;
+      const desc =
+        provider.description ||
+        (provider.source ? `Source: ${provider.source}` : "") ||
+        `${provider.namespace}/${provider.name}`;
       // Pass pre-fetched versions to avoid duplicate API call
       const prefetchedVersions = { versions: availableVersions };
       await importProvider(orgid!, provider.namespace, provider.name, selectedVersion, desc, prefetchedVersions);
-      
+
       updateProgress(0, "finish", "Provider created");
       updateProgress(1, "finish", "Version created");
       updateProgress(2, "finish", `${platformCount} platform(s) added`);
 
-      message.success(
-        `Provider ${provider.namespace}/${provider.name} v${selectedVersion} added successfully`
-      );
-      
+      message.success(`Provider ${provider.namespace}/${provider.name} v${selectedVersion} added successfully`);
+
       // Update existing providers set (name is now stored as just the short name)
-      setExistingProviders(prev => new Set([...prev, provider.name.toLowerCase()]));
-      
+      setExistingProviders((prev) => new Set([...prev, provider.name.toLowerCase()]));
+
       // Small delay to show completion
       setTimeout(() => {
         closeModal();
@@ -401,7 +377,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
       }, 1000);
     } catch (error: any) {
       console.error("Error importing provider:", error);
-      const currentStep = importProgress.findIndex(p => p.status === "process");
+      const currentStep = importProgress.findIndex((p) => p.status === "process");
       if (currentStep >= 0) {
         updateProgress(currentStep, "error", `Failed: ${error.message || "Unknown error"}`);
       }
@@ -426,7 +402,8 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             name: module.name,
             description: module.description || `Imported from Terraform Registry: ${module.namespace}/${module.name}`,
             provider: module.provider,
-            source: module.source || `https://github.com/${module.namespace}/terraform-${module.provider}-${module.name}`,
+            source:
+              module.source || `https://github.com/${module.namespace}/terraform-${module.provider}-${module.name}`,
           },
         },
       };
@@ -464,11 +441,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const renderProviderLogo = (provider: TerraformRegistryProvider) => {
     if (provider.logo_url) {
       return (
-        <img
-          src={provider.logo_url}
-          alt={provider.name}
-          style={{ width: 32, height: 32, objectFit: "contain" }}
-        />
+        <img src={provider.logo_url} alt={provider.name} style={{ width: 32, height: 32, objectFit: "contain" }} />
       );
     }
     return <CloudOutlined style={{ fontSize: 32 }} />;
@@ -503,17 +476,21 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
 
   const renderProviderCard = (provider: TerraformRegistryProvider) => {
     const alreadyImported = isProviderImported(provider);
-    
+
     return (
-      <Card
-        hoverable
-        className="module-card"
-        style={{ width: "100%" }}
-        styles={{ body: { padding: 0 } }}
-      >
+      <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
         <div className="module-card-body">
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <div style={{ flexShrink: 0, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div
+              style={{
+                flexShrink: 0,
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               {renderProviderLogo(provider)}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -522,15 +499,16 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                   {provider.namespace} / {provider.name}
                 </Typography.Text>
                 {alreadyImported && (
-                  <Typography.Text type="secondary" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                  <Typography.Text
+                    type="secondary"
+                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}
+                  >
                     <CheckCircleOutlined style={{ color: "#52c41a" }} />
                     In your Registry
                   </Typography.Text>
                 )}
               </div>
-              <div className="module-card-desc">
-                {provider.description || "No description available"}
-              </div>
+              <div className="module-card-desc">{provider.description || "No description available"}</div>
             </div>
             {!alreadyImported && (
               <Button
@@ -547,7 +525,15 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           </div>
         </div>
         {/* Footer with separator */}
-        <div style={{ borderTop: "1px solid #f0f0f0", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div
+          style={{
+            borderTop: "1px solid #f0f0f0",
+            padding: "10px 24px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <Space size={16}>
             <Space size={4}>
               <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
@@ -567,17 +553,21 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
 
   const renderModuleCard = (module: TerraformRegistryModule) => {
     const alreadyImported = isModuleImported(module);
-    
+
     return (
-      <Card
-        hoverable
-        className="module-card"
-        style={{ width: "100%" }}
-        styles={{ body: { padding: 0 } }}
-      >
+      <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
         <div className="module-card-body">
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <div style={{ flexShrink: 0, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div
+              style={{
+                flexShrink: 0,
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               {renderModuleProviderIcon(module.provider)}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -586,15 +576,16 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                   {module.namespace} / {module.name}
                 </Typography.Text>
                 {alreadyImported && (
-                  <Typography.Text type="secondary" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                  <Typography.Text
+                    type="secondary"
+                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}
+                  >
                     <CheckCircleOutlined style={{ color: "#52c41a" }} />
                     In your Registry
                   </Typography.Text>
                 )}
               </div>
-              <div className="module-card-desc">
-                {module.description || "No description available"}
-              </div>
+              <div className="module-card-desc">{module.description || "No description available"}</div>
             </div>
             {!alreadyImported && (
               <Button
@@ -611,7 +602,15 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           </div>
         </div>
         {/* Footer with separator */}
-        <div style={{ borderTop: "1px solid #f0f0f0", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div
+          style={{
+            borderTop: "1px solid #f0f0f0",
+            padding: "10px 24px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <Space size={16}>
             <Space size={4}>
               <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
@@ -630,9 +629,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   };
 
   const getModalTitle = () => {
-    return modalState.type === "provider"
-      ? "Add provider to organization"
-      : "Add module to organization";
+    return modalState.type === "provider" ? "Add provider to organization" : "Add module to organization";
   };
 
   const getModalItemName = () => {
@@ -695,7 +692,11 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         <Search
           placeholder="Search Terraform Registry..."
           allowClear
-          enterButton={<><SearchOutlined /> Search</>}
+          enterButton={
+            <>
+              <SearchOutlined /> Search
+            </>
+          }
           size="large"
           onSearch={handleSearch}
           loading={loading}
@@ -711,20 +712,24 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         closable={!importing}
         maskClosable={!importing}
         width={560}
-        footer={importing ? null : [
-          <Button key="cancel" onClick={closeModal}>
-            Cancel
-          </Button>,
-          <Button
-            key="add"
-            type="primary"
-            loading={loadingVersions}
-            disabled={modalState.type === "provider" && !selectedVersion}
-            onClick={modalState.type === "provider" ? handleAddProvider : handleAddModule}
-          >
-            Import {modalState.type === "provider" ? "Provider" : "Module"}
-          </Button>,
-        ]}
+        footer={
+          importing
+            ? null
+            : [
+                <Button key="cancel" onClick={closeModal}>
+                  Cancel
+                </Button>,
+                <Button
+                  key="add"
+                  type="primary"
+                  loading={loadingVersions}
+                  disabled={modalState.type === "provider" && !selectedVersion}
+                  onClick={modalState.type === "provider" ? handleAddProvider : handleAddModule}
+                >
+                  Import {modalState.type === "provider" ? "Provider" : "Module"}
+                </Button>,
+              ]
+        }
       >
         {importing ? (
           <div style={{ padding: "20px 0" }}>
@@ -734,22 +739,26 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             <Steps
               direction="vertical"
               size="small"
-              current={importProgress.findIndex(p => p.status === "process")}
+              current={importProgress.findIndex((p) => p.status === "process")}
               items={importProgress.map((p) => ({
                 title: p.message,
                 status: p.status,
-                icon: p.status === "process" ? <LoadingOutlined /> : 
-                      p.status === "finish" ? <CheckCircleOutlined /> : undefined,
+                icon:
+                  p.status === "process" ? (
+                    <LoadingOutlined />
+                  ) : p.status === "finish" ? (
+                    <CheckCircleOutlined />
+                  ) : undefined,
               }))}
             />
           </div>
         ) : (
           <>
             <Typography.Paragraph>
-              Import this {modalState.type} from the public Terraform Registry to your private
-              registry in <strong>{organizationName}</strong>.
+              Import this {modalState.type} from the public Terraform Registry to your private registry in{" "}
+              <strong>{organizationName}</strong>.
             </Typography.Paragraph>
-            
+
             <div style={{ background: "#f5f5f5", padding: 16, borderRadius: 8, marginBottom: 16 }}>
               <Typography.Text strong style={{ fontSize: 16 }}>
                 {getModalItemName()}
@@ -787,7 +796,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                         }
                         return 0;
                       })
-                      .map(v => ({
+                      .map((v) => ({
                         value: v.version,
                         label: `v${v.version}`,
                       }))}
@@ -797,8 +806,8 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             )}
 
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              This will create the {modalState.type} in your private registry, allowing you to use it
-              in your Terraform configurations with your organization's registry URL.
+              This will create the {modalState.type} in your private registry, allowing you to use it in your Terraform
+              configurations with your organization's registry URL.
             </Typography.Paragraph>
           </>
         )}

@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Flex, Spin, Typography } from "antd";
+import { Alert, Button, Flex, Spin, Typography, Breadcrumb } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { UserToken } from "@/modules/user/types";
@@ -34,16 +34,37 @@ export const Tokens = () => {
 
   return (
     <div className="pat-section">
-      <Flex gap="middle" justify="space-between" align="center">
+      <Breadcrumb
+        className="breadcrumb"
+        items={[
+          {
+            title: "Settings",
+          },
+          {
+            title: "Tokens",
+          },
+        ]}
+      />
+      <Flex gap="middle" justify="space-between" align="center" className="header-section">
         <Flex vertical>
-          <Typography.Title className="title">Personal Access Tokens</Typography.Title>
-          <Typography.Text type="secondary">
-            Personal Access Tokens (PAT), also known as API tokens can be used to access the Terrakube API and perform
-            all the actions your user account is entitled to. For more information, see the Terrakube documentation.
+          <Typography.Title level={2} className="title">
+            Tokens
+          </Typography.Title>
+          <Typography.Text type="secondary" className="description">
+            Your API tokens can be used to access the Terrakube API and perform all the actions your user account is
+            entitled to. For more information, see the{" "}
+            <a href="https://docs.terrakube.io/" target="_blank" rel="noreferrer">
+              user API tokens documentation
+            </a>
+            .
+          </Typography.Text>
+          <Typography.Text type="secondary" className="warning-text">
+            Treat these tokens like passwords, as they can be used to access your account without a username, password,
+            or two-factor authentication.
           </Typography.Text>
         </Flex>
         <Button type="primary" onClick={() => setVisible(true)}>
-          New token
+          Create an API token
         </Button>
       </Flex>
 
@@ -58,20 +79,7 @@ export const Tokens = () => {
         </Flex>
       )}
 
-      {!loading && tokens.length === 0 && (
-        <Flex justify="center">
-          <Empty
-            className="no-content"
-            style={{ textAlign: "center" }}
-            description="You have not created any Personal Access Tokens. Create one now to start integrating with the Terrakube API"
-          >
-            <Button type="primary" onClick={() => setVisible(true)}>
-              Create a new token
-            </Button>
-          </Empty>
-        </Flex>
-      )}
-      {!loading && tokens.length > 0 && (
+      {!loading && (
         <TokenGrid
           tokens={tokens}
           action={(id) => userService.deletePersonalAccessToken(id!)}

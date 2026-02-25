@@ -14,20 +14,20 @@
   margin-right: auto;
 }
 
-
-
 /* Module card — Leaa-inspired: white card, soft shadow, no border */
 .module-card.ant-card {
-  box-shadow: 0 9px 18px 0 rgba(0, 35, 90, 0.06),
-              0 0 2px 0 rgba(0, 35, 90, 0.06);
+  box-shadow:
+    0 9px 18px 0 rgba(0, 35, 90, 0.06),
+    0 0 2px 0 rgba(0, 35, 90, 0.06);
   border: none !important;
   border-radius: 8px;
   transition: box-shadow 0.25s ease;
 }
 
 .module-card.ant-card:hover {
-  box-shadow: 0 9px 24px 0 rgba(0, 35, 90, 0.10),
-              0 0 2px 0 rgba(0, 35, 90, 0.08);
+  box-shadow:
+    0 9px 24px 0 rgba(0, 35, 90, 0.1),
+    0 0 2px 0 rgba(0, 35, 90, 0.08);
 }
 
 /* Uniform card content height */
@@ -46,6 +46,30 @@
   font-size: 13px;
   color: #656d76;
   line-height: 1.5;
+}
+
+/* Module card name */
+.module-card-name {
+  font-size: 16px;
+  color: #222b3d;
+}
+
+[data-theme="dark"] .module-card-name {
+  color: #58a6ff;
+}
+
+/* Dark mode for module card description */
+[data-theme="dark"] .module-card-desc {
+  color: #8b949e;
+}
+
+/* Dark mode for module card border */
+[data-theme="dark"] .module-card .ant-card {
+  border-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .module-card-body + div {
+  border-top-color: var(--tk-border-primary) !important;
 }
 
 .module-flat-icon {

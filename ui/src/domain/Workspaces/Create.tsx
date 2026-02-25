@@ -145,11 +145,47 @@ export const CreateWorkspace = () => {
   useEffect(() => {
     setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME));
     setLoading(true);
-    loadVersions(iacType);
-    loadSSHKeys();
-    loadOrgTemplates();
-    loadVCS();
     getIacTypes();
+
+    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+
+    // Parallel load: versions, SSH keys, templates, and VCS
+    Promise.all([
+      axiosInstance.get(versionsApi),
+      axiosInstance.get(`organization/${organizationId}/ssh`),
+      axiosInstance.get(`organization/${organizationId}/template`),
+      axiosInstance.get(`organization/${organizationId}/vcs`),
+    ]).then(([versionsRes, sshRes, templatesRes, vcsRes]) => {
+      // Process versions
+      const tfVersions: string[] = [];
+      if (iacType.id === "tofu") {
+        (versionsRes.data as TofuRelease[]).forEach((release) => {
+          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+        });
+      } else {
+        for (const version in versionsRes.data.versions) {
+          if (!version.includes("-")) tfVersions.push(version);
+        }
+      }
+      tfVersions.sort(compareVersions).reverse();
+      setTerraformVersions(tfVersions);
+      if (tfVersions.length > 0) {
+        form.setFieldsValue({ terraformVersion: tfVersions[0] });
+      }
+
+      // Set SSH keys
+      setSSHKeys(sshRes.data.data);
+
+      // Set templates
+      setOrgTemplates(templatesRes.data.data);
+      if (templatesRes.data.data.length > 0) {
+        form.setFieldsValue({ defaultTemplate: templatesRes.data.data[0].id });
+      }
+
+      // Set VCS
+      setVCS(vcsRes.data.data);
+      setLoading(false);
+    });
   }, []);
   const handleClick = () => {
     setCurrent(2);
@@ -205,38 +241,16 @@ export const CreateWorkspace = () => {
             &nbsp;
           </IconContext.Provider>
         );
-        case "AZURE_SP_MI":
-            return (
-                <IconContext.Provider value={{ size: "20px" }}>
-                    <VscAzureDevops />
-                    &nbsp;
-                </IconContext.Provider>
-            );
+      case "AZURE_SP_MI":
+        return (
+          <IconContext.Provider value={{ size: "20px" }}>
+            <VscAzureDevops />
+            &nbsp;
+          </IconContext.Provider>
+        );
       default:
         return <GithubOutlined style={{ fontSize: "20px" }} />;
     }
-  };
-
-  const loadVCS = () => {
-    axiosInstance.get(`organization/${organizationId}/vcs`).then((response) => {
-      setVCS(response.data.data);
-      setLoading(false);
-    });
-  };
-
-  const loadSSHKeys = () => {
-    axiosInstance.get(`organization/${organizationId}/ssh`).then((response) => {
-      setSSHKeys(response.data.data);
-    });
-  };
-
-  const loadOrgTemplates = () => {
-    axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
-      setOrgTemplates(response.data.data);
-      if(response.data.data.length > 0) {
-        form.setFieldsValue({defaultTemplate: response.data.data[0].id});
-      }
-    });
   };
 
   const [form] = Form.useForm();
@@ -285,7 +299,7 @@ export const CreateWorkspace = () => {
       tfVersions.sort(compareVersions).reverse();
       setTerraformVersions(tfVersions);
       if (tfVersions.length > 0) {
-        form.setFieldsValue({terraformVersion: tfVersions[0]})
+        form.setFieldsValue({ terraformVersion: tfVersions[0] });
       }
     });
   };

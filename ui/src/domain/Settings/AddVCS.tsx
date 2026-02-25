@@ -454,12 +454,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           <div>
             <Typography.Text type="secondary" className="paragraph">
               1. On {renderVCSType(vcsType)},{" "}
-              <Button
-                className="link"
-                target="_blank"
-                href="https://aex.dev.azure.com/me?mkt=es-ES"
-                type="link"
-              >
+              <Button className="link" target="_blank" href="https://aex.dev.azure.com/me?mkt=es-ES" type="link">
                 grant accesses to the managed identity &nbsp; <HiOutlineExternalLink />
               </Button>
               . Enter the following information:
@@ -470,19 +465,13 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                 <ul className="disc-list">
                   <li>
                     <b>Organization Setup:</b>{" "}
-                    <Typography.Paragraph
-                      type="secondary"
-                      style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
-                    >
+                    <Typography.Paragraph type="secondary" style={{ display: "inline", margin: 0, paddingLeft: "5px" }}>
                       Add the manage identity to the organization and grant "Basic" access level
                     </Typography.Paragraph>
                   </li>
                   <li>
                     <b>Repository setup:</b>{" "}
-                    <Typography.Paragraph
-                      type="secondary"
-                      style={{ display: "inline", margin: 0, paddingLeft: "5px" }}
-                    >
+                    <Typography.Paragraph type="secondary" style={{ display: "inline", margin: 0, paddingLeft: "5px" }}>
                       Add the manage identity to the repository and grant "Contributor" access level
                     </Typography.Paragraph>
                   </li>
@@ -834,10 +823,20 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             >
               <Input placeholder={renderVCSType(vcsType)} />
             </Form.Item>
-            <Form.Item name="endpoint" label="HTTPS URL" rules={[{ required: !httpsHidden(vcsType) }]} hidden={httpsHidden(vcsType)}>
+            <Form.Item
+              name="endpoint"
+              label="HTTPS URL"
+              rules={[{ required: !httpsHidden(vcsType) }]}
+              hidden={httpsHidden(vcsType)}
+            >
               <Input placeholder={getHttpsPlaceholder(vcsType)} />
             </Form.Item>
-            <Form.Item name="apiUrl" label="API URL" rules={[{ required: !apiUrlHidden(vcsType) }]} hidden={apiUrlHidden(vcsType)}>
+            <Form.Item
+              name="apiUrl"
+              label="API URL"
+              rules={[{ required: !apiUrlHidden(vcsType) }]}
+              hidden={apiUrlHidden(vcsType)}
+            >
               <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
             </Form.Item>
             <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>

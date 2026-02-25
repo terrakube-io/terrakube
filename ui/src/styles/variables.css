@@ -1,0 +1,69 @@
+:root {
+  /* Light Theme (Default) */
+  --tk-bg-base: #ffffff;
+  --tk-bg-container: #ffffff;
+  --tk-bg-elevated: #ffffff;
+  --tk-bg-layout: #f0f2f5;
+  --tk-bg-spotlight: #000000;
+
+  --tk-border-primary: #d9d9d9;
+  --tk-border-secondary: #f0f0f0;
+
+  --tk-text-primary: rgba(0, 0, 0, 0.88);
+  --tk-text-secondary: rgba(0, 0, 0, 0.65);
+  --tk-text-tertiary: rgba(0, 0, 0, 0.45);
+  --tk-text-quaternary: rgba(0, 0, 0, 0.25);
+
+  --tk-fill-primary: #f5f5f5;
+  --tk-fill-secondary: #fafafa;
+
+  --tk-accent-glow: rgba(24, 144, 255, 0.2);
+  --tk-glass-bg: rgba(255, 255, 255, 0.9);
+  --tk-glass-border: rgba(255, 255, 255, 0.3);
+
+  --tk-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --tk-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --tk-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] {
+  /* Dark Theme - Premium Palette */
+  /* Backgrounds - rich dark, not pure black */
+  --tk-bg-base: #0d1117;
+  --tk-bg-container: #161b22;
+  --tk-bg-elevated: #1c2128;
+  --tk-bg-layout: #0d1117;
+  --tk-bg-spotlight: #21262d;
+
+  /* Borders - subtle but visible */
+  --tk-border-primary: #30363d;
+  --tk-border-secondary: #21262d;
+
+  /* Text - high contrast */
+  --tk-text-primary: #e6edf3;
+  --tk-text-secondary: #8b949e;
+  --tk-text-tertiary: #6e7681;
+  --tk-text-quaternary: #484f58;
+
+  /* Fill colors */
+  --tk-fill-primary: #21262d;
+  --tk-fill-secondary: #30363d;
+  --tk-fill-tertiary: #161b22;
+  --tk-fill-quaternary: #0d1117;
+
+  /* Premium Effects */
+  --tk-accent-glow: rgba(94, 106, 210, 0.3); /* Linear-inspired purple */
+  --tk-glass-bg: rgba(28, 33, 40, 0.85);
+  --tk-glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Shadows */
+  --tk-shadow-sm: 0 1px 0 rgba(27, 31, 35, 0.04);
+  --tk-shadow-md: 0 3px 6px rgba(140, 149, 159, 0.15);
+  --tk-shadow-lg: 0 8px 24px rgba(140, 149, 159, 0.2);
+  --tk-shadow-glow: 0 0 0 2px var(--tk-accent-glow);
+
+  /* Scrollbars */
+  --tk-scrollbar-track: #161b22;
+  --tk-scrollbar-thumb: #30363d;
+  --tk-scrollbar-thumb-hover: #484f58;
+}

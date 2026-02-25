@@ -2,20 +2,44 @@
   margin-left: 40px;
   margin-right: 100px;
   padding-bottom: 100px;
-  .title {
-    margin-bottom: 5px;
+
+  .breadcrumb {
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #666;
   }
+
+  .header-section {
+    margin-bottom: 30px;
+  }
+
+  .title {
+    margin-bottom: 10px !important;
+    font-weight: 600;
+  }
+
+  .description {
+    margin-bottom: 10px;
+    display: block;
+    max-width: 800px;
+  }
+
+  .warning-text {
+    display: block;
+    max-width: 800px;
+    margin-top: 10px;
+  }
+
   .alert {
     margin-top: 10px;
   }
+
   .loader {
     margin-top: 50px;
   }
+
   .no-content {
     margin-top: 50px;
     max-width: 350px;
-  }
-  .delete-button {
-    margin-left: 20px;
   }
 }

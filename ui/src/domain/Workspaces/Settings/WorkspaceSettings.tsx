@@ -19,7 +19,13 @@ type Props = {
   onWorkspaceUpdate?: () => void;
 };
 
-export const WorkspaceSettings = ({ workspace, orgTemplates, manageWorkspace, vcsProvider, onWorkspaceUpdate }: Props) => {
+export const WorkspaceSettings = ({
+  workspace,
+  orgTemplates,
+  manageWorkspace,
+  vcsProvider,
+  onWorkspaceUpdate,
+}: Props) => {
   const [activeKey, setActiveKey] = useState("general");
   const { token } = theme.useToken();
 
