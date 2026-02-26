@@ -12,12 +12,8 @@ const JSON_API_CONTENT_TYPE = "application/vnd.api+json";
 
 // Terrakube API functions
 
-export const listProviders = async (
-  orgId: string
-): Promise<{ data: ProviderModel[] }> => {
-  const response = await axiosInstance.get(
-    `organization/${orgId}/provider`
-  );
+export const listProviders = async (orgId: string): Promise<{ data: ProviderModel[] }> => {
+  const response = await axiosInstance.get(`organization/${orgId}/provider`);
   return response.data;
 };
 
@@ -28,9 +24,7 @@ export const getProvider = async (
   data: ProviderModel;
   included?: (ProviderVersionModel | ProviderImplementationModel)[];
 }> => {
-  const response = await axiosInstance.get(
-    `organization/${orgId}/provider/${providerId}?include=version`
-  );
+  const response = await axiosInstance.get(`organization/${orgId}/provider/${providerId}?include=version`);
   return response.data;
 };
 
@@ -134,10 +128,7 @@ export const createImplementation = async (
  * Delete a provider and all its children (implementations, then versions).
  * The backend has no cascade delete, so we must delete children first.
  */
-export const deleteProviderCascade = async (
-  orgId: string,
-  providerId: string
-): Promise<void> => {
+export const deleteProviderCascade = async (orgId: string, providerId: string): Promise<void> => {
   // 1. Get provider with versions and implementations
   const response = await axiosInstance.get(
     `organization/${orgId}/provider/${providerId}?include=version,version.implementation`
@@ -172,15 +163,11 @@ export const deleteProviderCascade = async (
 
   // 3. Delete all versions
   for (const versionId of versionIds) {
-    await axiosInstance.delete(
-      `organization/${orgId}/provider/${providerId}/version/${versionId}`
-    );
+    await axiosInstance.delete(`organization/${orgId}/provider/${providerId}/version/${versionId}`);
   }
 
   // 4. Delete the provider itself
-  await axiosInstance.delete(
-    `organization/${orgId}/provider/${providerId}`
-  );
+  await axiosInstance.delete(`organization/${orgId}/provider/${providerId}`);
 };
 
 // Keep simple delete for backward compatibility
@@ -188,9 +175,7 @@ export const deleteProvider = deleteProviderCascade;
 
 // Terraform Registry API functions (via backend proxy to avoid CORS)
 
-export const searchTerraformRegistry = async (
-  query: string
-): Promise<TerraformRegistrySearchResult> => {
+export const searchTerraformRegistry = async (query: string): Promise<TerraformRegistrySearchResult> => {
   const response = await axiosRegistry.get("/registry/v1/providers", {
     params: {
       q: query,
@@ -204,9 +189,7 @@ export const getProviderVersions = async (
   namespace: string,
   name: string
 ): Promise<TerraformRegistryProviderVersions> => {
-  const response = await axiosRegistry.get(
-    `/registry/v1/providers/${namespace}/${name}/versions`
-  );
+  const response = await axiosRegistry.get(`/registry/v1/providers/${namespace}/${name}/versions`);
   return response.data;
 };
 
@@ -233,7 +216,7 @@ export const importProvider = async (
   prefetchedVersions?: TerraformRegistryProviderVersions
 ): Promise<{ provider: ProviderModel; version: ProviderVersionModel }> => {
   // 1. Get versions from registry (or use pre-fetched data to avoid duplicate call)
-  const versionsData = prefetchedVersions || await getProviderVersions(namespace, name);
+  const versionsData = prefetchedVersions || (await getProviderVersions(namespace, name));
   const versionInfo = versionsData.versions.find((v) => v.version === version);
 
   if (!versionInfo) {
@@ -242,12 +225,10 @@ export const importProvider = async (
 
   // 2. Create provider in Terrakube (use only the short name, not namespace/name)
   const desc = description || `${namespace}/${name}`;
-  const providerResult = await createProvider(
-    orgId,
-    name,
-    desc.substring(0, 256),
-    { imported: true, registryNamespace: namespace }
-  );
+  const providerResult = await createProvider(orgId, name, desc.substring(0, 256), {
+    imported: true,
+    registryNamespace: namespace,
+  });
   const providerId = providerResult.data.id;
 
   // 3. Create version in Terrakube
@@ -266,23 +247,18 @@ export const importProvider = async (
 
   // Filter to only available platforms
   const availablePlatforms = platforms.filter((platform) =>
-    versionInfo.platforms?.some(
-      (p) => p.os === platform.os && p.arch === platform.arch
-    )
+    versionInfo.platforms?.some((p) => p.os === platform.os && p.arch === platform.arch)
   );
 
   // Fetch all download info in parallel
   const downloadResults = await Promise.allSettled(
-    availablePlatforms.map((platform) =>
-      getProviderDownload(namespace, name, version, platform.os, platform.arch)
-    )
+    availablePlatforms.map((platform) => getProviderDownload(namespace, name, version, platform.os, platform.arch))
   );
 
   // Create all implementations in parallel
   const implementationPromises = downloadResults
     .filter(
-      (result): result is PromiseFulfilledResult<TerraformRegistryProviderDownload> =>
-        result.status === "fulfilled"
+      (result): result is PromiseFulfilledResult<TerraformRegistryProviderDownload> => result.status === "fulfilled"
     )
     .map((result) => {
       const downloadInfo = result.value;
@@ -308,10 +284,7 @@ export const importProvider = async (
         source: source.substring(0, 64) || "unknown",
         sourceUrl: sourceUrl.substring(0, 512) || "https://unknown",
       }).catch((error) => {
-        console.warn(
-          `Failed to create implementation for ${downloadInfo.os}/${downloadInfo.arch}:`,
-          error
-        );
+        console.warn(`Failed to create implementation for ${downloadInfo.os}/${downloadInfo.arch}:`, error);
       });
     });
 
@@ -322,5 +295,3 @@ export const importProvider = async (
     version: versionResult.data,
   };
 };
-
-

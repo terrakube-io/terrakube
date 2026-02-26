@@ -1,36 +1,13 @@
-import {
-  CopyOutlined,
-  DeleteOutlined,
-  DownOutlined,
-  LinkOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
-import {
-  Button,
-  Card,
-  Col,
-  Divider,
-  Dropdown,
-  message,
-  Popconfirm,
-  Row,
-  Space,
-  Typography,
-} from "antd";
+import { CopyOutlined, DeleteOutlined, DownOutlined, LinkOutlined, SettingOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Divider, Dropdown, message, Popconfirm, Row, Space, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconContext } from "react-icons";
 import { RiFolderHistoryLine } from "react-icons/ri";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import {
-  getProvider,
-  deleteProviderCascade,
-} from "./providerService";
-import {
-  ProviderModel,
-  ProviderVersionModel,
-} from "./types";
+import { getProvider, deleteProviderCascade } from "./providerService";
+import { ProviderModel, ProviderVersionModel } from "./types";
 
 type Props = {
   organizationName: string;
@@ -154,7 +131,12 @@ export const ProviderDetails = ({ organizationName }: Props) => {
   return (
     <PageWrapper
       title={shortName || "Provider"}
-      subTitle={provider?.attributes.description?.replace(/https?:\/\/[^\s]+/g, "").replace(/Source:?\s*/i, "").trim() || undefined}
+      subTitle={
+        provider?.attributes.description
+          ?.replace(/https?:\/\/[^\s]+/g, "")
+          .replace(/Source:?\s*/i, "")
+          .trim() || undefined
+      }
       loading={loading}
       loadingText="Loading Provider..."
       breadcrumbs={[
@@ -166,202 +148,176 @@ export const ProviderDetails = ({ organizationName }: Props) => {
       fluid
       innerClassName="registry-centered"
       contentClassName="registry-centered"
-
     >
       {provider && (
-          <div>
-            {/* Metadata row */}
-            <Space
-              size="large"
-              style={{ marginTop: 12, marginBottom: 24 }}
-              wrap
-            >
-              {namespace && (
-                <Typography.Text type="secondary">
-                  By <strong>{namespace}</strong>
-                </Typography.Text>
-              )}
-              {selectedVersion && (
-                <Space size={4}>
-                  <IconContext.Provider value={{ size: "1.1em" }}>
-                    <RiFolderHistoryLine />
-                  </IconContext.Provider>
-                  <Typography.Text type="secondary">
-                    Version{" "}
-                  </Typography.Text>
-                  <Dropdown
-                    menu={{
-                      items: versions.map((v) => ({
-                        key: v.versionNumber,
-                        label: v.versionNumber,
-                      })),
-                      onClick: ({ key }) => setSelectedVersion(key),
-                      selectedKeys: [selectedVersion],
-                    }}
-                    trigger={["click"]}
-                  >
-                    <Typography.Link style={{ fontWeight: 600 }}>
-                      {selectedVersion} <DownOutlined style={{ fontSize: 10 }} />
-                    </Typography.Link>
-                  </Dropdown>
-                </Space>
-              )}
-              {sourceUrl && (
-                <Space size={4}>
-                  <LinkOutlined />
-                  <Typography.Text type="secondary">
-                    Source{" "}
-                    <Typography.Link
-                      href={sourceUrl}
-                      target="_blank"
-                    >
-                      {sourceRepoName} <LinkOutlined />
-                    </Typography.Link>
-                  </Typography.Text>
-                </Space>
-              )}
-
-            </Space>
-
-            {/* Overview content */}
-            <Row gutter={32} style={{ marginTop: 16 }}>
-              <Col span={16}>
-                <Typography.Title level={4}>
-                  Provider details
-                </Typography.Title>
-                <Typography.Paragraph type="secondary">
-                  Select a version from the metadata above and copy the
-                  configuration from the sidebar.
-                </Typography.Paragraph>
-
-              </Col>
-              <Col span={8}>
-                <Card
-                  style={{ borderRadius: 12, border: "1px solid #e8e8e8" }}
-                  styles={{ body: { padding: "20px 24px" } }}
+        <div>
+          {/* Metadata row */}
+          <Space size="large" style={{ marginTop: 12, marginBottom: 24 }} wrap>
+            {namespace && (
+              <Typography.Text type="secondary">
+                By <strong>{namespace}</strong>
+              </Typography.Text>
+            )}
+            {selectedVersion && (
+              <Space size={4}>
+                <IconContext.Provider value={{ size: "1.1em" }}>
+                  <RiFolderHistoryLine />
+                </IconContext.Provider>
+                <Typography.Text type="secondary">Version </Typography.Text>
+                <Dropdown
+                  menu={{
+                    items: versions.map((v) => ({
+                      key: v.versionNumber,
+                      label: v.versionNumber,
+                    })),
+                    onClick: ({ key }) => setSelectedVersion(key),
+                    selectedKeys: [selectedVersion],
+                  }}
+                  trigger={["click"]}
                 >
-                  {/* Manage Provider dropdown */}
-                  <Dropdown
-                    menu={{
-                      items: [
-                        {
-                          key: "delete",
-                          label: (
-                            <Popconfirm
-                              title={
-                                <p>
-                                  Provider <b>{providerName}</b> and all
-                                  its versions will be permanently
-                                  deleted.
-                                  <br />
-                                  Are you sure?
-                                </p>
-                              }
-                              onConfirm={handleDelete}
-                              okText="Yes"
-                              cancelText="No"
-                              placement="left"
-                            >
-                              <Space>
-                                <DeleteOutlined
-                                  style={{ color: "#ff4d4f" }}
-                                />
-                                <span style={{ color: "#ff4d4f" }}>
-                                  Remove from organization
-                                </span>
-                              </Space>
-                            </Popconfirm>
-                          ),
-                        },
-                      ],
-                    }}
-                    trigger={["click"]}
-                  >
-                    <Button
-                      style={{ width: "100%" }}
-                      icon={<SettingOutlined />}
-                      loading={deleting}
-                    >
-                      Manage Provider <DownOutlined />
-                    </Button>
-                  </Dropdown>
+                  <Typography.Link style={{ fontWeight: 600 }}>
+                    {selectedVersion} <DownOutlined style={{ fontSize: 10 }} />
+                  </Typography.Link>
+                </Dropdown>
+              </Space>
+            )}
+            {sourceUrl && (
+              <Space size={4}>
+                <LinkOutlined />
+                <Typography.Text type="secondary">
+                  Source{" "}
+                  <Typography.Link href={sourceUrl} target="_blank">
+                    {sourceRepoName} <LinkOutlined />
+                  </Typography.Link>
+                </Typography.Text>
+              </Space>
+            )}
+          </Space>
 
-                  <Divider />
-
-                  {/* Usage Instructions */}
-                  <Typography.Title level={5} style={{ marginTop: 0 }}>
-                    Usage Instructions
-                  </Typography.Title>
-                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                    Copy and paste into your Terraform configuration and run{" "}
-                    <Typography.Text code style={{ fontSize: 12 }}>terraform init</Typography.Text>.
-                  </Typography.Text>
-
-                  <pre
-                    style={{
-                      background: "#f5f5f5",
-                      border: "1px solid #e8e8e8",
-                      borderRadius: 6,
-                      padding: 12,
-                      marginTop: 12,
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      overflow: "auto",
-                      color: "#333",
-                    }}
-                  >
-                    {terraformSnippet}
-                  </pre>
-
-                  <Button
-                    icon={<CopyOutlined />}
-                    onClick={handleCopySnippet}
-                    style={{ marginTop: 8 }}
-                  >
-                    Copy configuration
+          {/* Overview content */}
+          <Row gutter={32} style={{ marginTop: 16 }}>
+            <Col span={16}>
+              <Typography.Title level={4}>Provider details</Typography.Title>
+              <Typography.Paragraph type="secondary">
+                Select a version from the metadata above and copy the configuration from the sidebar.
+              </Typography.Paragraph>
+            </Col>
+            <Col span={8}>
+              <Card
+                style={{ borderRadius: 12, border: "1px solid #e8e8e8" }}
+                styles={{ body: { padding: "20px 24px" } }}
+              >
+                {/* Manage Provider dropdown */}
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: "delete",
+                        label: (
+                          <Popconfirm
+                            title={
+                              <p>
+                                Provider <b>{providerName}</b> and all its versions will be permanently deleted.
+                                <br />
+                                Are you sure?
+                              </p>
+                            }
+                            onConfirm={handleDelete}
+                            okText="Yes"
+                            cancelText="No"
+                            placement="left"
+                          >
+                            <Space>
+                              <DeleteOutlined style={{ color: "#ff4d4f" }} />
+                              <span style={{ color: "#ff4d4f" }}>Remove from organization</span>
+                            </Space>
+                          </Popconfirm>
+                        ),
+                      },
+                    ],
+                  }}
+                  trigger={["click"]}
+                >
+                  <Button style={{ width: "100%" }} icon={<SettingOutlined />} loading={deleting}>
+                    Manage Provider <DownOutlined />
                   </Button>
+                </Dropdown>
 
-                  <Divider />
+                <Divider />
 
-                  {/* Helpful links */}
-                  <Typography.Text strong style={{ fontSize: 13 }}>Helpful links</Typography.Text>
-                  <div style={{ marginTop: 8 }}>
-                    <Space direction="vertical" size={4}>
-                      {namespace && shortName && (
-                        <Typography.Link
-                          href={`https://registry.terraform.io/providers/${namespace}/${shortName}/latest/docs`}
-                          target="_blank"
-                          style={{ fontSize: 13 }}
-                        >
-                          Provider Documentation <LinkOutlined />
-                        </Typography.Link>
-                      )}
+                {/* Usage Instructions */}
+                <Typography.Title level={5} style={{ marginTop: 0 }}>
+                  Usage Instructions
+                </Typography.Title>
+                <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                  Copy and paste into your Terraform configuration and run{" "}
+                  <Typography.Text code style={{ fontSize: 12 }}>
+                    terraform init
+                  </Typography.Text>
+                  .
+                </Typography.Text>
+
+                <pre
+                  style={{
+                    background: "#f5f5f5",
+                    border: "1px solid #e8e8e8",
+                    borderRadius: 6,
+                    padding: 12,
+                    marginTop: 12,
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    overflow: "auto",
+                    color: "#333",
+                  }}
+                >
+                  {terraformSnippet}
+                </pre>
+
+                <Button icon={<CopyOutlined />} onClick={handleCopySnippet} style={{ marginTop: 8 }}>
+                  Copy configuration
+                </Button>
+
+                <Divider />
+
+                {/* Helpful links */}
+                <Typography.Text strong style={{ fontSize: 13 }}>
+                  Helpful links
+                </Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <Space direction="vertical" size={4}>
+                    {namespace && shortName && (
                       <Typography.Link
-                        href="https://www.terraform.io/docs/language/providers/configuration.html"
+                        href={`https://registry.terraform.io/providers/${namespace}/${shortName}/latest/docs`}
                         target="_blank"
                         style={{ fontSize: 13 }}
                       >
-                        Using Providers <LinkOutlined />
+                        Provider Documentation <LinkOutlined />
                       </Typography.Link>
-                    </Space>
+                    )}
+                    <Typography.Link
+                      href="https://www.terraform.io/docs/language/providers/configuration.html"
+                      target="_blank"
+                      style={{ fontSize: 13 }}
+                    >
+                      Using Providers <LinkOutlined />
+                    </Typography.Link>
+                  </Space>
+                </div>
+                {sourceUrl && (
+                  <div style={{ marginTop: 12 }}>
+                    <Typography.Link
+                      href={`${sourceUrl}/issues`}
+                      target="_blank"
+                      style={{ color: "#ff4d4f", fontSize: 13 }}
+                    >
+                      Report an issue <LinkOutlined />
+                    </Typography.Link>
                   </div>
-                  {sourceUrl && (
-                    <div style={{ marginTop: 12 }}>
-                      <Typography.Link
-                        href={`${sourceUrl}/issues`}
-                        target="_blank"
-                        style={{ color: "#ff4d4f", fontSize: 13 }}
-                      >
-                        Report an issue <LinkOutlined />
-                      </Typography.Link>
-                    </div>
-                  )}
-                </Card>
-              </Col>
-            </Row>
-
-
-          </div>
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </div>
       )}
     </PageWrapper>
   );

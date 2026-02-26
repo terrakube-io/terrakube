@@ -151,23 +151,24 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
     });
   };
 
-  const loadWorkspaces = () => {
-    axiosInstance.get(`organization/${orgid}/workspace`).then((response) => {
-      setWorkspaces(response.data.data);
+  useEffect(() => {
+    setLoading(true);
+    // Parallel load: references and workspaces
+    Promise.all([
+      axiosInstance.get(`organization/${orgid}/collection/${collectionId}/reference`),
+      axiosInstance.get(`organization/${orgid}/workspace`),
+    ]).then(([refsRes, workspacesRes]) => {
+      setReferences(refsRes.data.data);
+      setWorkspaces(workspacesRes.data.data);
 
       // Create a map of workspace IDs to names for easier lookup
       const map: { [key: string]: string } = {};
-      response.data.data.forEach((workspace: Workspace) => {
+      workspacesRes.data.data.forEach((workspace: Workspace) => {
         map[workspace.id] = workspace.attributes.name;
       });
       setWorkspacesMap(map);
+      setLoading(false);
     });
-  };
-
-  useEffect(() => {
-    setLoading(true);
-    loadReferences();
-    loadWorkspaces();
   }, [orgid, collectionId]);
 
   return (

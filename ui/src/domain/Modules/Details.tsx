@@ -24,24 +24,38 @@ import {
   Typography,
 } from "antd";
 import { Buffer } from "buffer";
-import * as hcl from "hcl2-parser";
 import { DateTime } from "luxon";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
-import { FaAws } from "react-icons/fa";
+import { FaAws } from "@/config/iconList";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzure, VscAzureDevops } from "react-icons/vsc";
-import Markdown from "react-markdown";
 import { useNavigate, useParams } from "react-router-dom";
+import LoadingFallback from "@/components/LoadingFallback";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
-import { unzip } from "unzipit";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
+
+const Markdown = lazy(async () => {
+  const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
+    import("react-markdown"),
+    import("remark-gfm"),
+    import("rehype-raw"),
+  ]);
+
+  const MarkdownWithPlugins = ({ children }: { children: string }) => {
+    return (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+        {children}
+      </ReactMarkdown>
+    );
+  };
+
+  return { default: MarkdownWithPlugins };
+});
 
 type Props = {
   organizationName: string;
@@ -60,6 +74,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const [allVersions, setAllVersions] = useState<ModuleVersionAttributes[]>([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState("loading...");
   const [hclObject, setHclObject] = useState<any>(null);
   const [inputs, setInputs] = useState("Inputs");
@@ -130,6 +145,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   // if submodule is empty then load the root module
   // if submodule is not empty then load the specific submodule tf files
   async function readFiles(url: string, submodule = "") {
+    const { unzip } = await import("unzipit");
     const { entries } = await unzip(url);
     let hclString = "";
     const modules: string[] = [];
@@ -159,6 +175,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       }
     }
 
+    const hcl = await import("hcl2-parser");
     const hclResult = hcl.parseToObject(hclString);
     if (hclResult) {
       setHclObject(hclResult[0]);
@@ -224,17 +241,25 @@ export const ModuleDetails = ({ organizationName }: Props) => {
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid!);
-    axiosInstance.get(`organization/${orgid}/module/${id}?include=vcs,version`).then((response) => {
-      setModule(response.data.data);
-      setLoading(false);
-      setModuleName(response.data.data.attributes.name);
-      const latestVersion = response.data.data.attributes.latestVersion;
-      setVersion(latestVersion);
-      loadReadme(response.data.data.attributes.registryPath, latestVersion);
-      loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
-      setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/module/${id}?include=vcs,version`)
+      .then((response) => {
+        setModule(response.data.data);
+        setModuleName(response.data.data.attributes.name);
+        const latestVersion = response.data.data.attributes.latestVersion;
+        setVersion(latestVersion);
+        loadReadme(response.data.data.attributes.registryPath, latestVersion);
+        loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
+        setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [orgid, id]);
 
   const loadModuleDetails = async (path: string, version: string, submodule = "") => {
@@ -246,6 +271,12 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/modules/v1/${path}/${version}/download`)
       .then((resp) => {
         readFiles(resp.headers["x-terraform-get"], submodule);
+      })
+      .catch((err) => {
+        console.error("Error loading module details:", err);
+        setLoadingInputs("Failed to load");
+        setLoadingOutputs("Failed to load");
+        setLoadingResources("Failed to load");
       });
   };
 
@@ -254,6 +285,9 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/readme/v1/${path}/${version}/download`)
       .then((resp) => {
         loadReadmeFile(resp.data.content);
+      })
+      .catch(() => {
+        setMarkdown("");
       });
   };
 
@@ -286,6 +320,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       subTitle={module?.attributes.description}
       loading={loading}
       loadingText="Loading Module..."
+      error={error ? { title: error.includes("permission") ? "Access Denied" : "Error", message: error } : undefined}
       breadcrumbs={[
         { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },
@@ -296,68 +331,93 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       contentClassName="registry-centered"
     >
       {module && (
-          <div>
-            <Row>
-              <Col span={16}>
-                <Space direction="vertical" style={{ marginTop: "10px", width: "95%" }}>
-                  {submodule === "" && (
-                    <>
-                      <Space size="large" wrap>
-                        <Typography.Text type="secondary">
-                          Published by {organizationName}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          Provider {renderLogo(module.attributes.provider)} {module.attributes.provider}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          Version {version}{" "}
-                          <Dropdown
-                            menu={{
-                              items: allVersions
-                                .sort((a, b) => compareVersions(a.version, b.version))
-                                .reverse()
-                                .map((v) => ({ key: v.version, label: v.version })),
-                              onClick: handleClick,
+        <div>
+          <Row>
+            <Col span={16}>
+              <Space direction="vertical" style={{ marginTop: "10px", width: "95%" }}>
+                {submodule === "" && (
+                  <>
+                    <Space size="large" wrap>
+                      <Typography.Text type="secondary">Published by {organizationName}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        Provider {renderLogo(module.attributes.provider)} {module.attributes.provider}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        Version {version}{" "}
+                        <Dropdown
+                          menu={{
+                            items: allVersions
+                              .sort((a, b) => compareVersions(a.version, b.version))
+                              .reverse()
+                              .map((v) => ({ key: v.version, label: v.version })),
+                            onClick: handleClick,
+                          }}
+                          trigger={["click"]}
+                        >
+                          <button
+                            type="button"
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              color: "#1677ff",
+                              cursor: "pointer",
                             }}
-                            trigger={["click"]}
                           >
-                            <button
-                              type="button"
-                              style={{
-                                background: "none",
-                                border: "none",
-                                padding: 0,
-                                color: "#1677ff",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Change <DownOutlined />
-                            </button>
-                          </Dropdown>
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          <ClockCircleOutlined /> Published {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          Source{" "}
-                          {renderVCSLogo(vcsProvider)}{" "}
-                          {module.attributes.source && (
-                            <a
-                              href={fixSshURL(module.attributes.source)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              {new URL(fixSshURL(module.attributes.source)).pathname
-                                .replace(".git", "")
-                                .substring(1)}
-                            </a>
-                          )}
-                        </Typography.Text>
-                      </Space>
-                      <Divider style={{ margin: "16px 0" }} />
-                      <Typography.Title level={4} style={{ margin: 0 }}>Module Details</Typography.Title>
-                      <Typography.Text type="secondary">Explore relevant submodules and examples</Typography.Text>
-                      {submodules.length > 0 && (
+                            Change <DownOutlined />
+                          </button>
+                        </Dropdown>
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        <ClockCircleOutlined /> Published{" "}
+                        {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        Source {renderVCSLogo(vcsProvider)}{" "}
+                        {module.attributes.source && (
+                          <a href={fixSshURL(module.attributes.source)} target="_blank" rel="noopener noreferrer">
+                            {new URL(fixSshURL(module.attributes.source)).pathname.replace(".git", "").substring(1)}
+                          </a>
+                        )}
+                      </Typography.Text>
+                    </Space>
+                    <Divider style={{ margin: "16px 0" }} />
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      Module Details
+                    </Typography.Title>
+                    <Typography.Text type="secondary">Explore relevant submodules and examples</Typography.Text>
+                    {submodules.length > 0 && (
+                      <Dropdown
+                        menu={{
+                          items: submodules.map((name) => ({ key: name, label: name })),
+                          onClick: onClickSubmodule,
+                        }}
+                        trigger={["click"]}
+                      >
+                        <Button style={{ marginTop: "10px", fontSize: ".75rem" }}>
+                          <Space>
+                            Submodules
+                            <DownOutlined />
+                          </Space>
+                        </Button>
+                      </Dropdown>
+                    )}
+                  </>
+                )}
+
+                {submodule !== "" && (
+                  <>
+                    <div>
+                      <Button
+                        style={{ paddingLeft: "0px", marginBottom: "10px" }}
+                        type="link"
+                        onClick={handleClickBack}
+                        icon={<ArrowLeftOutlined />}
+                      >
+                        Back to {moduleName}
+                      </Button>
+                      <h2 className="moduleTitle">
+                        submodules/
                         <Dropdown
                           menu={{
                             items: submodules.map((name) => ({ key: name, label: name })),
@@ -365,407 +425,374 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                           }}
                           trigger={["click"]}
                         >
-                          <Button style={{ marginTop: "10px", fontSize: ".75rem" }}>
-                            <Space>
-                              Submodules
-                              <DownOutlined />
-                            </Space>
-                          </Button>
-                        </Dropdown>
-                      )}
-                    </>
-                  )}
-
-                  {submodule !== "" && (
-                    <>
-                      <div>
-                        <Button
-                          style={{ paddingLeft: "0px", marginBottom: "10px" }}
-                          type="link"
-                          onClick={handleClickBack}
-                          icon={<ArrowLeftOutlined />}
-                        >
-                          Back to {moduleName}
-                        </Button>
-                        <h2 className="moduleTitle">
-                          submodules/
-                          <Dropdown
-                            menu={{
-                              items: submodules.map((name) => ({ key: name, label: name })),
-                              onClick: onClickSubmodule,
+                          <button
+                            type="button"
+                            style={{
+                              color: "black",
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              cursor: "pointer",
+                              font: "inherit",
                             }}
-                            trigger={["click"]}
                           >
-                            <button
-                              type="button"
+                            {submodule} <DownOutlined />
+                          </button>
+                        </Dropdown>
+                      </h2>
+                    </div>
+                  </>
+                )}
+
+                <Tabs
+                  className="moduleTabs"
+                  defaultActiveKey="1"
+                  items={[
+                    {
+                      label: "Readme",
+                      key: "1",
+                      children: (
+                        <div className="markdown-body" style={{ backgroundColor: colorBgContainer }}>
+                          <Suspense fallback={<LoadingFallback />}>
+                            <Markdown>{markdown}</Markdown>
+                          </Suspense>
+                        </div>
+                      ),
+                      className: "markdown-body",
+                    },
+                    {
+                      label: inputs,
+                      key: "2",
+                      children:
+                        hclObject && hclObject?.variable ? (
+                          <Space direction="vertical">
+                            <h3>Inputs</h3>
+                            <span>These variables should be set in the module block when using this module.</span>
+                            <table
                               style={{
-                                color: "black",
-                                background: "none",
-                                border: "none",
-                                padding: 0,
-                                cursor: "pointer",
-                                font: "inherit",
+                                width: "100%",
+                                tableLayout: "fixed",
+                                whiteSpace: "normal",
+                                wordBreak: "break-word",
+                                borderCollapse: "collapse",
+                                border: `1px solid ${colorBorder}`,
+                                backgroundColor: colorBgContainer,
                               }}
                             >
-                              {submodule} <DownOutlined />
-                            </button>
-                          </Dropdown>
-                        </h2>
-                      </div>
-                    </>
-                  )}
-
-                  <Tabs
-                    className="moduleTabs"
-                    defaultActiveKey="1"
-                    items={[
-                      {
-                        label: "Readme",
-                        key: "1",
-                        children: (
-                          <div className="markdown-body" style={{ backgroundColor: colorBgContainer }}>
-                            <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{markdown}</Markdown>
-                          </div>
+                              <thead>
+                                <tr>
+                                  <th
+                                    style={{
+                                      width: "40%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Name
+                                  </th>
+                                  <th
+                                    style={{
+                                      width: "20%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Type
+                                  </th>
+                                  <th
+                                    style={{
+                                      width: "35%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Description
+                                  </th>
+                                  <th
+                                    style={{
+                                      width: "15%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Default
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.keys(hclObject?.variable).map((keyName, i) => (
+                                  <tr
+                                    key={i}
+                                    style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
+                                  >
+                                    <td
+                                      style={{
+                                        textAlign: "left",
+                                        verticalAlign: "top",
+                                        padding: "8px",
+                                        border: `1px solid ${colorBorder}`,
+                                      }}
+                                    >
+                                      <Typography.Text copyable strong>
+                                        {keyName}
+                                      </Typography.Text>
+                                    </td>
+                                    <td
+                                      style={{
+                                        textAlign: "left",
+                                        verticalAlign: "top",
+                                        padding: "8px",
+                                        border: `1px solid ${colorBorder}`,
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          padding: "4px 8px",
+                                          borderRadius: "4px",
+                                          display: "inline-block",
+                                        }}
+                                      >
+                                        {hclObject?.variable[keyName][0]?.type?.replace(/{|}|\$/g, "")}
+                                      </span>
+                                    </td>
+                                    <td
+                                      style={{
+                                        textAlign: "left",
+                                        verticalAlign: "top",
+                                        padding: "8px",
+                                        border: `1px solid ${colorBorder}`,
+                                      }}
+                                    >
+                                      {JSON.stringify(hclObject?.variable[keyName][0]?.description)?.replaceAll(
+                                        '"',
+                                        ""
+                                      )}
+                                    </td>
+                                    <td
+                                      style={{
+                                        textAlign: "left",
+                                        verticalAlign: "top",
+                                        padding: "8px",
+                                        border: `1px solid ${colorBorder}`,
+                                      }}
+                                    >
+                                      {JSON.stringify(hclObject?.variable[keyName][0]?.default)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </Space>
+                        ) : (
+                          <p>{loadingInputs}</p>
                         ),
-                        className: "markdown-body",
-                      },
-                      {
-                        label: inputs,
-                        key: "2",
-                        children:
-                          hclObject && hclObject?.variable ? (
-                            <Space direction="vertical">
-                              <h3>Inputs</h3>
-                              <span>These variables should be set in the module block when using this module.</span>
-                              <table
-                                style={{
-                                  width: "100%",
-                                  tableLayout: "fixed",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  borderCollapse: "collapse",
-                                  border: `1px solid ${colorBorder}`,
-                                  backgroundColor: colorBgContainer,
-                                }}
-                              >
-                                <thead>
-                                  <tr>
-                                    <th
+                    },
+                    {
+                      label: outputs,
+                      key: "3",
+                      children:
+                        hclObject && hclObject?.output ? (
+                          <Space direction="vertical">
+                            <h3>Outputs</h3>
+                            <span>These outputs are returned by this module.</span>
+                            <table
+                              style={{
+                                width: "100%",
+                                tableLayout: "fixed",
+                                whiteSpace: "normal",
+                                wordBreak: "break-word",
+                                borderCollapse: "collapse",
+                                border: `1px solid ${colorBorder}`,
+                                backgroundColor: colorBgContainer,
+                              }}
+                            >
+                              <thead>
+                                <tr>
+                                  <th
+                                    style={{
+                                      width: "30%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Name
+                                  </th>
+                                  <th
+                                    style={{
+                                      width: "70%",
+                                      textAlign: "left",
+                                      verticalAlign: "top",
+                                      padding: "8px",
+                                      border: `1px solid ${colorBorder}`,
+                                      backgroundColor: colorFillSecondary,
+                                    }}
+                                  >
+                                    Description
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.keys(hclObject?.output).map((keyName, i) => (
+                                  <tr
+                                    key={i}
+                                    style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
+                                  >
+                                    <td
                                       style={{
-                                        width: "40%",
                                         textAlign: "left",
                                         verticalAlign: "top",
                                         padding: "8px",
                                         border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
                                       }}
                                     >
-                                      Name
-                                    </th>
-                                    <th
+                                      <Typography.Text copyable strong>
+                                        {keyName}
+                                      </Typography.Text>
+                                    </td>
+                                    <td
                                       style={{
-                                        width: "20%",
                                         textAlign: "left",
                                         verticalAlign: "top",
                                         padding: "8px",
                                         border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
                                       }}
                                     >
-                                      Type
-                                    </th>
-                                    <th
-                                      style={{
-                                        width: "35%",
-                                        textAlign: "left",
-                                        verticalAlign: "top",
-                                        padding: "8px",
-                                        border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
-                                      }}
-                                    >
-                                      Description
-                                    </th>
-                                    <th
-                                      style={{
-                                        width: "15%",
-                                        textAlign: "left",
-                                        verticalAlign: "top",
-                                        padding: "8px",
-                                        border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
-                                      }}
-                                    >
-                                      Default
-                                    </th>
+                                      {JSON.stringify(hclObject?.output[keyName][0]?.description)?.replaceAll('"', "")}
+                                    </td>
                                   </tr>
-                                </thead>
-                                <tbody>
-                                  {Object.keys(hclObject?.variable).map((keyName, i) => (
-                                    <tr
-                                      key={i}
-                                      style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
-                                    >
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        <Typography.Text copyable strong>
-                                          {keyName}
-                                        </Typography.Text>
-                                      </td>
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        <span
-                                          style={{
-                                            padding: "4px 8px",
-                                            borderRadius: "4px",
-                                            display: "inline-block",
-                                          }}
-                                        >
-                                          {hclObject?.variable[keyName][0]?.type?.replace(/{|}|\$/g, "")}
-                                        </span>
-                                      </td>
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        {JSON.stringify(hclObject?.variable[keyName][0]?.description)?.replaceAll(
-                                          '"',
-                                          ""
-                                        )}
-                                      </td>
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        {JSON.stringify(hclObject?.variable[keyName][0]?.default)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </Space>
-                          ) : (
-                            <p>{loadingInputs}</p>
-                          ),
-                      },
-                      {
-                        label: outputs,
-                        key: "3",
-                        children:
-                          hclObject && hclObject?.output ? (
-                            <Space direction="vertical">
-                              <h3>Outputs</h3>
-                              <span>These outputs are returned by this module.</span>
-                              <table
-                                style={{
-                                  width: "100%",
-                                  tableLayout: "fixed",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  borderCollapse: "collapse",
-                                  border: `1px solid ${colorBorder}`,
-                                  backgroundColor: colorBgContainer,
+                                ))}
+                              </tbody>
+                            </table>
+                          </Space>
+                        ) : (
+                          <p>{loadingOutputs}</p>
+                        ),
+                    },
+                    {
+                      label: resources,
+                      key: "5",
+                      children:
+                        hclObject && hclObject?.resource ? (
+                          <Space direction="vertical">
+                            <h3>Resources</h3>
+                            <span>This is the list of resources this module can create.</span>
+                            <span>This module defines {Object.keys(hclObject?.resource)?.length} resources.</span>
+                            <ul>
+                              {Object.keys(hclObject?.resource).map((resourceType, i) =>
+                                Object.keys(hclObject?.resource[resourceType]).map((resourceName, j) => (
+                                  <li key={`${i}-${j}`}>
+                                    <Tag>
+                                      {resourceType}.{resourceName}
+                                    </Tag>
+                                  </li>
+                                ))
+                              )}
+                            </ul>
+                          </Space>
+                        ) : (
+                          <p>{loadingResources}</p>
+                        ),
+                    },
+                  ]}
+                />
+              </Space>
+            </Col>
+            <Col span={8}>
+              <Card>
+                <Space style={{ paddingRight: "10px", width: "100%" }} direction="vertical">
+                  <div style={{ width: "100%" }}>
+                    <Dropdown
+                      menu={{
+                        items: [
+                          {
+                            key: "delete",
+                            label: (
+                              <Popconfirm
+                                title={
+                                  <p>
+                                    Module <b>{module.attributes.name}</b> will be permanently deleted.
+                                    <br />
+                                    Are you sure?
+                                  </p>
+                                }
+                                onConfirm={() => {
+                                  onDelete(id!);
                                 }}
+                                okText="Yes"
+                                cancelText="No"
+                                placement="left"
                               >
-                                <thead>
-                                  <tr>
-                                    <th
-                                      style={{
-                                        width: "30%",
-                                        textAlign: "left",
-                                        verticalAlign: "top",
-                                        padding: "8px",
-                                        border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
-                                      }}
-                                    >
-                                      Name
-                                    </th>
-                                    <th
-                                      style={{
-                                        width: "70%",
-                                        textAlign: "left",
-                                        verticalAlign: "top",
-                                        padding: "8px",
-                                        border: `1px solid ${colorBorder}`,
-                                        backgroundColor: colorFillSecondary,
-                                      }}
-                                    >
-                                      Description
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {Object.keys(hclObject?.output).map((keyName, i) => (
-                                    <tr
-                                      key={i}
-                                      style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
-                                    >
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        <Typography.Text copyable strong>
-                                          {keyName}
-                                        </Typography.Text>
-                                      </td>
-                                      <td
-                                        style={{
-                                          textAlign: "left",
-                                          verticalAlign: "top",
-                                          padding: "8px",
-                                          border: `1px solid ${colorBorder}`,
-                                        }}
-                                      >
-                                        {JSON.stringify(hclObject?.output[keyName][0]?.description)?.replaceAll(
-                                          '"',
-                                          ""
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </Space>
-                          ) : (
-                            <p>{loadingOutputs}</p>
-                          ),
-                      },
-                      {
-                        label: resources,
-                        key: "5",
-                        children:
-                          hclObject && hclObject?.resource ? (
-                            <Space direction="vertical">
-                              <h3>Resources</h3>
-                              <span>This is the list of resources this module can create.</span>
-                              <span>This module defines {Object.keys(hclObject?.resource)?.length} resources.</span>
-                              <ul>
-                                {Object.keys(hclObject?.resource).map((resourceType, i) =>
-                                  Object.keys(hclObject?.resource[resourceType]).map((resourceName, j) => (
-                                    <li key={`${i}-${j}`}>
-                                      <Tag>
-                                        {resourceType}.{resourceName}
-                                      </Tag>
-                                    </li>
-                                  ))
-                                )}
-                              </ul>
-                            </Space>
-                          ) : (
-                            <p>{loadingResources}</p>
-                          ),
-                      },
-                    ]}
-                  />
-                </Space>
-              </Col>
-              <Col span={8}>
-                <Card>
-                  <Space style={{ paddingRight: "10px", width: "100%" }} direction="vertical">
-                    <div style={{ width: "100%" }}>
-                      <Dropdown
-                        menu={{
-                          items: [
-                            {
-                              key: "delete",
-                              label: (
-                                <Popconfirm
-                                  title={
-                                    <p>
-                                      Module <b>{module.attributes.name}</b> will be permanently deleted.
-                                      <br />
-                                      Are you sure?
-                                    </p>
-                                  }
-                                  onConfirm={() => {
-                                    onDelete(id!);
-                                  }}
-                                  okText="Yes"
-                                  cancelText="No"
-                                  placement="left"
-                                >
-                                  <Space>
-                                    <DeleteOutlined style={{ color: "#ff4d4f" }} />
-                                    <span style={{ color: "#ff4d4f" }}>Remove from organization</span>
-                                  </Space>
-                                </Popconfirm>
-                              ),
-                            },
-                          ],
-                        }}
-                        trigger={["click"]}
-                      >
-                        <Button style={{ width: "100%" }} icon={<SettingOutlined />}>
-                          Manage Module <DownOutlined />
-                        </Button>
-                      </Dropdown>
-                      <Divider />
+                                <Space>
+                                  <DeleteOutlined style={{ color: "#ff4d4f" }} />
+                                  <span style={{ color: "#ff4d4f" }}>Remove from organization</span>
+                                </Space>
+                              </Popconfirm>
+                            ),
+                          },
+                        ],
+                      }}
+                      trigger={["click"]}
+                    >
+                      <Button style={{ width: "100%" }} icon={<SettingOutlined />}>
+                        Manage Module <DownOutlined />
+                      </Button>
+                    </Dropdown>
+                    <Divider />
+                  </div>
+                  <p className="moduleSubtitles">Usage Instructions</p>
+                  <p className="moduleInstructions">
+                    Copy and paste into your Terraform configuration and set values for the input variables.
+                  </p>
+                  <div style={{ width: "100%" }}>
+                    <Divider />
+                    <p className="moduleSubtitles">Copy configuration details</p>
+                  </div>
+                  <pre className="moduleCode">
+                    module &quot;{module.attributes.name}&quot; {"{"}
+                    <br />
+                    &nbsp;&nbsp;source = &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
+                    {module.attributes.registryPath}
+                    {submodulePath}&quot;
+                    <br />
+                    &nbsp;&nbsp;version = &quot;{version}&quot;
+                    <br />
+                    &nbsp;&nbsp;# insert required variables here
+                    <br />
+                    {"}"}
+                  </pre>
+                  <Tag style={{ width: "100%", fontSize: "13px" }} color="blue">
+                    <div style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+                      When running Terraform on the CLI, you must configure credentials in .terraformrc or terraform.rc
+                      to access this module:
                     </div>
-                    <p className="moduleSubtitles">Usage Instructions</p>
-                    <p className="moduleInstructions">
-                      Copy and paste into your Terraform configuration and set values for the input variables.
-                    </p>
-                    <div style={{ width: "100%" }}>
-                      <Divider />
-                      <p className="moduleSubtitles">Copy configuration details</p>
-                    </div>
-                    <pre className="moduleCode">
-                      module &quot;{module.attributes.name}&quot; {"{"}
+                    <pre className="moduleCredentials">
+                      credentials &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}&quot; {" {"}
                       <br />
-                      &nbsp;&nbsp;source = &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
-                      {module.attributes.registryPath}
-                      {submodulePath}&quot;
-                      <br />
-                      &nbsp;&nbsp;version = &quot;{version}&quot;
-                      <br />
-                      &nbsp;&nbsp;# insert required variables here
+                      &nbsp;&nbsp;token = &quot;xxxxxx.yyyyyy.zzzzzzzzzzzzz&quot;
                       <br />
                       {"}"}
                     </pre>
-                    <Tag style={{ width: "100%", fontSize: "13px" }} color="blue">
-                      <div style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                        When running Terraform on the CLI, you must configure credentials in .terraformrc or
-                        terraform.rc to access this module:
-                      </div>
-                      <pre className="moduleCredentials">
-                        credentials &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}&quot; {" {"}
-                        <br />
-                        &nbsp;&nbsp;token = &quot;xxxxxx.yyyyyy.zzzzzzzzzzzzz&quot;
-                        <br />
-                        {"}"}
-                      </pre>
-                    </Tag>
-                  </Space>
-                </Card>
-              </Col>
-
-            </Row>
-          </div>
+                  </Tag>
+                </Space>
+              </Card>
+            </Col>
+          </Row>
+        </div>
       )}
     </PageWrapper>
   );

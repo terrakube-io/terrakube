@@ -96,5 +96,3 @@ export type TerraformRegistryProviderDownload = {
 export type TerraformRegistrySearchResult = {
   providers: TerraformRegistryProvider[];
 };
-
-

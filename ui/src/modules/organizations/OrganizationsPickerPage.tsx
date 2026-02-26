@@ -1,4 +1,5 @@
 import { Button, Empty, Flex } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import "antd/dist/reset.css";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -24,6 +25,12 @@ export default function OrganizationsPickerPage() {
   });
 
   async function initPage() {
+    // Skip redirect if explicitly navigating to /organizations
+    if (window.location.pathname === "/organizations") {
+      await execute();
+      return;
+    }
+
     if (orgId === "" || orgId === null) {
       await execute();
     } else {
@@ -51,12 +58,20 @@ export default function OrganizationsPickerPage() {
 
   return (
     <PageWrapper
-      title="Choose an Organization"
-      subTitle="You have access to the following organizations"
+      title="Organizations"
+      subTitle="Manage your organizations"
       error={error}
       loading={loading}
       loadingText="Loading organizations..."
       breadcrumbs={[{ label: "Organizations", path: "/" }]}
+      actions={
+        !loading &&
+        organizations.length > 0 && (
+          <Button type="primary" onClick={() => navigate("/organizations/create")}>
+            <PlusOutlined /> Create organization
+          </Button>
+        )
+      }
     >
       {!loading && organizations.length === 0 && (
         <Flex justify="center">

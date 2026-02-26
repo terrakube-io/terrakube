@@ -1,5 +1,20 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Button, Col, Flex, Form, Input, Popconfirm, Row, Select, Space, Spin, Switch, Table, message } from "antd";
+import {
+  Button,
+  Col,
+  Flex,
+  Form,
+  Input,
+  Popconfirm,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Table,
+  Typography,
+  message,
+} from "antd";
 import { useEffect, useState } from "react";
 import { v7 as uuid } from "uuid";
 import axiosInstance from "../../../config/axiosConfig";
@@ -40,42 +55,42 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       return;
     }
     setWebhookEnabled(true);
-    try {
-      axiosInstance
-        .get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`)
-        .then((response) => {
-          setRemoteHookId(response.data.data.attributes.remoteHookId);
-        });
-      axiosInstance
-        .get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`)
-        .then((response) => {
-          let i = 1;
-          const events = response.data.data
-            .sort((a: WebhookEvent, b: WebhookEvent) => b.attributes.priority - a.attributes.priority)
-            .map((event: WebhookEvent) => {
-              return {
-                key: i++,
-                id: event.id,
-                priority: event.attributes.priority,
-                event: event.attributes.event,
-                branch: event.attributes.branch,
-                file: event.attributes.path,
-                template: event.attributes.templateId,
-                prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
-                created: true,
-              };
-            });
-          setRecordIndex(events.length + 1);
-          setWebhookEvents(
-            events.concat({
-              key: i,
-              id: uuid(),
-            })
-          );
-        });
-    } catch (error) {
-      message.error("Failed to load webhook");
-    }
+
+    // Parallel load: webhook details and webhook events
+    Promise.all([
+      axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`),
+      axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`),
+    ])
+      .then(([webhookRes, eventsRes]) => {
+        setRemoteHookId(webhookRes.data.data.attributes.remoteHookId);
+
+        let i = 1;
+        const events = eventsRes.data.data
+          .sort((a: WebhookEvent, b: WebhookEvent) => b.attributes.priority - a.attributes.priority)
+          .map((event: WebhookEvent) => {
+            return {
+              key: i++,
+              id: event.id,
+              priority: event.attributes.priority,
+              event: event.attributes.event,
+              branch: event.attributes.branch,
+              file: event.attributes.path,
+              template: event.attributes.templateId,
+              prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
+              created: true,
+            };
+          });
+        setRecordIndex(events.length + 1);
+        setWebhookEvents(
+          events.concat({
+            key: i,
+            id: uuid(),
+          })
+        );
+      })
+      .catch(() => {
+        message.error("Failed to load webhook");
+      });
   };
   const handleEventChange = (index: number, _: any, name: string, value: string | boolean) => {
     webhookEvents[index][name] = value;
@@ -360,10 +375,11 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
   return (
     <div>
       <h1>Webhook</h1>
-      <p>
+      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
         Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works
         with VCS flow workspace.
-      </p>
+      </Typography.Text>
+      <h2>VCS Webhook Configuration</h2>
       <Spin spinning={waiting}>
         <Form onFinish={onFinish}>
           <Form.Item

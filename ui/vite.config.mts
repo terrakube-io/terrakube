@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import commonjs from "vite-plugin-commonjs";
 import tsconfigPaths from "vite-tsconfig-paths";
+
+
 export default defineConfig(() => {
   return {
     server: {
@@ -15,7 +17,20 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks: function (id) {
-            if (id.includes("react-icons")) return "icons";
+            if (id.includes('node_modules')) {
+              if (id.includes('react-icons')) return 'icons';
+              if (id.includes('antd')) return 'antd';
+              if (id.includes('@monaco-editor/react')) return 'monaco';
+              if (id.includes('reactflow')) return 'reactflow';
+              if (id.includes('react-vis')) return 'charts';
+              if (id.includes('react/') || id.includes('react-dom') || id.includes('react-router-dom')) return 'vendor';
+              // Markdown ecosystem
+              if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('unified') || id.includes('mdast') || id.includes('hast')) return 'markdown';
+              // HCL parser
+              if (id.includes('hcl2-parser')) return 'hcl-parser';
+              // Unzipit
+              if (id.includes('unzipit')) return 'unzipit';
+            }
           },
         },
       },
@@ -25,6 +40,7 @@ export default defineConfig(() => {
       commonjs(),
       // Ensure path aliases are loaded from tsconfig.app.json where the paths are defined
       tsconfigPaths({ projects: ["./tsconfig.app.json"] }),
+
     ],
     rollup: {
       plugins: [dynamicImportVars()],

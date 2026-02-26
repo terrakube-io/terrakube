@@ -1,37 +1,15 @@
-import { ClockCircleOutlined, DeleteOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Form,
-  Input,
-  InputNumber,
-  List,
-  Modal,
-  Popconfirm,
-  Row,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-  theme,
-} from "antd";
+import { InfoCircleOutlined } from "@ant-design/icons";
+import { Alert, Button, Divider, Form, Input, Space, Spin, Tooltip, Typography, message, theme } from "antd";
 import CreatePatModal from "@/modules/token/modals/CreatePatModal";
-import { CreatedToken, CreateTokenForm } from "@/modules/user/types";
+import { CreateTokenForm } from "@/modules/user/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
-import FormItem from "antd/es/form/FormItem";
-import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
 import "./Settings.css";
-import { TeamPermissions } from "./TeamPermissions";
-import "./TeamPermissions.css";
-const { Paragraph } = Typography;
+import { TeamPermissionsV2 } from "./TeamPermissionsV2";
 
 type Props = {
   mode: "edit" | "create";
@@ -42,9 +20,9 @@ type Props = {
 
 type CreateTeamForm = {
   name: string;
-} & UpdatTeamForm;
+} & UpdateTeamForm;
 
-type UpdatTeamForm = {
+type UpdateTeamForm = {
   manageCollection: boolean;
   manageJob: boolean;
   manageModule: boolean;
@@ -53,22 +31,21 @@ type UpdatTeamForm = {
   manageTemplate: boolean;
   manageVcs: boolean;
   manageWorkspace: boolean;
+  role?: string;
+  planJob?: boolean;
+  approveJob?: boolean;
 };
 
 export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [loadingTokens, setLoadingTokens] = useState(true);
   const [form] = Form.useForm();
-  const [formToken] = Form.useForm<CreateTokenForm>();
   const [teamName, setTeamName] = useState<string>();
   const [tokens, setTokens] = useState<TeamToken[]>([]);
   const [visible, setVisible] = useState(false);
-  const [visibleToken, setVisibleToken] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [token, setToken] = useState("");
   const [createTokenDisabled, setCreateTokenDisabled] = useState(true);
-  const { token: themeToken } = theme.useToken();
 
   useEffect(() => {
     if (mode === "edit" && teamId) {
@@ -82,28 +59,43 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
   }, [teamId]);
 
   const loadTeam = (id: string) => {
-    axiosInstance.get(`organization/${orgid}/team/${id}`).then((response) => {
-      const name = response.data.data.attributes.name;
-      setTeamName(name);
-      form.setFieldsValue({
-        manageState: response.data.data.attributes.manageState,
-        manageProvider: response.data.data.attributes.manageProvider,
-        manageModule: response.data.data.attributes.manageModule,
-        manageWorkspace: response.data.data.attributes.manageWorkspace,
-        manageVcs: response.data.data.attributes.manageVcs,
-        manageTemplate: response.data.data.attributes.manageTemplate,
-        manageCollection: response.data.data.attributes.manageCollection,
-        manageJob: response.data.data.attributes.manageJob,
+    axiosInstance
+      .get(`organization/${orgid}/team/${id}`)
+      .then((response) => {
+        const name = response.data.data.attributes.name;
+        setTeamName(name);
+        const attrs = response.data.data.attributes;
+        form.setFieldsValue({
+          manageState: attrs.manageState,
+          manageProvider: attrs.manageProvider,
+          manageModule: attrs.manageModule,
+          manageWorkspace: attrs.manageWorkspace,
+          manageVcs: attrs.manageVcs,
+          manageTemplate: attrs.manageTemplate,
+          manageCollection: attrs.manageCollection,
+          manageJob: attrs.manageJob,
+          role: attrs.role || "custom",
+          planJob: attrs.planJob ?? attrs.manageJob,
+          approveJob: attrs.approveJob ?? attrs.manageJob,
+        });
+        setError(null);
+        if (name) {
+          loadTokens(name);
+          loadUserTeams(name);
+        }
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        setLoading(false);
       });
-      setLoading(false);
-      if (name) {
-        loadTokens(name);
-        loadUserTeams(name);
-      }
-    });
   };
 
   const onCreate = (values: CreateTeamForm) => {
+    // Keep manageJob in sync with planJob/approveJob for backward compatibility
+    // with V1 backends that only read the manageJob field.
+    const manageJob = values.planJob || values.approveJob || false;
     const body = {
       data: {
         type: "team",
@@ -116,31 +108,33 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           manageVcs: values.manageVcs,
           manageTemplate: values.manageTemplate,
           manageCollection: values.manageCollection,
-          manageJob: values.manageJob,
+          manageJob: manageJob,
+          role: values.role || "custom",
+          planJob: values.planJob,
+          approveJob: values.approveJob,
         },
       },
     };
 
     axiosInstance
       .post(`organization/${orgid}/team`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
+        headers: { "Content-Type": "application/vnd.api+json" },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Team created successfully");
         loadTeams();
-        loadTokens(teamName);
         setMode("list");
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
-  const onNewToken = () => {
-    formToken.resetFields();
-    setVisible(true);
-  };
-
-  const onUpdate = (values: UpdatTeamForm) => {
+  const onUpdate = (values: UpdateTeamForm) => {
+    // Keep manageJob in sync with planJob/approveJob for backward compatibility
+    // with V1 backends that only read the manageJob field.
+    const manageJob = values.planJob || values.approveJob || false;
     const body = {
       data: {
         type: "team",
@@ -153,24 +147,30 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           manageVcs: values.manageVcs,
           manageTemplate: values.manageTemplate,
           manageCollection: values.manageCollection,
-          manageJob: values.manageJob,
+          manageJob: manageJob,
+          role: values.role || "custom",
+          planJob: values.planJob,
+          approveJob: values.approveJob,
         },
       },
     };
+
     axiosInstance
       .patch(`organization/${orgid}/team/${teamId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
+        headers: { "Content-Type": "application/vnd.api+json" },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Team updated successfully");
         loadTeams();
         setMode("list");
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
-  const onFinish = (values: CreateTeamForm | UpdatTeamForm) => {
+  const onFinish = (values: CreateTeamForm | UpdateTeamForm) => {
     if (mode === "edit") {
       onUpdate(values);
     } else {
@@ -178,105 +178,119 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
     }
   };
 
-  const onDeleteToken = async (id: string) => {
-    const response = await apiDelete(`/access-token/v1/teams/${id}`);
-    loadTokens(teamName);
-    return response;
-  };
-
   const onCancel = () => {
     setMode("list");
     form.resetFields();
   };
 
-  const onCreateToken = async (values: CreateTokenForm) => {
-    const token = {
-      ...values,
-      group: teamName,
-    };
-
-    return await apiPost("/access-token/v1/teams", token);
+  const onNewToken = () => {
+    setVisible(true);
   };
 
-  const loadTokens = async (teamName: string) => {
+  const onDeleteToken = async (id: string) => {
+    const response = await apiDelete(`/access-token/v1/teams/${id}`);
+    if (response.isError) {
+      message.error("Failed to delete token");
+    } else {
+      message.success("Token deleted successfully");
+    }
+    loadTokens(teamName);
+    return response;
+  };
+
+  const onCreateToken = async (values: CreateTokenForm) => {
+    return await apiPost("/access-token/v1/teams", { ...values, group: teamName });
+  };
+
+  const loadTokens = async (teamName?: string) => {
+    if (!teamName) return;
     const response = await apiGet("/access-token/v1/teams");
-    console.log(response);
-    setTokens(response.data.filter((token: any) => token.group === teamName));
+    if (response.isError) {
+      console.error("Failed to load team tokens:", response.error);
+    } else {
+      setTokens(response.data.filter((token: any) => token.group === teamName));
+    }
     setLoadingTokens(false);
   };
 
   const loadUserTeams = async (teamName: string) => {
     const response = await apiGet("/access-token/v1/teams/current-teams");
-    if (response.data?.groups.includes(teamName)) {
+    if (!response.isError && response.data?.groups?.includes(teamName)) {
       setCreateTokenDisabled(false);
     }
   };
 
   return (
-    <div>
-      <h1>{mode === "edit" ? <>Team: {teamName}</> : "New team"} </h1>
-      <Space className="chooseType" direction="vertical">
-        {loading ? (
-          <p>Data loading...</p>
-        ) : (
-          <Form name="team" form={form} onFinish={onFinish} layout="vertical">
-            {mode === "create" ? (
-              <Form.Item
-                name="name"
-                tooltip={{
-                  title: "Must be a valid AD Group name",
-                  icon: <InfoCircleOutlined />,
-                }}
-                label="Name"
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-            ) : (
-              ""
-            )}
+    <div className="setting">
+      <h1>{mode === "edit" ? `Team: ${teamName}` : "New Team"}</h1>
+      <Typography.Text type="secondary">
+        {mode === "edit"
+          ? "Update this team's role and permissions to control what its members can do within the organization."
+          : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."}
+      </Typography.Text>
 
-            <TeamPermissions managePermissions={true} />
-
-            <Space direction="horizontal" style={{ marginTop: "20px" }}>
-              {mode === "create" ? (
-                <Button onClick={onCancel} type="default">
-                  Cancel
-                </Button>
-              ) : (
-                <></>
-              )}
-              <Button type="primary" htmlType="submit">
-                {mode === "edit" ? "Update team organization access" : "Create team"}
-              </Button>
-            </Space>
-          </Form>
-        )}
-      </Space>
-
-      {mode === "edit" ? (
-        <>
-          <h2 style={{ marginTop: "30px" }}>Team API Tokens</h2>
-          <div className="App-text">
-            You can use team API tokens to perform API actions. The token's access level matches the team's access
-            level. For example, if a team can execute jobs on workspaces, the token can also create jobs on workspaces
-            through the API.
-          </div>
-          <Tooltip title="A team token can only be generated if you are member of this team.">
-            <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
-              Create a Team Token
-            </Button>
-          </Tooltip>
-          <h4 style={{ marginTop: "30px" }}>Team API Tokens List</h4>
-          {loadingTokens ? (
-            <p>Data loading...</p>
-          ) : (
-            <TokenGrid
-              tokens={tokens}
-              action={onDeleteToken}
-              onDeleted={() => loadTokens(teamName)}
-            />
+      {loading ? (
+        <Spin style={{ marginTop: 24, display: "block" }} />
+      ) : error ? (
+        <Alert message="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
+      ) : (
+        <Form name="team" form={form} onFinish={onFinish} layout="vertical" style={{ marginTop: 24 }}>
+          {mode === "create" && (
+            <Form.Item
+              name="name"
+              tooltip={{
+                title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
+                icon: <InfoCircleOutlined />,
+              }}
+              label="Team Name"
+              rules={[{ required: true, message: "Team name is required" }]}
+              extra="The team name must correspond to a group in your identity provider."
+            >
+              <Input placeholder="e.g. ENGINEERING_TEAM" />
+            </Form.Item>
           )}
+
+          <Divider />
+
+          <TeamPermissionsV2 managePermissions={true} />
+
+          <Divider />
+
+          <Space direction="horizontal">
+            <Button type="primary" htmlType="submit">
+              {mode === "edit" ? "Update team" : "Create team"}
+            </Button>
+            <Button onClick={onCancel} type="default">
+              Cancel
+            </Button>
+          </Space>
+        </Form>
+      )}
+
+      {mode === "edit" && !loading && !error && (
+        <>
+          <Divider />
+
+          <h2>Team API Tokens</h2>
+          <Typography.Text type="secondary">
+            Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation.
+          </Typography.Text>
+
+          <div style={{ marginTop: 16 }}>
+            <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
+              <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
+                Create a Team Token
+              </Button>
+            </Tooltip>
+          </div>
+
+          <h4 style={{ marginTop: 24 }}>Existing Tokens</h4>
+          {loadingTokens ? (
+            <Spin style={{ display: "block", marginTop: 16 }} />
+          ) : (
+            <TokenGrid tokens={tokens} action={onDeleteToken} onDeleted={() => loadTokens(teamName)} />
+          )}
+
           <CreatePatModal
             visible={visible}
             onCancel={() => setVisible(false)}
@@ -285,16 +299,12 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
             shortlivedTokens={true}
           />
         </>
-      ) : (
-        ""
       )}
 
-      {mode === "edit" ? (
-        <Button style={{ marginTop: "60px" }} onClick={onCancel} type="default">
+      {mode === "edit" && (
+        <Button style={{ marginTop: 40 }} onClick={onCancel} type="default">
           Go back to Teams list
         </Button>
-      ) : (
-        <></>
       )}
     </div>
   );

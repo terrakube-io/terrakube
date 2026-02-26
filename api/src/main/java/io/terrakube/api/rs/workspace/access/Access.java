@@ -41,6 +41,15 @@ public class Access {
     @Column(name = "manage_workspace")
     private boolean manageWorkspace;
 
+    @Column(name = "plan_job")
+    private boolean planJob;
+
+    @Column(name = "approve_job")
+    private boolean approveJob;
+
+    @Column(name = "role")
+    private String role;
+
     @ManyToOne
     private Workspace workspace;
 }

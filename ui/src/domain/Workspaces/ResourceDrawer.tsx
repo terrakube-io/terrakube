@@ -21,10 +21,9 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
     const fetchActions = async () => {
       try {
         setLoading(true);
-        const response = await axiosInstance.get('action', {
+        const response = await axiosInstance.get("action", {
           params: {
-            'filter[action]':
-              "active==true;type=in=('Workspace/ResourceDrawer/Action','Workspace/ResourceDrawer/Tab')",
+            "filter[action]": "active==true;type=in=('Workspace/ResourceDrawer/Action','Workspace/ResourceDrawer/Tab')",
           },
         });
         const fetchedActions = response.data.data || [];

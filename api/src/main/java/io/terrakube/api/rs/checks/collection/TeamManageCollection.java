@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.team.Team;
@@ -25,6 +26,9 @@ public class TeamManageCollection extends OperationCheck<Collection> {
     @Autowired
     GroupService groupService;
 
+    @Autowired
+    RbacService rbacService;
+
     @Override
     public boolean ok(Collection collection, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team manage collection {}", collection.getId());
@@ -32,11 +36,11 @@ public class TeamManageCollection extends OperationCheck<Collection> {
         List<Team> teamList = collection.getOrganization().getTeam();
         for (Team team : teamList) {
             if (isServiceAccount){
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageCollection() ){
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageCollection(team) ){
                     return true;
                 }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageCollection())
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageCollection(team))
                     return true;
             }
         }

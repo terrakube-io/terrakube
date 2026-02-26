@@ -9,6 +9,7 @@ const validateMessages = { required: "${label} is required!" };
 
 type Props = {
   changeJob: (id: string) => void;
+  planJob?: boolean;
 };
 
 type CreateJobForm = {
@@ -16,7 +17,7 @@ type CreateJobForm = {
   branchName: string;
 };
 
-export const CreateJob = ({ changeJob }: Props) => {
+export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [visible, setVisible] = useState(false);
@@ -103,6 +104,7 @@ export const CreateJob = ({ changeJob }: Props) => {
           setVisible(true);
         }}
         icon={<PlayCircleOutlined />}
+        disabled={!planJob}
       >
         Run now
       </Button>
@@ -137,7 +139,8 @@ export const CreateJob = ({ changeJob }: Props) => {
               name="templateId"
               label="Choose job type"
               rules={[{ required: true }]}
-              initialValue={defaultTemplate}>
+              initialValue={defaultTemplate}
+            >
               {loading || !templates ? (
                 <p>Data loading...</p>
               ) : (

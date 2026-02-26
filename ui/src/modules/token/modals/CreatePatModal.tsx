@@ -1,20 +1,22 @@
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { Modal, Space, Form, Input, InputNumber, Typography, Alert, ModalProps, Button, Flex } from "antd";
-import { useState } from "react";
+import { Modal, Space, Form, Input, Typography, Alert, Button, Flex, Select, Tag } from "antd";
+import { useState, useEffect } from "react";
+import { DateTime } from "luxon";
 import useApiRequest from "@/modules/api/useApiRequest";
-import { CreateTokenForm } from "@/modules/token/types";
+import { CreateTokenForm, CreatedToken } from "@/modules/token/types";
+import "./CreatePatModal.css";
 
 type Props = {
   visible: boolean;
-  shortlivedTokens: boolean;
   onCancel: () => void;
   onCreated: () => void;
   action: (data?: CreateTokenForm) => Promise<ApiResponse<CreatedToken>>;
 };
 
-export default function CreatePatModal({ onCancel, action, onCreated, visible, shortlivedTokens }: Props) {
+export default function CreatePatModal({ onCancel, action, onCreated, visible }: Props) {
   const [form] = Form.useForm<CreateTokenForm>();
   const [tokenValue, setTokenValue] = useState<string>();
+  const [expiryDate, setExpiryDate] = useState<string>("");
+  const [selectedDays, setSelectedDays] = useState<number>(30);
 
   const { loading, execute, error } = useApiRequest({
     showErrorAsNotification: false,
@@ -29,92 +31,86 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible, s
     },
   });
 
+  useEffect(() => {
+    if (selectedDays === 0) {
+      setExpiryDate("Never expires");
+    } else {
+      const date = DateTime.now().plus({ days: selectedDays });
+      setExpiryDate(`This token will expire on ${date.toFormat("MMMM d, yyyy")}`);
+    }
+  }, [selectedDays]);
+
   async function submitForm() {
     setTokenValue(undefined);
     const formValues = await form.validateFields();
-    await execute(formValues);
+    // Map the selected days to the form values expected by the API
+    // The API expects days, hours, minutes. We'll just set days.
+    const apiValues: CreateTokenForm = {
+      description: formValues.description,
+      days: selectedDays,
+      hours: 0,
+      minutes: 0,
+    };
+    await execute(apiValues);
   }
 
-  const buttonProps: Partial<ModalProps> =
-    tokenValue === undefined
-      ? {
-          okText: "Create",
-          okButtonProps: { loading, type: "primary" },
-          onOk: () => submitForm(),
-          onCancel: onCancel,
-          cancelText: "Cancel",
-          cancelButtonProps: { type: "text", danger: true },
-        }
-      : {
-          footer: null,
-        };
+  const handleDaysChange = (value: number) => {
+    setSelectedDays(value);
+  };
 
   return (
-    <Modal className="create-pat-modal" open={visible} title="Create Access Token" destroyOnClose {...buttonProps}>
+    <Modal
+      className="create-pat-modal"
+      open={visible}
+      title="Creating a user token"
+      destroyOnClose
+      onCancel={onCancel}
+      footer={
+        tokenValue === undefined ? (
+          <Flex justify="end" gap="small">
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button type="primary" loading={loading} onClick={submitForm}>
+              Generate token
+            </Button>
+          </Flex>
+        ) : null
+      }
+    >
       {tokenValue === undefined && (
         <Space className="content" direction="vertical">
           {error && <Alert type="error" banner message={error?.message} />}
-          <Form
-            name="tokens"
-            form={form}
-            layout="vertical"
-            disabled={loading}
-            initialValues={{ minutes: 0, hours: 0, days: 0 }}
-            validateMessages={{
-              required: "${label} is required",
-            }}
-          >
+          <Form name="tokens" form={form} layout="vertical" disabled={loading} initialValues={{ description: "" }}>
             <Form.Item
               name="description"
-              tooltip={{
-                title: "Choose a description to help you identify this token later",
-                icon: <InfoCircleOutlined />,
-              }}
-              label="Description"
-              rules={[{ required: true }]}
+              label={
+                <span>
+                  Description <Tag className="required-badge">Required</Tag>
+                </span>
+              }
+              help="To help you identify this token later."
+              rules={[{ required: true, message: "Description is required" }]}
             >
-              <Input placeholder="Please input a description" />
+              <Input placeholder="e.g. API testing" />
             </Form.Item>
-            <Form.Item
-              name="days"
-              tooltip={{
-                title: "Number of days for the token to be valid",
-                icon: <InfoCircleOutlined />,
-              }}
-              label="Days"
-              rules={[{ required: true }]}
-            >
-              <InputNumber min={0} placeholder="10" />
+
+            <Form.Item label="Expiration" name="expiration" initialValue={30}>
+              <Select onChange={handleDaysChange} value={selectedDays}>
+                <Select.Option value={30}>30 days</Select.Option>
+                <Select.Option value={60}>60 days</Select.Option>
+                <Select.Option value={90}>90 days</Select.Option>
+                <Select.Option value={120}>120 days</Select.Option>
+                <Select.Option value={365}>1 year</Select.Option>
+                <Select.Option value={0}>Never</Select.Option>
+              </Select>
             </Form.Item>
-            {shortlivedTokens ? (
-              <>
-                <Form.Item
-                  name="hours"
-                  tooltip={{
-                    title: "Number of hours for the token to be valid",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  label="Hours"
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={0} />
-                </Form.Item>
-                <Form.Item
-                  name="minutes"
-                  tooltip={{
-                    title: "Number of minutes for the token to be valid",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  label="Minutes"
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={0} />
-                </Form.Item>
-              </>
-            ) : undefined}
+
+            <Typography.Text type="secondary" className="expiry-text">
+              {expiryDate}
+            </Typography.Text>
           </Form>
         </Space>
       )}
+
       {tokenValue !== undefined && (
         <Space className="content" direction="vertical" size="middle">
           <Typography.Text>
@@ -122,23 +118,22 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible, s
             account without a username, password, or two-factor authentication.
           </Typography.Text>
 
-          <Typography.Paragraph className="created-token" copyable>
-            {tokenValue}
-          </Typography.Paragraph>
+          <div className="token-display">
+            <Typography.Paragraph className="created-token" copyable>
+              {tokenValue}
+            </Typography.Paragraph>
+          </div>
+
           <Alert
-            banner
-            description={
-              <span>
-                This token <b>will not be displayed again</b>, so make sure to save it to a safe place.
-              </span>
-            }
+            message="Terrakube will not display this token again, so store it securely."
             type="warning"
             showIcon
+            className="warning-banner"
           />
+
           <Flex justify="end">
             <Button
               type="primary"
-              danger
               onClick={() => {
                 setTokenValue(undefined);
                 onCreated();

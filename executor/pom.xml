@@ -29,18 +29,18 @@
 		<groovy.version>5.0.4</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>5.5.1</jcolor.version>
-		<aws-sdk.version>2.41.29</aws-sdk.version>
+		<aws-sdk.version>2.41.34</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.17</slf4j.version>
 		<gcp-libraries-bom.version>26.76.0</gcp-libraries-bom.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
-		<jedis.version>7.2.1</jedis.version>
+		<jedis.version>7.3.0</jedis.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
 		</sonar.coverage.jacoco.xmlReportPaths>
 		<!--BUILDPACK DATA-->
-		<buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.519</buildpack.builder>
-		<buildpack.java>paketobuildpacks/java:20.5.0</buildpack.java>
-		<buildpack.telemetry>paketobuildpacks/opentelemetry:2.20.0</buildpack.telemetry>
+		<buildpack.builder>paketobuildpacks/builder-jammy-base:0.4.546</buildpack.builder>
+		<buildpack.java>paketobuildpacks/java:21.2.0</buildpack.java>
+		<buildpack.telemetry>paketobuildpacks/opentelemetry:2.23.0</buildpack.telemetry>
 	</properties>
 	<dependencies>
 		<dependency>

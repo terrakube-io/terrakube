@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.access.Access;
@@ -25,6 +26,9 @@ public class TeamLimitedManageJob extends OperationCheck<Job> {
     @Autowired
     GroupService groupService;
 
+    @Autowired
+    RbacService rbacService;
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team limited manage job {}", job.getId());
@@ -33,11 +37,11 @@ public class TeamLimitedManageJob extends OperationCheck<Job> {
         if (!teamList.isEmpty())
             for (Access team : teamList) {
                 if (isServiceAccount) {
-                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && team.isManageJob()) {
+                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team)) {
                         return true;
                     }
                 } else {
-                    if (groupService.isMember(requestScope.getUser(), team.getName()) && team.isManageJob())
+                    if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageJob(team))
                         return true;
                 }
             }

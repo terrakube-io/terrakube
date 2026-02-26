@@ -1,35 +1,71 @@
 import { Layout, ConfigProvider } from "antd";
-import { useState, useEffect } from "react";
-import { RouterProvider, createBrowserRouter, Outlet, useParams } from "react-router-dom";
-import { useAuth } from "../../config/authConfig";
+import { lazy, Suspense, useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { AxiosResponse } from "axios";
 import {
-  getThemeConfig,
-  ColorSchemeOption,
-  ThemeMode,
-  defaultColorScheme,
-  defaultThemeMode,
-} from "../../config/themeConfig";
+  RouterProvider,
+  createBrowserRouter,
+  Outlet,
+  useParams,
+  useNavigate,
+  useOutletContext,
+} from "react-router-dom";
+import { useAuth } from "../../config/authConfig";
+import { getThemeConfig } from "../../config/themeConfig";
+import { ThemeProvider, useTheme } from "../../context/ThemeContext";
 import Login from "../Login/Login";
-import { CreateModule } from "../Modules/Create";
-import { ModuleDetails } from "../Modules/Details";
-import { PublicRegistrySearch } from "../Modules/PublicRegistrySearch";
-import { ProviderDetails } from "../Providers/ProviderDetails";
-import { Registry } from "../Modules/Registry";
-import { CreateOrganization } from "../Organizations/Create";
-import { OrganizationSettings } from "../Settings/Settings";
-import { CreateWorkspace } from "../Workspaces/Create";
-import { WorkspaceDetails } from "../Workspaces/Details";
-import { ImportWorkspace } from "../Workspaces/Import";
 import "./App.css";
 import MainMenu from "./MainMenu";
-import { ProfilePicture } from "./ProfilePicture";
+import { HelpMenu } from "@/components/HelpMenu";
+import LoadingFallback from "@/components/LoadingFallback";
+import { UserMenu } from "@/components/UserMenu";
+import { OrganizationSelector } from "@/components/OrganizationSelector";
 import logo from "./white_logo.png";
-import { UserSettingsPage } from "@/modules/user/UserSettingsPage";
-import OrganizationsPickerPage from "@/modules/organizations/OrganizationsPickerPage";
-import OrganizationsDetailPage from "@/modules/organizations/OrganizationDetailsPage";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
+import { ApiResponse, FlatOrganization, Organization } from "../types";
 const { Header, Footer } = Layout;
+
+type AppRouteContext = {
+  organizationName: string;
+  setOrganizationName: Dispatch<SetStateAction<string>>;
+};
+
+// Organizations
+const CreateOrganization = lazy(() =>
+  import("../Organizations/Create").then((module) => ({ default: module.CreateOrganization }))
+);
+const OrganizationsPickerPage = lazy(() => import("@/modules/organizations/OrganizationsPickerPage"));
+const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/OrganizationDetailsPage"));
+
+// Workspaces
+const CreateWorkspace = lazy(() =>
+  import("../Workspaces/Create").then((module) => ({ default: module.CreateWorkspace }))
+);
+const ImportWorkspace = lazy(() =>
+  import("../Workspaces/Import").then((module) => ({ default: module.ImportWorkspace }))
+);
+const WorkspaceDetails = lazy(() =>
+  import("../Workspaces/Details").then((module) => ({ default: module.WorkspaceDetails }))
+);
+
+// Modules and registry
+const CreateModule = lazy(() => import("../Modules/Create").then((module) => ({ default: module.CreateModule })));
+const Registry = lazy(() => import("../Modules/Registry").then((module) => ({ default: module.Registry })));
+const PublicRegistrySearch = lazy(() =>
+  import("../Modules/PublicRegistrySearch").then((module) => ({ default: module.PublicRegistrySearch }))
+);
+const ProviderDetails = lazy(() =>
+  import("../Providers/ProviderDetails").then((module) => ({ default: module.ProviderDetails }))
+);
+const ModuleDetails = lazy(() => import("../Modules/Details").then((module) => ({ default: module.ModuleDetails })));
+
+// Settings
+const OrganizationSettings = lazy(() =>
+  import("../Settings/Settings").then((module) => ({ default: module.OrganizationSettings }))
+);
+const UserSettingsPage = lazy(() =>
+  import("@/modules/user/UserSettingsPage").then((module) => ({ default: module.UserSettingsPage }))
+);
 
 // Helper component to extract URL parameters for collection routes
 const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
@@ -37,25 +73,50 @@ const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
   return <OrganizationSettings selectedTab="9" collectionMode={mode} collectionId={collectionid} />;
 };
 
-const App = () => {
-  const auth = useAuth();
+const useAppRouteContext = () => useOutletContext<AppRouteContext>();
+
+const CreateOrganizationRoute = () => {
+  const { setOrganizationName } = useAppRouteContext();
+  return <CreateOrganization setOrganizationName={setOrganizationName} />;
+};
+
+const OrganizationsDetailRoute = () => {
+  const { organizationName, setOrganizationName } = useAppRouteContext();
+  return <OrganizationsDetailPage setOrganizationName={setOrganizationName} organizationName={organizationName} />;
+};
+
+const WorkspaceDetailsRoute = ({ selectedTab }: { selectedTab?: string }) => {
+  const { setOrganizationName } = useAppRouteContext();
+  return <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab={selectedTab} />;
+};
+
+const RegistryRoute = () => {
+  const { organizationName, setOrganizationName } = useAppRouteContext();
+  return <Registry setOrganizationName={setOrganizationName} organizationName={organizationName} />;
+};
+
+const PublicRegistrySearchRoute = () => {
+  const { organizationName } = useAppRouteContext();
+  return <PublicRegistrySearch organizationName={organizationName} />;
+};
+
+const ProviderDetailsRoute = () => {
+  const { organizationName } = useAppRouteContext();
+  return <ProviderDetails organizationName={organizationName} />;
+};
+
+const ModuleDetailsRoute = () => {
+  const { organizationName } = useAppRouteContext();
+  return <ModuleDetails organizationName={organizationName} />;
+};
+
+const AppLayout = () => {
+  const navigate = useNavigate();
   const [organizationName, setOrganizationName] = useState<string>("");
-  const [colorScheme, setColorScheme] = useState<ColorSchemeOption>(defaultColorScheme);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(defaultThemeMode);
-  const expiry = auth?.user?.expires_at;
+  const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
+  const { colorScheme, themeMode } = useTheme();
 
   useEffect(() => {
-    // Load color scheme and theme mode preferences from localStorage
-    const savedScheme = localStorage.getItem("terrakube-color-scheme") as ColorSchemeOption;
-    const savedThemeMode = localStorage.getItem("terrakube-theme-mode") as ThemeMode;
-    if (savedScheme) {
-      setColorScheme(savedScheme);
-    }
-    if (savedThemeMode) {
-      setThemeMode(savedThemeMode);
-    }
-
-    // Initialize organization name from URL or session storage
     const pathname = window.location.pathname;
     const paths = pathname.split("/");
     const orgIdIndex = paths.indexOf("organizations") + 1;
@@ -63,14 +124,12 @@ const App = () => {
     if (orgIdIndex > 0 && orgIdIndex < paths.length) {
       const orgId = paths[orgIdIndex];
       if (orgId) {
-        // Check if we already have the org name in session storage
         const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
         const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
 
         if (storedOrgName && storedOrgId === orgId) {
           setOrganizationName(storedOrgName);
         } else {
-          // Fetch the organization name
           axiosInstance
             .get(`organization/${orgId}`)
             .then((response) => {
@@ -87,7 +146,6 @@ const App = () => {
         }
       }
     } else {
-      // No org ID in URL, use session storage if available
       const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
       if (storedOrgName) {
         setOrganizationName(storedOrgName);
@@ -95,9 +153,73 @@ const App = () => {
     }
   }, []);
 
+  useEffect(() => {
+    axiosInstance
+      .get("organization")
+      .then((response: AxiosResponse<ApiResponse<Organization[]>>) => {
+        const organizations = prepareOrgs(response.data.data);
+        setOrgs(organizations);
+      })
+      .catch((error) => {
+        console.error("Failed to load organizations:", error);
+      });
+  }, []);
+
+  const handleOrgChange = (orgId: string) => {
+    const org = orgs.find((o) => o.id === orgId);
+    if (org) {
+      sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
+      sessionStorage.setItem(ORGANIZATION_NAME, org.name);
+      setOrganizationName(org.name);
+    }
+    navigate(`/organizations/${orgId}/workspaces`);
+  };
+
+  return (
+    <ConfigProvider key={`${colorScheme}-${themeMode}`} theme={getThemeConfig(colorScheme, themeMode)}>
+      <Layout className="layout mh-100" key={organizationName || "no-org"}>
+        <Header>
+          <a>
+            <img className="logo" src={logo} alt="Logo"></img>
+          </a>
+          <OrganizationSelector
+            organizationName={organizationName}
+            organizations={orgs}
+            onOrgChange={handleOrgChange}
+            onManageOrgs={() => navigate("/organizations")}
+          />
+          <div className="menu">
+            <MainMenu
+              organizationName={organizationName}
+              setOrganizationName={setOrganizationName}
+              themeMode={themeMode}
+            />
+          </div>
+          <div className="user">
+            <HelpMenu />
+            <UserMenu />
+          </div>
+        </Header>
+        <Outlet context={{ organizationName, setOrganizationName }} />
+        <Footer style={{ textAlign: "center" }}>
+          Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
+        </Footer>
+      </Layout>
+    </ConfigProvider>
+  );
+};
+
+const App = () => {
+  const auth = useAuth();
+  const expiry = auth?.user?.expires_at;
+
   // Checking with the expiry time in the localstorage and when it has crossed the access has been revoked so It will clear the local storage and by default with no localstorage object it will route to login page.
   if (auth.isAuthenticated && auth?.user && expiry !== undefined && Math.floor(Date.now() / 1000) > expiry) {
     localStorage.clear();
+  }
+
+  if (auth.isLoading) {
+    return null;
   }
 
   if (!auth.isAuthenticated) {
@@ -107,45 +229,23 @@ const App = () => {
   const router = createBrowserRouter([
     {
       path: "/",
-      element: (
-        <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
-          <Layout className="layout mh-100">
-            <Header>
-              <a>
-                <img className="logo" src={logo} alt="Logo"></img>
-              </a>
-              <div className="menu">
-                <MainMenu
-                  organizationName={organizationName}
-                  setOrganizationName={setOrganizationName}
-                  themeMode={themeMode}
-                />
-              </div>
-              <div className="user">
-                <ProfilePicture />
-              </div>
-            </Header>
-            <Outlet />
-            <Footer style={{ textAlign: "center" }}>
-              Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
-            </Footer>
-          </Layout>
-        </ConfigProvider>
-      ),
+      element: <AppLayout />,
       children: [
         {
           path: "/",
           element: <OrganizationsPickerPage />,
         },
         {
+          path: "/organizations",
+          element: <OrganizationsPickerPage />,
+        },
+        {
           path: "/organizations/create",
-          element: <CreateOrganization setOrganizationName={setOrganizationName} />,
+          element: <CreateOrganizationRoute />,
         },
         {
           path: "/organizations/:id/workspaces",
-          element: (
-            <OrganizationsDetailPage setOrganizationName={setOrganizationName} organizationName={organizationName} />
-          ),
+          element: <OrganizationsDetailRoute />,
         },
         {
           path: "/workspaces/create",
@@ -157,67 +257,67 @@ const App = () => {
         },
         {
           path: "/workspaces/:id",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} />,
+          element: <WorkspaceDetailsRoute />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} />,
+          element: <WorkspaceDetailsRoute />,
         },
         {
           path: "/workspaces/:id/runs",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="2" />,
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/runs",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="2" />,
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
         },
         {
           path: "/workspaces/:id/runs/:runid",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="2" />,
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/runs/:runid",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="2" />,
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
         },
         {
           path: "/workspaces/:id/states",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="3" />,
+          element: <WorkspaceDetailsRoute selectedTab="3" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/states",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="3" />,
+          element: <WorkspaceDetailsRoute selectedTab="3" />,
         },
         {
           path: "/workspaces/:id/variables",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="4" />,
+          element: <WorkspaceDetailsRoute selectedTab="4" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/variables",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="4" />,
+          element: <WorkspaceDetailsRoute selectedTab="4" />,
         },
         {
           path: "/workspaces/:id/schedules",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="5" />,
+          element: <WorkspaceDetailsRoute selectedTab="5" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/schedules",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="5" />,
+          element: <WorkspaceDetailsRoute selectedTab="5" />,
         },
         {
           path: "/workspaces/:id/settings",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="6" />,
+          element: <WorkspaceDetailsRoute selectedTab="6" />,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings",
-          element: <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab="6" />,
+          element: <WorkspaceDetailsRoute selectedTab="6" />,
         },
         {
           path: "/organizations/:orgid/registry",
-          element: <Registry setOrganizationName={setOrganizationName} organizationName={organizationName} />,
+          element: <RegistryRoute />,
         },
         {
           path: "/organizations/:orgid/registry/search",
-          element: <PublicRegistrySearch organizationName={organizationName} />,
+          element: <PublicRegistrySearchRoute />,
         },
         {
           path: "/organizations/:orgid/registry/create",
@@ -225,11 +325,11 @@ const App = () => {
         },
         {
           path: "/organizations/:orgid/registry/providers/:providerid",
-          element: <ProviderDetails organizationName={organizationName} />,
+          element: <ProviderDetailsRoute />,
         },
         {
           path: "/organizations/:orgid/registry/:id",
-          element: <ModuleDetails organizationName={organizationName} />,
+          element: <ModuleDetailsRoute />,
         },
         {
           path: "/organizations/:orgid/settings",
@@ -291,7 +391,21 @@ const App = () => {
     },
   ]);
 
-  return <RouterProvider router={router} />;
+  return (
+    <ThemeProvider>
+      <Suspense fallback={<LoadingFallback />}>
+        <RouterProvider router={router} />
+      </Suspense>
+    </ThemeProvider>
+  );
 };
+
+function prepareOrgs(organizations: Organization[]): FlatOrganization[] {
+  return organizations.map((element) => ({
+    id: element.id,
+    name: element.attributes.name,
+    description: element.attributes.description,
+  }));
+}
 
 export default App;

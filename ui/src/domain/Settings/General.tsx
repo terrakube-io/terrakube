@@ -1,8 +1,8 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
+import { Alert, Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Organization } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import "./Settings.css";
@@ -17,11 +17,16 @@ type GeneralSettingsForm = {
   icon?: string;
 };
 
-export const GeneralSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const GeneralSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [organization, setOrganization] = useState<Organization>();
   const [loading, setLoading] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState<string>();
   const [form] = Form.useForm();
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
@@ -55,6 +60,10 @@ export const GeneralSettings = () => {
           message.error("Organization update failed");
         }
         setWaiting(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setWaiting(false);
       });
   };
 
@@ -81,6 +90,9 @@ export const GeneralSettings = () => {
         } else {
           message.error("Organization deletion failed");
         }
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -106,8 +118,12 @@ export const GeneralSettings = () => {
         });
         setLoading(false);
       })
-      .catch((error) => {
-        message.error("Failed to load organization settings");
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load organization settings");
+        }
         setLoading(false);
       });
   }, [orgid, form]);
@@ -115,7 +131,9 @@ export const GeneralSettings = () => {
   return (
     <div className="setting">
       <h1>General Settings</h1>
-      {loading || organization === undefined ? (
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : loading || organization === undefined ? (
         <Spin tip="Loading Organization Settings..." />
       ) : (
         <Spin spinning={waiting}>
@@ -137,8 +155,12 @@ export const GeneralSettings = () => {
             <Form.Item name="name" label="Name">
               <Input />
             </Form.Item>
-            <Form.Item name="description" label="Description">
-              <Input.TextArea />
+            <Form.Item
+              name="description"
+              label="Description"
+              extra={<Typography.Text type="secondary">A brief description of this organization.</Typography.Text>}
+            >
+              <Input.TextArea rows={3} />
             </Form.Item>
             <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces (informational only)">
               <Radio.Group>
@@ -176,18 +198,21 @@ export const GeneralSettings = () => {
               </Space>
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
+              <Button type="primary" htmlType="submit" disabled={!managePermission}>
                 Update organization
               </Button>
             </Form.Item>
           </Form>
         </Spin>
       )}
-      <h1>Delete this Organization</h1>
-      <div>
+      <h1>Destruction and Deletion</h1>
+      <h3>Delete this Organization</h3>
+      <div style={{ textAlign: "left", marginBottom: "16px" }}>
         <Typography.Text type="secondary" className="App-text">
-          Deleting the organization will permanently delete all workspaces associated with it. Please be certain that
-          you understand this.
+          Deleting the <strong>{organization?.attributes?.name}</strong> organization will permanently delete all
+          workspaces associated with it.
+          <br />
+          Please be certain that you understand this. This action cannot be undone.
         </Typography.Text>
       </div>
       <Popconfirm
@@ -206,11 +231,13 @@ export const GeneralSettings = () => {
         cancelText="No"
         placement="bottom"
       >
-        <Button type="default" danger style={{ width: "100%" }}>
-          <Space>
-            <DeleteOutlined />
-            Delete from Terrakube
-          </Space>
+        <Button
+          type="primary"
+          danger
+          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+          disabled={!managePermission}
+        >
+          Delete this organization
         </Button>
       </Popconfirm>
     </div>

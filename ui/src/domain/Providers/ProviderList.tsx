@@ -18,16 +18,12 @@ type Props = {
  * Extract a source repo owner/repo string and URL from a description that
  * may contain an embedded URL (e.g. "https://github.com/owner/repo").
  */
-const extractSourceRepo = (
-  description: string
-): { repoLabel: string; repoUrl: string } | null => {
+const extractSourceRepo = (description: string): { repoLabel: string; repoUrl: string } | null => {
   const urlMatch = description.match(/https?:\/\/[^\s]+/);
   if (!urlMatch) return null;
   const url = urlMatch[0];
   try {
-    const repoName = new URL(url).pathname
-      .replace(/^\//, "")
-      .replace(/\.git$/, "");
+    const repoName = new URL(url).pathname.replace(/^\//, "").replace(/\.git$/, "");
     if (repoName) return { repoLabel: repoName, repoUrl: url };
   } catch {
     /* invalid URL – ignore */
@@ -53,11 +49,7 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
   if (filteredProviders.length === 0) {
     return (
       <Empty
-        description={
-          searchFilter
-            ? "No providers match your search"
-            : "No providers found in this organization"
-        }
+        description={searchFilter ? "No providers match your search" : "No providers found in this organization"}
       />
     );
   }
@@ -71,31 +63,34 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
         const desc = item.description || "";
         const source = extractSourceRepo(desc);
         const descriptionText = source
-          ? desc.replace(source.repoUrl, "").replace(/Source:?\s*/i, "").trim()
+          ? desc
+              .replace(source.repoUrl, "")
+              .replace(/Source:?\s*/i, "")
+              .trim()
           : desc.replace(/Source:?\s*/i, "").trim();
 
         return (
           <List.Item
             style={{ cursor: "pointer", padding: "6px 0" }}
-            onClick={() =>
-              navigate(
-                `/organizations/${orgid}/registry/providers/${item.id}`
-              )
-            }
+            onClick={() => navigate(`/organizations/${orgid}/registry/providers/${item.id}`)}
           >
-            <Card
-              hoverable
-              className="module-card"
-              style={{ width: "100%" }}
-              styles={{ body: { padding: 0 } }}
-            >
+            <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
               <div className="module-card-body">
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div style={{ flexShrink: 0, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      width: 36,
+                      height: 36,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                     <CloudOutlined style={{ fontSize: 18, color: "#7b61ff" }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <Typography.Text strong style={{ fontSize: 16, color: "#222b3d" }}>
+                    <Typography.Text strong className="module-card-name">
                       {item.name}
                     </Typography.Text>
                     <div className="module-card-desc">
@@ -104,12 +99,18 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
                   </div>
                 </div>
               </div>
-              <div style={{ borderTop: "1px solid #f0f0f0", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div
+                style={{
+                  borderTop: "1px solid #f0f0f0",
+                  padding: "10px 24px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
                 <Space size={16}>
                   {item.latestVersion && (
-                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
-                      v{item.latestVersion}
-                    </Typography.Text>
+                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>v{item.latestVersion}</Typography.Text>
                   )}
                 </Space>
                 <Space size={6}>

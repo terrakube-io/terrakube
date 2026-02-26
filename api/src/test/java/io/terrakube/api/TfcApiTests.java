@@ -150,7 +150,7 @@ class TfcApiTests extends ServerApplicationTests {
     @Test
     void getWorkspace() {
         Team team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(true);
+        team.setManageJob(true);        team.setPlanJob(true);        team.setApproveJob(true);        team.setRole("admin");
         teamRepository.save(team);
 
         given()
@@ -186,7 +186,7 @@ class TfcApiTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value());
 
         team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(false);
+        team.setManageJob(false);        team.setPlanJob(false);        team.setApproveJob(false);        team.setRole("custom");
         teamRepository.save(team);
     }
 
@@ -219,7 +219,7 @@ class TfcApiTests extends ServerApplicationTests {
     @Test
     void lockWorkspace() {
         Team team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(true);
+        team.setManageJob(true);        team.setPlanJob(true);        team.setApproveJob(true);        team.setRole("admin");
         teamRepository.save(team);
 
         given()
@@ -265,14 +265,14 @@ class TfcApiTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.CONFLICT.value());
 
         team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(false);
+        team.setManageJob(false);        team.setPlanJob(false);        team.setApproveJob(false);        team.setRole("custom");
         teamRepository.save(team);
     }
 
     @Test
     void unlockWorkspace() {
         Team team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(true);
+        team.setManageJob(true);        team.setPlanJob(true);        team.setApproveJob(true);        team.setRole("admin");
         teamRepository.save(team);
 
         given()
@@ -308,7 +308,7 @@ class TfcApiTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value());
 
         team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
-        team.setManageJob(false);
+        team.setManageJob(false);        team.setPlanJob(false);        team.setApproveJob(false);        team.setRole("custom");
         teamRepository.save(team);
     }
 

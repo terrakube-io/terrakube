@@ -1,6 +1,8 @@
 import { Layout, Menu, theme } from "antd";
 import { useState } from "react";
 import { WorkspaceGeneral } from "./General";
+import { WorkspaceLocking } from "./Locking";
+import { WorkspaceSSHKey } from "./SSHKey";
 import { WorkspaceWebhook } from "./Webhook";
 import { WorkspaceAdvanced } from "./Advanced";
 import { Workspace, Template, VcsType } from "../../types";
@@ -14,14 +16,27 @@ type Props = {
   orgTemplates: Template[];
   manageWorkspace: boolean;
   vcsProvider?: VcsType;
+  onWorkspaceUpdate?: () => void;
 };
 
-export const WorkspaceSettings = ({ workspace, orgTemplates, manageWorkspace, vcsProvider }: Props) => {
+export const WorkspaceSettings = ({
+  workspace,
+  orgTemplates,
+  manageWorkspace,
+  vcsProvider,
+  onWorkspaceUpdate,
+}: Props) => {
   const [activeKey, setActiveKey] = useState("general");
   const { token } = theme.useToken();
 
   const handleMenuClick: MenuProps["onClick"] = (e) => {
     setActiveKey(e.key);
+  };
+
+  const handleWorkspaceUpdate = () => {
+    if (onWorkspaceUpdate) {
+      onWorkspaceUpdate();
+    }
   };
 
   const renderContent = () => {
@@ -30,6 +45,16 @@ export const WorkspaceSettings = ({ workspace, orgTemplates, manageWorkspace, vc
         return (
           <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} />
         );
+      case "locking":
+        return (
+          <WorkspaceLocking
+            workspace={workspace}
+            manageWorkspace={manageWorkspace}
+            onWorkspaceUpdate={handleWorkspaceUpdate}
+          />
+        );
+      case "sshkey":
+        return <WorkspaceSSHKey workspace={workspace} manageWorkspace={manageWorkspace} />;
       case "webhook":
         return (
           <WorkspaceWebhook
@@ -55,8 +80,10 @@ export const WorkspaceSettings = ({ workspace, orgTemplates, manageWorkspace, vc
       key: "workspace-settings",
       children: [
         { key: "general", label: "General" },
+        { key: "locking", label: "Locking" },
+        { key: "sshkey", label: "SSH Key" },
         { key: "webhook", label: "Webhook" },
-        { key: "advanced", label: "Advanced" },
+        { key: "advanced", label: "Destruction and Deletion" },
       ],
     },
   ];
@@ -80,7 +107,7 @@ export const WorkspaceSettings = ({ workspace, orgTemplates, manageWorkspace, vc
           onClick={handleMenuClick}
         />
       </Sider>
-      <Content style={{ padding: "0 24px", minHeight: 280 }}>{renderContent()}</Content>
+      <Content style={{ padding: "0 24px", minHeight: 280, maxWidth: 900 }}>{renderContent()}</Content>
     </Layout>
   );
 };

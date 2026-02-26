@@ -1,10 +1,4 @@
-import {
-  AppstoreOutlined,
-  CloudOutlined,
-  DownCircleOutlined,
-  PlusCircleOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
+import { AppstoreOutlined, CloudOutlined, SettingOutlined } from "@ant-design/icons";
 import { Menu } from "antd";
 import "antd/dist/reset.css";
 import { AxiosResponse } from "axios";
@@ -76,31 +70,39 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
 
   useEffect(() => {
     // Load all organizations
-    axiosInstance.get("organization").then((response: AxiosResponse<ApiResponse<Organization[]>>) => {
-      const organizations = prepareOrgs(response.data.data);
-      setOrgs(organizations);
+    axiosInstance
+      .get("organization")
+      .then((response: AxiosResponse<ApiResponse<Organization[]>>) => {
+        const organizations = prepareOrgs(response.data.data);
+        setOrgs(organizations);
 
-      // Check if we have an org ID in the URL but not in session storage
-      if (orgIdFromUrl && (!sessionStorage.getItem(ORGANIZATION_NAME) || organizationName === "select organization")) {
-        // Find the organization name by ID
-        const foundOrg = organizations.find((org) => org.id === orgIdFromUrl);
-        if (foundOrg) {
-          sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgIdFromUrl);
-          sessionStorage.setItem(ORGANIZATION_NAME, foundOrg.name);
-          setOrganizationName(foundOrg.name);
+        // Check if we have an org ID in the URL but not in session storage
+        if (
+          orgIdFromUrl &&
+          (!sessionStorage.getItem(ORGANIZATION_NAME) || organizationName === "select organization")
+        ) {
+          // Find the organization name by ID
+          const foundOrg = organizations.find((org) => org.id === orgIdFromUrl);
+          if (foundOrg) {
+            sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgIdFromUrl);
+            sessionStorage.setItem(ORGANIZATION_NAME, foundOrg.name);
+            setOrganizationName(foundOrg.name);
+          } else {
+            // If not found in the list, fetch directly
+            ensureOrganizationName(
+              orgIdFromUrl,
+              "",
+              setOrganizationName,
+              () => {} // No additional action needed
+            );
+          }
         } else {
-          // If not found in the list, fetch directly
-          ensureOrganizationName(
-            orgIdFromUrl,
-            "",
-            setOrganizationName,
-            () => {} // No additional action needed
-          );
+          setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "select organization");
         }
-      } else {
-        setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "select organization");
-      }
-    });
+      })
+      .catch((error) => {
+        console.error("Failed to load organizations:", error);
+      });
 
     if (location.pathname.includes("registry")) {
       setDefaultSelected(["registry"]);
@@ -124,43 +126,15 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
 
   const handleSectionNavigation = (section: string) => {
     // Use the helper function for section navigation
-    ensureOrganizationName(organizationId!, organizationName, setOrganizationName, () => {
+    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
       // Navigate within the same organization
-      navigate(`/organizations/${organizationId}/${section}`);
+      navigate(`/organizations/${orgIdFromUrl}/${section}`);
       setDefaultSelected([section]);
     });
   };
 
   const items = [
-    {
-      label: organizationName,
-      key: "organization-name",
-      icon: <DownCircleOutlined />,
-      children: [
-        {
-          label: "Create new organization",
-          key: "new",
-          icon: <PlusCircleOutlined />,
-          onClick: handleClick,
-        },
-        {
-          type: "divider",
-        },
-        {
-          type: "group",
-          label: "Organizations",
-          children: orgs
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((org) => ({
-              label: org.name,
-              key: org.id,
-              onClick: handleClick,
-            })),
-        },
-      ],
-    },
-
-    ...(organizationId
+    ...(orgIdFromUrl
       ? [
           {
             label: "Workspaces",

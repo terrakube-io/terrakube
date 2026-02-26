@@ -51,6 +51,19 @@ async function requestWrapper<T>(
         };
       }
 
+      if (error.response?.status === 403) {
+        return {
+          isError: true,
+          error: {
+            status: "Forbidden",
+            statusCode: 403,
+            message:
+              "You do not have the required permissions to perform this action. Please contact your organization administrator.",
+          },
+          responseCode: 403,
+        };
+      }
+
       let apiErr = error.response?.data;
 
       if (Object.keys(apiErr ?? {}).length === 0) {

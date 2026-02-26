@@ -1,9 +1,9 @@
 import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Button, Form, Input, Space, theme } from "antd";
+import { Alert, Button, Form, Input, message, Space, theme } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Template } from "../types";
 import "./Settings.css";
@@ -34,6 +34,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   const editorRef = useRef<IStandaloneCodeEditor>(null);
   const [template, setTemplate] = useState<Template>();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { token } = theme.useToken();
 
   function handleEditorDidMount(editor: IStandaloneCodeEditor) {
@@ -49,12 +50,19 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   }
 
   const loadTemplate = (templateId: string) => {
-    axiosInstance.get(`organization/${orgid}/template/${templateId}`).then((response) => {
-      setTemplate(response.data.data);
-      const buff = Buffer.from(response.data.data.attributes.tcl, "base64");
-      setTCL(buff.toString("ascii"));
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/template/${templateId}`)
+      .then((response) => {
+        setTemplate(response.data.data);
+        const buff = Buffer.from(response.data.data.attributes.tcl, "base64");
+        setTCL(buff.toString("ascii"));
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   const onFinish = (values: EditTemplateForm) => {
@@ -79,9 +87,13 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
       })
       .then((response) => {
         if (response.status == 204) {
+          message.success("Template updated successfully");
           setMode("list");
           loadTemplates();
         }
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
   return (
@@ -90,6 +102,8 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
       <Space className="chooseType" direction="vertical">
         {loading ? (
           <p>Data loading...</p>
+        ) : error ? (
+          <Alert message="Error" description={error} type="error" showIcon />
         ) : template ? (
           <Form
             initialValues={{ name: template.attributes.name, description: template.attributes.description }}

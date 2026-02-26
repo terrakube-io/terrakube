@@ -1,15 +1,35 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, Spin } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  message,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  Spin,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
 import "./Settings.css";
 
-export const GlobalVariablesSettings = () => {
+type Props = {
+  managePermission?: boolean;
+};
+
+export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [globalVariables, setGlobalVariables] = useState<Variable[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
   const [variableKey, setVariableKey] = useState<string>();
   const [mode, setMode] = useState("create");
@@ -63,7 +83,7 @@ export const GlobalVariablesSettings = () => {
       render: (_: any, record: Variable) => {
         return (
           <div>
-            <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)}>
+            <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)} disabled={!managePermission}>
               Edit
             </Button>
             <Popconfirm
@@ -81,7 +101,7 @@ export const GlobalVariablesSettings = () => {
               cancelText="No"
             >
               {" "}
-              <Button danger type="link" icon={<DeleteOutlined />}>
+              <Button danger type="link" icon={<DeleteOutlined />} disabled={!managePermission}>
                 Delete
               </Button>
             </Popconfirm>
@@ -118,9 +138,14 @@ export const GlobalVariablesSettings = () => {
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/globalvar/${id}`).then((response) => {
-      loadGlobalVariables();
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/globalvar/${id}`)
+      .then((response) => {
+        loadGlobalVariables();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: CreateVariableForm) => {
@@ -148,6 +173,9 @@ export const GlobalVariablesSettings = () => {
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -176,14 +204,27 @@ export const GlobalVariablesSettings = () => {
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadGlobalVariables = () => {
-    axiosInstance.get(`organization/${orgid}/globalvar`).then((response) => {
-      setGlobalVariables(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/globalvar`)
+      .then((response) => {
+        setGlobalVariables(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (isPermissionError(err)) {
+          setError(getErrorMessage(err));
+        } else {
+          message.error("Failed to load global variables");
+        }
+        setLoading(false);
+      });
   };
   useEffect(() => {
     setLoading(true);
@@ -192,90 +233,96 @@ export const GlobalVariablesSettings = () => {
 
   return (
     <div className="setting">
-      <h1>Global Variables</h1>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Global Variables allow you to define and apply variables one time across multiple workspaces within an
-          organization.
-        </Typography.Text>
-      </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
-        Create global variable
-      </Button>
-      <br></br>
+      {error ? (
+        <Alert message="Access Denied" description={error} type="error" showIcon />
+      ) : (
+        <>
+          <h1>Global Variables</h1>
+          <div>
+            <Typography.Text type="secondary" className="App-text">
+              Global Variables allow you to define and apply variables one time across multiple workspaces within an
+              organization.
+            </Typography.Text>
+          </div>
+          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+            Create global variable
+          </Button>
+          <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Global Variables</h3>
-      <Spin spinning={loading} tip="Loading Global Variables...">
-        <Table dataSource={globalVariables} columns={VARIABLES_COLUMS(onEdit)} rowKey="key" />
-      </Spin>
+          <h3 style={{ marginTop: "30px" }}>Global Variables</h3>
+          <Spin spinning={loading} tip="Loading Global Variables...">
+            <Table dataSource={globalVariables} columns={VARIABLES_COLUMS(onEdit)} rowKey="key" />
+          </Spin>
 
-      <Modal
-        width="600px"
-        open={visible}
-        title={mode === "edit" ? "Edit global variable " + variableKey : "Create new global variable"}
-        okText="Save global variable"
-        onCancel={onCancel}
-        cancelText="Cancel"
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
-        }}
-      >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="globalVariable" form={form} layout="vertical">
-            <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-              <Input.TextArea rows={1} autoSize={{ maxRows: 5 }} />
-            </Form.Item>
-            <Form.Item name="category" label="Category" rules={[{ required: true }]}>
-              <Select placeholder="Please select a category">
-                <Select.Option value="TERRAFORM">Terraform Variable</Select.Option>
-                <Select.Option value="ENV">Environment Variable</Select.Option>
-              </Select>
-            </Form.Item>
-            <Form.Item name="description" rules={[{ required: true }]} label="Description">
-              <Input.TextArea style={{ width: "800px" }} />
-            </Form.Item>
-            <Form.Item
-              name="hcl"
-              valuePropName="checked"
-              label="HCL"
-              tooltip={{
-                title:
-                  "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
-                icon: <InfoCircleOutlined />,
-              }}
-            >
-              <Switch />
-            </Form.Item>
-            {mode === "create" ? (
-              <Form.Item
-                name="sensitive"
-                valuePropName="checked"
-                label="Sensitive"
-                tooltip={{
-                  title:
-                    "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Switch />
-              </Form.Item>
-            ) : (
-              ""
-            )}
-          </Form>
-        </Space>
-      </Modal>
+          <Modal
+            width="600px"
+            open={visible}
+            title={mode === "edit" ? "Edit global variable " + variableKey : "Create new global variable"}
+            okText="Save global variable"
+            onCancel={onCancel}
+            cancelText="Cancel"
+            onOk={() => {
+              form
+                .validateFields()
+                .then((values) => {
+                  if (mode === "create") onCreate(values);
+                  else onUpdate(values);
+                })
+                .catch((info) => {
+                  console.log("Validate Failed:", info);
+                });
+            }}
+          >
+            <Space style={{ width: "100%" }} direction="vertical">
+              <Form name="globalVariable" form={form} layout="vertical">
+                <Form.Item name="key" label="Key" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="value" label="Value" rules={[{ required: true }]}>
+                  <Input.TextArea rows={1} autoSize={{ maxRows: 5 }} />
+                </Form.Item>
+                <Form.Item name="category" label="Category" rules={[{ required: true }]}>
+                  <Select placeholder="Please select a category">
+                    <Select.Option value="TERRAFORM">Terraform Variable</Select.Option>
+                    <Select.Option value="ENV">Environment Variable</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="description" rules={[{ required: true }]} label="Description">
+                  <Input.TextArea style={{ width: "800px" }} />
+                </Form.Item>
+                <Form.Item
+                  name="hcl"
+                  valuePropName="checked"
+                  label="HCL"
+                  tooltip={{
+                    title:
+                      "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                >
+                  <Switch />
+                </Form.Item>
+                {mode === "create" ? (
+                  <Form.Item
+                    name="sensitive"
+                    valuePropName="checked"
+                    label="Sensitive"
+                    tooltip={{
+                      title:
+                        "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                  >
+                    <Switch />
+                  </Form.Item>
+                ) : (
+                  ""
+                )}
+              </Form>
+            </Space>
+          </Modal>
+        </>
+      )}
     </div>
   );
 };

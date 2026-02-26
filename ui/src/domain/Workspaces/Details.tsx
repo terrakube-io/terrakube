@@ -35,9 +35,10 @@ import {
   Input,
   theme,
 } from "antd";
-import { AxiosInstance } from "axios";
+
 import { DateTime } from "luxon";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { usePolling } from "../../hooks";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
@@ -45,9 +46,8 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ActionLoader from "../../ActionLoader.js";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
-import { DetailsJob } from "../Jobs/Details";
 import {
   Action,
   ActionWithSettings,
@@ -58,36 +58,29 @@ import {
   IncludedItem,
   Organization,
   Resource,
-  Schedule,
-  StateOutputValue,
-  Template,
   VcsType,
   Workspace,
 } from "../types.js";
 import { CLIDriven } from "../Workspaces/CLIDriven";
 import { ResourceDrawer } from "../Workspaces/ResourceDrawer";
 import { Schedules } from "../Workspaces/Schedules";
-import { States } from "../Workspaces/States";
 import { Tags } from "../Workspaces/Tags";
 import { Variables } from "../Workspaces/Variables";
 import { getServiceIcon } from "./Icons.jsx";
-import { WorkspaceSettings } from "./Settings/WorkspaceSettings";
 import { getIaCIconById, getIaCNameById, renderVCSLogo } from "./Workspaces";
 import "./Workspaces.css";
+import LoadingFallback from "@/components/LoadingFallback";
 import RunList from "@/modules/workspaces/components/RunList";
+
+import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
+const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
+const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
+const WorkspaceSettings = lazy(() =>
+  import("./Settings/WorkspaceSettings").then((m) => ({ default: m.WorkspaceSettings }))
+);
+
 const { Paragraph } = Typography;
 
-const include = {
-  VARIABLE: "variable",
-  JOB: "job",
-  HISTORY: "history",
-  SCHEDULE: "schedule",
-  VCS: "vcs",
-  AGENT: "agent",
-  WEBHOOK: "webhook",
-  REFERENCE: "reference",
-  ORGANIZATION: "organization",
-};
 const { Content } = Layout;
 const { TabPane } = Tabs;
 
@@ -102,8 +95,6 @@ type Params = {
   orgid: string;
 };
 
-type StateOutputVariableWithName = { name: string } & StateOutputValue;
-
 export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) => {
   const navigate = useNavigate();
   const { id, runid, orgid } = useParams<Params>();
@@ -115,6 +106,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [workspace, setWorkspace] = useState<Workspace>();
   const [manageWorkspace, setManageWorkspace] = useState(false);
   const [manageState, setManageState] = useState(false);
+  const [planJob, setPlanJob] = useState(false);
+  const [approveJob, setApproveJob] = useState(false);
   const [variables, setVariables] = useState<FlatVariable[]>([]);
   const [collectionVariables, setCollectionVariables] = useState<any[]>([]);
   const [collectionEnvVariables, setCollectionEnvVariables] = useState<any[]>([]);
@@ -129,6 +122,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [stateDetailsVisible, setStateDetailsVisible] = useState(false);
   const [jobId, setJobId] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [jobVisible, setJobVisible] = useState(false);
   const [organizationNameLocal, setOrganizationNameLocal] = useState<string>();
   const [workspaceName, setWorkspaceName] = useState("...");
@@ -235,9 +229,14 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   };
 
   const loadOrgTemplates = () => {
-    axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
-      setOrgTemplates(response.data.data);
-    });
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((response) => {
+        setOrgTemplates(response.data.data);
+      })
+      .catch((err) => {
+        console.error("Failed to load org templates:", err);
+      });
   };
 
   const showDrawer = (record: Resource) => {
@@ -294,8 +293,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
   const fetchActions = async () => {
     try {
-      const response = await axiosInstance.get('action', {
-        params: { 'filter[action]': "active==true;type=in=('Workspace/Action')" },
+      const response = await axiosInstance.get("action", {
+        params: { "filter[action]": "active==true;type=in=('Workspace/Action')" },
       });
 
       const fetchedActions = response.data.data || [];
@@ -307,16 +306,21 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
     loadWorkspace(true, true, true);
     loadPermissionSet();
-    setLoading(false);
     loadOrgTemplates();
-    const interval = setInterval(() => {
+    // Polling is now handled by usePolling hook below
+  }, [id]);
+
+  // Polling for workspace updates
+  usePolling(
+    () => {
       loadWorkspace(false, false, false);
       loadPermissionSet();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [id]);
+    },
+    { interval: 10000, enabled: Boolean(id), immediate: false }
+  );
 
   const changeJob = (id: string) => {
     setJobId(id);
@@ -328,77 +332,104 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     const url = `${
       new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
     }/access-token/v1/teams/permissions/organization/${organizationId}`;
-    axiosInstance.get(url).then((response) => {
-      setManageState(response.data.manageState);
-      setManageWorkspace(response.data.manageWorkspace);
+    axiosInstance
+      .get(url)
+      .then((response) => {
+        setManageState(response.data.manageState);
+        setManageWorkspace(response.data.manageWorkspace);
+        setPlanJob(response.data.planJob);
+        setApproveJob(response.data.approveJob);
 
-      if (id !== undefined && id !== null) {
-        const urlWorkspaceAccess = `${
-          new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-        }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
-        axiosInstance.get(urlWorkspaceAccess).then((response) => {
-          setManageState(response.data.manageState);
-          setManageWorkspace(response.data.manageWorkspace);
-        });
-      }
-    });
+        if (id !== undefined && id !== null) {
+          const urlWorkspaceAccess = `${
+            new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
+          }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
+          axiosInstance
+            .get(urlWorkspaceAccess)
+            .then((response) => {
+              setManageState(response.data.manageState);
+              setManageWorkspace(response.data.manageWorkspace);
+              setPlanJob(response.data.planJob);
+              setApproveJob(response.data.approveJob);
+            })
+            .catch((err) => {
+              console.error("Failed to load workspace permissions:", err);
+            });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load org permissions:", err);
+      });
   };
 
   const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
     let url = `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,reference`;
     if (_loadWebhook) url += ",webhook";
-    axiosInstance.get(`organization/${organizationId}/template`).then((template) => {
-      setTemplates(template.data.data);
-      axiosInstance
-        .get(
-          `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference`
-        )
-        .then(async (response) => {
-          if (_loadPermissionSet) loadPermissionSet();
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((template) => {
+        setTemplates(template.data.data);
+        axiosInstance
+          .get(
+            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference`
+          )
+          .then(async (response) => {
+            if (_loadPermissionSet) loadPermissionSet();
 
-          setWorkspace(response.data.data);
+            setWorkspace(response.data.data);
 
-          if (response.data.included) {
-            await setupWorkspaceIncludes(
-              response.data,
-              setVariables,
-              setJobs,
-              setEnvVariables,
-              setHistory,
-              setSchedule,
-              template.data.data,
-              setLastRun,
-              setVCSProvider,
-              setCurrentStateId,
-              currentStateId,
-              axiosInstance,
-              setResources,
-              setOutputs,
-              setAgent,
-              _loadWebhook,
-              setContextState,
-              setCollectionVariables,
-              setCollectionEnvVariables,
-              setGlobalVariables,
-              setGlobalEnvVariables
+            if (response.data.included) {
+              await setupWorkspaceIncludes(
+                response.data,
+                setVariables,
+                setJobs,
+                setEnvVariables,
+                setHistory,
+                setSchedule,
+                template.data.data,
+                setLastRun,
+                setVCSProvider,
+                setCurrentStateId,
+                currentStateId,
+                axiosInstance,
+                setResources,
+                setOutputs,
+                setAgent,
+                _loadWebhook,
+                setContextState,
+                setCollectionVariables,
+                setCollectionEnvVariables,
+                setGlobalVariables,
+                setGlobalEnvVariables
+              );
+            }
+
+            const organization: Organization | undefined = response.data.included?.find(
+              (item: IncludedItem<Organization>) => item.type === "organization"
             );
-          }
-
-          const organization: Organization | undefined = response.data.included?.find(
-            (item: IncludedItem<Organization>) => item.type === "organization"
-          );
-          if (organization) {
-            const organizationName = organization.attributes.name;
-            setOrganizationName(organizationName);
-            sessionStorage.setItem(ORGANIZATION_NAME, organizationName);
-          }
-          setOrganizationNameLocal(sessionStorage.getItem(ORGANIZATION_NAME)!);
-          setWorkspaceName(response.data.data.attributes.name);
-          setExecutionMode(response.data.data.attributes.executionMode);
-          if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
-          fetchActions();
-        });
-    });
+            if (organization) {
+              const organizationName = organization.attributes.name;
+              setOrganizationName(organizationName);
+              sessionStorage.setItem(ORGANIZATION_NAME, organizationName);
+            }
+            setOrganizationNameLocal(sessionStorage.getItem(ORGANIZATION_NAME)!);
+            setWorkspaceName(response.data.data.attributes.name);
+            setExecutionMode(response.data.data.attributes.executionMode);
+            if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
+            fetchActions();
+            setLoadError(null);
+          })
+          .catch((err) => {
+            setLoadError(getErrorMessage(err));
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      })
+      .catch((err) => {
+        setLoadError(getErrorMessage(err));
+        setLoading(false);
+      });
   };
 
   const handleClickSettings = () => {
@@ -423,13 +454,13 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
       })
       .then((response) => {
         loadWorkspace(true);
-        var newstatus = locked ? "unlocked" : "locked";
+        const newstatus = locked ? "unlocked" : "locked";
         message.success("Workspace " + newstatus + " successfully");
       })
       .catch((error) => {
-        var newstatus = locked ? "unlock" : "lock";
+        const newstatus = locked ? "unlock" : "lock";
         message.error("Workspace " + newstatus + " failed: " + error.response.data.errors[0].detail);
-      })
+      });
   };
 
   return (
@@ -451,7 +482,15 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
 
       <div className="site-layout-content" style={{ background: colorBgContainer }}>
         <div className="workspaceDisplay">
-          {loading || !workspace || !variables || !jobs ? (
+          {loadError ? (
+            <Alert
+              message={loadError.includes("permission") ? "Access Denied" : "Error"}
+              description={loadError}
+              type="error"
+              showIcon
+              style={{ margin: "20px 0" }}
+            />
+          ) : loading || !workspace || !variables || !jobs ? (
             <Spin spinning={true} tip="Loading Workspace...">
               <p style={{ marginTop: "50px" }}></p>
             </Spin>
@@ -583,7 +622,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                       >
                         {workspace.attributes.locked ? "Unlock" : "Lock"}
                       </Button>
-                      <CreateJob changeJob={changeJob} />
+                      <CreateJob changeJob={changeJob} planJob={planJob} />
                     </Space>
                   </>
                 }
@@ -705,7 +744,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                       <Space direction="vertical">
                         <br />
                         <span>
-                          {workspace.attributes.branch !== "remote-content" ? (
+                          {workspace.attributes.branch !== "remote-content" &&
+                          isValidUrl(fixSshURL(workspace.attributes.source)) ? (
                             <>
                               {" "}
                               {renderVCSLogo(vcsProvider)}{" "}
@@ -725,8 +765,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                           )}
                         </span>
                         <span>
-                          <ThunderboltOutlined /> Execution Mode:{" "}
-                          {executionMode}{" "}
+                          <ThunderboltOutlined /> Execution Mode: {executionMode}{" "}
                         </span>
                         <Divider />
                         <h4>Tags</h4>
@@ -737,17 +776,25 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                 </TabPane>
 
                 <TabPane tab="Runs" key="2">
-                  {jobVisible ? <DetailsJob jobId={jobId!} /> : <RunList jobs={jobs} onRunClick={handleClick} />}
+                  {jobVisible ? (
+                    <Suspense fallback={<LoadingFallback />}>
+                      <DetailsJob jobId={jobId!} />
+                    </Suspense>
+                  ) : (
+                    <RunList jobs={jobs} onRunClick={handleClick} />
+                  )}
                 </TabPane>
                 <TabPane tab="States" key="3" disabled={!manageState}>
-                  <States
-                    history={history}
-                    setStateDetailsVisible={setStateDetailsVisible}
-                    stateDetailsVisible={stateDetailsVisible}
-                    workspace={workspace}
-                    onRollback={loadWorkspace}
-                    manageState={manageState}
-                  />
+                  <Suspense fallback={<LoadingFallback />}>
+                    <States
+                      history={history}
+                      setStateDetailsVisible={setStateDetailsVisible}
+                      stateDetailsVisible={stateDetailsVisible}
+                      workspace={workspace}
+                      onRollback={loadWorkspace}
+                      manageState={manageState}
+                    />
+                  </Suspense>
                 </TabPane>
                 <TabPane tab="Variables" key="4">
                   <Variables
@@ -764,12 +811,15 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                   {templates ? <Schedules schedules={schedule} manageWorkspace={manageWorkspace} /> : <p>Loading...</p>}
                 </TabPane>
                 <TabPane tab="Settings" key="6">
-                  <WorkspaceSettings
-                    workspace={workspace}
-                    vcsProvider={vcsProvider}
-                    orgTemplates={orgTemplates}
-                    manageWorkspace={manageWorkspace}
-                  />
+                  <Suspense fallback={<LoadingFallback />}>
+                    <WorkspaceSettings
+                      workspace={workspace}
+                      vcsProvider={vcsProvider}
+                      orgTemplates={orgTemplates}
+                      manageWorkspace={manageWorkspace}
+                      onWorkspaceUpdate={() => loadWorkspace(false)}
+                    />
+                  </Suspense>
                 </TabPane>
               </Tabs>
             </div>
@@ -779,449 +829,3 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     </Content>
   );
 };
-
-async function setupWorkspaceIncludes(
-  data: any,
-  setVariables: (val: any[]) => void,
-  setJobs: (val: any[]) => void,
-  setEnvVariables: (val: any[]) => void,
-  setHistory: (val: FlatJobHistory[]) => void,
-  setSchedule: (val: any[]) => void,
-  templates: Template[],
-  setLastRun: (val: string) => void,
-  setVCSProvider: (val: VcsType) => void,
-  setCurrentStateId: (val: string) => void,
-  currentStateId: string,
-  axiosInstance: any,
-  setResources: (val: any[]) => void,
-  setOutputs: (val: any[]) => void,
-  setAgent: (val: any) => void,
-  _loadWebhook: boolean,
-  setContextState: (val: any) => void,
-  setCollectionVariables: (val: any[]) => void,
-  setCollectionEnvVariables: (val: any[]) => void,
-  setGlobalVariables: (val: FlatVariable[]) => void,
-  setGlobalEnvVariables: (val: FlatVariable[]) => void
-): Promise<void> {
-  const variables: FlatVariable[] = [];
-  const jobs: FlatJob[] = [];
-  const webhooks: any = {};
-  const envVariables: FlatVariable[] = [];
-  const history: FlatJobHistory[] = [];
-  const schedule: Schedule[] = [];
-  const collectionVariables: any[] = [];
-  const collectionEnvVariables: any[] = [];
-  const globalVariables: FlatVariable[] = [];
-  const globalEnvVariables: FlatVariable[] = [];
-  const includes = data.included;
-  const asyncPromises: Promise<void>[] = [];
-
-  includes.forEach((element: any) => {
-    switch (element.type) {
-      case include.ORGANIZATION:
-        asyncPromises.push(
-          axiosInstance.get(`/organization/${element.id}/globalvar`).then((response: any) => {
-            const globalVar = response.data.data;
-            if (globalVar != null) {
-              globalVar.forEach((variableItem: any) => {
-                if (variableItem.attributes.category === "ENV") {
-                  globalEnvVariables.push({
-                    id: variableItem.id,
-                    type: variableItem.type,
-                    ...variableItem.attributes,
-                  });
-                } else {
-                  globalVariables.push({
-                    id: variableItem.id,
-                    type: variableItem.type,
-                    ...variableItem.attributes,
-                  });
-                }
-              });
-            }
-          })
-        );
-        break;
-      case include.JOB:
-        let finalColor = "";
-        switch (element.attributes.status) {
-          case "completed":
-            finalColor = "#2eb039";
-            break;
-          case "noChanges":
-            finalColor = "#9f37fa";
-            break;
-          case "rejected":
-            finalColor = "#FB0136";
-            break;
-          case "failed":
-            finalColor = "#FB0136";
-            break;
-          case "running":
-            finalColor = "#108ee9";
-            break;
-          case "waitingApproval":
-            finalColor = "#fa8f37";
-            break;
-          default:
-            finalColor = "";
-            break;
-        }
-        jobs.push({
-          id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          statusColor: finalColor,
-          commitId: element.attributes.commitId,
-          stepNumber: element.attributes.stepNumber,
-          latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-          ...element.attributes,
-        });
-        setLastRun(element.attributes.updatedDate);
-        break;
-      case include.HISTORY:
-        console.log(element);
-        history.push({
-          id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-          createdDate: element.attributes.createdDate,
-          ...element.attributes,
-        });
-        break;
-
-      case include.SCHEDULE:
-        schedule.push({
-          id: element.id,
-          name: templates?.find((template: Template) => template.id === element.attributes.templateReference)
-            ?.attributes?.name,
-          ...element.attributes,
-        });
-        break;
-      case include.VCS:
-        setVCSProvider(element.attributes.vcsType);
-        break;
-      case include.AGENT:
-        setAgent(element.id);
-        break;
-      case include.VARIABLE:
-        if (element.attributes.category == "ENV") {
-          envVariables.push({
-            id: element.id,
-            type: element.type,
-            ...element.attributes,
-          });
-        } else {
-          variables.push({
-            id: element.id,
-            type: element.type,
-            ...element.attributes,
-          });
-        }
-        break;
-      case include.WEBHOOK:
-        webhooks[element.attributes.event] = {
-          id: element.id,
-          type: element.type,
-          ...element.attributes,
-        };
-        break;
-      case include.REFERENCE:
-        asyncPromises.push(
-          axiosInstance.get(`/reference/${element.id}/collection?include=item`).then((response: any) => {
-            const collectionInfo = response.data.data;
-            if (response.data.included != null) {
-              const items = response.data.included;
-              items.forEach((item: any) => {
-                item.attributes.priority = collectionInfo.attributes.priority;
-                item.attributes.collectionName = collectionInfo.attributes.name;
-                if (item.attributes.category === "ENV") {
-                  collectionEnvVariables.push({
-                    id: item.id,
-                    type: item.type,
-                    ...item.attributes,
-                  });
-                } else {
-                  collectionVariables.push({
-                    id: item.id,
-                    type: item.type,
-                    ...item.attributes,
-                  });
-                }
-              });
-            }
-          })
-        );
-        break;
-    }
-  });
-
-  await Promise.all(asyncPromises);
-
-  const byKey = (a: { key?: string }, b: { key?: string }) =>
-    (a.key ?? "").localeCompare(b.key ?? "", undefined, { sensitivity: "base" });
-
-  setVariables([...variables].sort(byKey));
-  setEnvVariables([...envVariables].sort(byKey));
-  setJobs(jobs);
-  setHistory(history);
-  setSchedule(schedule);
-  setCollectionVariables([...collectionVariables].sort(byKey));
-  setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
-  setGlobalVariables([...globalVariables].sort(byKey));
-  setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
-
-  // set state data
-  const lastState = history
-    .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
-    .reverse()[0];
-  // reload state only if there is a new version
-
-  if (currentStateId !== lastState?.id) {
-    const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
-    const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
-    axiosInstance.get(url).then((response: any) => {
-      loadState(
-        lastState,
-        axiosInstance,
-        setOutputs,
-        setResources,
-        sessionStorage.getItem(WORKSPACE_ARCHIVE)!,
-        setContextState,
-        response.data.manageState
-      );
-    });
-  }
-  setCurrentStateId(lastState?.id);
-}
-
-function loadState(
-  state: any,
-  axiosInstance: AxiosInstance,
-  setOutputs: (val: any) => void,
-  setResources: (val: any) => void,
-  workspaceId: string,
-  setContextState: (val: any) => void,
-  manageState: boolean
-) {
-  if (!state || !manageState) {
-    return;
-  }
-
-  let currentState;
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
-
-  axiosInstance.get(state.output).then((resp) => {
-    let result = parseState(resp.data);
-    setContextState(resp.data);
-    if (result.outputs.length < 1 && result.resources.length < 1) {
-      axiosInstance
-        .get(
-          `${
-            new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-          }/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`
-        )
-        .then((currentStateData) => {
-          currentState = currentStateData.data;
-          setContextState(currentState);
-          result = parseOldState(currentState);
-
-          setResources(result.resources);
-          setOutputs(result.outputs);
-        })
-        .catch(function (error: Error) {
-          console.error(error);
-        });
-    } else {
-      setResources(result.resources);
-      setOutputs(result.outputs);
-    }
-  });
-}
-
-function parseState(state: any) {
-  let resources: any[] = [];
-  const outputs: StateOutputVariableWithName[] = [];
-
-  // parse root outputs
-  if (state?.values?.outputs != null) {
-    for (const [key, value] of Object.entries(state?.values?.outputs) as [any, any][]) {
-      if (typeof value.type === "string") {
-          if (value.sensitive) {
-              outputs.push({
-                  name: key,
-                  type: value.type,
-                  value: "*****",
-              });
-          } else {
-              outputs.push({
-                  name: key,
-                  type: value.type,
-                  value: value.value,
-              });
-          }
-      } else {
-        const jsonObject = JSON.stringify(value.value);
-        if (value.sensitive) {
-            outputs.push({
-                name: key,
-                type: "Other type",
-                value: "*****",
-            });
-        } else {
-            outputs.push({
-                name: key,
-                type: "Other type",
-                value: jsonObject,
-            });
-        }
-
-      }
-    }
-  } else {
-    console.log("State has no outputs");
-  }
-
-  // parse root module resources
-  if (state?.values?.root_module?.resources != null) {
-    for (const [_, value] of Object.entries(state?.values?.root_module?.resources) as [any, any][]) {
-      resources.push({
-        name: value.name,
-        type: value.type,
-        provider: value.provider_name,
-        module: "root_module",
-        values: value.values,
-        depends_on: value.depends_on,
-      });
-    }
-  } else {
-    console.log("State has no resources");
-  }
-
-  // parse child module resources
-  if (state?.values?.root_module?.child_modules?.length > 0) {
-    state?.values?.root_module?.child_modules?.forEach((moduleVal: any, index: any) => {
-      if (moduleVal.resources != null)
-        for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
-          resources.push({
-            name: value.name,
-            type: value.type,
-            provider: value.provider_name,
-            module: moduleVal.address,
-            values: value.values,
-            depends_on: value.depends_on,
-          });
-        }
-
-      if (moduleVal.child_modules?.length > 0) {
-        resources = parseChildModules(resources, moduleVal.child_modules);
-      }
-    });
-  } else {
-    console.log("State has no child modules resources");
-  }
-
-  return { resources: resources, outputs: outputs };
-}
-
-function parseOldState(state: any) {
-  const resources: any[] = [];
-  const outputs = [];
-  if (state?.outputs != null) {
-    for (const [key, value] of Object.entries(state?.outputs) as [any, any][]) {
-      if (typeof value.type === "string") {
-          if (value.sensitive) {
-              outputs.push({
-              name: key,
-              type: value.type,
-              value: "********",
-              })
-          } else {
-              outputs.push({
-                  name: key,
-                  type: value.type,
-                  value: value.value,
-              });
-          }
-      } else {
-        const jsonObject = JSON.stringify(value.value);
-        if (value.sensitive) {
-            outputs.push({
-              name: key,
-              type: "Other type",
-              value: "********",
-            })
-        } else {
-            outputs.push({
-                name: key,
-                type: "Other type",
-                value: jsonObject,
-            });
-        }
-      }
-    }
-  } else {
-    console.log("State has no outputs");
-  }
-
-  console.log("Parsing resources and modules fallback method");
-  if (state?.resources != null && state?.resources.length > 0) {
-    state?.resources.forEach((value: any) => {
-      if (value.module != null) {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace("provider[", "").replace("]", ""),
-          module: value.module,
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
-        });
-      } else {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace('provider["', "").replace('"]', ""),
-          module: "root_module",
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
-        });
-      }
-    });
-  } else {
-    console.log("State has no resources/modules");
-  }
-
-  return { resources: resources, outputs: outputs };
-}
-
-function parseChildModules(resources: any, child_modules?: any) {
-  child_modules?.forEach((moduleVal: any, index: number) => {
-    if (moduleVal.resources != null)
-      for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider_name,
-          module: moduleVal.address,
-          values: value.values,
-          depends_on: value.depends_on,
-        });
-      }
-
-    if (moduleVal.child_modules?.length > 0) {
-      resources = parseChildModules(resources);
-    }
-  });
-
-  return resources;
-}
-
-function fixSshURL(source: string) {
-  if (source.startsWith("git@")) {
-    return source.replace(":", "/").replace("git@", "https://");
-  } else {
-    return source;
-  }
-}

@@ -1,7 +1,7 @@
 import { Flex, Typography, Card } from "antd";
 import stringToDeterministicColor from "@/modules/utils/stringToDeterministicColor";
 import { OrganizationModel } from "../../types";
-import * as FaIcons from "react-icons/fa6";
+import { getFaIcon, FaBuilding } from "@/config/iconList";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../../../config/actionTypes";
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -22,7 +22,7 @@ function parseIconField(iconField: string | undefined, orgId: string): { iconNam
 
 // Helper to get the icon component
 function getOrgIcon(iconName: string, color: string) {
-  const IconComponent = FaIcons[(iconName as keyof typeof FaIcons) || DEFAULT_ICON] || FaIcons[DEFAULT_ICON];
+  const IconComponent = getFaIcon(iconName) || FaBuilding;
   return <IconComponent style={{ color, fontSize: 40 }} />;
 }
 
