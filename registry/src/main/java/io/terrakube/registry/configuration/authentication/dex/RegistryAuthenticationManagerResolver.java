@@ -57,7 +57,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private String getJwtIssuer(HttpServletRequest request) {
         String token = request.getHeader("authorization").replace("Bearer ", "");
         String[] chunks = token.split("\\.");
-        Base64.Decoder decoder = Base64.getDecoder();
+        Base64.Decoder decoder = Base64.getUrlDecoder();
         String payload = new String(decoder.decode(chunks[1]));
         String issuer = "";
         try {

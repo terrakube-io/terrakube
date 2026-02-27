@@ -78,7 +78,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private String getJwtClaim(HttpServletRequest request, String claim) {
         String tokenRequest = request.getHeader("authorization").replace("Bearer ", "");
         String[] chunksToken = tokenRequest.split("\\.");
-        Base64.Decoder decoder = Base64.getDecoder();
+        Base64.Decoder decoder = Base64.getUrlDecoder();
         String payloadFromToken = new String(decoder.decode(chunksToken[1]));
         String claimJwt = "";
         try {
