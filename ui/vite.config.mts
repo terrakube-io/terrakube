@@ -19,17 +19,17 @@ export default defineConfig(() => {
           manualChunks: function (id) {
             if (id.includes('node_modules')) {
               if (id.includes('react-icons')) return 'icons';
-              if (id.includes('antd')) return 'antd';
-              if (id.includes('@monaco-editor/react')) return 'monaco';
               if (id.includes('reactflow')) return 'reactflow';
               if (id.includes('react-vis')) return 'charts';
-              if (id.includes('react/') || id.includes('react-dom') || id.includes('react-router-dom')) return 'vendor';
+              if (id.includes('@monaco-editor/react')) return 'monaco';
               // Markdown ecosystem
               if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('unified') || id.includes('mdast') || id.includes('hast')) return 'markdown';
               // HCL parser
               if (id.includes('hcl2-parser')) return 'hcl-parser';
               // Unzipit
               if (id.includes('unzipit')) return 'unzipit';
+              // Everything else including antd, react, react-dom goes to vendor
+              return 'vendor';
             }
           },
         },
