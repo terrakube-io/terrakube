@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -23,15 +24,22 @@ import java.util.UUID;
 
 @Slf4j
 @RestController
-@AllArgsConstructor
 @RequestMapping("/access-token/v1/teams")
 public class TeamTokenController {
 
     private final WorkspaceRepository workspaceRepository;
     private final RbacService rbacService;
-    TeamTokenService teamTokenService;
-    TeamRepository teamRepository;
-    AccessRepository accessRepository;
+    private final TeamTokenService teamTokenService;
+    private final TeamRepository teamRepository;
+    private final String instanceOwner;
+
+    public TeamTokenController(WorkspaceRepository workspaceRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner) {
+        this.workspaceRepository = workspaceRepository;
+        this.rbacService = rbacService;
+        this.teamTokenService = teamTokenService;
+        this.teamRepository = teamRepository;
+        this.instanceOwner = instanceOwner;
+    }
 
     @PostMapping
     public ResponseEntity<TeamToken> createToken(@RequestBody GroupTokenRequest groupTokenRequest,
@@ -74,7 +82,12 @@ public class TeamTokenController {
             permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
             permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
             permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
         });
+
+        if (groups.contains(instanceOwner)) {
+            permissions.setManagePermission(true);
+        }
 
         log.debug("Permissions: {}", permissions);
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
@@ -98,6 +111,7 @@ public class TeamTokenController {
             permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
             permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
             permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
         });
 
         workspaceRepository.findById(UUID.fromString(workspaceId)).ifPresent(workspace -> {
@@ -165,5 +179,6 @@ public class TeamTokenController {
         private boolean manageJob;
         private boolean planJob;
         private boolean approveJob;
+        private boolean managePermission;
     }
 }
