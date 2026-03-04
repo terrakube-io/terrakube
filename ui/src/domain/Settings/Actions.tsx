@@ -67,6 +67,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   const [isEditing, setIsEditing] = useState(false);
   const [mode, setMode] = useState("create");
   const [actionId, setActionId] = useState<string>();
+  const [actionContent, setActionContent] = useState<string>("");
   const [form] = Form.useForm();
   const editorRef = useRef<IStandaloneCodeEditor>(null);
   const { token } = theme.useToken();
@@ -137,6 +138,10 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   const onCancel = () => {
     setIsEditing(false);
     form.resetFields();
+    setActionContent("");
+    if (editorRef.current) {
+      editorRef.current.setValue("");
+    }
   };
 
   const onEdit = (id: string) => {
@@ -153,7 +158,10 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
           displayCriteria: JSON.parse(action.attributes.displayCriteria),
         });
         const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
-        editorRef.current.setValue(actionDecoded);
+        setActionContent(actionDecoded);
+        if (editorRef.current) {
+          editorRef.current.setValue(actionDecoded);
+        }
       })
       .catch((err) => {
         message.error(getErrorMessage(err));
@@ -165,6 +173,10 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
     form.resetFields();
     setIsEditing(true);
     setMode("create");
+    setActionContent("");
+    if (editorRef.current) {
+      editorRef.current.setValue("");
+    }
   };
 
   const onDelete = (id: string) => {
@@ -180,7 +192,8 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   };
 
   const onCreate = (values: CreateActionForm) => {
-    const actionEncoded = Buffer.from(editorRef.current.getValue()).toString("base64");
+    const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
+    const actionEncoded = Buffer.from(editorValue).toString("base64");
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
       data: {
@@ -207,7 +220,8 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   };
 
   const onUpdate = (values: EditActionForm) => {
-    const actionEncoded = Buffer.from(editorRef.current.getValue()).toString("base64");
+    const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
+    const actionEncoded = Buffer.from(editorValue).toString("base64");
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
       data: {
@@ -255,6 +269,9 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
 
   function handleEditorDidMount(editor: IStandaloneCodeEditor) {
     editorRef.current = editor;
+    if (actionContent) {
+      editor.setValue(actionContent);
+    }
   }
 
   return (
