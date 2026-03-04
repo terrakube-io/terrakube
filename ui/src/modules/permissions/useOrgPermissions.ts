@@ -17,6 +17,7 @@ export interface OrgPermissionSet {
   manageJob: boolean;
   planJob: boolean;
   approveJob: boolean;
+  managePermission: boolean;
 }
 
 const defaultPermissions: OrgPermissionSet = {
@@ -30,6 +31,7 @@ const defaultPermissions: OrgPermissionSet = {
   manageJob: false,
   planJob: false,
   approveJob: false,
+  managePermission: false,
 };
 
 /**
@@ -68,6 +70,7 @@ export function useOrgPermissions() {
           manageJob: response.data.manageJob ?? false,
           planJob: response.data.planJob ?? false,
           approveJob: response.data.approveJob ?? false,
+          managePermission: response.data.managePermission ?? false,
         });
       })
       .catch((err) => {

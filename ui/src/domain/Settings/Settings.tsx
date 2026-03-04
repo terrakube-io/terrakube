@@ -63,11 +63,11 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
   const renderContent = () => {
     switch (activeKey) {
       case "1":
-        return <GeneralSettings managePermission={permissions.manageWorkspace} />;
+        return <GeneralSettings managePermission={permissions.managePermission} />;
       case "2":
-        return <TeamSettings key={activeKey} managePermission={permissions.manageWorkspace} />;
+        return <TeamSettings key={activeKey} managePermission={permissions.managePermission} />;
       case "3":
-        return <GlobalVariablesSettings managePermission={permissions.manageWorkspace} />;
+        return <GlobalVariablesSettings managePermission={permissions.managePermission} />;
       case "4":
         return <VCSSettings vcsMode={vcsMode} managePermission={permissions.manageVcs} />;
       case "5":
@@ -77,13 +77,13 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
       case "7":
         return <TagsSettings managePermission={permissions.manageWorkspace} />;
       case "8":
-        return <AgentSettings managePermission={permissions.manageWorkspace} />;
+        return <AgentSettings managePermission={permissions.managePermission} />;
       case "9":
         return renderCollectionContent();
       case "10":
-        return <ActionSettings managePermission={permissions.manageTemplate} />;
+        return <ActionSettings managePermission={permissions.managePermission} />;
       default:
-        return <GeneralSettings managePermission={permissions.manageWorkspace} />;
+        return <GeneralSettings managePermission={permissions.managePermission} />;
     }
   };
 
