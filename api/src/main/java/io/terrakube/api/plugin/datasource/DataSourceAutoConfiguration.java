@@ -1,14 +1,14 @@
 package io.terrakube.api.plugin.datasource;
 
 import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-
 import javax.sql.DataSource;
 
 @Slf4j
@@ -22,7 +22,13 @@ public class DataSourceAutoConfiguration {
     @Bean
     public DataSource getDataSource(DataSourceConfigurationProperties dataSourceConfigurationProperties) {
         log.info("DataSourceType: {}", dataSourceConfigurationProperties.getType());
-        DataSource dataSource = null;
+        HikariConfig config = new HikariConfig();
+        config.setMaximumPoolSize(dataSourceConfigurationProperties.getPoolSize());
+        config.setMinimumIdle(dataSourceConfigurationProperties.getPoolMinIdle());
+        config.setConnectionTimeout(dataSourceConfigurationProperties.getPoolConnectionTimeout());
+        config.setIdleTimeout(dataSourceConfigurationProperties.getPoolIdleTimeout());
+        config.setMaxLifetime(dataSourceConfigurationProperties.getPoolMaxLifetime());
+
         switch (dataSourceConfigurationProperties.getType()) {
             case SQL_AZURE:
                 SQLServerDataSource sqlServerDataSource = new SQLServerDataSource();
@@ -34,7 +40,7 @@ public class DataSourceAutoConfiguration {
                 sqlServerDataSource.setLoginTimeout(30);
                 sqlServerDataSource.setTrustServerCertificate(dataSourceConfigurationProperties.isTrustCertificate());
 
-                dataSource = sqlServerDataSource;
+                config.setDataSource(sqlServerDataSource);
                 break;
             case POSTGRESQL:
                 log.info("postgresql datasource using SSL Mode: {}", dataSourceConfigurationProperties.getSslMode());
@@ -53,17 +59,15 @@ public class DataSourceAutoConfiguration {
                 ds.setPassword(dataSourceConfigurationProperties.getDatabasePassword());
                 ds.setCurrentSchema(dataSourceConfigurationProperties.getDatabaseSchema());
                 ds.setSslMode(dataSourceConfigurationProperties.getSslMode());
-                dataSource = ds;
+                config.setDataSource(ds);
                 break;
             default:
-                DriverManagerDataSource h2DataSource = new DriverManagerDataSource();
-                h2DataSource.setDriverClassName("org.h2.Driver");
-                h2DataSource.setUrl("jdbc:h2:mem:db;DB_CLOSE_DELAY=-1");
-                h2DataSource.setUsername("sa");
-                h2DataSource.setPassword("sa");
-                dataSource = h2DataSource;
+                config.setDriverClassName("org.h2.Driver");
+                config.setJdbcUrl("jdbc:h2:mem:db;DB_CLOSE_DELAY=-1");
+                config.setUsername("sa");
+                config.setPassword("sa");
                 break;
         }
-        return dataSource;
+        return new HikariDataSource(config);
     }
 }
