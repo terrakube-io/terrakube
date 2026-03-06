@@ -4,9 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.PropertySource;
-import org.springframework.stereotype.Component;
 
-@Component
 @Getter
 @Setter
 @PropertySource(value = "classpath:application.properties", ignoreResourceNotFound = true)
@@ -24,4 +22,10 @@ public class DataSourceConfigurationProperties {
     private boolean awsIamAuth;
     private boolean trustCertificate;
     private String awsRegion;
+
+    private int poolSize = 10;
+    private int poolMinIdle = 5;
+    private long poolConnectionTimeout = 30000;
+    private long poolIdleTimeout = 600000;
+    private long poolMaxLifetime = 1800000;
 }
