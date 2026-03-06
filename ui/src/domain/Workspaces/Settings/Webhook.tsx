@@ -21,6 +21,21 @@ import axiosInstance from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, Workspace } from "../../types";
 import { atomicHeader, renderVCSLogo } from "../Workspaces";
 
+const isValidRegexList = (str: string | undefined) => {
+  if (!str) return true;
+  return str
+    .split(",")
+    .map((s) => s.trim())
+    .every((s) => {
+      try {
+        new RegExp(s);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+};
+
 type Props = {
   workspace: Workspace;
   manageWorkspace: boolean;
@@ -170,6 +185,26 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     if (inputError) {
       setWaiting(false);
       message.error("Event, Branch, File and Template are required fields");
+      setWebhookEvents([...webhookEvents]);
+      return;
+    }
+    // Verify regex patterns
+    let regexError = false;
+    webhookEvents
+      .filter((_, index) => index < recordIndex - 1)
+      .forEach((event) => {
+        if (!isValidRegexList(event.branch)) {
+          event.branchStatus = "error";
+          regexError = true;
+        }
+        if (!isValidRegexList(event.file)) {
+          event.fileStatus = "error";
+          regexError = true;
+        }
+      });
+    if (regexError) {
+      setWaiting(false);
+      message.error("Branch and File must be valid regex patterns");
       setWebhookEvents([...webhookEvents]);
       return;
     }
