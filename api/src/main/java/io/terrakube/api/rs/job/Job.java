@@ -93,6 +93,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 
+    @Exclude
+    @Column(name = "pr_number")
+    private Integer prNumber;
+
+    @Exclude
+    @Column(name = "pr_comment_id")
+    private String prCommentId;
+
     @ManyToOne
     private Organization organization;
 
