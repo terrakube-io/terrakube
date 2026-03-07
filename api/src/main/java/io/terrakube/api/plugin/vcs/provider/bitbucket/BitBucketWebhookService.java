@@ -229,7 +229,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         String apiUrl = workspace.getVcs().getApiUrl() + "/repositories/" + String.join("/", ownerAndRepo)
                 + "/pullrequests/" + job.getPrNumber() + "/comments";
 
-        String escapedBody = markdownBody.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+        String escapedBody = escapeJsonString(markdownBody);
         String body = "{\"content\":{\"raw\":\"" + escapedBody + "\"}}";
 
         ResponseEntity<String> response = callBitBucketApi(workspace.getVcs().getAccessToken(), body, apiUrl, HttpMethod.POST);
@@ -245,14 +245,6 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         } else {
             log.error("Failed to post PR comment on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
         }
-        return null;
-    }
-
-    private String parseTerrakubeCommand(String commentBody) {
-        if (commentBody == null) return null;
-        String lower = commentBody.trim().toLowerCase();
-        if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
-        if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
         return null;
     }
 

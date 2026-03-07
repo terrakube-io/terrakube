@@ -449,22 +449,6 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
     }
 
-    private String parseTerrakubeCommand(String commentBody) {
-        if (commentBody == null) return null;
-        String lower = commentBody.trim().toLowerCase();
-        if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
-        if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
-        return null;
-    }
-
-    private String escapeJsonString(String input) {
-        return input.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
-
     private ResponseEntity<String> callGitHubApi(Vcs vcs, String[] ownerAndRepo, String body, String apiUrl,
             HttpMethod httpMethod) {
         String token = "";

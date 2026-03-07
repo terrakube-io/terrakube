@@ -22,9 +22,11 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
+import reactor.netty.http.client.HttpClient;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -267,14 +269,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .baseUrl(apiUrl)
                     .defaultHeader("Authorization", "Bearer " + accessToken)
                     .defaultHeader("Content-Type", "application/json")
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
                     .filter(ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-                        log.info("WebClient Request: {} {}", clientRequest.method(), clientRequest.url());
+                        log.debug("WebClient Request: {} {}", clientRequest.method(), clientRequest.url());
                         clientRequest.headers().forEach((name, values) ->
                                 log.debug("Request Header: {}: {}", name, String.join(", ", values)));
                         return Mono.just(clientRequest);
                     }))
                     .filter(ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
-                        log.info("WebClient Response: {}", clientResponse.statusCode());
+                        log.debug("WebClient Response: {}", clientResponse.statusCode());
                         clientResponse.headers().asHttpHeaders().forEach((name, values) ->
                                 log.debug("Response Header: {}: {}", name, String.join(", ", values)));
                         return Mono.just(clientResponse);
@@ -306,7 +309,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
                                     return response.bodyToMono(String.class)
                                             .doOnNext(responseBody -> {
-                                                log.info("Processing page {}: {}", currentPage.get(), responseBody);
+                                                log.debug("Processing page {}: {}", currentPage.get(), responseBody);
                                                 try {
                                                     GitlabDiffResponseModel[] diffModels = objectMapper.readValue(
                                                             responseBody,
@@ -443,6 +446,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 .baseUrl(gitlabBaseUrl)
                 .defaultHeader("Authorization", "Bearer " + accessToken)
                 .defaultHeader("Content-Type", "application/json")
+                .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
                 .build();
 
         AtomicInteger currentPage = new AtomicInteger(1);
@@ -582,6 +586,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .baseUrl(workspace.getVcs().getApiUrl())
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
                     .build();
 
             Map<String, Object> requestBody = new HashMap<>();
@@ -603,14 +608,6 @@ public class GitLabWebhookService extends WebhookServiceBase {
         } catch (Exception e) {
             log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
         }
-        return null;
-    }
-
-    private String parseTerrakubeCommand(String commentBody) {
-        if (commentBody == null) return null;
-        String lower = commentBody.trim().toLowerCase();
-        if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
-        if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
         return null;
     }
 
@@ -653,6 +650,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.ACCEPT, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + job.getWorkspace().getVcs().getAccessToken())
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
                     .build();
 
             // Create request body
