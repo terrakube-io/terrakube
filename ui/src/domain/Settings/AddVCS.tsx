@@ -48,6 +48,39 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
   const [vcsType, setVcsType] = useState<VcsTypeExtended>(vcsName ? vcsName : VcsTypeExtended.GITHUB);
   const [connectionType, setConnectionType] = useState(VcsConnectionType.OAUTH);
   const [uuid] = useState(uuidv1());
+
+  const validatePrivateKeyFormat = (_: any, value: string) => {
+    if (!value) {
+      return Promise.resolve();
+    }
+
+    if (!value.includes("-----BEGIN PRIVATE KEY-----")) {
+      return Promise.reject(new Error("Private key must be in PKCS#8 format (-----BEGIN PRIVATE KEY-----)"));
+    }
+
+    if (!value.includes("-----END PRIVATE KEY-----")) {
+      return Promise.reject(new Error("Private key is incomplete (missing -----END PRIVATE KEY-----)"));
+    }
+
+    return Promise.resolve();
+  };
+
+  const validateUrlFormat = (_: any, value: string) => {
+    if (!value) {
+      return Promise.resolve();
+    }
+
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return Promise.reject(new Error("URL must start with http:// or https://"));
+      }
+      return Promise.resolve();
+    } catch {
+      return Promise.reject(new Error("Please enter a valid URL"));
+    }
+  };
+
   const handleChange = (currentVal: number) => {
     setCurrent(currentVal);
   };
@@ -826,7 +859,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <Form.Item
               name="endpoint"
               label="HTTPS URL"
-              rules={[{ required: !httpsHidden(vcsType) }]}
+              rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
               hidden={httpsHidden(vcsType)}
             >
               <Input placeholder={getHttpsPlaceholder(vcsType)} />
@@ -834,7 +867,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <Form.Item
               name="apiUrl"
               label="API URL"
-              rules={[{ required: !apiUrlHidden(vcsType) }]}
+              rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
               hidden={apiUrlHidden(vcsType)}
             >
               <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
@@ -854,7 +887,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <Form.Item
               name="privateKey"
               label={getSecretIdName(vcsType)}
-              rules={[{ required: connectionType != "OAUTH" ? true : false }]}
+              rules={[{ required: connectionType != "OAUTH" ? true : false }, { validator: validatePrivateKeyFormat }]}
               hidden={connectionType === "OAUTH"}
             >
               <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
