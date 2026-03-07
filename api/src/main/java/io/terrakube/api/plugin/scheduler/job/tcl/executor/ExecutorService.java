@@ -11,10 +11,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
@@ -102,7 +102,7 @@ public class ExecutorService {
             try {
                 executorContext.setAccessToken(tokenService.getAccessToken(job.getWorkspace().getSource(), vcs));
             } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
-                    | URISyntaxException e) {
+                     | URISyntaxException | GitAPIException e) {
                 log.error("Failed to fetch access token for job {} on workspace {}, error {}", job.getId(),
                         job.getWorkspace().getName(), e);
             }
@@ -271,7 +271,7 @@ public class ExecutorService {
                             String accessToken = tokenService.getAccessToken(toolsRepository, vcs.get());
                             workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", accessToken);
                         } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
-                                | URISyntaxException e) {
+                                | URISyntaxException | GitAPIException e) {
                             log.error(
                                     "Failed to fetch access token for private extension repository for job {} on workspace {}, error {}",
                                     job.getId(), job.getWorkspace().getName(), e);

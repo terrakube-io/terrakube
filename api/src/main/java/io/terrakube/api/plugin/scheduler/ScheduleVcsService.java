@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import lombok.Getter;
 
+@Deprecated
 @Getter
 @Service
 public class ScheduleVcsService extends ScheduleServiceBase {

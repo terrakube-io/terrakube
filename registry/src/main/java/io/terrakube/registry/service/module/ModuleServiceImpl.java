@@ -10,13 +10,13 @@ import io.terrakube.client.model.organization.module.ModuleRequest;
 import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
+import io.terrakube.client.model.refresh.RefreshTokenRequest;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -89,7 +89,6 @@ public class ModuleServiceImpl implements ModuleService {
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
         String moduleVersionPath = "";
-
         String organizationId = commonSearchService.getOrganizationId(organizationName);
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
@@ -139,6 +138,10 @@ public class ModuleServiceImpl implements ModuleService {
     }
 
     private String getAccessToken(String organizationId, String vcsId, String repository_source) {
+
+        RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest();
+        refreshTokenRequest.setGitPath(repository_source);
+        refreshVcsToken(vcsId, repository_source);
         Vcs vcs = getVcsInformation(organizationId, vcsId);
         if (vcs == null)
             return null;
@@ -149,6 +152,16 @@ public class ModuleServiceImpl implements ModuleService {
             token = gitHubAppToken.getAttributes().getToken();
         }
         return token;
+    }
+
+    private void refreshVcsToken(String vcsId, String gitPath) {
+        try {
+            RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest();
+            refreshTokenRequest.setGitPath(gitPath);
+            terrakubeClient.refreshToken(vcsId, refreshTokenRequest);
+        } catch (Exception e){
+            log.error("Error refreshing VCS token for {} {}", gitPath, e.getMessage());
+        }
     }
 
     private Vcs getVcsInformation(String organizationId, String vcsId) {

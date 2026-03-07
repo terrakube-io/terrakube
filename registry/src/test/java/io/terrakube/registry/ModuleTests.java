@@ -60,6 +60,45 @@ public class ModuleTests extends OpenRegistryApplicationTests{
             "    }\n" +
             "}";
 
+    private static final String MODULE_BY_NAME_BODY = "{\n" +
+            "  \"data\": [\n" +
+            "    {\n" +
+            "      \"type\": \"module\",\n" +
+            "      \"id\": \"25778e8a-6989-4792-9f38-17bb3f09543b\",\n" +
+            "      \"attributes\": {\n" +
+            "        \"name\": \"vpc\",\n" +
+            "        \"provider\": \"aws\",\n" +
+            "        \"source\": \"https://github.com/terraform-aws-modules/terraform-aws-vpc\",\n" +
+            "        \"downloadQuantity\": 10\n" +
+            "      },\n" +
+            "      \"relationships\": {\n" +
+            "        \"vcs\": {\n" +
+            "          \"data\": {\n" +
+            "            \"type\": \"vcs\",\n" +
+            "            \"id\": \"12345\"\n" +
+            "          }\n" +
+            "        },\n" +
+            "        \"ssh\": {\n" +
+            "          \"data\": null\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  ]\n" +
+            "}";
+
+    private static final String VCS_BY_ID_BODY = "{\n" +
+            "  \"data\": {\n" +
+            "    \"type\": \"vcs\",\n" +
+            "    \"id\": \"12345\",\n" +
+            "    \"attributes\": {\n" +
+            "      \"name\": \"GitHub\",\n" +
+            "      \"vcsType\": \"GITHUB\",\n" +
+            "      \"connectionType\": \"OAUTH\",\n" +
+            "      \"accessToken\": \"some-token\"\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
     @Test
     void moduleApiGetTestStep1() {
         wireMockServer.resetAll();
@@ -84,5 +123,51 @@ public class ModuleTests extends OpenRegistryApplicationTests{
                 .body("modules[0].versions",hasSize(1))
                 .log().all()
                 .statusCode(HttpStatus.SC_OK);
+    }
+
+    @Test
+    void refreshVcsTokenTest() {
+        wireMockServer.resetAll();
+
+        // Stub for getOrganizationId
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("organization(filter: \\\"name==aws\\\")"))
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.SC_OK)
+                        .withBody(ORGANIZATION_SEARCH_BODY)));
+
+        // Stub for getModuleByNameAndProvider
+        stubFor(get(urlMatching("/api/v1/organization/.*/module.*"))
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.SC_OK)
+                        .withHeader("Content-Type", "application/vnd.api+json")
+                        .withBody(MODULE_BY_NAME_BODY)));
+
+        // Stub for updateModule (for download count)
+        stubFor(patch(urlMatching("/api/v1/organization/.*/module/.*"))
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.SC_NO_CONTENT)));
+
+        // Stub for getVcsById
+        stubFor(get(urlMatching("/api/v1/organization/.*/vcs/12345"))
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.SC_OK)
+                        .withHeader("Content-Type", "application/vnd.api+json")
+                        .withBody(VCS_BY_ID_BODY)));
+
+        // Stub for refreshToken (the method we want to ensure is called)
+        stubFor(post(urlEqualTo("/refresh-token/v1/vcs/12345"))
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.SC_OK)));
+
+        when()
+                .get("/terraform/modules/v1/aws/vpc/aws/v3.3.0/download")
+                .then()
+                .log().all()
+                .statusCode(HttpStatus.SC_NO_CONTENT);
+
+        // Verify refreshToken was called exactly once
+        verify(1, postRequestedFor(urlEqualTo("/refresh-token/v1/vcs/12345"))
+                .withRequestBody(containing("https://github.com/terraform-aws-modules/terraform-aws-vpc")));
     }
 }
