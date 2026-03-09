@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-31-0-1" author="Dennis Webb (denniswebb@users.noreply.github.com)">
+        <createTable tableName="vcs_webhook">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="vcs_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="repository_url" type="varchar(1024)">
+                <constraints nullable="false" />
+            </column>
+            <column name="remote_hook_id" type="varchar(220)" />
+            <column name="secret" type="varchar(128)" />
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="vcs_webhook" baseColumnNames="vcs_id"
+            constraintName="fk_vcs_webhook_vcs_id" referencedTableName="vcs"
+            referencedColumnNames="id" />
+        <addUniqueConstraint tableName="vcs_webhook" columnNames="vcs_id, repository_url"
+            constraintName="uq_vcs_webhook_vcs_repo" />
+    </changeSet>
+</databaseChangeLog>

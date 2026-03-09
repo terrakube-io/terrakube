@@ -1,5 +1,6 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Col,
   Flex,
@@ -18,6 +19,7 @@ import {
 import { useEffect, useState } from "react";
 import { v7 as uuid } from "uuid";
 import axiosInstance from "../../../config/axiosConfig";
+import { axiosRegistry } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, Workspace } from "../../types";
 import { atomicHeader, renderVCSLogo } from "../Workspaces";
 
@@ -56,6 +58,8 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
   ]);
   const workspaceId = workspace.id;
   const [remoteHookId, setRemoteHookId] = useState("");
+  const [isLegacyWebhook, setIsLegacyWebhook] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const webhookId = workspace.relationships.webhook?.data?.id;
 
   useEffect(() => {
@@ -76,7 +80,9 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`),
     ])
       .then(([webhookRes, eventsRes]) => {
-        setRemoteHookId(webhookRes.data.data.attributes.remoteHookId);
+        const hookId = webhookRes.data.data.attributes.remoteHookId;
+        setRemoteHookId(hookId);
+        setIsLegacyWebhook(!!hookId);
 
         let i = 1;
         const events = eventsRes.data.data
@@ -123,6 +129,27 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
   };
   const handleWebhookClick = () => {
     setWebhookEnabled(!webhookEnabled);
+  };
+  const handleMigrate = () => {
+    if (!webhookId) return;
+    setMigrating(true);
+    axiosRegistry
+      .post(`/api/v1/webhook/${webhookId}/migrate`)
+      .then((response) => {
+        if (response.status === 200) {
+          message.success("Webhook migrated to shared mode");
+          setRemoteHookId("");
+          setIsLegacyWebhook(false);
+        } else {
+          message.error("Failed to migrate webhook");
+        }
+      })
+      .catch(() => {
+        message.error("Failed to migrate webhook");
+      })
+      .finally(() => {
+        setMigrating(false);
+      });
   };
   const onDelete = (record: any) => {
     const newWebhookEvents = webhookEvents.filter((item) => item.key !== record.key);
@@ -407,13 +434,47 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
           >
             <Switch onChange={handleWebhookClick} checked={webhookEnabled} disabled={!manageWorkspace} />
           </Form.Item>
+          {webhookEnabled && isLegacyWebhook && vcsProvider === VcsType.GITHUB && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="info"
+              showIcon
+              message="Legacy per-workspace webhook"
+              description={
+                <Space>
+                  <span>This workspace uses its own GitHub webhook. Migrate to a shared webhook to reduce the number of hooks on your repository.</span>
+                  <Popconfirm
+                    title="Migrate to shared webhook?"
+                    description="This will delete the per-workspace GitHub hook and attach to a shared one. Event rules are preserved."
+                    onConfirm={handleMigrate}
+                    okText="Migrate"
+                    cancelText="Cancel"
+                    disabled={!manageWorkspace}
+                  >
+                    <Button type="primary" size="small" loading={migrating} disabled={!manageWorkspace}>
+                      Migrate to shared
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              }
+            />
+          )}
+          {webhookEnabled && !isLegacyWebhook && !remoteHookId && webhookId && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="success"
+              showIcon
+              message="Shared webhook"
+              description="This workspace uses a shared repository webhook. Multiple workspaces on this repository share a single GitHub hook."
+            />
+          )}
           <Row hidden={!webhookEnabled}>
             <Col span={12}>
               <Form.Item label="ID" hidden={!webhookEnabled}>
                 {webhookId}
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={12} hidden={!remoteHookId}>
               <Form.Item hidden={!webhookEnabled} label={renderVCSLogo(vcsProvider!)}>
                 {remoteHookId}
               </Form.Item>

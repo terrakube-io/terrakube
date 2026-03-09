@@ -105,6 +105,46 @@ public class WebhookServiceBase {
         return restTemplate.exchange(apiUrl, method, entity, String.class);
     }
 
+    public static String normalizeRepositoryUrl(String repoUrl) {
+        if (repoUrl == null) {
+            return null;
+        }
+        String normalized = repoUrl.toLowerCase().trim();
+        if (normalized.endsWith(".git")) {
+            normalized = normalized.substring(0, normalized.length() - 4);
+        }
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    protected WebhookResult handleWebhookWithSecret(String jsonPayload, Map<String, String> headers,
+            String secret, String signatureHeader, String via,
+            TriFunction<String, WebhookResult, Map<String, String>, WebhookResult> handleEvent) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(via);
+
+        log.info("verify signature for shared " + via + " webhook");
+        result.setValid(verifySignature(headers, signatureHeader, secret, jsonPayload));
+
+        if (!result.isValid()) {
+            log.info("Signature verification failed for shared webhook");
+            return result;
+        }
+
+        log.info("Parsing shared " + via + " webhook payload");
+
+        try {
+            result = handleEvent.apply(jsonPayload, result, headers);
+        } catch (Exception e) {
+            log.info("Error processing the shared webhook", e);
+        }
+
+        return result;
+    }
+
     protected WebhookResult handleWebhook(String jsonPayload, Map<String, String> headers, String token,
             String signatureHeader, String via,
             TriFunction<String, WebhookResult, Map<String, String>, WebhookResult> handleEvent) {

@@ -39,4 +39,33 @@ public class WebHookController {
         }
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/webhook/v1/vcs/{vcsWebhookId}")
+    public ResponseEntity<String> processVcsWebhook(@PathVariable String vcsWebhookId, @RequestBody Map<String, Object> payload, @RequestHeader Map<String, String> headers) {
+
+        log.info("Processing shared VCS webhook {}", vcsWebhookId);
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            log.info("shared webhook payload: {}", jsonPayload);
+            webhookService.processSharedWebhook(vcsWebhookId, jsonPayload, headers);
+        } catch (Exception e) {
+            log.error("Error processing shared VCS webhook", e);
+            return ResponseEntity.internalServerError().build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/api/v1/webhook/{webhookId}/migrate")
+    public ResponseEntity<String> migrateWebhook(@PathVariable String webhookId) {
+
+        log.info("Migrating webhook {} to shared mode", webhookId);
+        try {
+            webhookService.migrateToSharedWebhook(
+                    webhookService.getWebhookById(webhookId));
+        } catch (Exception e) {
+            log.error("Error migrating webhook to shared mode", e);
+            return ResponseEntity.internalServerError().build();
+        }
+        return ResponseEntity.ok().build();
+    }
 }

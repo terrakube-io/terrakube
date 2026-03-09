@@ -54,6 +54,63 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs));
     }
 
+    public WebhookResult processSharedWebhook(String jsonPayload, Map<String, String> headers, String secret, Vcs vcs) {
+        return handleWebhookWithSecret(jsonPayload, headers, secret, "x-hub-signature-256", JobVia.Github.name(),
+                (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs));
+    }
+
+    public String createSharedWebhook(Vcs vcs, String repoSource, String callbackUrl, String secret, List<String> events) {
+        String[] ownerAndRepo = extractOwnerAndRepo(repoSource);
+        String eventsJson = events.stream()
+                .map(e -> "\"" + e.toLowerCase() + "\"")
+                .collect(Collectors.joining(","));
+        String body = "{\"name\":\"web\",\"active\":true,\"events\":[" + eventsJson
+                + "],\"config\":{\"url\":\"" + callbackUrl
+                + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+        String apiUrl = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
+
+        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, body, apiUrl, HttpMethod.POST);
+        if (response != null && response.getStatusCode().value() == 201) {
+            try {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                String id = rootNode.path("id").asText();
+                log.info("Shared GitHub webhook created for repo {} with remote id {}", repoSource, id);
+                return id;
+            } catch (Exception e) {
+                log.error("Error parsing GitHub webhook creation response", e);
+            }
+        }
+        return null;
+    }
+
+    public void updateSharedWebhookEvents(Vcs vcs, String repoSource, String remoteHookId, List<String> events) {
+        String[] ownerAndRepo = extractOwnerAndRepo(repoSource);
+        String eventsJson = events.stream()
+                .map(e -> "\"" + e.toLowerCase() + "\"")
+                .collect(Collectors.joining(","));
+        String body = "{\"active\":true, \"events\":[" + eventsJson + "]}";
+        String apiUrl = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks/" + remoteHookId;
+
+        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, body, apiUrl, HttpMethod.PATCH);
+        if (response != null && response.getStatusCode().value() == 200) {
+            log.info("Shared GitHub webhook events updated for repo {}", repoSource);
+        } else {
+            log.error("Failed to update shared GitHub webhook events for repo {}", repoSource);
+        }
+    }
+
+    public void deleteSharedWebhook(Vcs vcs, String repoSource, String remoteHookId) {
+        String[] ownerAndRepo = extractOwnerAndRepo(repoSource);
+        String apiUrl = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks/" + remoteHookId;
+
+        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", apiUrl, HttpMethod.DELETE);
+        if (response != null && response.getStatusCode().value() == 204) {
+            log.info("Shared GitHub webhook deleted for repo {}", repoSource);
+        } else {
+            log.warn("Failed to delete shared GitHub webhook for repo {}, remote id {}", repoSource, remoteHookId);
+        }
+    }
+
     private WebhookResult handleEvent(String jsonPayload, WebhookResult result, Map<String, String> headers, Vcs vcs) {
         String event = headers.get("x-github-event");
         result.setEvent(event);
