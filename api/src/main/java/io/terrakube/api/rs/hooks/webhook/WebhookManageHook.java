@@ -22,17 +22,22 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
 
     @Override
     public void execute(Operation operation, TransactionPhase phase, Webhook elideEntity, RequestScope requestScope,
-            Optional<ChangeSpec> changes) {
+                        Optional<ChangeSpec> changes) {
         switch (operation) {
             case CREATE:
             case UPDATE:
                 switch (phase) {
                     case PRECOMMIT:
-                        try {
-                            webhookService.createOrUpdateWorkspaceWebhook(elideEntity);
-                        } catch (Exception e) {
-                            throw new WebhookManagementException(HttpStatus.SC_FAILED_DEPENDENCY,
-                                    "Failed to create/update webhook: " + e.getMessage());
+                        if (elideEntity.isMigratedV2()) {
+                            webhookService.deleteWorkspaceWebhook(elideEntity);
+                            webhookService.createRepoWebhook(elideEntity);
+                        } else {
+                            try {
+                                webhookService.createOrUpdateWorkspaceWebhook(elideEntity);
+                            } catch (Exception e) {
+                                throw new WebhookManagementException(HttpStatus.SC_FAILED_DEPENDENCY,
+                                        "Failed to create/update webhook: " + e.getMessage());
+                            }
                         }
                         break;
 

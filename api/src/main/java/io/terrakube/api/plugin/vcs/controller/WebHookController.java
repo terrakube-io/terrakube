@@ -39,4 +39,20 @@ public class WebHookController {
         }
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/webhook/v2/{repoWebhookId}")
+    public ResponseEntity<String> processVcsWebhook(@PathVariable String repoWebhookId, @RequestBody Map<String, Object> payload, @RequestHeader Map<String, String> headers) {
+
+        log.info("Processing shared repository webhook {}", repoWebhookId);
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            log.info("shared webhook payload: {}", jsonPayload);
+            webhookService.processSharedWebhook(repoWebhookId, jsonPayload, headers);
+        } catch (Exception e) {
+            log.error("Error processing shared VCS webhook", e);
+            return ResponseEntity.internalServerError().build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
 }

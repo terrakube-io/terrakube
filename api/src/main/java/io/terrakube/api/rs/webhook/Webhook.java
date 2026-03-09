@@ -46,4 +46,7 @@ public class Webhook extends GenericAuditFields {
     
     @OneToMany(mappedBy = "webhook", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<WebhookEvent> events;
+
+    @Column(name = "is_migrated_v2")
+    private boolean isMigratedV2 = false;
 }

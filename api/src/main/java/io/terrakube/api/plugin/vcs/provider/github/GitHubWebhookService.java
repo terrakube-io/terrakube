@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import io.terrakube.api.rs.webhook.RepoWebhook;
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -372,5 +374,51 @@ public class GitHubWebhookService extends WebhookServiceBase {
         ResponseEntity<String> response = makeApiRequest(headers, body, apiUrl, httpMethod);
 
         return response;
+    }
+
+    public String createOrUpdateWebhookV2(RepoWebhook repoWebhook, Webhook webhook) {
+        String id = repoWebhook.getRemoteHookId();
+        String secret = Base64.getEncoder()
+                .encodeToString(repoWebhook.getId().toString().getBytes(StandardCharsets.UTF_8));
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
+
+        // Only Push and Pull Request events are supported for now
+        String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
+                .map(s -> "\"" + String.valueOf(s).toLowerCase() + "\"")
+                .collect(Collectors.joining(","));
+        String body = "";
+        String apiUrl = webhook.getWorkspace().getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
+        HttpMethod httpMethod = HttpMethod.POST;
+
+        if (id != null) {
+            body = "{\"active\":true, \"events\":[" + events + "]}";
+            apiUrl = apiUrl + "/" + webhook.getRemoteHookId();
+            httpMethod = HttpMethod.PATCH;
+        } else {
+            body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                    + webhookUrl
+                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+        }
+
+        ResponseEntity<String> response = callGitHubApi(webhook.getWorkspace().getVcs(), ownerAndRepo, body, apiUrl,
+                httpMethod);
+        // Extract the id from the response
+        if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
+            if (id == null) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    id = rootNode.path("id").asText();
+                } catch (Exception e) {
+                    log.error("Error parsing JSON response", e);
+                }
+            }
+
+            log.info("GitHub Hook created/updated successfully for repository {} with id {}",
+                    repoWebhook.getRepositoryUrl(), id);
+        }
+
+        return id;
     }
 }

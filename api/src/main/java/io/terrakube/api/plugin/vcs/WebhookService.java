@@ -1,21 +1,16 @@
 package io.terrakube.api.plugin.vcs;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
+import io.terrakube.api.repository.*;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
-import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.WebhookEventRepository;
-import io.terrakube.api.repository.WebhookRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
@@ -42,6 +37,8 @@ public class WebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     ObjectMapper objectMapper;
+    RepoWebhookRepository repoWebhookRepository;
+    OrganizationRepository organizationRepository;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -148,6 +145,48 @@ public class WebhookService {
     }
 
     @Transactional
+    public void createRepoWebhook(Webhook webhook) {
+        String repository = webhook.getWorkspace().getSource();
+        Optional<RepoWebhook> repoWebhook = repoWebhookRepository.findByRepositoryUrl(repository);
+        if(repoWebhook.isEmpty()){
+            RepoWebhook repoWebhookEntity = new RepoWebhook();
+            repoWebhookEntity.setRepositoryUrl(repository);
+            repoWebhookEntity = repoWebhookRepository.save(repoWebhookEntity);
+            repoWebhookEntity.setRemoteHookId(createOrUpdateWorkspaceWebhookV2(repoWebhookEntity, webhook));
+            repoWebhookRepository.save(repoWebhookEntity);
+
+        } else {
+            log.info("Repo webhook already exists for repository {}", repository);
+        }
+    }
+
+
+    public String createOrUpdateWorkspaceWebhookV2(RepoWebhook repoWebhook, Webhook webhook) {
+        if (webhook.getWorkspace().getVcs() == null) {
+            log.warn("There is no VCS defined for repository {}, skipping repository webhook creation", repoWebhook.getRepositoryUrl());
+            throw new IllegalArgumentException("No VCS defined for workspace");
+        }
+
+        String webhookRemoteId = "";
+
+        switch (webhook.getWorkspace().getVcs().getVcsType()) {
+            case GITHUB:
+                webhookRemoteId = gitHubWebhookService.createOrUpdateWebhookV2(repoWebhook, webhook);
+                break;
+            default:
+                log.warn("Webhook type {} not supported for repository {}", webhook.getWorkspace().getVcs().getVcsType(), repoWebhook.getRepositoryUrl());
+                break;
+        }
+
+        if (webhookRemoteId.isEmpty()) {
+            log.error("Error creating the repoW");
+            throw new IllegalArgumentException("Error creating/updating the repoW");
+        }
+
+        return webhookRemoteId;
+    }
+
+    @Transactional
     public void deleteWorkspaceWebhook(Webhook webhook) {
         Workspace workspace = webhook.getWorkspace();
         if (workspace.getVcs() == null) {
@@ -237,5 +276,17 @@ public class WebhookService {
             default:
                 break;
         }
+    }
+
+    public void processSharedWebhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
+        organizationRepository.findAll().forEach(organization -> {
+            log.info("Processing shared repository webhook for organization {}", organization.getName());
+            organization.getWorkspace().forEach(workspace -> {
+                if(workspace.getWebhook() != null && workspace.getWebhook().isMigratedV2()){
+
+                    //process the shared webhook using the
+                }
+            });
+        });
     }
 }
