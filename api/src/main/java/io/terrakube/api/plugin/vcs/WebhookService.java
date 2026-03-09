@@ -90,15 +90,23 @@ public class WebhookService {
         try {
             if (webhookResult.isPrComment()) {
                 handlePrCommentCommand(webhookResult, webhook, workspace);
-            } else if (isPrWorkflowEvent(webhookResult, webhook)) {
-                handlePrWorkflowPlanTrigger(webhookResult, webhook, workspace);
-            } else {
-                String templateId = webhookResult.isRelease() ? findTemplateIdRelease(webhookResult, webhook) : findTemplateId(webhookResult, webhook);
+            } else if (webhookResult.isRelease()) {
+                String templateId = findTemplateIdRelease(webhookResult, webhook);
                 log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
-                        webhook.getWorkspace().getName(), templateId);
-                Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
-                if (!webhookResult.isRelease())
-                    sendCommitStatus(savedJob);
+                        workspace.getName(), templateId);
+                createAndScheduleJob(templateId, webhookResult, workspace);
+            } else {
+                WebhookEvent matchedEvent = findMatchingEvent(webhookResult, webhook);
+                log.info("webhook event {} for workspace {}, using template with id {}", webhookResult.getNormalizedEvent(),
+                        workspace.getName(), matchedEvent.getTemplateId());
+                Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
+
+                if (matchedEvent.isPrWorkflowEnabled() && webhookResult.getPrNumber() != null) {
+                    savedJob.setPrNumber(webhookResult.getPrNumber().intValue());
+                    jobRepository.save(savedJob);
+                }
+
+                sendCommitStatus(savedJob);
             }
         } catch (Exception e) {
             log.error("Error creating the job", e);
@@ -106,37 +114,15 @@ public class WebhookService {
         return result;
     }
 
-    private boolean isPrWorkflowEvent(WebhookResult webhookResult, Webhook webhook) {
-        if (!"pull_request".equals(webhookResult.getNormalizedEvent())) {
-            return false;
-        }
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
-                .stream()
-                .filter(e -> checkBranch(webhookResult.getBranch(), e)
-                        && checkFileChanges(webhookResult.getFileChanges(), e))
-                .findFirst()
-                .map(WebhookEvent::isPrWorkflowEnabled)
-                .orElse(false);
-    }
-
-    private void handlePrWorkflowPlanTrigger(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
-        String templateId = findTemplateId(webhookResult, webhook);
-        log.info("PR workflow plan trigger for workspace {}, using template with id {}", workspace.getName(), templateId);
-        Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
-        savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
-        jobRepository.save(savedJob);
-        sendCommitStatus(savedJob);
-    }
-
     private void handlePrCommentCommand(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
         String command = webhookResult.getCommentCommand();
         log.info("PR comment command '{}' received for workspace {}", command, workspace.getName());
 
+        WebhookEvent matchedEvent = findMatchingEvent(webhookResult, webhook);
+
         if ("plan".equals(command)) {
-            String templateId = findTemplateIdForPrComment(webhookResult, webhook);
-            log.info("PR comment plan command for workspace {}, using template with id {}", workspace.getName(), templateId);
-            Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
+            log.info("PR comment plan for workspace {}, using template {}", workspace.getName(), matchedEvent.getTemplateId());
+            Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
             savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
             jobRepository.save(savedJob);
             sendCommitStatus(savedJob);
@@ -146,7 +132,7 @@ public class WebhookService {
                 log.error("No default template configured for apply in PR workflow on workspace {}", workspace.getName());
                 return;
             }
-            log.info("PR comment apply command for workspace {}, using default template {}", workspace.getName(), templateId);
+            log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
             workspace.setLocked(true);
             workspace.setLockDescription("Locked by PR #" + webhookResult.getPrNumber() + " apply");
             workspaceRepository.save(workspace);
@@ -179,17 +165,19 @@ public class WebhookService {
         return savedJob;
     }
 
-    private String findTemplateIdForPrComment(WebhookResult result, Webhook webhook) {
-        // For PR comments, look up the PULL_REQUEST event configuration
+    private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
+        WebhookEventType eventType = result.isPrComment()
+                ? WebhookEventType.PULL_REQUEST
+                : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
+
         return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for PR comment on branch " + result.getBranch()))
-                .getTemplateId();
+                        "No valid template found for webhook event " + result.getEvent()));
     }
 
     @Transactional
@@ -277,19 +265,6 @@ public class WebhookService {
         }
         log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
         return false;
-    }
-
-    private String findTemplateId(WebhookResult result, Webhook webhook) {
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
-                .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
-                        && checkFileChanges(result.getFileChanges(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
-                .getTemplateId();
     }
 
     private String findTemplateIdRelease(WebhookResult result, Webhook webhook) {
