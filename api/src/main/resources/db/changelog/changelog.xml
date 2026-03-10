@@ -94,4 +94,5 @@
     <include file="/db/changelog/local/changelog-2.30.0-provider-imported.xml" />
     <include file="db/changelog/local/changelog-rbac-v2-team-role.xml"/>
     <include file="db/changelog/local/changelog-rbac-v2-plan-approve.xml"/>
+    <include file="db/changelog/local/changelog-2.31.0-repo-webhooks.xml"/>
 </databaseChangeLog>

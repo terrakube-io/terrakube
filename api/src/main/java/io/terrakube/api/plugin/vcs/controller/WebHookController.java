@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +24,9 @@ public class WebHookController {
     WebhookService webhookService;
 
     @Autowired
+    RepoWebhookService repoWebhookService;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @PostMapping("/webhook/v1/{webhookId}")
@@ -35,6 +39,25 @@ public class WebHookController {
             webhookService.processWebhook(webhookId, jsonPayload,headers);
         } catch (Exception e) {
             log.error("Error processing webhook", e);
+            return ResponseEntity.internalServerError().build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/webhook/v2/{repoWebhookId}")
+    public ResponseEntity<String> processV2Webhook(@PathVariable String repoWebhookId, @RequestBody Map<String, Object> payload, @RequestHeader Map<String, String> headers) {
+        log.info("Processing v2 webhook {}", repoWebhookId);
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            repoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
+        } catch (IllegalArgumentException e) {
+            log.warn("Bad v2 webhook request: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (SecurityException e) {
+            log.warn("V2 webhook signature verification failed for {}", repoWebhookId);
+            return ResponseEntity.status(401).build();
+        } catch (Exception e) {
+            log.error("Error processing v2 webhook", e);
             return ResponseEntity.internalServerError().build();
         }
         return ResponseEntity.ok().build();

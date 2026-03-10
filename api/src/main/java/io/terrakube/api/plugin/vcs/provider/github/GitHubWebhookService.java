@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -22,8 +23,10 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -351,6 +354,75 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             log.warn("Failed to delete webhook with remote hook id {} on repository {}, message {}", webhookRemoteId,
                     workspace.getSource(), response.getBody());
+        }
+    }
+
+    public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers, Vcs vcs) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(JobVia.Github.name());
+        result.setValid(true);
+        return handleEvent(jsonPayload, result, headers, vcs);
+    }
+
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+        String id = repoWebhook.getRemoteHookId();
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
+
+        String events = eventTypes.stream()
+                .map(e -> "\"" + e.name().toLowerCase() + "\"")
+                .collect(Collectors.joining(","));
+
+        String body;
+        String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
+        HttpMethod httpMethod;
+
+        if (id != null && !id.isEmpty()) {
+            body = "{\"active\":true, \"events\":[" + events + "]}";
+            apiUrl = apiUrl + "/" + id;
+            httpMethod = HttpMethod.PATCH;
+        } else {
+            body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                    + webhookUrl
+                    + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+            httpMethod = HttpMethod.POST;
+        }
+
+        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, apiUrl, httpMethod);
+        if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
+            if (id == null || id.isEmpty()) {
+                try {
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    id = rootNode.path("id").asText();
+                } catch (Exception e) {
+                    log.error("Error parsing JSON response", e);
+                }
+            }
+            log.info("GitHub repo webhook created/updated successfully with id {}", id);
+        }
+
+        return id;
+    }
+
+    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+        if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
+            log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
+            return;
+        }
+        String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
+        String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks/" + repoWebhook.getRemoteHookId();
+
+        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, "", apiUrl, HttpMethod.DELETE);
+        if (response == null) {
+            log.error("Failed to delete repo webhook with remote hook id {}", repoWebhook.getRemoteHookId());
+            return;
+        }
+
+        if (response.getStatusCode().value() == 204) {
+            log.info("Repo webhook with remote hook id {} deleted successfully", repoWebhook.getRemoteHookId());
+        } else {
+            log.warn("Failed to delete repo webhook with remote hook id {}, message {}", repoWebhook.getRemoteHookId(), response.getBody());
         }
     }
 

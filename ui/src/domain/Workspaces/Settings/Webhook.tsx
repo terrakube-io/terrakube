@@ -56,6 +56,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
   ]);
   const workspaceId = workspace.id;
   const [remoteHookId, setRemoteHookId] = useState("");
+  const [migratedV2, setMigratedV2] = useState(false);
   const webhookId = workspace.relationships.webhook?.data?.id;
 
   useEffect(() => {
@@ -77,6 +78,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     ])
       .then(([webhookRes, eventsRes]) => {
         setRemoteHookId(webhookRes.data.data.attributes.remoteHookId);
+        setMigratedV2(webhookRes.data.data.attributes.migratedV2 || false);
 
         let i = 1;
         const events = eventsRes.data.data
@@ -277,6 +279,62 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       message.success("Webhook saved successfully");
     });
   };
+  const handleMigrateV2 = () => {
+    if (!webhookId) return;
+    setWaiting(true);
+    axiosInstance
+      .patch(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`, {
+        data: {
+          type: "webhook",
+          id: webhookId,
+          attributes: {
+            migratedV2: true,
+          },
+        },
+      })
+      .then((response) => {
+        if (response.status === 200) {
+          setMigratedV2(true);
+          message.success("Migrated to shared webhook successfully");
+        } else {
+          message.error("Failed to migrate to shared webhook");
+        }
+        setWaiting(false);
+      })
+      .catch(() => {
+        message.error("Failed to migrate to shared webhook");
+        setWaiting(false);
+      });
+  };
+
+  const handleRevertV2 = () => {
+    if (!webhookId) return;
+    setWaiting(true);
+    axiosInstance
+      .patch(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`, {
+        data: {
+          type: "webhook",
+          id: webhookId,
+          attributes: {
+            migratedV2: false,
+          },
+        },
+      })
+      .then((response) => {
+        if (response.status === 200) {
+          setMigratedV2(false);
+          message.success("Reverted to per-workspace webhook");
+        } else {
+          message.error("Failed to revert webhook");
+        }
+        setWaiting(false);
+      })
+      .catch(() => {
+        message.error("Failed to revert webhook");
+        setWaiting(false);
+      });
+  };
+
   const columns = [
     {
       title: "Priority",
@@ -415,8 +473,47 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
             </Col>
             <Col span={12}>
               <Form.Item hidden={!webhookEnabled} label={renderVCSLogo(vcsProvider!)}>
-                {remoteHookId}
+                {migratedV2 ? <Typography.Text type="success">Shared</Typography.Text> : remoteHookId}
               </Form.Item>
+            </Col>
+          </Row>
+          <Row hidden={!webhookEnabled || vcsProvider !== "GITHUB"}>
+            <Col span={24} style={{ marginBottom: 16 }}>
+              {migratedV2 ? (
+                <Space>
+                  <Typography.Text type="success">Shared repo webhook active</Typography.Text>
+                  <Popconfirm
+                    title="Revert to per-workspace webhook?"
+                    description="This will create a new per-workspace webhook on your next save."
+                    onConfirm={handleRevertV2}
+                    okText="Yes"
+                    cancelText="No"
+                    disabled={!manageWorkspace}
+                  >
+                    <Button type="default" size="small" disabled={!manageWorkspace}>
+                      Revert
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ) : (
+                <Space>
+                  <Typography.Text type="secondary">
+                    Consolidate webhooks across workspaces sharing this repository
+                  </Typography.Text>
+                  <Popconfirm
+                    title="Migrate to shared webhook?"
+                    description="This will replace the per-workspace webhook with a single shared webhook for this repository."
+                    onConfirm={handleMigrateV2}
+                    okText="Yes"
+                    cancelText="No"
+                    disabled={!manageWorkspace}
+                  >
+                    <Button type="default" size="small" disabled={!manageWorkspace}>
+                      Migrate to Shared Webhook
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              )}
             </Col>
           </Row>
           <Row hidden={!webhookEnabled}>

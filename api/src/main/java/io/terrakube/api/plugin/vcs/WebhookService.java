@@ -3,7 +3,6 @@ package io.terrakube.api.plugin.vcs;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Date;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -20,7 +19,6 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.webhook.Webhook;
-import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -176,54 +174,12 @@ public class WebhookService {
         }
     }
 
-    private boolean checkBranch(String webhookBranch, WebhookEvent webhookEvent) {
-        String[] branchList = webhookEvent.getBranch().split(",");
-        for (String branch : branchList) {
-            branch = branch.trim();
-            if (webhookBranch.matches(branch)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean checkFileChanges(List<String> files, WebhookEvent webhookEvent) {
-        String[] triggeredPath = webhookEvent.getPath().split(",");
-        for (String file : files) {
-            for (int i = 0; i < triggeredPath.length; i++) {
-                if (file.matches(triggeredPath[i])) {
-                    log.info("Changed file {} matches set trigger pattern {}", file, triggeredPath[i]);
-                    return true;
-                }
-            }
-        }
-        log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
-        return false;
-    }
-
     private String findTemplateId(WebhookResult result, Webhook webhook) {
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
-                .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
-                        && checkFileChanges(result.getFileChanges(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
-                .getTemplateId();
+        return WebhookEventMatcher.findTemplateId(result, webhook, webhookEventRepository);
     }
 
     private String findTemplateIdRelease(WebhookResult result, Webhook webhook) {
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
-                .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent() + "normalized " + result.getNormalizedEvent()))
-                .getTemplateId();
+        return WebhookEventMatcher.findTemplateIdRelease(result, webhook, webhookEventRepository);
     }
 
     private void sendCommitStatus(Job job) {
