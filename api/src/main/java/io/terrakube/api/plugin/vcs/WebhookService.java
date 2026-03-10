@@ -283,8 +283,7 @@ public class WebhookService {
             log.info("Processing shared repository webhook for organization {}", organization.getName());
             organization.getWorkspace().forEach(workspace -> {
                 if(workspace.getWebhook() != null && workspace.getWebhook().isMigratedV2()){
-
-                    //process the shared webhook using the
+                    processWebhook(repoWebhookId, jsonPayload, headers);
                 }
             });
         });
