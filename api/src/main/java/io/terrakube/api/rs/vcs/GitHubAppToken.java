@@ -1,8 +1,12 @@
 package io.terrakube.api.rs.vcs;
 
 import java.sql.Types;
+
+import java.util.Date;
 import java.util.UUID;
 
+import com.yahoo.elide.annotation.Exclude;
+import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
@@ -10,12 +14,6 @@ import io.terrakube.api.rs.IdConverter;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.ReadPermission;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -42,4 +40,9 @@ public class GitHubAppToken extends GenericAuditFields {
 
     @Column(name = "app_id")
     private String appId;
+
+    @Exclude
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "token_expiration")
+    private Date tokenExpiration;
 }

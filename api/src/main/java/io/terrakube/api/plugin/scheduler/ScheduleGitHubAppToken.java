@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
+@Deprecated
 @Slf4j
 @Component
 public class ScheduleGitHubAppToken implements Job {
@@ -38,16 +39,7 @@ public class ScheduleGitHubAppToken implements Job {
         Optional<GitHubAppToken> search = gitHubAppTokenRepository.findById(UUID.fromString(tokenId));        
         if (search.isEmpty()) return;
         GitHubAppToken appToken = search.get();
-        try {
-            token = gitHubTokenService.refreshAccessToken(appToken);
-            log.debug("Token refreshed for GitHub installation {} on organization/user {}", appToken.getId(), appToken.getOwner());
-        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
-            log.error("Failed to refresh token for GitHub installation {} on organization/user {}, error {}", appToken.getId(), appToken.getOwner(), e);
-        } 
-        if (token != null) {
-            appToken.setToken(token);
-            gitHubAppTokenRepository.save(appToken);
-        }
+        log.warn("Refreshing task for GitHub App Token {} no longer need it", appToken.getId());
     }
     
 }

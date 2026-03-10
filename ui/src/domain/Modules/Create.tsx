@@ -1,5 +1,5 @@
 import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Breadcrumb, Button, Form, Input, Layout, Select, Space, Steps, message, theme } from "antd";
+import { Breadcrumb, Button, Form, Input, Layout, Modal, Select, Space, Steps, message, theme } from "antd";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
@@ -209,6 +209,38 @@ export const CreateModule = () => {
       })
       .then((response) => {
         if (response.status === 201) {
+          if (vcsId !== "") {
+            axiosInstance
+              .post(`refresh-token/v1/vcs/${vcsId}`, {
+                gitPath: values.source,
+              })
+              .then(() => {
+                Modal.success({
+                  title: "Module Created",
+                  content: "The modules has been created successfully",
+                  onOk: () => {
+                    navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
+                  },
+                });
+              })
+              .catch(() => {
+                Modal.success({
+                  title: "Module Created",
+                  content: "The modules has been created successfully",
+                  onOk: () => {
+                    navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
+                  },
+                });
+              });
+          } else {
+            Modal.success({
+              title: "Module Created",
+              content: "The modules has been created successfully",
+              onOk: () => {
+                navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
+              },
+            });
+          }
           navigate(`/organizations/${orgid}/registry/${response.data.data.id}`);
         }
       })
@@ -272,21 +304,21 @@ export const CreateModule = () => {
           <div className="App-text">
             This module will be created under the current organization, {sessionStorage.getItem(ORGANIZATION_NAME)}.
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
+          <Steps orientation="horizontal" size="small" current={current} onChange={handleChange}>
             <Step title="Connect to VCS" />
             <Step title="Choose a repository" />
             <Step title="Confirm selection" />
           </Steps>
 
           {current === 0 && (
-            <Space className="chooseType" direction="vertical">
+            <Space className="chooseType" orientation="vertical">
               <h3>Connect to a version control provider</h3>
               <div className="workflowDescription2 App-text">
                 Choose the version control provider that hosts your module source code.
               </div>
               {vcsButtonsVisible ? (
                 <div>
-                  <Space direction="horizontal">
+                  <Space orientation="horizontal">
                     <Button
                       icon={<SiGit />}
                       onClick={() => {
