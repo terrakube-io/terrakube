@@ -175,7 +175,7 @@ public class RepoWebhookService {
             job.setVia(webhookResult.getVia());
             job.setCommitId(webhookResult.getCommit());
             Job savedJob = jobRepository.save(job);
-            if (!webhookResult.isRelease()) {
+            if (!webhookResult.isRelease() && workspace.getVcs() != null) {
                 gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending);
             }
             scheduleJobService.createJobContext(savedJob);
