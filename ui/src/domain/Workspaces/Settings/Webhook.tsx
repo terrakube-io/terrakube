@@ -12,6 +12,7 @@ import {
   Spin,
   Switch,
   Table,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -52,6 +53,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     {
       key: 1,
       id: uuid(),
+      prWorkflowEnabled: false,
     } as any,
   ]);
   const workspaceId = workspace.id;
@@ -90,6 +92,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
               branch: event.attributes.branch,
               file: event.attributes.path,
               template: event.attributes.templateId,
+              prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
               created: true,
             };
           });
@@ -105,7 +108,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
         message.error("Failed to load webhook");
       });
   };
-  const handleEventChange = (index: number, _: any, name: string, value: string) => {
+  const handleEventChange = (index: number, _: any, name: string, value: string | boolean) => {
     webhookEvents[index][name] = value;
     if (index == webhookEvents.length - 1) {
       const index = recordIndex + 1;
@@ -114,6 +117,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
         {
           key: index,
           id: uuid(),
+          prWorkflowEnabled: false,
         },
       ]);
       setRecordIndex(index);
@@ -142,6 +146,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       newWebhookEvents.push({
         key: 1,
         id: uuid(),
+        prWorkflowEnabled: false,
       });
     }
     setWebhookEvents(newWebhookEvents);
@@ -249,6 +254,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
                   branch: event.branch,
                   path: event.file,
                   templateId: event.template,
+                  prWorkflowEnabled: event.prWorkflowEnabled || false,
                 },
               },
             };
@@ -309,6 +315,25 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
           <Select.Option value="pull_request">Pull Request</Select.Option>
           <Select.Option value="release">Release</Select.Option>
         </Select>
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="Enable Atlantis-style workflow: post plan/apply results as PR comments and accept 'terrakube plan' / 'terrakube apply' commands from PR comments">
+          PR Workflow <InfoCircleOutlined />
+        </Tooltip>
+      ),
+      dataIndex: "prWorkflowEnabled",
+      key: "prWorkflowEnabled",
+      width: "8%",
+      render: (_: string, record: any, index: number) => (
+        record.event === "pull_request" ? (
+          <Switch
+            size="small"
+            checked={record.prWorkflowEnabled || false}
+            onChange={(checked) => handleEventChange(index, record.key, "prWorkflowEnabled", checked)}
+          />
+        ) : null
       ),
     },
     {

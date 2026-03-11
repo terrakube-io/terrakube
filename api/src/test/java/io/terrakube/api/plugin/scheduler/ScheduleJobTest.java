@@ -34,6 +34,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
+import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -67,6 +68,7 @@ public class ScheduleJobTest {
     SoftDeleteService softDeleteService;
     ScheduleJobService scheduleJobService;
     GitHubWebhookService gitHubWebhookService;
+    PrCommentService prCommentService;
     ScheduleRepository scheduleRepository;
     TemplateRepository templateRepository;
     EphemeralExecutorService ephemeralExecutorService;
@@ -86,6 +88,7 @@ public class ScheduleJobTest {
         softDeleteService = mock(SoftDeleteService.class, new FailUnkownMethod<SoftDeleteService>());
         scheduleJobService = mock(ScheduleJobService.class, new FailUnkownMethod<ScheduleJobService>());
         gitHubWebhookService = mock(GitHubWebhookService.class, new FailUnkownMethod<GitHubWebhookService>());
+        prCommentService = mock(PrCommentService.class, new FailUnkownMethod<PrCommentService>());
         scheduleRepository = mock(ScheduleRepository.class, new FailUnkownMethod<ScheduleRepository>());
         templateRepository = mock(TemplateRepository.class, new FailUnkownMethod<TemplateRepository>());
         gitLabWebhookService = mock(GitLabWebhookService.class, new FailUnkownMethod<GitLabWebhookService>());
@@ -107,6 +110,7 @@ public class ScheduleJobTest {
                 scheduleJobService,
                 null,
                 gitHubWebhookService,
+                prCommentService,
                 globalVarRepository,
                 variableRepository);
     }

@@ -138,6 +138,53 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setValid(false);
                 log.error("No valid github release event: {}", action);
             }
+        } else if ("issue_comment".equals(event)) {
+            String action = rootNode.path("action").asText();
+            if ("created".equals(action)) {
+                JsonNode issueNode = rootNode.path("issue");
+                // Only process comments on pull requests
+                if (issueNode.has("pull_request")) {
+                    String commentBody = rootNode.path("comment").path("body").asText().trim();
+                    String command = parseTerrakubeCommand(commentBody);
+                    if (command != null) {
+                        result.setPrComment(true);
+                        result.setCommentBody(commentBody);
+                        result.setCommentCommand(command);
+                        result.setPrNumber(issueNode.path("number").asInt());
+                        result.setCreatedBy(rootNode.path("comment").path("user").path("login").asText());
+
+                        // Fetch PR details to get head SHA and branch
+                        String prUrl = issueNode.path("pull_request").path("url").asText();
+                        String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
+                        String repoName = rootNode.path("repository").path("name").asText();
+                        String[] ownerAndRepo = new String[]{repoOwner, repoName};
+
+                        ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prUrl, HttpMethod.GET);
+                        if (prResponse != null && prResponse.getStatusCode().is2xxSuccessful()) {
+                            try {
+                                JsonNode prNode = objectMapper.readTree(prResponse.getBody());
+                                result.setCommit(prNode.path("head").path("sha").asText());
+                                result.setBranch(prNode.path("head").path("ref").asText());
+
+                                String prFilesUrl = prUrl + "/files";
+                                result.setFileChanges(getPrFileChanges(vcs, ownerAndRepo, prFilesUrl));
+                            } catch (Exception e) {
+                                log.error("Error fetching PR details for issue_comment", e);
+                                result.setValid(false);
+                            }
+                        } else {
+                            log.error("Failed to fetch PR details for issue_comment");
+                            result.setValid(false);
+                        }
+                    } else {
+                        result.setValid(false);
+                    }
+                } else {
+                    result.setValid(false);
+                }
+            } else {
+                result.setValid(false);
+            }
         } else {
             result.setValid(false);
             log.error("No valid github event " + result.getEvent());
@@ -286,10 +333,16 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
-        // Only Push and Pull Request events are supported for now
         String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
                 .map(s -> "\"" + String.valueOf(s).toLowerCase() + "\"")
                 .collect(Collectors.joining(","));
+
+        // If any event has PR workflow enabled, also subscribe to issue_comment events
+        boolean hasPrWorkflow = webhook.getEvents().stream()
+                .anyMatch(WebhookEvent::isPrWorkflowEnabled);
+        if (hasPrWorkflow && !events.contains("issue_comment")) {
+            events += ",\"issue_comment\"";
+        }
         String body = "";
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
         HttpMethod httpMethod = HttpMethod.POST;
@@ -351,6 +404,48 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             log.warn("Failed to delete webhook with remote hook id {} on repository {}, message {}", webhookRemoteId,
                     workspace.getSource(), response.getBody());
+        }
+    }
+
+    public String postPrComment(Job job, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
+                + "/issues/" + job.getPrNumber() + "/comments";
+
+        String escapedBody = escapeJsonString(markdownBody);
+        String body = "{\"body\":\"" + escapedBody + "\"}";
+
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl, HttpMethod.POST);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            try {
+                JsonNode node = objectMapper.readTree(response.getBody());
+                String commentId = node.path("id").asText();
+                log.info("PR comment posted successfully on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
+                return commentId;
+            } catch (Exception e) {
+                log.error("Error parsing PR comment response", e);
+            }
+        } else {
+            log.error("Failed to post PR comment on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
+        }
+        return null;
+    }
+
+    public void updatePrComment(Job job, String commentId, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
+                + "/issues/comments/" + commentId;
+
+        String escapedBody = escapeJsonString(markdownBody);
+        String body = "{\"body\":\"" + escapedBody + "\"}";
+
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl, HttpMethod.PATCH);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            log.info("PR comment updated successfully on workspace {}", workspace.getName());
+        } else {
+            log.error("Failed to update PR comment on workspace {}", workspace.getName());
         }
     }
 

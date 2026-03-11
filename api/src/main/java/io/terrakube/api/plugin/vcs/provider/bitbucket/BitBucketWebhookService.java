@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.vcs.provider.bitbucket;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.webhook.Webhook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -54,6 +55,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             return handlePushEvent(jsonPayload, result);
         } else if (event.equals("pullrequest:created") || event.equals("pullrequest:updated")) {
             return handlePullRequestEvent(jsonPayload, result);
+        } else if (event.equals("pullrequest:comment_created")) {
+            return handlePullRequestCommentEvent(jsonPayload, result);
         } else {
             log.error("Unsupported Bitbucket event: {}", result.getEvent());
             result.setValid(false);
@@ -184,6 +187,67 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         return result;
     }
 
+    private WebhookResult handlePullRequestCommentEvent(String jsonPayload, WebhookResult result) {
+        result.setEvent("issue_comment");
+        try {
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            String commentBody = rootNode.path("comment").path("content").path("raw").asText().trim();
+            String command = parseTerrakubeCommand(commentBody);
+
+            if (command == null) {
+                result.setValid(false);
+                return result;
+            }
+
+            result.setPrComment(true);
+            result.setCommentBody(commentBody);
+            result.setCommentCommand(command);
+            result.setCreatedBy(rootNode.path("comment").path("user").path("display_name").asText());
+
+            JsonNode pullRequestNode = rootNode.path("pullrequest");
+            result.setPrNumber(pullRequestNode.path("id").asInt());
+            result.setBranch(pullRequestNode.path("source").path("branch").path("name").asText());
+            result.setCommit(pullRequestNode.path("source").path("commit").path("hash").asText());
+
+            JsonNode linksNode = pullRequestNode.path("links");
+            if (linksNode.has("diff")) {
+                String diffUrl = linksNode.path("diff").path("href").asText();
+                result.setFileChanges(getFileChanges(diffUrl, result.getWorkspaceId()));
+            }
+
+            log.info("Bitbucket PR comment event processed for PR #{}", pullRequestNode.path("id").asInt());
+        } catch (Exception e) {
+            log.error("Error parsing pull request comment event JSON response", e);
+            result.setValid(false);
+        }
+        return result;
+    }
+
+    public String postPrComment(Job job, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repositories/" + String.join("/", ownerAndRepo)
+                + "/pullrequests/" + job.getPrNumber() + "/comments";
+
+        String escapedBody = escapeJsonString(markdownBody);
+        String body = "{\"content\":{\"raw\":\"" + escapedBody + "\"}}";
+
+        ResponseEntity<String> response = callBitBucketApi(workspace.getVcs().getAccessToken(), body, apiUrl, HttpMethod.POST);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            try {
+                JsonNode node = objectMapper.readTree(response.getBody());
+                String commentId = node.path("id").asText();
+                log.info("PR comment posted successfully on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
+                return commentId;
+            } catch (Exception e) {
+                log.error("Error parsing PR comment response", e);
+            }
+        } else {
+            log.error("Failed to post PR comment on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
+        }
+        return null;
+    }
+
     private List<String> getFileChanges(String diffFile, String workspaceId) {
         List<String> fileChanges = new ArrayList<>();
 
@@ -237,9 +301,14 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
             String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
 
+            // Check if any event has PR workflow enabled
+            boolean hasPrWorkflow = webhook.getEvents() != null && webhook.getEvents().stream()
+                    .anyMatch(e -> e.isPrWorkflowEnabled());
+            String commentEvent = hasPrWorkflow ? ",\"pullrequest:comment_created\"" : "";
+
             // Create the body with support for push, pull request, and release events
             String body = "{\"description\":\"Terrakube\",\"url\":\"" + webhookUrl
-                    + "\",\"active\":true,\"events\":[\"repo:push\",\"pullrequest:created\",\"pullrequest:updated\"],\"secret\":\"" + secret + "\"}";
+                    + "\",\"active\":true,\"events\":[\"repo:push\",\"pullrequest:created\",\"pullrequest:updated\"" + commentEvent + "],\"secret\":\"" + secret + "\"}";
 
             String apiUrl = workspace.getVcs().getApiUrl() + "/repositories/" + String.join("/", ownerAndRepo) + "/hooks";
 

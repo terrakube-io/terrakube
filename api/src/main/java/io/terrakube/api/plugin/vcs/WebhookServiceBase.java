@@ -105,6 +105,22 @@ public class WebhookServiceBase {
         return restTemplate.exchange(apiUrl, method, entity, String.class);
     }
 
+    protected String parseTerrakubeCommand(String commentBody) {
+        if (commentBody == null) return null;
+        String lower = commentBody.trim().toLowerCase();
+        if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
+        if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
+        return null;
+    }
+
+    protected String escapeJsonString(String input) {
+        return input.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
+    }
+
     protected WebhookResult handleWebhook(String jsonPayload, Map<String, String> headers, String token,
             String signatureHeader, String via,
             TriFunction<String, WebhookResult, Map<String, String>, WebhookResult> handleEvent) {
