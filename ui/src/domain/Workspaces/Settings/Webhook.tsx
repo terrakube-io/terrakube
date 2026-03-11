@@ -12,6 +12,7 @@ import {
   Spin,
   Switch,
   Table,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -282,7 +283,11 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       ),
     },
     {
-      title: "PR Workflow",
+      title: (
+        <Tooltip title="Enable Atlantis-style workflow: post plan/apply results as PR comments and accept 'terrakube plan' / 'terrakube apply' commands from PR comments">
+          PR Workflow <InfoCircleOutlined />
+        </Tooltip>
+      ),
       dataIndex: "prWorkflowEnabled",
       key: "prWorkflowEnabled",
       width: "8%",
