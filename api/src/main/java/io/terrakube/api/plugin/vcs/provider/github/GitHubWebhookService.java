@@ -46,6 +46,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
     private String hostname;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
+    @Value("${io.terrakube.webhook.insecure-ssl:1}")
+    private String insecureSsl;
 
     public GitHubWebhookService(ObjectMapper objectMapper, TokenService tokenService) {
         this.objectMapper = objectMapper;
@@ -123,9 +125,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setCreatedBy(prUser);
                 
                 String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
-                // Fetch file changes for the PR
-                List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
-                result.setFileChanges(prFileChanges);
+                result.setPrFilesUrl(prFilesUrl);
+                if (vcs != null) {
+                    List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
+                    result.setFileChanges(prFileChanges);
+                }
             } else {
                 result.setValid(false);
                 log.error("No valid github pull request event: {} ", action);
@@ -304,7 +308,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
                     + webhookUrl
-                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
         }
 
         ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl,
@@ -365,6 +369,15 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return handleEvent(jsonPayload, result, headers, vcs);
     }
 
+    public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers) {
+        return parseGitHubPayload(jsonPayload, headers, null);
+    }
+
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, String prFilesUrl) {
+        String[] ownerAndRepo = extractOwnerAndRepo(source);
+        return getPrFileChanges(vcs, ownerAndRepo, prFilesUrl);
+    }
+
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
         String id = repoWebhook.getRemoteHookId();
         String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
@@ -385,7 +398,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
                     + webhookUrl
-                    + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+                    + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
             httpMethod = HttpMethod.POST;
         }
 

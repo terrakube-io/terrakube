@@ -22,6 +22,7 @@ public class WebhookResult {
     private String commit;
     private Number prNumber;
     private boolean isRelease;
+    private String prFilesUrl;
 
     public String getNormalizedEvent() {
         String normalizedEvent = "";

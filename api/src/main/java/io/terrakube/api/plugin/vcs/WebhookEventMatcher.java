@@ -19,7 +19,7 @@ public final class WebhookEventMatcher {
         String[] branchList = webhookEvent.getBranch().split(",");
         for (String branch : branchList) {
             branch = branch.trim();
-            if (webhookBranch.matches(branch)) {
+            if (globMatch(webhookBranch, branch)) {
                 return true;
             }
         }
@@ -30,7 +30,7 @@ public final class WebhookEventMatcher {
         String[] triggeredPath = webhookEvent.getPath().split(",");
         for (String file : files) {
             for (int i = 0; i < triggeredPath.length; i++) {
-                if (file.matches(triggeredPath[i])) {
+                if (globMatch(file, triggeredPath[i].trim())) {
                     log.info("Changed file {} matches set trigger pattern {}", file, triggeredPath[i]);
                     return true;
                 }
@@ -38,6 +38,38 @@ public final class WebhookEventMatcher {
         }
         log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
         return false;
+    }
+
+    static boolean globMatch(String input, String globPattern) {
+        try {
+            String regex = globToSafeRegex(globPattern);
+            return input.matches(regex);
+        } catch (Exception e) {
+            log.warn("Invalid glob pattern '{}': {}", globPattern, e.getMessage());
+            return false;
+        }
+    }
+
+    static String globToSafeRegex(String glob) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            switch (c) {
+                case '*':
+                    sb.append(".*");
+                    break;
+                case '?':
+                    sb.append(".");
+                    break;
+                default:
+                    if ("()[]{}|+^$\\.".indexOf(c) >= 0) {
+                        sb.append('\\');
+                    }
+                    sb.append(c);
+                    break;
+            }
+        }
+        return sb.toString();
     }
 
     public static String findTemplateId(WebhookResult result, Webhook webhook,

@@ -330,7 +330,7 @@ class RepoWebhookServiceTest {
             WebhookResult pingResult = new WebhookResult();
             pingResult.setEvent("ping");
             pingResult.setValid(true);
-            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any(), any())).thenReturn(pingResult);
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pingResult);
 
             subject.processV2Webhook(rw.getId().toString(), payload, headers);
 
@@ -358,7 +358,7 @@ class RepoWebhookServiceTest {
             pushResult.setVia("Github");
             pushResult.setCommit("abc123");
             pushResult.setFileChanges(List.of("main.tf"));
-            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any(), any())).thenReturn(pushResult);
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pushResult);
 
             // Create two workspaces with matching webhook events
             Workspace ws1 = workspaceWithSource("https://github.com/owner/repo");
@@ -367,7 +367,7 @@ class RepoWebhookServiceTest {
             WebhookEvent event1 = new WebhookEvent();
             event1.setEvent(WebhookEventType.PUSH);
             event1.setBranch("main");
-            event1.setPath(".*");
+            event1.setPath("*");
             event1.setTemplateId("template-1");
             wh1.setEvents(List.of(event1));
             ws1.setWebhook(wh1);
@@ -378,7 +378,7 @@ class RepoWebhookServiceTest {
             WebhookEvent event2 = new WebhookEvent();
             event2.setEvent(WebhookEventType.PUSH);
             event2.setBranch("main");
-            event2.setPath(".*");
+            event2.setPath("*");
             event2.setTemplateId("template-2");
             wh2.setEvents(List.of(event2));
             ws2.setWebhook(wh2);
@@ -416,7 +416,7 @@ class RepoWebhookServiceTest {
             pushResult.setVia("Github");
             pushResult.setCommit("abc123");
             pushResult.setFileChanges(List.of("main.tf"));
-            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any(), any())).thenReturn(pushResult);
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pushResult);
 
             // ws1 has no webhook (should be skipped with warning)
             Workspace ws1 = workspaceWithSource("https://github.com/owner/repo");
@@ -429,7 +429,7 @@ class RepoWebhookServiceTest {
             WebhookEvent event2 = new WebhookEvent();
             event2.setEvent(WebhookEventType.PUSH);
             event2.setBranch("main");
-            event2.setPath(".*");
+            event2.setPath("*");
             event2.setTemplateId("template-2");
             wh2.setEvents(List.of(event2));
             ws2.setWebhook(wh2);
@@ -461,7 +461,7 @@ class RepoWebhookServiceTest {
             WebhookResult invalidResult = new WebhookResult();
             invalidResult.setEvent("unknown");
             invalidResult.setValid(false);
-            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any(), any())).thenReturn(invalidResult);
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(invalidResult);
 
             subject.processV2Webhook(rw.getId().toString(), payload, headers);
 
@@ -488,7 +488,7 @@ class RepoWebhookServiceTest {
             WebhookResult pingResult = new WebhookResult();
             pingResult.setEvent("ping");
             pingResult.setValid(true);
-            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any(), any())).thenReturn(pingResult);
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pingResult);
 
             // Should not throw — valid signature
             subject.processV2Webhook(rw.getId().toString(), payload, headers);

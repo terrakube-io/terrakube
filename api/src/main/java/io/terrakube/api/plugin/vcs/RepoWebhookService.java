@@ -113,8 +113,7 @@ public class RepoWebhookService {
             throw new SecurityException("HMAC signature verification failed");
         }
 
-        WebhookResult webhookResult = gitHubWebhookService.parseGitHubPayload(jsonPayload, headers,
-                repoWebhook.getVcs());
+        WebhookResult webhookResult = gitHubWebhookService.parseGitHubPayload(jsonPayload, headers);
 
         if (webhookResult.getEvent() != null && webhookResult.getEvent().equals("ping")) {
             log.info("Received ping for repo webhook {}", repoWebhookId);
@@ -145,6 +144,17 @@ public class RepoWebhookService {
         if (workspace.getWebhook() == null) {
             log.warn("Workspace {} has no webhook despite being returned by migrated query", workspace.getName());
             return;
+        }
+
+        if (webhookResult.getPrFilesUrl() != null) {
+            if (workspace.getVcs() != null) {
+                List<String> prFiles = gitHubWebhookService.fetchPrFileChanges(
+                        workspace.getVcs(), workspace.getSource(), webhookResult.getPrFilesUrl());
+                webhookResult.setFileChanges(prFiles);
+            } else {
+                log.warn("Workspace {} has no VCS, cannot fetch PR file changes", workspace.getName());
+                return;
+            }
         }
 
         try {

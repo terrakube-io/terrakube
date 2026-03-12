@@ -15,10 +15,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Slf4j
 @RestController
 public class WebHookController {
+
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
     @Autowired
     WebhookService webhookService;
@@ -35,7 +39,6 @@ public class WebHookController {
         log.info("Processing webhook {}", webhookId);
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            log.info("webhook payload: {}", jsonPayload);
             webhookService.processWebhook(webhookId, jsonPayload,headers);
         } catch (Exception e) {
             log.error("Error processing webhook", e);
@@ -46,15 +49,15 @@ public class WebHookController {
 
     @PostMapping("/webhook/v2/{repoWebhookId}")
     public ResponseEntity<String> processV2Webhook(@PathVariable String repoWebhookId, @RequestBody Map<String, Object> payload, @RequestHeader Map<String, String> headers) {
-        log.info("Processing v2 webhook {}", repoWebhookId);
+        if (!UUID_PATTERN.matcher(repoWebhookId).matches()) {
+            return ResponseEntity.status(401).build();
+        }
+        log.info("Processing v2 webhook");
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
             repoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
-        } catch (IllegalArgumentException e) {
-            log.warn("Bad v2 webhook request: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
-        } catch (SecurityException e) {
-            log.warn("V2 webhook signature verification failed for {}", repoWebhookId);
+        } catch (IllegalArgumentException | SecurityException e) {
+            log.warn("V2 webhook request rejected");
             return ResponseEntity.status(401).build();
         } catch (Exception e) {
             log.error("Error processing v2 webhook", e);

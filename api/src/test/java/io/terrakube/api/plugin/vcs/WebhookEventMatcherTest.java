@@ -30,8 +30,8 @@ class WebhookEventMatcherTest {
     }
 
     @Test
-    void checkBranch_regexMatch_returnsTrue() {
-        assertThat(WebhookEventMatcher.checkBranch("main-branch", eventWithBranch("main.*"))).isTrue();
+    void checkBranch_globMatch_returnsTrue() {
+        assertThat(WebhookEventMatcher.checkBranch("main-branch", eventWithBranch("main*"))).isTrue();
     }
 
     @Test
@@ -41,7 +41,7 @@ class WebhookEventMatcherTest {
 
     @Test
     void checkBranch_commaSeparatedList_matchesAny() {
-        WebhookEvent event = eventWithBranch("main, develop, release/.*");
+        WebhookEvent event = eventWithBranch("main, develop, release/*");
         assertThat(WebhookEventMatcher.checkBranch("develop", event)).isTrue();
         assertThat(WebhookEventMatcher.checkBranch("release/1.0", event)).isTrue();
         assertThat(WebhookEventMatcher.checkBranch("feature/foo", event)).isFalse();
@@ -52,18 +52,47 @@ class WebhookEventMatcherTest {
     @Test
     void checkFileChanges_fileMatchesPattern_returnsTrue() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("src/main/App.java"), eventWithPath("src/main/.*"))).isTrue();
+                List.of("src/main/App.java"), eventWithPath("src/main/*"))).isTrue();
     }
 
     @Test
     void checkFileChanges_noFileMatches_returnsFalse() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("docs/README.md"), eventWithPath("src/.*"))).isFalse();
+                List.of("docs/README.md"), eventWithPath("src/*"))).isFalse();
     }
 
     @Test
     void checkFileChanges_multiplePatterns_oneMatches_returnsTrue() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("terraform/main.tf"), eventWithPath("src/.*,terraform/.*"))).isTrue();
+                List.of("terraform/main.tf"), eventWithPath("src/*,terraform/*"))).isTrue();
+    }
+
+    // --- glob matching tests ---
+
+    @Test
+    void globMatch_questionMark_matchesSingleChar() {
+        assertThat(WebhookEventMatcher.globMatch("main", "mai?")).isTrue();
+        assertThat(WebhookEventMatcher.globMatch("main", "ma??")).isTrue();
+        assertThat(WebhookEventMatcher.globMatch("main", "m?")).isFalse();
+    }
+
+    @Test
+    void globMatch_escapesRegexSpecialChars() {
+        assertThat(WebhookEventMatcher.globMatch("file.txt", "file.txt")).isTrue();
+        assertThat(WebhookEventMatcher.globMatch("fileatxt", "file.txt")).isFalse();
+    }
+
+    @Test
+    void globMatch_invalidPattern_returnsFalse() {
+        assertThat(WebhookEventMatcher.globMatch("test", null)).isFalse();
+    }
+
+    // --- globToSafeRegex prevents ReDoS ---
+
+    @Test
+    void globToSafeRegex_escapesNestedQuantifiers() {
+        String regex = WebhookEventMatcher.globToSafeRegex("(a+)+$");
+        // Nested quantifiers should be escaped, not treated as regex
+        assertThat(regex).isEqualTo("\\(a\\+\\)\\+\\$");
     }
 }
