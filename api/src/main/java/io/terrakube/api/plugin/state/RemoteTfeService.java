@@ -107,6 +107,8 @@ public class RemoteTfeService {
 
     private VariableRepository variableRepository;
 
+    private GlobalVarRepository globalVarRepository;
+
     private RbacService rbacService;
 
     public RemoteTfeService(JobRepository jobRepository,
@@ -126,7 +128,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -148,6 +150,7 @@ public class RemoteTfeService {
         this.addressRepository = addressRepository;
         this.projectRepository = projectRepository;
         this.variableRepository = variableRepository;
+        this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
     }
 
@@ -820,21 +823,40 @@ public class RemoteTfeService {
     }
 
     private Optional<Integer> getHistoryLimit(Job job) {
-        Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
-
-        return variables.stream()
+        // First check global variables
+        Optional<List<Globalvar>> globalsList = Optional.ofNullable(globalVarRepository.findByOrganization(job.getOrganization()));
+        Optional<Integer> globalLimit = globalsList.stream()
                 .flatMap(List::stream)
                 .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
                 .findFirst()
                 .map(v -> {
                     try {
-                        log.info("Found KEEP_JOB_HISTORY variable with value {}", v.getValue());
+                        log.info("Found global KEEP_JOB_HISTORY variable with value {}", v.getValue());
                         return Integer.parseInt(v.getValue());
                     } catch (NumberFormatException exception) {
-                        log.error("Failed to parse KEEP_JOB_HISTORY variable value: {}", v.getValue());
+                        log.error("Failed to parse global KEEP_JOB_HISTORY variable value: {}", v.getValue());
                         return 0;
                     }
                 });
+
+        // Then check workspace variables (overrides global)
+        Optional<List<Variable>> variables = variableRepository.findByWorkspace(job.getWorkspace());
+        Optional<Integer> workspaceLimit = variables.stream()
+                .flatMap(List::stream)
+                .filter(v -> v.getCategory() == Category.ENV && v.getKey().equals("KEEP_JOB_HISTORY"))
+                .findFirst()
+                .map(v -> {
+                    try {
+                        log.info("Found workspace KEEP_JOB_HISTORY variable with value {}", v.getValue());
+                        return Integer.parseInt(v.getValue());
+                    } catch (NumberFormatException exception) {
+                        log.error("Failed to parse workspace KEEP_JOB_HISTORY variable value: {}", v.getValue());
+                        return 0;
+                    }
+                });
+
+        // Workspace variable overrides global variable
+        return workspaceLimit.isPresent() ? workspaceLimit : globalLimit;
     }
 
     private void deleteOldJobs(Job job) {
