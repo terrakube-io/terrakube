@@ -3,8 +3,10 @@ package io.terrakube.api.plugin.security.authentication.dex;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.io.Decoders;
+import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.token.group.Group;
 import io.terrakube.api.rs.token.pat.Pat;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,33 +40,46 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private String internalJwtSecret;
     private PatRepository patRepository;
     private TeamTokenRepository teamTokenRepository;
+    private FederatedRepository federatedRepository;
 
     @Override
     public AuthenticationManager resolve(HttpServletRequest request) {
         ProviderManager providerManager = null;
         String issuer = "";
+        String federatedIssuer = "";
         try{
             issuer = getJwtClaim(request, "iss");
             if (isTokenDeleted(getJwtClaim(request, "jti"))){
                 //FORCE TOKEN TO USE INTERNAL AUTH SO IT CAN ALWAYS FAIL
                 issuer = jwtTypeInternal;
             }
+
+            Federated federated = federatedRepository.findByIssuerUrl(issuer).orElse(null);
+            if(federated != null){
+                log.debug("Federated issuer found: {}", federated.getIssuerUrl());
+                federatedIssuer = federated.getIssuerUrl();
+            }
         }catch (Exception ex){
             log.info(ex.getMessage());
         }
-        switch (issuer) {
-            case jwtTypePat:
-                log.debug("Using Terrakube Authentication Provider");
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
-                break;
-            case jwtTypeInternal:
-                log.debug("Using Terrakube Internal Authentication Provider");
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypeInternal)));
-                break;
-            default:
-                log.debug("Using Dex JWT Authentication Provider");
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(this.dexIssuerUri)));
-                break;
+
+        if(!federatedIssuer.isEmpty()){
+            providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(federatedIssuer)));
+        } else {
+            switch (issuer) {
+                case jwtTypePat:
+                    log.debug("Using Terrakube Authentication Provider");
+                    providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
+                    break;
+                case jwtTypeInternal:
+                    log.debug("Using Terrakube Internal Authentication Provider");
+                    providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypeInternal)));
+                    break;
+                default:
+                    log.debug("Using Dex JWT Authentication Provider");
+                    providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(this.dexIssuerUri)));
+                    break;
+            }
         }
         return providerManager;
     }

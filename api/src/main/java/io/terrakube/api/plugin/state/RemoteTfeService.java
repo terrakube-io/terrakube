@@ -111,6 +111,8 @@ public class RemoteTfeService {
 
     private RbacService rbacService;
 
+    private FederatedRepository federatedRepository;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -128,7 +130,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, FederatedRepository federatedRepository) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -152,6 +154,7 @@ public class RemoteTfeService {
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
+        this.federatedRepository = federatedRepository;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
