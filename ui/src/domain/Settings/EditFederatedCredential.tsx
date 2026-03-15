@@ -14,6 +14,7 @@ type Props = {
 type FederatedForm = {
   name: string;
   issuerUrl: string;
+  audience: string;
 };
 
 export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFederated }: Props) => {
@@ -39,6 +40,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
         form.setFieldsValue({
           name: attrs.name,
           issuerUrl: attrs.issuerUrl,
+          audience: attrs.audience,
         });
       })
       .catch((err) => {
@@ -56,6 +58,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
         attributes: {
           name: values.name,
           issuerUrl: values.issuerUrl,
+          audience: values.audience,
         },
       },
     };
@@ -113,6 +116,13 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
             rules={[{ required: true, message: "Please enter the issuer URL" }]}
           >
             <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
+          </Form.Item>
+          <Form.Item
+            name="audience"
+            label="Audience"
+            rules={[{ required: true, message: "Please enter the audience" }]}
+          >
+            <Input placeholder="e.g. terrakube-audience" />
           </Form.Item>
           <Form.Item>
             <Space>

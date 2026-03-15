@@ -33,8 +33,8 @@ import java.util.*;
 @Slf4j
 public class DexAuthenticationManagerResolver implements AuthenticationManagerResolver<HttpServletRequest> {
 
-    private static final String jwtTypePat="Terrakube";
-    private static final String jwtTypeInternal="TerrakubeInternal";
+    private static final String jwtTypePat = "Terrakube";
+    private static final String jwtTypeInternal = "TerrakubeInternal";
     private String dexIssuerUri;
     private String patJwtSecret;
     private String internalJwtSecret;
@@ -46,24 +46,26 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     public AuthenticationManager resolve(HttpServletRequest request) {
         ProviderManager providerManager = null;
         String issuer = "";
+        String audience = "";
         String federatedIssuer = "";
-        try{
+        try {
             issuer = getJwtClaim(request, "iss");
-            log.info("Issuer: {}", issuer);
-            if (isTokenDeleted(getJwtClaim(request, "jti"))){
+            audience = getJwtClaim(request, "aud");
+            log.debug("Issuer: {} Audience: {}", issuer, audience);
+            if (isTokenDeleted(getJwtClaim(request, "jti"))) {
                 //FORCE TOKEN TO USE INTERNAL AUTH SO IT CAN ALWAYS FAIL
                 issuer = jwtTypeInternal;
             }
-            Federated federated = federatedRepository.findByIssuerUrl(issuer).orElse(null);
-            if(federated != null){
+            Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+            if (federated != null) {
                 log.debug("Federated issuer found: {}", federated.getIssuerUrl());
                 federatedIssuer = federated.getIssuerUrl();
             }
-        }catch (Exception ex){
+        } catch (Exception ex) {
             log.info(ex.getMessage());
         }
 
-        if(!federatedIssuer.isEmpty()){
+        if (!federatedIssuer.isEmpty()) {
             providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(federatedIssuer)));
         } else {
             switch (issuer) {
@@ -98,10 +100,17 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         String payloadFromToken = new String(decoder.decode(chunksToken[1]));
         String claimJwt = "";
         try {
-            Map<String,Object> resultMap = new ObjectMapper().readValue(payloadFromToken, HashMap.class);
-            log.info(resultMap.toString());
+            Map<String, Object> resultMap = new ObjectMapper().readValue(payloadFromToken, HashMap.class);
+            log.debug(resultMap.toString());
             if (resultMap.get(claim) != null) {
-                claimJwt = resultMap.get(claim).toString();
+                if (resultMap.get(claim) instanceof String) {
+                    claimJwt = (String) resultMap.get(claim);
+                } else if (resultMap.get(claim) instanceof java.util.List) {
+                    java.util.List<String> audienceList = (java.util.List<String>) resultMap.get(claim);
+                    if (!audienceList.isEmpty()) {
+                        claimJwt = audienceList.getFirst();
+                    }
+                }
                 log.debug("JWT Claim: {} = {}", claim, claimJwt);
             }
         } catch (JsonProcessingException e) {

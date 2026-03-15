@@ -134,7 +134,14 @@ public class TeamTokenService {
     }
 
     public List<String> getCurrentGroups(JwtAuthenticationToken principalJwt) {
-        Optional<Federated> federated = federatedRepository.findByIssuerUrl(principalJwt.getTokenAttributes().get("iss").toString());
+        String issuer = principalJwt.getTokenAttributes().get("iss").toString();
+        String audience = "";
+        if (principalJwt.getTokenAttributes().get("aud") instanceof List){
+            audience = ((java.util.ArrayList) principalJwt.getTokenAttributes().get("aud")).getFirst().toString();
+        } else if (principalJwt.getTokenAttributes().get("aud") instanceof String){
+            audience = principalJwt.getTokenAttributes().get("aud").toString();
+        }
+        Optional<Federated> federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience);
         if(federated.isPresent()){
             List array = new ArrayList();
             array.add(federated.get().getName());

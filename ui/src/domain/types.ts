@@ -287,6 +287,7 @@ export type Federated = {
 export type FederatedAttributes = {
   name: string;
   issuerUrl: string;
+  audience: string;
 };
 export type ApiWorkspaceTag = {
   id: string;

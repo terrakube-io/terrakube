@@ -4,7 +4,6 @@ import com.yahoo.elide.core.security.User;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
 import lombok.extern.slf4j.Slf4j;
-import org.checkerframework.checker.units.qual.A;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -54,7 +53,20 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
 
     @Override
     public boolean isFederatedAccount(User user) {
-        Federated federated = federatedRepository.findByIssuerUrl(getSecurityPrincipal(user).getTokenAttributes().get("iss").toString()).orElse(null);
+        String issuer = getSecurityPrincipal(user).getTokenAttributes().get("iss").toString();
+        Object audienceObj = getSecurityPrincipal(user).getTokenAttributes().get("aud");
+        String audience = "";
+
+        if (audienceObj instanceof String) {
+            audience = (String) audienceObj;
+        } else if (audienceObj instanceof java.util.List) {
+            java.util.List<String> audienceList = (java.util.List<String>) audienceObj;
+            if (!audienceList.isEmpty()) {
+                audience = audienceList.get(0);
+            }
+        }
+
+        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         return federated != null;
     }
 

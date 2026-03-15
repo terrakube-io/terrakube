@@ -10,5 +10,5 @@ import java.util.UUID;
 @Repository
 public interface FederatedRepository extends JpaRepository<Federated, UUID> {
 
-    Optional<Federated> findByIssuerUrl(String issuerUrl);
+    Optional<Federated> findByIssuerUrlAndAudience(String issuerUrl, String audience);
 }

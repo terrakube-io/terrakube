@@ -129,7 +129,13 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
                   <List.Item.Meta
                     avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<SafetyOutlined />} />}
                     title={item.attributes.name}
-                    description={item.attributes.issuerUrl}
+                    description={
+                      <>
+                        <Typography.Text type="secondary">{item.attributes.issuerUrl}</Typography.Text>
+                        <br />
+                        <Typography.Text type="secondary">{item.attributes.audience}</Typography.Text>
+                      </>
+                    }
                   />
                 </List.Item>
               )}

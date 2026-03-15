@@ -66,7 +66,9 @@ public class DexGroupServiceImpl implements GroupService {
 
     private boolean isFederatedAccount(User user) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        Federated federated = federatedRepository.findByIssuerUrl(principal.getTokenAttributes().get("iss").toString()).orElse(null);
+        String issuer = principal.getTokenAttributes().get("iss").toString();
+        String audience = principal.getTokenAttributes().get("aud").toString();
+        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
             return true;
         }
@@ -76,7 +78,9 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     public boolean isFederatedMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        Federated federated = federatedRepository.findByIssuerUrl(principal.getTokenAttributes().get("iss").toString()).orElse(null);
+        String issuer = principal.getTokenAttributes().get("iss").toString();
+        String audience = principal.getTokenAttributes().get("aud").toString();
+        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
             return federated.getName().equals(group);
         }
