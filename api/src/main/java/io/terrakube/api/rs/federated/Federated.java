@@ -10,14 +10,14 @@ import org.hibernate.annotations.JdbcTypeCode;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "user belongs organization")
+@ReadPermission(expression = "user is a superuser")
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")
-@Include
+@Include(rootLevel = true)
 @Getter
 @Setter
-@Entity(name = "federated_credentials")
+@Entity(name = "federated")
 public class Federated {
 
     @Id
@@ -31,5 +31,8 @@ public class Federated {
 
     @Column(name = "issuer_url")
     String issuerUrl;
+
+    @Column(name = "audience")
+    String audience;
 
 }

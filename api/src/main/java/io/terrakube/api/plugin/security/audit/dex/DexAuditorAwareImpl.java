@@ -18,7 +18,7 @@ public class DexAuditorAwareImpl implements AuditorAware<String> {
             if (authentication instanceof AnonymousAuthenticationToken)
                 return Optional.empty();
             else
-                return Optional.of(isServiceAccount(authentication) ? "serviceAccount" : getEmail(authentication));
+                return Optional.ofNullable(isServiceAccount(authentication) ? "serviceAccount" : getEmail(authentication));
         } else {
             return Optional.of("Internal");
         }
@@ -26,7 +26,10 @@ public class DexAuditorAwareImpl implements AuditorAware<String> {
 
     public String getEmail(Authentication authentication) {
         org.springframework.security.oauth2.jwt.Jwt principal = (org.springframework.security.oauth2.jwt.Jwt) authentication.getPrincipal();
-        return (String) principal.getClaims().get("email");
+        if (principal.getClaims().get("email") != null)
+            return (String) principal.getClaims().get("email");
+        else
+            return "Unknown";
     }
 
     public boolean isServiceAccount(Authentication authentication) {

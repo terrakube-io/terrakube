@@ -49,11 +49,11 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         String federatedIssuer = "";
         try{
             issuer = getJwtClaim(request, "iss");
+            log.info("Issuer: {}", issuer);
             if (isTokenDeleted(getJwtClaim(request, "jti"))){
                 //FORCE TOKEN TO USE INTERNAL AUTH SO IT CAN ALWAYS FAIL
                 issuer = jwtTypeInternal;
             }
-
             Federated federated = federatedRepository.findByIssuerUrl(issuer).orElse(null);
             if(federated != null){
                 log.debug("Federated issuer found: {}", federated.getIssuerUrl());
@@ -64,7 +64,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         }
 
         if(!federatedIssuer.isEmpty()){
-            providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(federatedIssuer)));
+            providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(federatedIssuer)));
         } else {
             switch (issuer) {
                 case jwtTypePat:
@@ -91,14 +91,15 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     }
 
     private String getJwtClaim(HttpServletRequest request, String claim) {
+        log.debug("Request Header: {}", request.getHeader("authorization"));
         String tokenRequest = request.getHeader("authorization").replace("Bearer ", "");
         String[] chunksToken = tokenRequest.split("\\.");
         Base64.Decoder decoder = Base64.getUrlDecoder();
         String payloadFromToken = new String(decoder.decode(chunksToken[1]));
         String claimJwt = "";
         try {
-            log.debug("Extracting JWT claim: {}", claim);
             Map<String,Object> resultMap = new ObjectMapper().readValue(payloadFromToken, HashMap.class);
+            log.info(resultMap.toString());
             if (resultMap.get(claim) != null) {
                 claimJwt = resultMap.get(claim).toString();
                 log.debug("JWT Claim: {} = {}", claim, claimJwt);
