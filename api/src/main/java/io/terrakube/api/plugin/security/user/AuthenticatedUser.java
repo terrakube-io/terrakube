@@ -10,6 +10,8 @@ public interface AuthenticatedUser {
 
     boolean isServiceAccount(User user);
 
+    boolean isFederatedAccount(User user);
+
     boolean isServiceAccountInternal(User user);
 
     boolean isSuperUser(User user);

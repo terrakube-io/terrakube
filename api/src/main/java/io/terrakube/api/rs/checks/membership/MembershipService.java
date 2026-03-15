@@ -22,6 +22,7 @@ public class MembershipService {
     GroupService groupService;
 
     public boolean checkMembership(User user, List<Team> teamList) {
+        boolean isFederatedAccount = authenticatedUser.isFederatedAccount(user);
         for (Team team : teamList) {
             if (authenticatedUser.isServiceAccount(user)) {
                 String applicationName = authenticatedUser.getApplication(user);
@@ -29,6 +30,10 @@ public class MembershipService {
                     log.debug("application {} is member of {}", applicationName, team.getName());
                     return true;
                 }
+            } else if (isFederatedAccount) {
+                boolean isFederatedMember = groupService.isFederatedMember(user, team.getName());
+                if (isFederatedMember)
+                    return true;
             } else {
                 String userName = authenticatedUser.getEmail(user);
                 if (groupService.isMember(user, team.getName())) {

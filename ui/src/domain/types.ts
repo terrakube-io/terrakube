@@ -278,6 +278,17 @@ export type Tag = {
 export type TagAttributes = {
   name: string;
 };
+
+// Federated
+export type Federated = {
+  id: string;
+  attributes: FederatedAttributes;
+};
+export type FederatedAttributes = {
+  name: string;
+  issuerUrl: string;
+  audience: string;
+};
 export type ApiWorkspaceTag = {
   id: string;
   attributes: {

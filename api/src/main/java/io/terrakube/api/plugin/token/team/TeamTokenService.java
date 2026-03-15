@@ -3,7 +3,9 @@ package io.terrakube.api.plugin.token.team;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,10 @@ public class TeamTokenService {
 
     @Autowired
     private TeamTokenRepository teamTokenRepository;
+
+    @Autowired
+    private FederatedRepository federatedRepository;
+
     private static final String ISSUER = "Terrakube";
 
     public String createTeamToken(String group, int days, int hours, int minutes, String description, JwtAuthenticationToken principalJwt) {
@@ -128,12 +134,26 @@ public class TeamTokenService {
     }
 
     public List<String> getCurrentGroups(JwtAuthenticationToken principalJwt) {
-        Object groups = principalJwt.getTokenAttributes().get("groups");
-        List array = (java.util.ArrayList) groups;
-        List<String> list = new ArrayList();
-        for (int i = 0; i < array.size(); i++) {
-            list.add(array.get(i).toString());
+        String issuer = principalJwt.getTokenAttributes().get("iss").toString();
+        String audience = "";
+        if (principalJwt.getTokenAttributes().get("aud") instanceof List){
+            audience = ((java.util.ArrayList) principalJwt.getTokenAttributes().get("aud")).getFirst().toString();
+        } else if (principalJwt.getTokenAttributes().get("aud") instanceof String){
+            audience = principalJwt.getTokenAttributes().get("aud").toString();
         }
-        return list;
+        Optional<Federated> federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience);
+        if(federated.isPresent()){
+            List array = new ArrayList();
+            array.add(federated.get().getName());
+            return array;
+        } else {
+            Object groups = principalJwt.getTokenAttributes().get("groups");
+            List array = (java.util.ArrayList) groups;
+            List<String> list = new ArrayList();
+            for (int i = 0; i < array.size(); i++) {
+                list.add(array.get(i).toString());
+            }
+            return list;
+        }
     }
 }

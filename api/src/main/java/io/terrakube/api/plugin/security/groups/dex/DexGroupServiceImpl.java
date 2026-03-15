@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.security.groups.dex;
 
 import com.yahoo.elide.core.security.User;
+import io.terrakube.api.repository.FederatedRepository;
+import io.terrakube.api.rs.federated.Federated;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,6 +29,8 @@ public class DexGroupServiceImpl implements GroupService {
 
     AccessRepository accessRepository;
 
+    FederatedRepository federatedRepository;
+
     private static final String REDIS_ORG_LIMITED = "org_%s_%s";
 
     @Override
@@ -45,9 +49,12 @@ public class DexGroupServiceImpl implements GroupService {
     public boolean isServiceMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
         boolean isMember = principal.getTokenAttributes().get("iss").equals("TerrakubeInternal")? true: false;
+        boolean isFederated = isFederatedAccount(user);
         if(!isMember) {
             for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
                 if (groupName.equals(group))
+                    isMember = true;
+                if (isFederated && isFederatedMember(user, group))
                     isMember = true;
             }
             log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
@@ -55,6 +62,29 @@ public class DexGroupServiceImpl implements GroupService {
             log.debug("TerrakubeInternal Client Service Group Membership");
         }
         return isMember;
+    }
+
+    private boolean isFederatedAccount(User user) {
+        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
+        String issuer = principal.getTokenAttributes().get("iss").toString();
+        String audience = principal.getTokenAttributes().get("aud").toString();
+        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+        if (federated != null) {
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isFederatedMember(User user, String group) {
+        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
+        String issuer = principal.getTokenAttributes().get("iss").toString();
+        String audience = principal.getTokenAttributes().get("aud").toString();
+        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+        if (federated != null) {
+            return federated.getName().equals(group);
+        }
+        return false;
     }
 
     private String[] toStringArray(java.util.ArrayList array) {

@@ -9,6 +9,7 @@ import { SSHKeysSettings } from "./SSHKeys";
 import { AgentSettings } from "./Agents";
 import { TagsSettings } from "./Tags";
 import { TeamSettings } from "./Teams";
+import { FederatedCredentials } from "./FederatedCredentials";
 import { TemplatesSettings } from "./Templates";
 import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
@@ -82,6 +83,8 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
         return renderCollectionContent();
       case "10":
         return <ActionSettings managePermission={permissions.managePermission} />;
+      case "11":
+        return <FederatedCredentials managePermission={permissions.managePermission} />;
       default:
         return <GeneralSettings managePermission={permissions.managePermission} />;
     }
@@ -122,7 +125,7 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
       type: "group",
       label: "Security",
       key: "security",
-      children: [{ key: "8", label: "Agents" }],
+      children: [{ key: "8", label: "Agents" }, { key: "11", label: "Federated Credentials" }],
     },
     {
       type: "group",
