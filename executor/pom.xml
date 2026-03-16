@@ -34,7 +34,7 @@
 		<slf4j.version>2.0.17</slf4j.version>
 		<gcp-libraries-bom.version>26.77.0</gcp-libraries-bom.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
-		<jedis.version>7.3.0</jedis.version>
+		<jedis.version>7.4.0</jedis.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
 		</sonar.coverage.jacoco.xmlReportPaths>
 		<!--BUILDPACK DATA-->
