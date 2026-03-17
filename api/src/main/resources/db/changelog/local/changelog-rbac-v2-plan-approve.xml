@@ -5,6 +5,13 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
+    <property name="boolean.true" value="1" dbms="mssql"/>
+    <property name="boolean.false" value="0" dbms="mssql"/>
+    <property name="boolean.true" value="true" dbms="postgresql"/>
+    <property name="boolean.false" value="false" dbms="postgresql"/>
+    <property name="boolean.true" value="true" dbms="h2"/>
+    <property name="boolean.false" value="false" dbms="h2"/>
+
     <!-- Add plan_job and approve_job columns to team table -->
     <changeSet id="add-plan-approve-to-team" author="terrakube">
         <addColumn tableName="team">
@@ -24,7 +31,7 @@
         <update tableName="team">
             <column name="plan_job" valueBoolean="true"/>
             <column name="approve_job" valueBoolean="true"/>
-            <where>manage_job = true</where>
+            <where>manage_job = ${boolean.true}</where>
         </update>
     </changeSet>
 
@@ -33,7 +40,7 @@
         <update tableName="team">
             <column name="plan_job" valueBoolean="false"/>
             <column name="approve_job" valueBoolean="false"/>
-            <where>manage_job = false</where>
+            <where>manage_job = ${boolean.false}</where>
         </update>
     </changeSet>
 
@@ -61,7 +68,7 @@
         <update tableName="access">
             <column name="plan_job" valueBoolean="true"/>
             <column name="approve_job" valueBoolean="true"/>
-            <where>manage_job = true</where>
+            <where>manage_job = ${boolean.true}</where>
         </update>
     </changeSet>
 
@@ -70,7 +77,7 @@
         <update tableName="access">
             <column name="plan_job" valueBoolean="false"/>
             <column name="approve_job" valueBoolean="false"/>
-            <where>manage_job = false</where>
+            <where>manage_job = ${boolean.false}</where>
         </update>
     </changeSet>
 </databaseChangeLog>
