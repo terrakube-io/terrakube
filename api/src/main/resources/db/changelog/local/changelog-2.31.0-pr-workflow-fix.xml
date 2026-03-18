@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-31-0-pr-workflow-fix" author="alfespa17@gmail.com">
+        <update tableName="webhook_event">
+            <column name="pr_workflow_enabled" valueBoolean="false"/>
+            <where>pr_workflow_enabled IS NULL</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

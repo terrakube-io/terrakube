@@ -95,5 +95,6 @@
     <include file="db/changelog/local/changelog-rbac-v2-team-role.xml"/>
     <include file="db/changelog/local/changelog-rbac-v2-plan-approve.xml"/>
     <include file="/db/changelog/local/changelog-2.31.0-pr-workflow.xml" />
+    <include file="/db/changelog/local/changelog-2.31.0-pr-workflow-fix.xml" />
     <include file="/db/changelog/local/changelog-2.31.0-federated-credentials.xml" />
 </databaseChangeLog>
