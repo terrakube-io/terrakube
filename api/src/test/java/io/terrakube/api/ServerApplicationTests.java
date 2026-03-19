@@ -16,6 +16,7 @@ import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.mockito.Mock;
 import org.quartz.Scheduler;
@@ -156,6 +157,10 @@ class ServerApplicationTests {
                 .compact();
 
         return jws;
+    }
+
+    @Test
+    void contextLoads() {
     }
 
 }

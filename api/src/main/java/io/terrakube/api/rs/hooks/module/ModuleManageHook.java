@@ -61,6 +61,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                             log.error("Failed to create module refresh task for {}/{}/{}, error {}",
                                     module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
                         }
+                        break;
                     default:
                         break;
                 }

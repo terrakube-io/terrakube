@@ -48,6 +48,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                     default:
                         break;
                 }
+                break;
             default:
                 log.info("No hook define for this operation");
                 break;
