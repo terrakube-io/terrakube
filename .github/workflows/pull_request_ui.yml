@@ -27,11 +27,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "npm"
-          cache-dependency-path: ui/package.json
+          cache: "yarn"
+          cache-dependency-path: ui/yarn.lock
 
       - name: "Install dependencies"
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --ignore-scripts
 
       - name: "Check linting"
         run: yarn lint:modules:check
@@ -40,6 +40,6 @@ jobs:
         run: yarn format:modules:check
 
       - name: "Build application"
-        run: npm run build --if-present
+        run: yarn build
         env:
           CI: false
