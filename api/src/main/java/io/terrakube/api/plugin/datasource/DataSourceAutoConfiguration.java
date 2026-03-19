@@ -21,7 +21,6 @@ public class DataSourceAutoConfiguration {
 
     @Bean
     public DataSource getDataSource(DataSourceConfigurationProperties dataSourceConfigurationProperties) {
-        log.info("DataSourceType: {}", dataSourceConfigurationProperties.getType());
         HikariConfig config = new HikariConfig();
         config.setMaximumPoolSize(dataSourceConfigurationProperties.getPoolSize());
         config.setMinimumIdle(dataSourceConfigurationProperties.getPoolMinIdle());
@@ -33,6 +32,7 @@ public class DataSourceAutoConfiguration {
             case SQL_AZURE:
                 SQLServerDataSource sqlServerDataSource = new SQLServerDataSource();
                 sqlServerDataSource.setServerName(dataSourceConfigurationProperties.getHostname());
+                sqlServerDataSource.setPortNumber(Integer.parseInt(dataSourceConfigurationProperties.getDatabasePort()));
                 sqlServerDataSource.setDatabaseName(dataSourceConfigurationProperties.getDatabaseName());
                 sqlServerDataSource.setAuthentication("SqlPassword"); //https://docs.microsoft.com/en-us/sql/connect/jdbc/connecting-using-azure-active-directory-authentication?view=sql-server-ver15
                 sqlServerDataSource.setUser(dataSourceConfigurationProperties.getDatabaseUser());
