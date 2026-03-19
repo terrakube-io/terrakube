@@ -52,6 +52,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <image>
+                        <pullPolicy>IF_NOT_PRESENT</pullPolicy>
                         <builder>${buildpack.builder}</builder>
                         <buildpacks>
                             <buildpack>${buildpack.java}</buildpack>

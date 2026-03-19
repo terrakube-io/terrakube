@@ -33,7 +33,7 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
       - name: Build Terrakube
         if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: mvn -B verify --file pom.xml org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=AzBuilder_azb-server
+        run: mvn -B verify --file pom.xml org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=AzBuilder_azb-server -Dspring-boot.build-image.skip=true
         env:
           USER_NAME: ${{ secrets.USER_NAME }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
@@ -41,7 +41,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
       - name: Build Terrakube from Fork
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-        run: mvn clean install
+        run: mvn clean install -Dspring-boot.build-image.skip=true
 
   build-alpaquita:
     runs-on: ubuntu-latest
