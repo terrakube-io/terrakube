@@ -222,6 +222,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
             ));
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                log.error("Interrupted while parsing note event: {}", e.getMessage());
+                Thread.currentThread().interrupt();
+            }
             log.error("Error handling note event", e);
             result.setValid(false);
         }
@@ -343,7 +347,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                                     }
 
                                                 } catch (Exception e) {
-                                                    log.error("Error parsing diff response on page {}: {}", currentPage.get(), e.getMessage());
+                                                    if (e instanceof InterruptedException) {
+                                                        log.error("Interrupted while parsing diff response on page {}: {}", currentPage.get(), e.getMessage());
+                                                        Thread.currentThread().interrupt();
+                                                    } else {
+                                                        log.error("Error parsing diff response on page {}: {}", currentPage.get(), e.getMessage());
+                                                    }
                                                     hasMorePages.set(false);
                                                 }
                                             });
@@ -356,7 +365,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
                             .block();
 
                 } catch (Exception e) {
-                    log.error("Failed to retrieve MR diffs on page {}: {}", currentPage.get(), e.getMessage());
+                    if (e instanceof InterruptedException) {
+                        log.error("Interrupted while retrieving MR diffs on page {}: {}", currentPage.get(), e.getMessage());
+                        Thread.currentThread().interrupt();
+                    } else {
+                        log.error("Failed to retrieve MR diffs on page {}: {}", currentPage.get(), e.getMessage());
+                    }
                     hasMorePages.set(false);
                 }
             }
@@ -365,7 +379,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     fileChanges.size(), currentPage.get() - 1, mergeRequestIid);
 
         } catch (Exception e) {
-            log.error("Error fetching file changes for MR {}: {}", mergeRequestIid, e.getMessage());
+            if (e instanceof InterruptedException) {
+                log.error("Interrupted while fetching file changes for MR {}: {}", mergeRequestIid, e.getMessage());
+                Thread.currentThread().interrupt();
+            } else {
+                log.error("Error fetching file changes for MR {}: {}", mergeRequestIid, e.getMessage());
+            }
         }
 
         return fileChanges;
@@ -478,6 +497,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                log.debug("Direct project lookup interrupted for {}: {}", ownerAndRepo, e.getMessage());
+                Thread.currentThread().interrupt();
+                throw e;
+            }
             log.debug("Direct project lookup failed for {}: {}", ownerAndRepo, e.getMessage());
         }
 
@@ -520,7 +544,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                                 
                                                 log.debug("Processed page {}, hasMorePages={}, projectFound={}", currentPage.get() -1, hasMorePages, projectFound);
                                             } catch (Exception e) {
-                                                log.error("Error parsing response: {}", e.getMessage());
+                                                if (e instanceof InterruptedException) {
+                                                    Thread.currentThread().interrupt();
+                                                } else {
+                                                    log.error("Error parsing response: {}", e.getMessage());
+                                                }
                                             }
                                         });
                             } else {
@@ -531,6 +559,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
                         }).block(Duration.ofSeconds(timeout));
             
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    log.error("Interrupted while retrieving project ID. Error: {}", e.getMessage());
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
                 log.error("Failed to retrieve project ID. Error: {}", e.getMessage());
                 hasMorePages.set(false);
             }
@@ -605,6 +638,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 log.info("MR note posted successfully on MR !{} in workspace {}", job.getPrNumber(), workspace.getName());
                 return noteId;
             }
+        } catch (InterruptedException e) {
+            log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
         }
@@ -670,9 +706,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             log.info("Commit status sent to GitLab: {}", response);
 
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
             log.error("Error sending commit status to GitLab", e);
             Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("Error sending commit status to GitLab", e);
         }
 
     }
