@@ -638,10 +638,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 log.info("MR note posted successfully on MR !{} in workspace {}", job.getPrNumber(), workspace.getName());
                 return noteId;
             }
-        } catch (InterruptedException e) {
-            log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
-            Thread.currentThread().interrupt();
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                log.error("Error posting MR note on MR !{} in workspace {}: {}", job.getPrNumber(), workspace.getName(), e.getMessage());
+                Thread.currentThread().interrupt();
+            }
             log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
         }
         return null;
