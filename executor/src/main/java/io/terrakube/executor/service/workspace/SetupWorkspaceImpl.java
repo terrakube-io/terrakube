@@ -54,7 +54,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class SetupWorkspaceImpl implements SetupWorkspace {
 
-    private static final String EXECUTOR_DIRECTORY = "%s/.terraform-spring-boot/executor/%s/%s";
     public static final String SSH_DIRECTORY = "%s/.terraform-spring-boot/executor/%s/%s/.ssh/%s";
 
     WorkspaceSecurity workspaceSecurity;
@@ -137,11 +136,11 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         String userHomeDirectory = FileUtils.getUserDirectoryPath();
         log.info("User Home Directory: {}", userHomeDirectory);
 
-        String executorPath = String.format(EXECUTOR_DIRECTORY, userHomeDirectory, organizationId, workspaceId);
+        String executorPath = Files.createTempDirectory("executor").toFile().getAbsolutePath();
         File executorFolder = new File(executorPath);
         FileUtils.forceMkdir(executorFolder);
         FileUtils.cleanDirectory(executorFolder);
-        log.info("Workspace git clone directory: {}", executorFolder.getPath());
+        log.info("Workspace git clone directory: {} for organizationId: {} and workspaceId: {}", executorFolder.getPath(), organizationId, workspaceId);
         return executorFolder;
     }
 
