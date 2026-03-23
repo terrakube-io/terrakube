@@ -16,7 +16,7 @@
     "buffer": "^6.0.3",
     "core-js-pure": "^3.49.0",
     "cron-to-quartz": "^1.4.7",
-    "cronstrue": "^3.13.0",
+    "cronstrue": "^3.14.0",
     "dotenv": "^17.3.1",
     "dotenv-expand": "^12.0.3",
     "github-markdown-css": "^5.9.0",

@@ -3697,10 +3697,10 @@ cron-to-quartz@^1.4.7:
   resolved "https://registry.npmjs.org/cron-to-quartz/-/cron-to-quartz-1.4.7.tgz"
   integrity sha512-d71zq3s2gwi8fvlS9fybqLC6GokWiOR5T1+q/gTqXBDKe9dsiW3pB//QSzCfRl/QRCURc5r8uNgCJzKuFv6qlg==
 
-cronstrue@^3.13.0:
-  version "3.13.0"
-  resolved "https://registry.yarnpkg.com/cronstrue/-/cronstrue-3.13.0.tgz#2ac6e91ec2ba8c73216fe095eeb41d6e81512315"
-  integrity sha512-M06cKwRIN46AyuM8BOmF1HUkBTkd3/h7uYImnrH1T3wtRKBGOibVo3jZ42VheEvx8LtgZbG/4GI35vfIxYxMug==
+cronstrue@^3.14.0:
+  version "3.14.0"
+  resolved "https://registry.yarnpkg.com/cronstrue/-/cronstrue-3.14.0.tgz#bc7844ae67959b90742b298aabe7c6d49cdbf931"
+  integrity sha512-XnW4vuK/jPJjmTyDWiej1Zq36Od7ITwxaV2O1pzHZuyMVvdy7NAvyvIBzybt+idqSpfqYuoDG7uf/ocGtJVWxA==
 
 cross-spawn@^7.0.3, cross-spawn@^7.0.6:
   version "7.0.6"
