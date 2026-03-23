@@ -31,7 +31,8 @@ import java.util.stream.Collectors;
 
 import static com.diogonunes.jcolor.Ansi.colorize;
 import static com.diogonunes.jcolor.Attribute.*;
-import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY;
+import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY_WORKSPACE;
+import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY_MODULE;
 
 @Slf4j
 @Service
@@ -515,18 +516,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         File sshKeyFile = null;
         if (terraformJob.getVcsType().startsWith("SSH") && terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
             //USING MODULE SSH KEY TO DOWNLOAD THE MODULES AND NOT THE DEFAULT SSH KEY THAT WAS USED TO CLONE THE WORKSPACE
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
+            String sshFilePath = String.format(SSH_DIRECTORY_MODULE, workingDirectory.getAbsolutePath());
             log.warn("1 - Using SSH key from: {}", sshFilePath);
             sshKeyFile = new File(sshFilePath);
         } else if (terraformJob.getVcsType().startsWith("SSH")) {
             //USING THE SAME SSH KEY THAT WAS USED TO CLONE THE REPOSITORY
-            String sshFileName = terraformJob.getVcsType().split("~")[1];
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), sshFileName);
-            log.warn("2 - Using SSH key from: {}", sshFilePath);
+            String sshFilePath = String.format(SSH_DIRECTORY_WORKSPACE, workingDirectory.getAbsolutePath());
             sshKeyFile = new File(sshFilePath);
         } else if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
             //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN OTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
+            String sshFilePath = String.format(SSH_DIRECTORY_MODULE, workingDirectory.getAbsolutePath());
             log.warn("3 - Using SSH key from: {}", sshFilePath);
             sshKeyFile = new File(sshFilePath);
         } else {
