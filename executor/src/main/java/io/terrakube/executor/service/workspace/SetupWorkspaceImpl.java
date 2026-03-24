@@ -136,11 +136,15 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         String userHomeDirectory = FileUtils.getUserDirectoryPath();
         log.info("User Home Directory: {}", userHomeDirectory);
 
-        String executorPath = Files.createTempDirectory("executor").toFile().getAbsolutePath();
+        String terrakubeDirectory = String.format("%s/.terraform-spring-boot/executor", userHomeDirectory);
+        FileUtils.forceMkdir(new File(terrakubeDirectory));
+
+        String executorPath = Files.createTempDirectory(Path.of(terrakubeDirectory), "tmp").toFile().getAbsolutePath();
         File executorFolder = new File(executorPath);
         FileUtils.forceMkdir(executorFolder);
         FileUtils.cleanDirectory(executorFolder);
-        log.info("Workspace git clone directory: {} for organizationId: {} and workspaceId: {}", executorFolder.getPath(), organizationId, workspaceId);
+        log.info("Workspace git clone directory: {} for organizationId: {} and workspaceId: {}",
+                executorFolder.getPath(), organizationId, workspaceId);
         return executorFolder;
     }
 
