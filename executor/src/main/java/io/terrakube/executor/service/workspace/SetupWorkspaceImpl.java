@@ -300,7 +300,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         String sshFileName = vcsType.split("~")[1];
         String sshFilePath = String.format(SSH_DIRECTORY, gitCloneDirectory.getAbsolutePath(), sshFileName);
         File sshFile = new File(sshFilePath);
-        log.info("Creating new SSH folder for {}", gitCloneDirectory.getAbsolutePath());
+        log.info("SSH file {}", sshFilePath);
         FileUtils.forceMkdirParent(sshFile);
         FileUtils.writeStringToFile(sshFile, privateKey + "\n", Charset.defaultCharset());
 
@@ -309,6 +309,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         perms.add(PosixFilePermission.OWNER_WRITE);
 
         Files.setPosixFilePermissions(Path.of(sshFile.getAbsolutePath()), perms);
+        log.info("SSH folder {}", sshFile.getParentFile());
         return sshFile.getParentFile();
     }
 
