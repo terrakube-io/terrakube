@@ -54,7 +54,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class SetupWorkspaceImpl implements SetupWorkspace {
 
-    public static final String SSH_DIRECTORY = "%s/.terraform-spring-boot/executor/%s/%s/.ssh/%s";
+    public static final String SSH_DIRECTORY = "%s/.ssh/%s";
 
     WorkspaceSecurity workspaceSecurity;
     boolean enableRegistrySecurity;
@@ -158,7 +158,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setTransportConfigCallback(transport -> {
                         try {
                             ((SshTransport) transport).setSshSessionFactory(
-                                    getSshdSessionFactory(terraformJob.getVcsType(), terraformJob.getAccessToken(),
+                                    getSshdSessionFactory(gitCloneFolder, terraformJob.getVcsType(), terraformJob.getAccessToken(),
                                             terraformJob.getOrganizationId(), terraformJob.getWorkspaceId()));
                         } catch (IOException e) {
                             throw new RuntimeException(e);
@@ -267,9 +267,9 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         }
     }
 
-    public SshdSessionFactory getSshdSessionFactory(String vcsType, String accessToken, String organizationId,
+    public SshdSessionFactory getSshdSessionFactory(File gitCloneDirectory, String vcsType, String accessToken, String organizationId,
             String workspaceId) throws IOException {
-        File sshDir = generateWorkspaceSshFolder(vcsType, accessToken, organizationId, workspaceId);
+        File sshDir = generateWorkspaceSshFolder(gitCloneDirectory, vcsType, accessToken, organizationId, workspaceId);
         return new SshdSessionFactoryBuilder()
                 .setServerKeyDatabase((h, s) -> new ServerKeyDatabase() {
 
@@ -295,13 +295,12 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 .build(new JGitKeyCache());
     }
 
-    private File generateWorkspaceSshFolder(String vcsType, String privateKey, String organizationId,
+    private File generateWorkspaceSshFolder(File gitCloneDirectory, String vcsType, String privateKey, String organizationId,
             String workspaceId) throws IOException {
         String sshFileName = vcsType.split("~")[1];
-        String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), organizationId, workspaceId,
-                sshFileName);
+        String sshFilePath = String.format(SSH_DIRECTORY, gitCloneDirectory.getAbsolutePath(), sshFileName);
         File sshFile = new File(sshFilePath);
-        log.info("Creating new SSH folder for organization {} wordkspace {}", organizationId, workspaceId);
+        log.info("Creating new SSH folder for {}", gitCloneDirectory.getAbsolutePath());
         FileUtils.forceMkdirParent(sshFile);
         FileUtils.writeStringToFile(sshFile, privateKey + "\n", Charset.defaultCharset());
 
