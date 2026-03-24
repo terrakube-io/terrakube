@@ -270,7 +270,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     public SshdSessionFactory getSshdSessionFactory(String vcsType, String accessToken, String organizationId,
             String workspaceId) throws IOException {
         File sshDir = generateWorkspaceSshFolder(vcsType, accessToken, organizationId, workspaceId);
-        SshdSessionFactory sshdSessionFactory = new SshdSessionFactoryBuilder()
+        return new SshdSessionFactoryBuilder()
                 .setServerKeyDatabase((h, s) -> new ServerKeyDatabase() {
 
                     @Override
@@ -293,8 +293,6 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 .setHomeDirectory(FS.DETECTED.userHome())
                 .setSshDirectory(sshDir)
                 .build(new JGitKeyCache());
-
-        return sshdSessionFactory;
     }
 
     private File generateWorkspaceSshFolder(String vcsType, String privateKey, String organizationId,
