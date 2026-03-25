@@ -5,8 +5,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import io.terrakube.api.plugin.importer.tfcloud.WorkspaceImport;
 import io.terrakube.api.plugin.importer.tfcloud.WorkspaceImportRequest;
 import io.terrakube.api.plugin.importer.tfcloud.services.WorkspaceService;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @RestController
 @RequestMapping("/importer/tfcloud")
@@ -24,7 +28,7 @@ public class TfCloudController {
     private String allowedUrls;
 
     @GetMapping("/workspaces")
-    public ResponseEntity<?> getWorkspaces(@RequestHeader("X-TFC-Url") String apiUrl,@RequestHeader("X-TFC-Token") String apiToken,
+    public ResponseEntity<List<WorkspaceImport.WorkspaceData>> getWorkspaces(@RequestHeader("X-TFC-Url") String apiUrl,@RequestHeader("X-TFC-Token") String apiToken,
             @RequestParam String organization) {
         log.info("Allowed URLs getWorkspaces: {}", allowedUrls);
         String[] listUrls = this.allowedUrls.split(",");
@@ -33,12 +37,12 @@ public class TfCloudController {
                 return ResponseEntity.ok(service.getWorkspaces(apiToken,apiUrl, organization));
             }
         }
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(INVALID_URL_MESSAGE);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ArrayList<>());
 
     }
 
     @PostMapping("/workspaces")
-    public ResponseEntity<?> importWorkspaces(@RequestHeader("X-TFC-Url") String apiUrl,@RequestHeader("X-TFC-Token") String apiToken,@RequestBody WorkspaceImportRequest request) {
+    public ResponseEntity<String> importWorkspaces(@RequestHeader("X-TFC-Url") String apiUrl,@RequestHeader("X-TFC-Token") String apiToken,@RequestBody WorkspaceImportRequest request) {
         log.info("Allowed URLs Import Workspaces: {}", allowedUrls);
         String[] listUrls = this.allowedUrls.split(",");
         for(String url:listUrls){
