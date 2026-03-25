@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.concurrent.ExecutionException;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 import static com.diogonunes.jcolor.Ansi.colorize;
 import static com.diogonunes.jcolor.Attribute.*;
 import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY;
+import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIRECTORY_MODULE;
 
 @Slf4j
 @Service
@@ -514,21 +516,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         File sshKeyFile = null;
         if (terraformJob.getVcsType().startsWith("SSH") && terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
-            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES AND NOT THE DEFAULT SSH KEY THAT WAS USED TO CLONE THE WORKSPACE
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
-            log.warn("1 - Using SSH key from: {}", sshFilePath);
-            sshKeyFile = new File(sshFilePath);
+            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES AND NOT THE DEFAULT SSH KEY USED TO CLONE THE WORKSPACE
+            sshKeyFile = getFile(SSH_DIRECTORY_MODULE, workingDirectory, sshKeyFile);
+            log.warn("1 - Using SSH key from: {}", sshKeyFile);
         } else if (terraformJob.getVcsType().startsWith("SSH")) {
-            //USING THE SAME SSH KEY THAT WAS USED TO CLONE THE REPOSITORY
-            String sshFileName = terraformJob.getVcsType().split("~")[1];
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), sshFileName);
-            log.warn("2 - Using SSH key from: {}", sshFilePath);
-            sshKeyFile = new File(sshFilePath);
+            //USING THE SAME SSH KEY USED TO CLONE THE REPOSITORY
+            sshKeyFile = getFile(SSH_DIRECTORY, workingDirectory, sshKeyFile);
+            log.warn("2 - Using SSH key from: {}", sshKeyFile);
         } else if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
-            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN OTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
-            String sshFilePath = String.format(SSH_DIRECTORY, FileUtils.getUserDirectoryPath(), terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
-            log.warn("3 - Using SSH key from: {}", sshFilePath);
-            sshKeyFile = new File(sshFilePath);
+            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN ANOTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
+            sshKeyFile = getFile(SSH_DIRECTORY, workingDirectory, sshKeyFile);
+            log.warn("3 - Using SSH key from: {}", sshKeyFile);
         } else {
             log.warn("Not using any SSH key to download modules");
         }
@@ -543,6 +541,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    private File getFile(String sshDirectory, File workingDirectory, File sshKeyFile) {
+        File folder = new File(String.format(sshDirectory, workingDirectory));
+        Collection<File> files = FileUtils.listFiles(folder, null, false);
+        for (File file : files) {
+            if (file.getName().startsWith("id_")) {
+                sshKeyFile = file;
+            }
+        }
+        return sshKeyFile;
     }
 
     private HashMap<String, String> loadTempEnvironmentVariables(File workingDirectory, TerraformJob terraformJob) {
