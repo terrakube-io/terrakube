@@ -1,12 +1,11 @@
 import { AppstoreOutlined, CloudOutlined, SettingOutlined } from "@ant-design/icons";
 import { Menu } from "antd";
 import "antd/dist/reset.css";
-import { AxiosResponse } from "axios";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
-import { ApiResponse, FlatOrganization, Organization } from "../types";
+import organizationService from "@/modules/organizations/organizationService";
+import { FlatOrganization } from "../types";
 import "./Home.css";
 import { ThemeMode } from "../../config/themeConfig";
 
@@ -24,17 +23,14 @@ const ensureOrganizationName = (
   onComplete: () => void
 ) => {
   if (orgId && currentOrgName && currentOrgName !== "select organization") {
-    // If we already have the organization name, just use it
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
     sessionStorage.setItem(ORGANIZATION_NAME, currentOrgName);
     onComplete();
   } else {
-    // If organization name is not set, fetch it first
-    axiosInstance
-      .get(`organization/${orgId}`)
-      .then((response) => {
-        if (response.data && response.data.data) {
-          const orgName = response.data.data.attributes.name;
+    organizationService
+      .getOrganizationNameGraphQL(orgId)
+      .then((orgName) => {
+        if (orgName) {
           sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
           sessionStorage.setItem(ORGANIZATION_NAME, orgName);
           setOrgName(orgName);
@@ -69,11 +65,10 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
   }, [organizationId, organizationName, setOrganizationName]);
 
   useEffect(() => {
-    // Load all organizations
-    axiosInstance
-      .get("organization")
-      .then((response: AxiosResponse<ApiResponse<Organization[]>>) => {
-        const organizations = prepareOrgs(response.data.data);
+    // Load all organizations via GraphQL (faster than REST, avoids loading all relationships)
+    organizationService
+      .listOrganizationsGraphQL()
+      .then((organizations) => {
         setOrgs(organizations);
 
         // Check if we have an org ID in the URL but not in session storage
@@ -164,13 +159,5 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
     </>
   );
 };
-
-function prepareOrgs(organizations: Organization[]): FlatOrganization[] {
-  return organizations.map((element) => ({
-    id: element.id,
-    name: element.attributes.name,
-    description: element.attributes.description,
-  }));
-}
 
 export default MainMenu;

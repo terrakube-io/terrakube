@@ -1,6 +1,5 @@
 import { Layout, ConfigProvider } from "antd";
 import { lazy, Suspense, useState, useEffect, type Dispatch, type SetStateAction } from "react";
-import { AxiosResponse } from "axios";
 import {
   RouterProvider,
   createBrowserRouter,
@@ -21,8 +20,8 @@ import { UserMenu } from "@/components/UserMenu";
 import { OrganizationSelector } from "@/components/OrganizationSelector";
 import logo from "./white_logo.png";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
-import { ApiResponse, FlatOrganization, Organization } from "../types";
+import organizationService from "@/modules/organizations/organizationService";
+import { FlatOrganization } from "../types";
 const { Header, Footer } = Layout;
 
 type AppRouteContext = {
@@ -130,11 +129,10 @@ const AppLayout = () => {
         if (storedOrgName && storedOrgId === orgId) {
           setOrganizationName(storedOrgName);
         } else {
-          axiosInstance
-            .get(`organization/${orgId}`)
-            .then((response) => {
-              if (response.data && response.data.data) {
-                const orgName = response.data.data.attributes.name;
+          organizationService
+            .getOrganizationNameGraphQL(orgId)
+            .then((orgName) => {
+              if (orgName) {
                 sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
                 sessionStorage.setItem(ORGANIZATION_NAME, orgName);
                 setOrganizationName(orgName);
@@ -154,10 +152,9 @@ const AppLayout = () => {
   }, []);
 
   useEffect(() => {
-    axiosInstance
-      .get("organization")
-      .then((response: AxiosResponse<ApiResponse<Organization[]>>) => {
-        const organizations = prepareOrgs(response.data.data);
+    organizationService
+      .listOrganizationsGraphQL()
+      .then((organizations) => {
         setOrgs(organizations);
       })
       .catch((error) => {
@@ -399,13 +396,5 @@ const App = () => {
     </ThemeProvider>
   );
 };
-
-function prepareOrgs(organizations: Organization[]): FlatOrganization[] {
-  return organizations.map((element) => ({
-    id: element.id,
-    name: element.attributes.name,
-    description: element.attributes.description,
-  }));
-}
 
 export default App;
