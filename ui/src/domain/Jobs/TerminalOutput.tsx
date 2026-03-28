@@ -77,7 +77,8 @@ export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
           </Tooltip>
         </div>
         <div className="terminal-content">
-          <Ansi>{outputLog}</Ansi>
+          {/* @ts-ignore */}
+          {Ansi.default ? <Ansi.default>{outputLog}</Ansi.default> : <Ansi>{outputLog}</Ansi>}
         </div>
       </div>
     </div>
