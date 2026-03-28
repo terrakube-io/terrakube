@@ -5,12 +5,13 @@ x-terrakube_dns: &terrakube_dns
 
 #### Extra Hosts #####
 
-x-terrakube_hosts: &terrakube_hosts
-  - "terrakube-api.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-dex.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-executor.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-registry.${DOMAIN}:${HOST_GATEWAY}"
+#x-terrakube_hosts: &terrakube_hosts
+#  - "terrakube-api.${DOMAIN}:${HOST_GATEWAY}"
+#  - "terrakube-executor.${DOMAIN}:${HOST_GATEWAY}"
+#  - "terrakube.${DOMAIN}:${HOST_GATEWAY}"
+#  - "terrakube-registry.${DOMAIN}:${HOST_GATEWAY}"
+#  - "terrakube-dex.${DOMAIN}:${HOST_GATEWAY}"
+
 
 #### Container Environment Variables #####
 
@@ -142,18 +143,18 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-api-http.middlewares: terrakube-api-redirect-https
   traefik.http.middlewares.terrakube-api-redirect-https.redirectscheme.scheme: https
 
-#  ## Terrakube Executor
-#  ## Terrakube executor HTTPS
-#  traefik.http.routers.terrakube-executor-https.rule: Host(`terrakube-executor.${DOMAIN}`)
-#  traefik.http.routers.terrakube-executor-https.entrypoints: websecure
-#  traefik.http.routers.terrakube-executor-https.tls: true
-#  traefik.http.routers.terrakube-executor-https.middlewares: terrakube-dex-allow-origin
-#  traefik.http.services.terrakube-executor-https.loadbalancer.server.port: 8090
-#  ## Redirect to HTTPS
-#  traefik.http.routers.terrakube-executor-http.rule: Host(`terrakube-executor.${DOMAIN}`)
-#  traefik.http.routers.terrakube-executor-http.entrypoints: web
-#  traefik.http.routers.terrakube-executor-http.middlewares: terrakube-executor-redirect-https
-#  traefik.http.middlewares.terrakube-executor-redirect-https.redirectscheme.scheme: https
+  #  ## Terrakube Executor
+  #  ## Terrakube executor HTTPS
+  #  traefik.http.routers.terrakube-executor-https.rule: Host(`terrakube-executor.${DOMAIN}`)
+  #  traefik.http.routers.terrakube-executor-https.entrypoints: websecure
+  #  traefik.http.routers.terrakube-executor-https.tls: true
+  #  traefik.http.routers.terrakube-executor-https.middlewares: terrakube-dex-allow-origin
+  #  traefik.http.services.terrakube-executor-https.loadbalancer.server.port: 8090
+  #  ## Redirect to HTTPS
+  #  traefik.http.routers.terrakube-executor-http.rule: Host(`terrakube-executor.${DOMAIN}`)
+  #  traefik.http.routers.terrakube-executor-http.entrypoints: web
+  #  traefik.http.routers.terrakube-executor-http.middlewares: terrakube-executor-redirect-https
+  #  traefik.http.middlewares.terrakube-executor-redirect-https.redirectscheme.scheme: https
   ## Terrakube UI
   ## Terrakube UI HTTPS
   traefik.http.routers.terrakube-ui-https.rule: Host(`terrakube.${DOMAIN}`)
@@ -213,10 +214,14 @@ services:
   traefik:
     image: traefik:v2
     container_name: terrakube-traefik
-    # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
     networks:
-      default:
-        ipv4_address: $TRAEFIK_IPV4_ADDRESS
+      terrakube-network:
+        aliases:
+        - terrakube-api.platform.local
+        - terrakube-executor.platform.local
+        - terrakube.platform.local
+        - terrakube-registry.platform.local
+        - terrakube-dex.platform.local
     environment: *traefik_env
     dns: *terrakube_dns
     ports:
@@ -231,7 +236,7 @@ services:
   terrakube-dev:
     platform: linux/amd64
     dns: *terrakube_dns
-    extra_hosts: *terrakube_hosts
+    #extra_hosts: *terrakube_hosts
     labels: *traefik_dev_labels
     ports:
       - 8080
@@ -244,9 +249,11 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces/terrakube:cached
+    networks:
+      - terrakube-network
   terrakube-dex:
     image: ghcr.io/dexidp/dex:${TK_DEX_VERSION}
-    extra_hosts: *terrakube_hosts
+    #extra_hosts: *terrakube_hosts
     labels: *traefik_dex_labels
     container_name: terrakube-dex
     environment:
@@ -254,18 +261,24 @@ services:
       - TK_DEX_STATIC_CLIENT=${TK_DEX_STATIC_CLIENT}
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
+    networks:
+      - terrakube-network
   ldap-service:
     image: bitnamilegacy/openldap:${TK_LDAP_VERSION}
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
       - ./config-ldap.ldif:/ldifs/config-ldap.ldif
+    networks:
+      - terrakube-network
   minio:
     container_name: terrakube-minio
     image: docker.io/bitnamilegacy/minio:${TK_MINIO_VERSION}
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
+    networks:
+      - terrakube-network
   redis-service:
     image: docker.io/bitnamilegacy/redis:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
@@ -276,6 +289,8 @@ services:
       - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
     volumes:
       - 'redis_data:/bitnami/redis/data'
+    networks:
+      - terrakube-network
   postgresql-service:
     image: docker.io/bitnamilegacy/postgresql:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service
@@ -287,6 +302,8 @@ services:
       - postgresql_data:/bitnami/postgresql
     ports:
       - 5432:5432
+    networks:
+      - terrakube-network
   mssql-service:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: mssql-service
@@ -294,13 +311,18 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=P@ssw0rd!
+    networks:
+      - terrakube-network
 volumes:
   minio_data:
   redis_data:
   postgresql_data:
     driver: local
-# External network is required, import its name below
 networks:
-  default:
-    name: $EXTERNAL_NETWORK_NAME
-    external: true
+  terrakube-network:
+    driver: bridge
+# External network is required, import its name below
+#networks:
+#  default:
+#    name: $EXTERNAL_NETWORK_NAME
+#    external: true
