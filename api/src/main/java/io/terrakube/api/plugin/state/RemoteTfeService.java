@@ -921,6 +921,10 @@ public class RemoteTfeService {
         }
     }
 
+    public String getWorkspaceName(String id){
+        return workspaceRepository.getReferenceById(UUID.fromString(id)).getName();
+    }
+
     public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {
         Optional<Workspace> workspaceOptinal = workspaceRepository.findById(UUID.fromString(workspaceId));
         boolean hasAcess = false;

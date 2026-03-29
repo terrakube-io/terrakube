@@ -33,6 +33,8 @@ import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -141,9 +143,13 @@ class ServerApplicationTests {
     }
 
     public String generateSystemToken() {
+        return generateSystemToken(new HashMap<>());
+    }
+
+    public String generateSystemToken(Map<String, Object> extraClaims) {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64KeyInternal));
 
-        String jws = Jwts.builder()
+        var builder = Jwts.builder()
                 .setIssuer(ISSUER_INTERNAL)
                 .setSubject(String.format("%s (Token)", "Terrakube Test"))
                 .setAudience(ISSUER_INTERNAL)
@@ -152,11 +158,13 @@ class ServerApplicationTests {
                 .claim("email_verified", true)
                 .claim("name", "Terrakube Test")
                 .setIssuedAt(Date.from(Instant.now()))
-                .setExpiration(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
-                .signWith(key)
-                .compact();
+                .setExpiration(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)));
 
-        return jws;
+        extraClaims.forEach((keyClaim, value) -> {
+            builder.claim(keyClaim, value);
+        });
+
+        return builder.signWith(key).compact();
     }
 
     @Test

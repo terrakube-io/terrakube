@@ -224,7 +224,7 @@ public class RemoteTfeController {
 
     @Transactional
     @GetMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/current-state-version")
-    public ResponseEntity<StateData> getCurrentWorkspaceState(@PathVariable("workspaceId") String workspaceId, Principal principal)
+    public ResponseEntity<?> getCurrentWorkspaceState(@PathVariable("workspaceId") String workspaceId, Principal principal)
             throws JsonProcessingException {
         log.info("Get current workspace state {}", workspaceId);
 
@@ -233,7 +233,13 @@ public class RemoteTfeController {
             String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
             log.info("WorkspaceIdToken: {}", workspaceIdToken);
             if (!remoteTfeService.validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspaceId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                String messageFormat = """
+                         This Terrakube job is not authorized to read the state of the workspace '%s'.
+                         Most commonly, this is required when using the terraform_remote_state data source.
+                         To allow this access, '%s' must configure this workspace ('%s')"
+                         as an authorized remote state consumer""";
+                String errorMessage = String.format(messageFormat, remoteTfeService.getWorkspaceName(workspaceId), remoteTfeService.getWorkspaceName(workspaceId), remoteTfeService.getWorkspaceName(workspaceIdToken));
+                return handleAccessDenied(new AccessDeniedException(errorMessage));
             }
         }
 

@@ -13,7 +13,9 @@ import org.springframework.http.HttpStatus;
 import io.terrakube.api.rs.team.Team;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -351,6 +353,38 @@ class TfcApiTests extends ServerApplicationTests {
         team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
         team.setManageJob(false);        team.setPlanJob(false);        team.setApproveJob(false);        team.setRole("custom");
         teamRepository.save(team);
+    }
+
+    @Test
+    void getCurrentWorkspaceStateAccessDenied() {
+        // Prepare workspace to restrict access
+        Workspace workspace = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).get();
+        workspace.setGlobalRemoteState(false);
+        workspace.setSharedIds("");
+        workspaceRepository.save(workspace);
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("workspaceId", "24480d33-2649-4c34-aabd-cbc988eb6265");
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generateSystemToken(claims))
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/current-state-version")
+                    .then()
+                    .assertThat()
+                    .log()
+                    .all()
+                    .statusCode(HttpStatus.FORBIDDEN.value())
+                    .body("errors[0].detail", org.hamcrest.Matchers.containsString("This Terrakube job is not authorized to read the state of the workspace 'sample_simple'"))
+                    .body("errors[0].detail", org.hamcrest.Matchers.containsString("To allow this access, 'sample_simple' must configure this workspace ('simple_tag3')"))
+                    .body("errors[0].detail", org.hamcrest.Matchers.containsString("as an authorized remote state consumer"));
+        } finally {
+            // Restore default for other tests
+            workspace.setGlobalRemoteState(true);
+            workspace.setSharedIds(null);
+            workspaceRepository.save(workspace);
+        }
     }
 
     @Test
