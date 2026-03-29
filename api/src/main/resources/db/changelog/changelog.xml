@@ -97,4 +97,5 @@
     <include file="/db/changelog/local/changelog-2.31.0-pr-workflow.xml" />
     <include file="/db/changelog/local/changelog-2.31.0-pr-workflow-fix.xml" />
     <include file="/db/changelog/local/changelog-2.31.0-federated-credentials.xml" />
+    <include file="/db/changelog/local/changelog-2.31.0-global-remote-state.xml" />
 </databaseChangeLog>

@@ -30,6 +30,8 @@ import io.terrakube.api.plugin.state.model.state.StateModel;
 import io.terrakube.api.plugin.state.model.terraform.TerraformState;
 import io.terrakube.api.plugin.state.model.workspace.*;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
+import io.terrakube.api.plugin.state.model.workspace.state.consumers.LinksStateConsumer;
+import io.terrakube.api.plugin.state.model.workspace.state.consumers.RemoteStateConsumer;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
@@ -427,8 +429,8 @@ public class RemoteTfeService {
                 .ofNullable(workspaceRepository.getByOrganizationNameAndName(organizationName, workspaceName));
 
         if (workspace.isPresent()) {
-            log.info("Found Workspace Id: {} Terraform: {}", workspace.get().getId().toString(),
-                    workspace.get().getTerraformVersion());
+            log.info("Found Workspace Id: {} Terraform: {} Global Remote State: {}", workspace.get().getId().toString(),
+                    workspace.get().getTerraformVersion(), workspace.get().isGlobalRemoteState());
             WorkspaceData workspaceData = new WorkspaceData();
 
             WorkspaceModel workspaceModel = new WorkspaceModel();
@@ -440,7 +442,8 @@ public class RemoteTfeService {
             attributes.put("locked", workspace.get().isLocked());
             attributes.put("auto-apply", false);
             attributes.put("execution-mode", workspace.get().getExecutionMode());
-            attributes.put("global-remote-state", true);
+
+            attributes.put("global-remote-state", workspace.get().isGlobalRemoteState());
 
             if (workspace.get().getFolder() != null
                     && (workspace.get().getVcs() != null || workspace.get().getSsh() != null)
@@ -510,6 +513,18 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().getProject().getData().setType("projects");
             }
 
+            if (!workspace.get().isGlobalRemoteState()) {
+                log.info("Adding workspace remote state consumer relationship information");
+                if (workspaceModel.getRelationships() == null) {
+                    workspaceModel.setRelationships(new io.terrakube.api.plugin.state.model.workspace.Relationships());
+                }
+                workspaceModel.getRelationships().setRemoteStateConsumer(new RemoteStateConsumer());
+                workspaceModel.getRelationships().getRemoteStateConsumer().setLinks(new LinksStateConsumer());
+                workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().setRelated(
+                        String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.get().getId()));
+                log.info("Workspace remote state consumer relationship URL: {}", workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().getRelated());
+            }
+
             return workspaceData;
         } else {
             return null;
@@ -518,21 +533,42 @@ public class RemoteTfeService {
     }
 
     StateConsumerList getWorkspaceStateConsumers(String workspaceId, JwtAuthenticationToken currentUser) {
+        log.info("Getting workspace state consumers for workspace ID: {}", workspaceId);
         Optional<Workspace> workspaceFound = Optional
-                .ofNullable(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
+                .of(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
 
         StateConsumerList stateConsumerList = new StateConsumerList();
-        stateConsumerList.setData(new ArrayList());
+        stateConsumerList.setData(new ArrayList<>());
 
         workspaceFound.ifPresent(workspaceData -> {
-            log.info("Workspace found {}, generating workspace list from organization", workspaceData.getName());
-            workspaceData.getOrganization().getWorkspace().forEach(workspace -> {
-                if (!workspace.getId().toString().equals(workspaceId)) {
-                    log.info("Adding workspace {} as state consumers", workspace.getName());
-                    stateConsumerList.getData().add(getWorkspace(workspace.getOrganization().getName(),
-                            workspace.getName(), new HashMap(), currentUser).getData());
+            log.info("Workspace found {}, globalRemoteState: {}, generating workspace list", workspaceData.getName(), workspaceData.isGlobalRemoteState());
+            if (workspaceData.isGlobalRemoteState()) {
+                log.info("Generating workspace list from organization (globalRemoteState is true)");
+                workspaceData.getOrganization().getWorkspace().forEach(workspace -> {
+                    if (!workspace.getId().toString().equals(workspaceId)) {
+                        log.info("Adding workspace {} as state consumers", workspace.getName());
+                        stateConsumerList.getData().add(getWorkspace(workspace.getOrganization().getName(),
+                                workspace.getName(), new HashMap<>(), currentUser).getData());
+                    }
+                });
+            } else {
+                log.info("Generating workspace list from sharedIds (globalRemoteState is false)");
+                if (workspaceData.getSharedIds() != null && !workspaceData.getSharedIds().isEmpty()) {
+                    String[] sharedIds = workspaceData.getSharedIds().split(",");
+                    for (String sharedId : sharedIds) {
+                        if (!sharedId.trim().isEmpty()) {
+                            try {
+                                Workspace sharedWorkspace = workspaceRepository.getReferenceById(UUID.fromString(sharedId.trim()));
+                                log.info("Adding shared workspace {} as state consumers", sharedWorkspace.getName());
+                                stateConsumerList.getData().add(getWorkspace(sharedWorkspace.getOrganization().getName(),
+                                        sharedWorkspace.getName(), new HashMap<>(), currentUser).getData());
+                            } catch (Exception e) {
+                                log.error("Error adding shared workspace ID {}: {}", sharedId, e.getMessage());
+                            }
+                        }
+                    }
                 }
-            });
+            }
         });
 
         return stateConsumerList;
@@ -883,6 +919,26 @@ public class RemoteTfeService {
         } else {
             log.info("Keeping history for local runs {}", job.getWorkspace().getName());
         }
+    }
+
+    public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {
+        Optional<Workspace> workspaceOptinal = workspaceRepository.findById(UUID.fromString(workspaceId));
+        boolean hasAcess = false;
+        if (!workspaceOptinal.isEmpty()) {
+            Workspace workspace = workspaceOptinal.get();
+            if (workspace.isGlobalRemoteState()) {
+                hasAcess = true;
+            } else {
+                String[] sharedIds = workspace.getSharedIds().split(",");
+                for (String sharedId : sharedIds) {
+                    log.info("Checking if workspace {} is shared with {} result {}", workspace.getName(), workspaceIdToken, sharedId.trim().equals(workspaceIdToken));
+                    if (sharedId.trim().equals(workspaceIdToken)) {
+                        hasAcess = true;
+                    }
+                }
+            }
+        }
+        return hasAcess;
     }
 
     StateData getWorkspaceState(String historyId) {

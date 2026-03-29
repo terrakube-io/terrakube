@@ -217,16 +217,26 @@ public class RemoteTfeController {
 
     @Transactional
     @GetMapping(produces = "application/vnd.api+json", path = "/state-versions/{historyId}")
-    public ResponseEntity<StateData> getWorkspaceState(@PathVariable("historyId") String historyId) {
+    public ResponseEntity<StateData> getWorkspaceState(@PathVariable("historyId") String historyId, Principal principal) {
         log.info("Looking history id {}", historyId);
         return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getWorkspaceState(historyId)));
     }
 
     @Transactional
     @GetMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/current-state-version")
-    public ResponseEntity<StateData> getCurrentWorkspaceState(@PathVariable("workspaceId") String workspaceId)
+    public ResponseEntity<StateData> getCurrentWorkspaceState(@PathVariable("workspaceId") String workspaceId, Principal principal)
             throws JsonProcessingException {
         log.info("Get current workspace state {}", workspaceId);
+
+        JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
+        if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
+            String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
+            log.info("WorkspaceIdToken: {}", workspaceIdToken);
+            if (!remoteTfeService.validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspaceId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+        }
+
         return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getCurrentWorkspaceState(workspaceId)));
     }
 
@@ -344,8 +354,18 @@ public class RemoteTfeController {
 
     @Transactional
     @GetMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/current-state-version-outputs")
-    public ResponseEntity<StateOutputs> getCurrentOutputs(@PathVariable("workspaceId") String workspaceId) {
+    public ResponseEntity<StateOutputs> getCurrentOutputs(@PathVariable("workspaceId") String workspaceId, Principal principal) {
         log.info("Get current outputs for: {}", workspaceId);
+
+        JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
+        if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
+            String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
+            log.info("Token WorkspaceId: {}", workspaceIdToken);
+            if (!workspaceIdToken.equals(workspaceId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+        }
+
         return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getCurrentOutputs(workspaceId)));
     }
 

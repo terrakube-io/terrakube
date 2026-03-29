@@ -205,6 +205,7 @@ class TfcApiTests extends ServerApplicationTests {
 
     @Test
     void getWorkspaceStateConsumers() {
+        // Default behavior (globalRemoteState is true by default)
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
@@ -213,7 +214,47 @@ class TfcApiTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
-                .statusCode(HttpStatus.OK.value());
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", org.hamcrest.Matchers.greaterThan(0));
+
+        // Restricted sharing (globalRemoteState = false, sharedIds = empty)
+        Workspace workspace = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).get();
+        workspace.setGlobalRemoteState(false);
+        workspace.setSharedIds("");
+        workspaceRepository.save(workspace);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/remote/tfe/v2/workspaces/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/relationships/remote-state-consumers")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", IsEqual.equalTo(0));
+
+        // Restricted sharing (globalRemoteState = false, sharedIds = "id1,id2")
+        // Using workspace 'sample_simple' (5ed411ca-7ab8-4d2f-b591-02d0d5788afc) to share state with itself (for test purposes) or another one if exists
+        workspace.setSharedIds("5ed411ca-7ab8-4d2f-b591-02d0d5788afc");
+        workspaceRepository.save(workspace);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/remote/tfe/v2/workspaces/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/relationships/remote-state-consumers")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", IsEqual.equalTo(1))
+                .body("data[0].attributes.name", IsEqual.equalTo("sample_simple"));
+
+        // Restore default for other tests
+        workspace.setGlobalRemoteState(true);
+        workspace.setSharedIds(null);
+        workspaceRepository.save(workspace);
     }
 
     @Test

@@ -80,8 +80,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 generateSshFolder(workspaceCloneFolder, terraformJob.getModuleSshKey(), SSH_DIRECTORY_FILE_MODULE);
             }
 
-            if (enableRegistrySecurity)
-                workspaceSecurity.addTerraformCredentials();
+            workspaceSecurity.addTerraformCredentials(terraformJob.getWorkspaceId());
 
             log.info("Executor WorkingDir: {}", workspaceCloneFolder);
             if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {

@@ -80,6 +80,12 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "allow_remote_apply")
     private boolean allowRemoteApply = false;
 
+    @Column(name = "global_remote_state")
+    private boolean globalRemoteState = true;
+
+    @Column(name = "shared_ids")
+    private String sharedIds;
+
     @Column(name = "default_template")
     private String defaultTemplate;
 

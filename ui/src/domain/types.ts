@@ -360,6 +360,8 @@ export type WorkspaceAttributes = {
   name: string;
   source: string;
   terraformVersion: string;
+  globalRemoteState?: boolean;
+  sharedIds?: string;
 } & AuditFieldBase;
 
 export type Webhook = {
