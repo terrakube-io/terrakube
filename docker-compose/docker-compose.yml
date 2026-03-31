@@ -35,7 +35,12 @@ x-api: &api_env
   AwsStorageSecretKey: $TK_OUTPUT_SECRET_KEY
   AwsStorageBucketName: $TK_OUTPUT_BUCKET_NAME
   AwsStorageRegion: $TK_OUTPUT_STORAGE_REGION
+  # AwsEndpoint: Full URL for S3-compatible storage (MinIO, Wasabi, B2, etc.).
+  # Leave empty for real AWS S3 (the SDK constructs the regional endpoint automatically).
   AwsEndpoint: $TK_OUTPUT_ENDPOINT
+  # AwsForcePathStyle: Set to true for S3-compatible storage requiring path-style access.
+  # Must be false (default) for real AWS S3.
+  AwsForcePathStyle: ${TK_OUTPUT_FORCE_PATH_STYLE:-false}
   TerrakubeUiURL: https://terrakube.${DOMAIN}
   spring_profiles_active: demo
   DexClientId: terrakube-app
@@ -55,7 +60,12 @@ x-executor: &executor_env
   AwsTerraformStateSecretKey: $TK_OUTPUT_SECRET_KEY
   AwsTerraformStateBucketName: $TK_OUTPUT_BUCKET_NAME
   AwsTerraformStateRegion: ${TK_OUTPUT_BUCKET_REGION}
+  # AwsEndpoint: Full URL for S3-compatible storage (MinIO, Wasabi, B2, etc.).
+  # Leave empty for real AWS S3 (the SDK constructs the regional endpoint automatically).
   AwsEndpoint: $TK_OUTPUT_ENDPOINT
+  # AwsForcePathStyle: Set to true for S3-compatible storage requiring path-style access.
+  # Must be false (default) for real AWS S3.
+  AwsForcePathStyle: ${TK_OUTPUT_FORCE_PATH_STYLE:-false}
   TerraformOutputType: AwsTerraformOutputImpl
   AwsTerraformOutputAccessKey: $TK_OUTPUT_ACCESS_KEY
   AwsTerraformOutputSecretKey: $TK_OUTPUT_SECRET_KEY
@@ -88,7 +98,12 @@ x-registry: &registry_env
   AwsStorageSecretKey: $TK_OUTPUT_SECRET_KEY
   AwsStorageBucketName: $TK_OUTPUT_BUCKET_NAME
   AwsStorageRegion: $TK_OUTPUT_STORAGE_REGION
+  # AwsEndpoint: Full URL for S3-compatible storage (MinIO, Wasabi, B2, etc.).
+  # Leave empty for real AWS S3 (the SDK constructs the regional endpoint automatically).
   AwsEndpoint: $TK_OUTPUT_ENDPOINT
+  # AwsForcePathStyle: Set to true for S3-compatible storage requiring path-style access.
+  # Must be false (default) for real AWS S3.
+  AwsForcePathStyle: ${TK_OUTPUT_FORCE_PATH_STYLE:-false}
   AppClientId: terrakube-app
   AppIssuerUri: https://terrakube-dex.${DOMAIN}/dex
   SERVICE_BINDING_ROOT: /mnt/platform/bindings
@@ -187,11 +202,13 @@ x-traefik_dex_labels: &traefik_dex_labels
   traefik.http.middlewares.terrakube-dex-redirect-https.redirectscheme.scheme: https
   ## Allow CORs from Terrakube UI
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowmethods: GET, PATCH, PUT, POST, DELETE, HEAD, OPTIONS
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders: >
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders:
+    >
     Content-Type, Accept, Authorization, X-Requested-With, Origin, *
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolalloworiginlist: https://terrakube.${DOMAIN}
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowcredentials: true
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders: >
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders:
+    >
     Cache-Control, Content-Language, Content-Length, Content-Type, Expires, Last-Modified,
     Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolmaxage: 86400
@@ -211,7 +228,6 @@ x-traefik_registry_labels: &traefik_registry_labels
   traefik.http.routers.terrakube-registry-http.entrypoints: web
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
-
 
 ### Containers
 services:
@@ -295,7 +311,7 @@ services:
     image: docker.io/bitnamilegacy/minio:${TK_MINIO_VERSION}
     environment: *minio_env
     volumes:
-      - 'minio_data:/data'
+      - "minio_data:/data"
   redis-service:
     image: bitnamilegacy/redis:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
@@ -305,7 +321,7 @@ services:
       - REDIS_MASTER_PASSWORD=${TK_REDIS_PASSWORD}
       - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
     volumes:
-      - 'redis_data:/bitnami/redis/data'
+      - "redis_data:/bitnami/redis/data"
   postgresql-service:
     image: docker.io/bitnamilegacy/postgresql:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service

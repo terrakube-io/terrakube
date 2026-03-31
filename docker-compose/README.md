@@ -58,4 +58,45 @@ Terrakube will be available in the following URL:
 
 * https://terrakube.platform.local
   * Username: admin@example.com
-  * Password: admin 
+  * Password: admin
+
+## Storage Backend Configuration
+
+Terrakube supports both real AWS S3 and S3-compatible storage (MinIO, Wasabi, Backblaze B2, Cloudflare R2, etc.).
+The default `.env` ships configured for the bundled MinIO container.
+
+### Key `.env` variables
+
+| Variable | Description | AWS S3 | MinIO / S3-compatible |
+|---|---|---|---|
+| `TK_OUTPUT_ENDPOINT` | Full endpoint URL | `""` (leave empty) | `http://terrakube-minio:9000` |
+| `TK_OUTPUT_STORAGE_REGION` | AWS region or equivalent | `us-east-1`, `eu-west-1`, … | any value (e.g. `us-east-1`) |
+| `TK_OUTPUT_FORCE_PATH_STYLE` | Enable path-style access | `false` | `true` |
+
+> **Important:** Setting `TK_OUTPUT_ENDPOINT` to a real AWS regional URL (e.g. `https://s3.us-east-1.amazonaws.com`)
+ > while expecting real AWS S3 behavior will cause a signature region mismatch error (`aws-global` vs `us-east-1`).
+> Leave `TK_OUTPUT_ENDPOINT` empty for real AWS S3.
+
+### Example: real AWS S3
+
+```env
+TK_OUTPUT_ACCESS_KEY=AKIA...
+TK_OUTPUT_SECRET_KEY=...
+TK_OUTPUT_BUCKET_NAME=my-terrakube-bucket
+TK_OUTPUT_STORAGE_REGION=us-east-1
+TK_OUTPUT_BUCKET_REGION=us-east-1
+TK_OUTPUT_ENDPOINT=
+TK_OUTPUT_FORCE_PATH_STYLE=false
+```
+
+### Example: MinIO (default)
+
+```env
+TK_OUTPUT_ACCESS_KEY=minioadmin
+TK_OUTPUT_SECRET_KEY=minioadmin
+TK_OUTPUT_BUCKET_NAME=sample
+TK_OUTPUT_STORAGE_REGION=us-east-1
+TK_OUTPUT_BUCKET_REGION=us-east-1
+TK_OUTPUT_ENDPOINT=http://terrakube-minio:9000
+TK_OUTPUT_FORCE_PATH_STYLE=true
+```

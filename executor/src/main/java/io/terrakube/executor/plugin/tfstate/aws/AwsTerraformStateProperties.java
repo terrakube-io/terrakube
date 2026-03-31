@@ -21,4 +21,11 @@ public class AwsTerraformStateProperties {
     private String endpoint;
     private boolean includeBackendKeys;
     private boolean enableRoleAuthentication;
+    /**
+     * When true, enables S3 path-style access (e.g. https://endpoint/bucket/key).
+     * Required for S3-compatible storage (MinIO, Wasabi, Backblaze B2, Ceph, etc.).
+     * Must NOT be set when using real AWS S3 (AWS deprecated path-style for new buckets).
+     * Default: false
+     */
+    private boolean forcePathStyle;
 }

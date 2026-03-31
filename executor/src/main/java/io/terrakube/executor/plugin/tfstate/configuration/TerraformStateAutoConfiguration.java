@@ -82,26 +82,29 @@ public class TerraformStateAutoConfiguration {
                                 .region(Region.of(awsTerraformStateProperties.getRegion()))
                                 .credentialsProvider(DefaultCredentialsProvider.create())
                                 .build();
-                    } else if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
-                        log.info("Creating AWS with custom endpoint and custom credentials");
-
-                        S3Configuration serviceConfiguration = S3Configuration.builder()
-                                .pathStyleAccessEnabled(true)
-                                .build();
-
-                        s3client = S3Client.builder()
-                                .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .region(Region.of("auto"))
-                                .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
-                                .serviceConfiguration(serviceConfiguration)
-                                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-                                .build();
                     } else {
-                        log.info("Creating AWS SDK with custom credentials");
-                        s3client = S3Client.builder()
+                        // Always use the configured region. For S3-compatible endpoints (MinIO, Wasabi,
+                        // Backblaze B2, Cloudflare R2, etc.) set AwsForcePathStyle=true and provide
+                        // AwsEndpoint. For real AWS S3 leave AwsEndpoint empty and AwsForcePathStyle false.
+                        log.info("Creating AWS SDK with custom credentials (endpoint={}, forcePathStyle={})",
+                                awsTerraformStateProperties.getEndpoint(),
+                                awsTerraformStateProperties.isForcePathStyle());
+
+                        S3Client.Builder s3Builder = S3Client.builder()
                                 .region(Region.of(awsTerraformStateProperties.getRegion()))
                                 .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .build();
+                                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED);
+
+                        if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
+                            s3Builder.endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()));
+                        }
+
+                        if (awsTerraformStateProperties.isForcePathStyle()) {
+                            s3Builder.serviceConfiguration(
+                                    S3Configuration.builder().pathStyleAccessEnabled(true).build());
+                        }
+
+                        s3client = s3Builder.build();
                     }
 
 
