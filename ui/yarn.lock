@@ -8345,12 +8345,10 @@ unrs-resolver@^1.7.11:
     "@unrs/resolver-binding-win32-ia32-msvc" "1.7.11"
     "@unrs/resolver-binding-win32-x64-msvc" "1.7.11"
 
-unzipit@^1.4.3:
-  version "1.4.3"
-  resolved "https://registry.npmjs.org/unzipit/-/unzipit-1.4.3.tgz"
-  integrity sha512-gsq2PdJIWWGhx5kcdWStvNWit9FVdTewm4SEG7gFskWs+XCVaULt9+BwuoBtJiRE8eo3L1IPAOrbByNLtLtIlg==
-  dependencies:
-    uzip-module "^1.0.2"
+unzipit@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/unzipit/-/unzipit-2.0.0.tgz#9461b6a9b067ed9b13f9eda1bc5b93bc448307fa"
+  integrity sha512-DVeVIWUZCAQPNzm5sB0hpsG1GygTTdBnzNtYYEpInkttx5evkyqRgZi6rTczoySqp8hO5jHVKzrH0f23X8FZLg==
 
 update-browserslist-db@^1.2.0:
   version "1.2.3"
@@ -8376,11 +8374,6 @@ uuid@^13.0.0:
   version "13.0.0"
   resolved "https://registry.npmjs.org/uuid/-/uuid-13.0.0.tgz"
   integrity sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w==
-
-uzip-module@^1.0.2:
-  version "1.0.3"
-  resolved "https://registry.npmjs.org/uzip-module/-/uzip-module-1.0.3.tgz"
-  integrity sha512-AMqwWZaknLM77G+VPYNZLEruMGWGzyigPK3/Whg99B3S6vGHuqsyl5ZrOv1UUF3paGK1U6PM0cnayioaryg/fA==
 
 v8-compile-cache-lib@^3.0.1:
   version "3.0.1"
