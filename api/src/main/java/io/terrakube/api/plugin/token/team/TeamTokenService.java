@@ -6,6 +6,7 @@ import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -142,7 +143,7 @@ public class TeamTokenService {
             audience = principalJwt.getTokenAttributes().get("aud").toString();
         }
         Optional<Federated> federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience);
-        if(federated.isPresent()){
+        if(federated.isPresent() && FederatedClaimMatcher.matchesClaims(federated.get(), principalJwt.getTokenAttributes())){
             List array = new ArrayList();
             array.add(federated.get().getName());
             return array;
@@ -156,4 +157,5 @@ public class TeamTokenService {
             return list;
         }
     }
+
 }

@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Spin, Typography, theme } from "antd";
+import { Alert, Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -14,6 +14,7 @@ type Props = {
 export const FederatedCredentials = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [federated, setFederated] = useState<Federated[]>([]);
+  const [claimCounts, setClaimCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [mode, setMode] = useState<"list" | "edit" | "create">("list");
@@ -29,23 +30,42 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
     setMode("create");
   };
 
-  const onDelete = (id: string) => {
-    axiosInstance
-      .delete(`federated/${id}`)
-      .then(() => {
-        message.success("Federated credential deleted successfully");
-        loadFederated();
-      })
-      .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
+  const onDelete = async (id: string) => {
+    try {
+      // Delete all claims first, then the federated credential
+      const claimsRes = await axiosInstance.get(`federated/${id}/claims`);
+      const claimsData = claimsRes.data.data || [];
+      await Promise.all(
+        claimsData.map((c: any) => axiosInstance.delete(`federated/${id}/claims/${c.id}`))
+      );
+      await axiosInstance.delete(`federated/${id}`);
+      message.success("Federated credential deleted successfully");
+      loadFederated();
+    } catch (err: any) {
+      message.error(getErrorMessage(err));
+    }
   };
 
   const loadFederated = () => {
     axiosInstance
       .get(`federated`)
-      .then((response) => {
-        setFederated(response.data.data);
+      .then(async (response) => {
+        const items: Federated[] = response.data.data;
+        setFederated(items);
+
+        // Load claim counts for each federated credential
+        const counts: Record<string, number> = {};
+        await Promise.all(
+          items.map(async (item) => {
+            try {
+              const claimsRes = await axiosInstance.get(`federated/${item.id}/claims`);
+              counts[item.id] = (claimsRes.data.data || []).length;
+            } catch {
+              counts[item.id] = 0;
+            }
+          })
+        );
+        setClaimCounts(counts);
         setLoading(false);
       })
       .catch((err) => {
@@ -104,7 +124,8 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
                     <Button
                       onClick={() => onEdit(item.id)}
                       icon={<EditOutlined />}
-                      type="link"
+                      shape="round"
+                      type="primary"
                       disabled={!managePermission}
                     >
                       Edit
@@ -120,7 +141,7 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
                       okText="Yes"
                       cancelText="No"
                     >
-                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                      <Button icon={<DeleteOutlined />} shape="round" type="primary" danger disabled={!managePermission}>
                         Delete
                       </Button>
                     </Popconfirm>,
@@ -134,6 +155,14 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
                         <Typography.Text type="secondary">{item.attributes.issuerUrl}</Typography.Text>
                         <br />
                         <Typography.Text type="secondary">{item.attributes.audience}</Typography.Text>
+                        <br />
+                        {claimCounts[item.id] > 0 ? (
+                          <Tag color="blue" style={{ marginTop: 4 }}>
+                            {claimCounts[item.id]} claim condition{claimCounts[item.id] !== 1 ? "s" : ""}
+                          </Tag>
+                        ) : (
+                          <Tag style={{ marginTop: 4 }}>No claim conditions</Tag>
+                        )}
                       </>
                     }
                   />
