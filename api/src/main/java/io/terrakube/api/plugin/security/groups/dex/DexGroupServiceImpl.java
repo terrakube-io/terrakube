@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.security.groups.dex;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -70,7 +71,7 @@ public class DexGroupServiceImpl implements GroupService {
         String audience = principal.getTokenAttributes().get("aud").toString();
         Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
-            return true;
+            return FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
         }
         return false;
     }
@@ -82,7 +83,7 @@ public class DexGroupServiceImpl implements GroupService {
         String audience = principal.getTokenAttributes().get("aud").toString();
         Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
-            return federated.getName().equals(group);
+            return federated.getName().equals(group) && FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
         }
         return false;
     }

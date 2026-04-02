@@ -289,6 +289,14 @@ export type FederatedAttributes = {
   issuerUrl: string;
   audience: string;
 };
+export type FederatedClaim = {
+  id: string;
+  attributes: FederatedClaimAttributes;
+};
+export type FederatedClaimAttributes = {
+  claimKey: string;
+  claimValue: string;
+};
 export type ApiWorkspaceTag = {
   id: string;
   attributes: {

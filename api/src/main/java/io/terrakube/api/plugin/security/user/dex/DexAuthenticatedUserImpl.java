@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.security.user.dex;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +12,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
+
 
 @Slf4j
 @Service
@@ -53,8 +55,9 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
 
     @Override
     public boolean isFederatedAccount(User user) {
-        String issuer = getSecurityPrincipal(user).getTokenAttributes().get("iss").toString();
-        Object audienceObj = getSecurityPrincipal(user).getTokenAttributes().get("aud");
+        JwtAuthenticationToken principal = getSecurityPrincipal(user);
+        String issuer = principal.getTokenAttributes().get("iss").toString();
+        Object audienceObj = principal.getTokenAttributes().get("aud");
         String audience = "";
 
         if (audienceObj instanceof String) {
@@ -67,7 +70,10 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
         }
 
         Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
-        return federated != null;
+        if (federated == null) {
+            return false;
+        }
+        return FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
     }
 
     @Override
