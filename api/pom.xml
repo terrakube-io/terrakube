@@ -16,7 +16,7 @@
     <properties>
         <java.version>25</java.version>
         <elide.version>7.1.16</elide.version>
-        <handlebars.version>4.5.0</handlebars.version>
+        <handlebars.version>4.3.1</handlebars.version>
         <azure.version>6.2.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.24.0</msal4j.version>
@@ -234,12 +234,6 @@
             <artifactId>wiremock-spring-boot</artifactId>
             <version>${wiremock.version}</version>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.github.jknack</groupId>
-                    <artifactId>handlebars</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.github.jknack</groupId>
