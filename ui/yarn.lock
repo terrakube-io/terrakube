@@ -2589,10 +2589,10 @@
   resolved "https://registry.npmjs.org/@types/ms/-/ms-2.1.0.tgz"
   integrity sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==
 
-"@types/node@*", "@types/node@^25.5.0":
-  version "25.5.0"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.5.0.tgz#5c99f37c443d9ccc4985866913f1ed364217da31"
-  integrity sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==
+"@types/node@*", "@types/node@^25.5.2":
+  version "25.5.2"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.5.2.tgz#94861e32f9ffd8de10b52bbec403465c84fff762"
+  integrity sha512-tO4ZIRKNC+MDWV4qKVZe3Ql/woTnmHDr5JD8UI5hn2pwBrHEwOEMZK7WlNb5RKB6EoJ02gwmQS9OrjuFnZYdpg==
   dependencies:
     undici-types "~7.18.0"
 
@@ -3975,10 +3975,10 @@ dotenv@^16.4.5:
   resolved "https://registry.npmjs.org/dotenv/-/dotenv-16.5.0.tgz"
   integrity sha512-m/C+AwOAr9/W1UOIZUo232ejMNnJAJtYQjUbHoNTBNTJSvqzzDh7vnrei3o3r3m9blf6ZoDkvcw0VmozNRFJxg==
 
-dotenv@^17.4.0:
-  version "17.4.0"
-  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-17.4.0.tgz#9a5de24d7112a889b4b179ffbe83933298c41d37"
-  integrity sha512-kCKF62fwtzwYm0IGBNjRUjtJgMfGapII+FslMHIjMR5KTnwEmBmWLDRSnc3XSNP8bNy34tekgQyDT0hr7pERRQ==
+dotenv@^17.4.1:
+  version "17.4.1"
+  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-17.4.1.tgz#d8e2179fe287365ef3aecb9459668454168eda88"
+  integrity sha512-k8DaKGP6r1G30Lx8V4+pCsLzKr8vLmV2paqEj1Y55GdAgJuIqpRp5FfajGF8KtwMxCz9qJc6wUIJnm053d/WCw==
 
 dunder-proto@^1.0.0, dunder-proto@^1.0.1:
   version "1.0.1"
@@ -7270,17 +7270,17 @@ react-property@2.0.2:
   resolved "https://registry.npmjs.org/react-property/-/react-property-2.0.2.tgz"
   integrity sha512-+PbtI3VuDV0l6CleQMsx2gtK0JZbZKbpdu5ynr+lbsuvtmgbNcS3VM0tuY2QjFNOcWxvXeHjDpy42RO+4U2rug==
 
-react-router-dom@7.13.2:
-  version "7.13.2"
-  resolved "https://registry.yarnpkg.com/react-router-dom/-/react-router-dom-7.13.2.tgz#6582ab2e2f096d19486e854898b719b4efc52524"
-  integrity sha512-aR7SUORwTqAW0JDeiWF07e9SBE9qGpByR9I8kJT5h/FrBKxPMS6TiC7rmVO+gC0q52Bx7JnjWe8Z1sR9faN4YA==
+react-router-dom@7.14.0:
+  version "7.14.0"
+  resolved "https://registry.yarnpkg.com/react-router-dom/-/react-router-dom-7.14.0.tgz#9d2df92ec9ce47e696808dc2a0e0a0c794ab278a"
+  integrity sha512-2G3ajSVSZMEtmTjIklRWlNvo8wICEpLihfD/0YMDxbWK2UyP5EGfnoIn9AIQGnF3G/FX0MRbHXdFcD+rL1ZreQ==
   dependencies:
-    react-router "7.13.2"
+    react-router "7.14.0"
 
-react-router@7.13.2:
-  version "7.13.2"
-  resolved "https://registry.yarnpkg.com/react-router/-/react-router-7.13.2.tgz#bab22c9f96f81759e060a34c04e7527e5f6dbbe1"
-  integrity sha512-tX1Aee+ArlKQP+NIUd7SE6Li+CiGKwQtbS+FfRxPX6Pe4vHOo6nr9d++u5cwg+Z8K/x8tP+7qLmujDtfrAoUJA==
+react-router@7.14.0:
+  version "7.14.0"
+  resolved "https://registry.yarnpkg.com/react-router/-/react-router-7.14.0.tgz#33169c9ac03b298bb51aad13e038ba548c79a862"
+  integrity sha512-m/xR9N4LQLmAS0ZhkY2nkPA1N7gQ5TUVa5n8TgANuDTARbn1gt+zLPXEm7W0XDTbrQ2AJSJKhoa6yx1D8BcpxQ==
   dependencies:
     cookie "^1.0.1"
     set-cookie-parser "^2.6.0"
@@ -8345,10 +8345,10 @@ unrs-resolver@^1.7.11:
     "@unrs/resolver-binding-win32-ia32-msvc" "1.7.11"
     "@unrs/resolver-binding-win32-x64-msvc" "1.7.11"
 
-unzipit@^2.0.0:
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/unzipit/-/unzipit-2.0.0.tgz#9461b6a9b067ed9b13f9eda1bc5b93bc448307fa"
-  integrity sha512-DVeVIWUZCAQPNzm5sB0hpsG1GygTTdBnzNtYYEpInkttx5evkyqRgZi6rTczoySqp8hO5jHVKzrH0f23X8FZLg==
+unzipit@^2.0.1:
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/unzipit/-/unzipit-2.0.1.tgz#44600577794fed7739f601b855d05d9d70b318f5"
+  integrity sha512-o+2dK2LsJCNL99OafsvPGM/z7NpkxOvV+UFE69h7cw+h31tArfX5yP/bPhaBempz6H5swGRdN8m3BSFtz/83Gw==
 
 update-browserslist-db@^1.2.0:
   version "1.2.3"
