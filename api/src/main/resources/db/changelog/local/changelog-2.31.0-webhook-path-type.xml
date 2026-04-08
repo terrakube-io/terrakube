@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-31-0-webhook-path-type" author="cursor">
+        <addColumn tableName="webhook_event">
+            <column name="path_type" type="varchar(32)" defaultValue="REGEX">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <dropDefaultValue tableName="webhook_event" columnName="path_type" columnDataType="varchar(32)"/>
+    </changeSet>
+</databaseChangeLog>

@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
+import io.terrakube.api.rs.vcs.Vcs;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
@@ -29,10 +30,10 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
 public class InactiveJobs implements org.quartz.Job {
 
     private final GitLabWebhookService gitLabWebhookService;
-    JobRepository jobRepository;
-    RedisTemplate redisTemplate;
-    GitHubWebhookService gitHubWebhookService;
-    StepRepository stepRepository;
+    private final JobRepository jobRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final GitHubWebhookService gitHubWebhookService;
+    private final StepRepository stepRepository;
 
     @Transactional
     @Override
@@ -42,47 +43,84 @@ public class InactiveJobs implements org.quartz.Job {
                 JobStatus.running,
                 JobStatus.queue,
                 JobStatus.waitingApproval))) {
+            if (job.getCreatedDate() == null) {
+                log.warn("Skipping inactive job {} because it has no created date", job.getId());
+                continue;
+            }
+
             Date currentTime = new Date(System.currentTimeMillis());
             Date jobExpirationDate = DateUtils.addHours(job.getCreatedDate(), 6);
             log.info("Inactive Job {} should be completed before {}, current time {}", job.getId(), jobExpirationDate, currentTime);
-            if (currentTime.after(jobExpirationDate)) {
-                try {
-                    log.error("Job has been running for more than 6 hours, cancelling running job {}", job.getId());
-                    job.setStatus(JobStatus.failed);
-                    jobRepository.save(job);
-                    redisTemplate.delete(String.valueOf(job.getId()));
-                    log.warn("Cancelling pending steps");
-                    for (Step step : stepRepository.findByJobId(job.getId())) {
-                        if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
-                            step.setStatus(JobStatus.failed);
-                            stepRepository.save(step);
-                        }
-                    }
-                    if (job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.Schedule.name())) {
-                        log.info("No information to update for job", job.getId());
-                        return;
-                    } else {
+            if (!currentTime.after(jobExpirationDate)) {
+                continue;
+            }
 
-                        switch (job.getWorkspace().getVcs().getVcsType()) {
-                            case GITHUB:
-                                log.info("Updating VCS information for GITHUB", job.getId());
-                                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown);
-                                break;
-                            case GITLAB:
-                                log.info("Updating VCS information for GITLAB", job.getId());
-                                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
-                } catch (Exception e) {
-                    log.error(e.getMessage());
-                }
-                log.warn("Closing Job");
+            try {
+                closeExpiredJob(job, jobExecutionContext);
+            } catch (Exception e) {
+                log.error("Failed to close inactive job {}", job.getId(), e);
+            }
+
+            log.warn("Closing Job {}", job.getId());
+        }
+    }
+
+    private void closeExpiredJob(Job job, JobExecutionContext jobExecutionContext) throws Exception {
+        log.error("Job has been running for more than 6 hours, cancelling running job {}", job.getId());
+        jobRepository.updateStatusById(JobStatus.failed.name(), job.getId());
+        redisTemplate.delete(String.valueOf(job.getId()));
+
+        failPendingSteps(job);
+
+        if (job.getWorkspace() == null) {
+            log.warn("Job {} belongs to a deleted or filtered workspace, skipping VCS status update", job.getId());
+            jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
+            return;
+        }
+
+        if (isManualOrScheduledJob(job)) {
+            log.info("No VCS status update required for job {}", job.getId());
+            jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
+            return;
+        }
+
+        Vcs workspaceVcs = job.getWorkspace().getVcs();
+        if (workspaceVcs == null) {
+            log.info("Workspace {} has no VCS configured, skipping VCS status update for job {}",
+                    job.getWorkspace().getId(), job.getId());
+            jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
+            return;
+        }
+
+        switch (workspaceVcs.getVcsType()) {
+            case GITHUB:
+                log.info("Updating VCS information for GITHUB on job {}", job.getId());
+                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                break;
+            case GITLAB:
+                log.info("Updating VCS information for GITLAB on job {}", job.getId());
+                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                break;
+            default:
+                break;
+        }
+
+        jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
+    }
+
+    private void failPendingSteps(Job job) {
+        log.warn("Cancelling pending steps");
+        for (Step step : stepRepository.findByJobId(job.getId())) {
+            if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
+                step.setStatus(JobStatus.failed);
+                stepRepository.save(step);
             }
         }
     }
 
+    private boolean isManualOrScheduledJob(Job job) {
+        return JobVia.CLI.name().equals(job.getVia())
+                || JobVia.UI.name().equals(job.getVia())
+                || JobVia.Schedule.name().equals(job.getVia());
+    }
 }

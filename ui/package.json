@@ -45,7 +45,6 @@
   },
   "scripts": {
     "start": "vite",
-    "poststart": "chmod +x ./env.sh && ./env.sh && cp env-config.js ./public/",
     "build": "vite build",
     "serve": "vite preview --port 3000",
     "test": "jest",
@@ -56,7 +55,8 @@
     "lint:modules:check": "eslint ./src/modules",
     "lint:modules": "eslint --fix ./src/modules",
     "format:modules:check": "prettier ./src/modules --check",
-    "format:modules": "prettier ./src/modules --write"
+    "format:modules": "prettier ./src/modules --write",
+    "prestart": "chmod +x ./env.sh && ./env.sh && cp env-config.js ./public/"
   },
   "eslintConfig": {
     "extends": [

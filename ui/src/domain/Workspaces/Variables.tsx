@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Form,
   Input,
@@ -36,7 +37,7 @@ const VARIABLES_COLUMS = (
       return (
         <div>
           {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
+          {record.sensitive && <Tag>Sensitive</Tag>} {record.incomplete && <Tag color="orange">Incomplete</Tag>}
         </div>
       );
     },
@@ -344,6 +345,9 @@ export const Variables = ({
 
   // Combine Terraform and Environment variables
   const workspaceVariables = [...vars, ...env];
+  const incompleteWorkspaceVariables = workspaceVariables.filter((variable) => {
+    return variable.incomplete;
+  });
 
   // Combine Collection Terraform and Environment variables
   const collectionVariables = [...collectionVars, ...collectionEnvVars];
@@ -361,12 +365,20 @@ export const Variables = ({
             later can also load default values from any *.auto.tfvars files in the configuration.
           </p>
           <p>
-            Sensitive variables are hidden from view in the UI and API, and can't be edited. (To change a sensitive
-            variable, delete and replace it.) Sensitive variables can still appear in Terraform logs if your
-            configuration is designed to output them.
+            Sensitive variables are hidden from view in the UI and API. Saving a new value replaces the previous one.
+            Sensitive variables can still appear in Terraform logs if your configuration is designed to output them.
           </p>
         </Typography.Text>
       </div>
+      {incompleteWorkspaceVariables.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: "16px" }}
+          message="Some sensitive variables are incomplete"
+          description="Complete or delete the highlighted variables before starting a new run."
+        />
+      )}
       <h2>Workspace variables ({workspaceVariables.length})</h2>
       <div>
         <Typography.Text type="secondary" className="App-text">

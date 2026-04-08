@@ -252,6 +252,7 @@ export type VariableAttributes = {
   category: string;
   description: string;
   sensitive: boolean;
+  incomplete: boolean;
 };
 
 export type FlatVariable = {
@@ -385,6 +386,10 @@ export enum WebhookEventType {
   PR_COMMENT = "PR_COMMENT",
   PING = "PING",
 }
+export enum WebhookEventPathType {
+  PATTERN = "PATTERN",
+  REGEX = "REGEX",
+}
 export type WebhookEvent = {
   id: string;
   attributes: WebhookEventAttributes;
@@ -392,6 +397,7 @@ export type WebhookEvent = {
 export type WebhookEventAttributes = {
   branch: string;
   path: string;
+  pathType: WebhookEventPathType;
   templateId: string;
   priority: number;
   event: WebhookEventType;

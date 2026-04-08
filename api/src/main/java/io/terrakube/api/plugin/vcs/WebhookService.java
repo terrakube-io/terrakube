@@ -35,6 +35,8 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class WebhookService {
 
+    private final WebhookPathMatcher webhookPathMatcher = new WebhookPathMatcher();
+
     WebhookRepository webhookRepository;
     WebhookEventRepository webhookEventRepository;
     GitHubWebhookService gitHubWebhookService;
@@ -182,7 +184,15 @@ public class WebhookService {
 
     @Transactional
     public void createOrUpdateWorkspaceWebhook(Webhook webhook) {
-        Workspace workspace = webhook.getWorkspace();
+        Webhook persistedWebhook = webhookRepository.findById(webhook.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Webhook not found"));
+
+        Workspace workspace = persistedWebhook.getWorkspace();
+        if (workspace == null) {
+            log.warn("There is no workspace defined for webhook {}", webhook.getId());
+            throw new IllegalArgumentException("No workspace defined for webhook");
+        }
+
         if (workspace.getVcs() == null) {
             log.warn("There is no VCS defined for workspace {}, skipping webhook creation", workspace.getName());
             throw new IllegalArgumentException("No VCS defined for workspace");
@@ -193,13 +203,13 @@ public class WebhookService {
         Vcs vcs = workspace.getVcs();
         switch (vcs.getVcsType()) {
             case GITHUB:
-                webhookRemoteId = gitHubWebhookService.createOrUpdateWebhook(workspace, webhook);
+                webhookRemoteId = gitHubWebhookService.createOrUpdateWebhook(workspace, persistedWebhook);
                 break;
             case GITLAB:
-                webhookRemoteId = gitLabWebhookService.createOrUpdateWebhook(workspace, webhook);
+                webhookRemoteId = gitLabWebhookService.createOrUpdateWebhook(workspace, persistedWebhook);
                 break;
             case BITBUCKET:
-                webhookRemoteId = bitBucketWebhookService.createOrUpdateWebhook(workspace, webhook);
+                webhookRemoteId = bitBucketWebhookService.createOrUpdateWebhook(workspace, persistedWebhook);
                 break;
             default:
                 break;
@@ -210,7 +220,7 @@ public class WebhookService {
             throw new IllegalArgumentException("Error creating/updating the webhook");
         }
 
-        webhook.setRemoteHookId(webhookRemoteId);
+        persistedWebhook.setRemoteHookId(webhookRemoteId);
     }
 
     @Transactional
@@ -254,16 +264,22 @@ public class WebhookService {
     }
 
     private boolean checkFileChanges(List<String> files, WebhookEvent webhookEvent) {
-        String[] triggeredPath = webhookEvent.getPath().split(",");
-        for (String file : files) {
-            for (int i = 0; i < triggeredPath.length; i++) {
-                if (file.matches(triggeredPath[i])) {
-                    log.info("Changed file {} matches set trigger pattern {}", file, triggeredPath[i]);
-                    return true;
-                }
-            }
+        if (webhookPathMatcher.matchesAny(files, webhookEvent)) {
+            log.info(
+                    "Changed files {} match configured {} webhook paths {}",
+                    files,
+                    webhookPathMatcher.resolvePathType(webhookEvent),
+                    webhookEvent.getPath()
+            );
+            return true;
         }
-        log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
+
+        log.info(
+                "Changed files {} don't match configured {} webhook paths {}",
+                files,
+                webhookPathMatcher.resolvePathType(webhookEvent),
+                webhookEvent.getPath()
+        );
         return false;
     }
 

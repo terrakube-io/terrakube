@@ -13,7 +13,13 @@ type Props = {
 
 export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [followEnabled, setFollowEnabled] = useState(isRunning);
+  const [followEnabled, setFollowEnabled] = useState(true);
+
+  useEffect(() => {
+    if (isRunning) {
+      setFollowEnabled(true);
+    }
+  }, [isRunning]);
 
   useEffect(() => {
     if (followEnabled && containerRef.current) {

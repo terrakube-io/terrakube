@@ -1,21 +1,30 @@
 import axios, { AxiosError, AxiosResponse } from "axios";
 import getUserFromStorage from "./authUser";
 
+type RuntimeEnv = Window["_env_"] & { REACT_APP_TERRAKUBE_SEND_COOKIES?: string };
+
+const runtimeEnv = window._env_ as RuntimeEnv;
+const sendCookiesWithRequests = runtimeEnv.REACT_APP_TERRAKUBE_SEND_COOKIES?.trim().toLowerCase() === "true";
+
 const axiosInstance = axios.create({
   baseURL: window._env_.REACT_APP_TERRAKUBE_API_URL,
+  withCredentials: sendCookiesWithRequests,
 });
 
 export const axiosClient = axios.create({
   baseURL: window._env_.REACT_APP_TERRAKUBE_API_URL,
+  withCredentials: sendCookiesWithRequests,
 });
 
 export const axiosGraphQL = axios.create({
   baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin + "/graphql/api/v1",
+  withCredentials: sendCookiesWithRequests,
 });
 
 // Axios instance for Terraform Registry proxy (without /api/v1 prefix)
 export const axiosRegistry = axios.create({
   baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+  withCredentials: sendCookiesWithRequests,
 });
 
 // Shared request interceptor that attaches the Bearer token
@@ -65,6 +74,13 @@ export function getErrorMessage(error: any): string {
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 403) {
       return "You do not have the required permissions to perform this action.";
+    }
+    if (error.response?.status === 429) {
+      if (typeof error.response.data === "string" && error.response.data.trim() !== "") {
+        return error.response.data;
+      }
+
+      return "The upstream API rate limit was reached. Please wait a moment and try again.";
     }
     if (error.response?.status === 404) {
       return "The requested resource could not be found.";

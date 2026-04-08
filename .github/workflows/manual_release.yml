@@ -1,0 +1,233 @@
+name: Manual Release to GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override (for example: 1.2.3 or v1.2.3)"
+        required: false
+        type: string
+      bump:
+        description: "Semver bump used when version is not provided"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve-version.outputs.version }}
+    steps:
+      - name: Resolve release version
+        id: resolve-version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+
+          normalize_version() {
+            echo "$1" | sed 's/^v//'
+          }
+
+          validate_version() {
+            [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          }
+
+          if [ -n "${INPUT_VERSION}" ]; then
+            CANDIDATE_VERSION="$(normalize_version "${INPUT_VERSION}")"
+            if ! validate_version "${CANDIDATE_VERSION}"; then
+              echo "Invalid version '${INPUT_VERSION}'. Expected semver format like 1.2.3 or v1.2.3"
+              exit 1
+            fi
+            NEXT_VERSION="${CANDIDATE_VERSION}"
+          else
+            LATEST_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+            if [ -z "${LATEST_TAG}" ] || [ "${LATEST_TAG}" = "null" ]; then
+              LATEST_VERSION="0.0.0"
+            else
+              LATEST_VERSION="$(normalize_version "${LATEST_TAG}")"
+            fi
+
+            if ! validate_version "${LATEST_VERSION}"; then
+              echo "Latest release tag '${LATEST_TAG}' is not semver-compatible. Use the version input explicitly."
+              exit 1
+            fi
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST_VERSION}"
+            case "${INPUT_BUMP}" in
+              major)
+                NEXT_VERSION="$((MAJOR + 1)).0.0"
+                ;;
+              minor)
+                NEXT_VERSION="${MAJOR}.$((MINOR + 1)).0"
+                ;;
+              patch)
+                NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+                ;;
+              *)
+                echo "Unsupported bump type: ${INPUT_BUMP}"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "Selected version: ${NEXT_VERSION}"
+          echo "version=${NEXT_VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build-and-push-images:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: ui
+            image_name: terrakube-ui
+            type: ui
+          - component: api
+            module: api
+            local_image: api-server
+            image_name: terrakube-api-server
+            type: maven
+          - component: registry
+            module: registry
+            local_image: open-registry
+            image_name: terrakube-open-registry
+            type: maven
+          - component: executor
+            module: executor
+            local_image: executor
+            image_name: terrakube-executor
+            type: executor
+    env:
+      VERSION: ${{ needs.prepare-release.outputs.version }}
+      OWNER_LC: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Convert owner to lowercase
+        run: echo "OWNER_LC=${OWNER_LC,,}" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node 22
+        if: matrix.type == 'ui'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Build and push UI image
+        if: matrix.type == 'ui'
+        working-directory: ./ui
+        run: |
+          docker build \
+            --build-arg REACT_APP_TERRAKUBE_VERSION=v${VERSION} \
+            -t ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:${VERSION} \
+            -t ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:latest \
+            --push .
+
+      - name: Cache Maven packages
+        if: matrix.type != 'ui'
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
+
+      - name: Set up JDK 25
+        if: matrix.type != 'ui'
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'liberica'
+
+      - name: Update POM version
+        if: matrix.type != 'ui'
+        run: mvn versions:set-property -Dproperty=revision -DnewVersion=${VERSION} -DgenerateBackupPoms=false
+
+      - name: Build component image with Maven
+        if: matrix.type == 'maven' || matrix.type == 'executor'
+        run: mvn -pl "${{ matrix.module }}" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true
+
+      - name: Tag and push component image
+        if: matrix.type == 'maven'
+        run: |
+          IMAGE_ID="$(docker images ${{ matrix.local_image }}:${VERSION} -q)"
+          docker tag "${IMAGE_ID}" ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:${VERSION}
+          docker tag "${IMAGE_ID}" ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:latest
+          docker push ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:${VERSION}
+          docker push ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:latest
+
+      - name: Tag and push Executor image
+        if: matrix.type == 'executor'
+        run: |
+          IMAGE_ID="$(docker images executor:${VERSION} -q)"
+          docker run --user="root" --entrypoint launcher "${IMAGE_ID}" "apt-get update && apt-get install git jq curl -y"
+          docker commit --change='ENTRYPOINT ["/cnb/process/web"]' --change='USER cnb' "$(docker ps -lq)" executortemp
+
+          EXECUTOR_IMAGE_ID="$(docker images executortemp -q)"
+          docker tag "${EXECUTOR_IMAGE_ID}" ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:${VERSION}
+          docker tag "${EXECUTOR_IMAGE_ID}" ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:latest
+          docker push ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:${VERSION}
+          docker push ${REGISTRY}/${OWNER_LC}/${{ matrix.image_name }}:latest
+
+  create-release:
+    needs:
+      - prepare-release
+      - build-and-push-images
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare-release.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Create or update GitHub release
+        run: |
+          set -euo pipefail
+
+          TAG="v${VERSION}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          METADATA_FILE="${RUNNER_TEMP}/release-metadata.json"
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${TAG}" \
+            -f target_commitish="${GITHUB_SHA}" \
+            > "${METADATA_FILE}"
+
+          RELEASE_TITLE="$(jq -r '.name // empty' "${METADATA_FILE}")"
+          jq -r '.body // empty' "${METADATA_FILE}" > "${NOTES_FILE}"
+
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_TITLE:-${TAG}}" \
+              --notes-file "${NOTES_FILE}"
+          else
+            gh release create "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "${RELEASE_TITLE:-${TAG}}" \
+              --notes-file "${NOTES_FILE}"
+          fi

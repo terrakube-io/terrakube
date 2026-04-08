@@ -3,7 +3,10 @@ package io.terrakube.api.repository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import java.util.List;
@@ -26,4 +29,8 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     Optional<Job> findFirstByWorkspaceAndAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
+
+    @Modifying(flushAutomatically = true)
+    @Query(value = "update job set status = :status where id = :jobId", nativeQuery = true)
+    int updateStatusById(@Param("status") String status, @Param("jobId") int jobId);
 }

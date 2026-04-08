@@ -7,6 +7,8 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
+import io.terrakube.api.plugin.variable.IncompleteVariableException;
+import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -70,6 +72,7 @@ public class ScheduleJob implements org.quartz.Job {
     PrCommentService prCommentService;
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
+    WorkspaceVariableValidationService workspaceVariableValidationService;
 
 
     @Transactional
@@ -231,6 +234,9 @@ public class ScheduleJob implements org.quartz.Job {
 
     private void executePendingJob(Job job) {
         job = tclService.initJobConfiguration(job);
+        if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
+            return;
+        }
 
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
         if (flow.isPresent()) {
@@ -387,6 +393,9 @@ public class ScheduleJob implements org.quartz.Job {
 
     private void executeApprovedJobs(Job job) {
         job = tclService.initJobConfiguration(job);
+        if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
+            return;
+        }
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
         if (flow.isPresent()) {
             log.info("Execute command: {} \n {}", flow.get().getType(), flow.get().getCommands());
@@ -410,6 +419,32 @@ public class ScheduleJob implements org.quartz.Job {
                 step.setStatus(jobStatus);
                 stepRepository.save(step);
             }
+        }
+    }
+
+    private boolean failJobIfWorkspaceVariablesAreIncomplete(Job job) {
+        try {
+            workspaceVariableValidationService.validateWorkspaceVariables(job.getWorkspace());
+            return false;
+        } catch (IncompleteVariableException exception) {
+            String failureMessage = workspaceVariableValidationService.buildIncompleteVariableMessage(job.getWorkspace());
+            log.warn("Failing job {} because of incomplete variables", job.getId(), exception);
+            job.setStatus(JobStatus.failed);
+            job.setOutput(failureMessage);
+            jobRepository.save(job);
+
+            try {
+                String stepId = tclService.getCurrentStepId(job);
+                Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
+                step.setName(WorkspaceVariableValidationService.INCOMPLETE_VARIABLE_STEP_NAME);
+                stepRepository.save(step);
+            } catch (Exception stepException) {
+                log.warn("Unable to update step for job {}", job.getId(), stepException);
+            }
+
+            updateJobStepsWithStatus(job.getId(), JobStatus.failed);
+            updateJobStatusOnVcs(job, JobStatus.failed);
+            return true;
         }
     }
 

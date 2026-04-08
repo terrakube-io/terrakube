@@ -7,9 +7,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.workspace.Workspace;
-
 import jakarta.persistence.*;
-
 import java.sql.Types;
 import java.util.UUID;
 
@@ -45,7 +43,16 @@ public class Variable {
     @Column(name="hcl")
     private boolean hcl;
 
+    @Column(name="incomplete")
+    private boolean incomplete;
+
     @ManyToOne
     private Workspace workspace;
+
+    @PrePersist
+    @PreUpdate
+    private void syncIncompleteFlag() {
+        incomplete = sensitive && (value == null || value.isBlank());
+    }
 }
 
