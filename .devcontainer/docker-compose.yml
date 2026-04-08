@@ -251,6 +251,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces/terrakube:cached
+      - 'maven_data:/home/vscode/.m2'
     networks:
       - terrakube-network
   terrakube-dex:
@@ -333,6 +334,7 @@ services:
 volumes:
   minio_data:
   redis_data:
+  maven_data:
   postgresql_data:
     driver: local
 networks:
