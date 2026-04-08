@@ -49,5 +49,6 @@ COPY rootCA.pem /usr/local/share/ca-certificates/root.crt
 
 RUN update-ca-certificates
 
+RUN mkdir -p /home/vscode/.m2 && chown -R vscode:vscode /home/vscode/.m2
 
 ENTRYPOINT ["sleep", "infinity"]
