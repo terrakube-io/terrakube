@@ -4,7 +4,7 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
             http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
-    <changeSet id="variable-incomplete-field" author="arunesh">
+    <changeSet id="variable-incomplete-field" author="arunesh90">
         <addColumn tableName="variable">
             <column name="incomplete" type="boolean" defaultValueBoolean="false">
                 <constraints nullable="true"/>
@@ -12,14 +12,14 @@
         </addColumn>
     </changeSet>
 
-    <changeSet id="variable-incomplete-field-update-existing" author="arunesh">
+    <changeSet id="variable-incomplete-field-update-existing" author="arunesh90">
         <update tableName="variable">
             <column name="incomplete" valueBoolean="false"/>
             <where>incomplete IS NULL</where>
         </update>
     </changeSet>
 
-    <changeSet id="variable-incomplete-field-not-null" author="arunesh">
+    <changeSet id="variable-incomplete-field-not-null" author="arunesh90">
         <addNotNullConstraint tableName="variable" columnName="incomplete" columnDataType="boolean"/>
     </changeSet>
 </databaseChangeLog>
