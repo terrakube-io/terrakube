@@ -2,8 +2,10 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.terraform.TerraformClient;
+import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
+import org.apache.commons.text.TextStringBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -23,14 +25,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
 public class PlanStructuredOutputService {
 
-    private static final String TERRAFORM_BINARY = "terraform";
-    private static final String TERRAFORM_DIRECTORY = "/.terraform-spring-boot/terraform/";
-    private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
@@ -40,14 +41,17 @@ public class PlanStructuredOutputService {
     private final WorkspaceSecurity workspaceSecurity;
     private final ObjectMapper objectMapper;
     private final String terrakubeApiUrl;
+    TerraformClient terraformClient;
 
     public PlanStructuredOutputService(
             WorkspaceSecurity workspaceSecurity,
             ObjectMapper objectMapper,
-            @Value("${io.terrakube.api.url}") String terrakubeApiUrl) {
+            @Value("${io.terrakube.api.url}") String terrakubeApiUrl,
+            TerraformClient terraformClient) {
         this.workspaceSecurity = workspaceSecurity;
         this.objectMapper = objectMapper;
         this.terrakubeApiUrl = terrakubeApiUrl;
+        this.terraformClient = terraformClient;
     }
 
     public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir) {
@@ -67,29 +71,25 @@ public class PlanStructuredOutputService {
         }
     }
 
-    String getPlanAsJson(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException {
-        ProcessBuilder processBuilder = new ProcessBuilder(
-                resolveTerraformBinary(terraformJob),
-                "show",
-                "-json",
-                TERRAFORM_PLAN_FILE);
-        processBuilder.directory(terraformWorkingDir);
-        processBuilder.redirectErrorStream(true);
-        applyExecutionEnvironment(processBuilder, terraformJob, terraformWorkingDir);
-        Process process = processBuilder.start();
+    String getPlanAsJson(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+        TextStringBuilder planOutput = new TextStringBuilder();
+        TextStringBuilder planErrorOutput = new TextStringBuilder();
 
-        String commandOutput;
-        try (InputStream processOutput = process.getInputStream()) {
-            commandOutput = new String(processOutput.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        TerraformProcessData terraformProcessData = TerraformProcessData
+                .builder()
+                .terraformVersion(terraformJob.getTerraformVersion())
+                .workingDirectory(terraformWorkingDir)
+                .detailExitCode(true)
+                .build();
 
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            log.warn("terraform show -json returned {}: {}", exitCode, commandOutput);
+        boolean success = terraformClient.showPlanJson(terraformProcessData, (Consumer<String>) planOutput::append, (Consumer<String>) planErrorOutput::append).get();
+
+        if (!success) {
+            log.warn("Unable to get plan json for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
             return null;
         }
 
-        return commandOutput;
+        return planOutput.toString();
     }
 
     List<Map<String, Object>> buildChangesFromPlanJson(String json) throws IOException {
@@ -224,51 +224,6 @@ public class PlanStructuredOutputService {
         return new HashMap<>();
     }
 
-    private void applyExecutionEnvironment(ProcessBuilder processBuilder, TerraformJob terraformJob,
-            File terraformWorkingDir) {
-        processBuilder.environment().put("TF_IN_AUTOMATION", "true");
-        processBuilder.environment().putAll(loadTempEnvironmentVariables(terraformWorkingDir));
-
-        if (terraformJob.getTerraformVersion() == null || terraformJob.getTerraformVersion().isBlank()) {
-            return;
-        }
-
-        String terraformPath = FileUtils.getUserDirectoryPath() + TERRAFORM_DIRECTORY + terraformJob.getTerraformVersion();
-        String currentPath = processBuilder.environment().get("PATH");
-        if (currentPath == null || currentPath.isBlank()) {
-            processBuilder.environment().put("PATH", terraformPath);
-            return;
-        }
-
-        processBuilder.environment().put("PATH", terraformPath + File.pathSeparator + currentPath);
-    }
-
-    private Map<String, String> loadTempEnvironmentVariables(File terraformWorkingDir) {
-        Map<String, String> environmentVariables = new HashMap<>();
-        File tempEnvironmentFile = new File(terraformWorkingDir, ".terrakube_temp_env");
-        if (!tempEnvironmentFile.exists()) {
-            return environmentVariables;
-        }
-
-        try {
-            List<String> lines = FileUtils.readLines(tempEnvironmentFile, StandardCharsets.UTF_8);
-            for (String line : lines) {
-                int separatorIndex = line.indexOf('=');
-                if (separatorIndex <= 0) {
-                    continue;
-                }
-
-                String key = line.substring(0, separatorIndex);
-                String value = line.substring(separatorIndex + 1);
-                environmentVariables.put(key, value);
-            }
-        } catch (IOException exception) {
-            log.warn("Unable to load temporary environment variables from {}", tempEnvironmentFile.getAbsolutePath(),
-                    exception);
-        }
-
-        return environmentVariables;
-    }
 
     private String readResponseBody(HttpURLConnection connection) throws IOException {
         InputStream stream = connection.getErrorStream();
@@ -283,23 +238,6 @@ public class PlanStructuredOutputService {
         try (InputStream responseStream = stream) {
             return new String(responseStream.readAllBytes(), StandardCharsets.UTF_8);
         }
-    }
-
-    private String resolveTerraformBinary(TerraformJob terraformJob) {
-        if (terraformJob.getTerraformVersion() == null || terraformJob.getTerraformVersion().isBlank()) {
-            return TERRAFORM_BINARY;
-        }
-
-        File terraformBinary = new File(
-                FileUtils.getUserDirectoryPath() + TERRAFORM_DIRECTORY + terraformJob.getTerraformVersion() + "/terraform");
-
-        if (terraformBinary.exists() && terraformBinary.canExecute()) {
-            return terraformBinary.getAbsolutePath();
-        }
-
-        log.warn("Terraform binary not found at {}. Falling back to PATH resolution.",
-                terraformBinary.getAbsolutePath());
-        return TERRAFORM_BINARY;
     }
 
     private String normalizeAction(List<String> actions) {
