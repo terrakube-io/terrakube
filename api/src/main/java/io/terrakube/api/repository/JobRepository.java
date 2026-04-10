@@ -31,6 +31,6 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
 
     @Modifying(flushAutomatically = true)
-    @Query(value = "update job set status = :status where id = :jobId", nativeQuery = true)
-    int updateStatusById(@Param("status") String status, @Param("jobId") int jobId);
+    @Query("update job j set j.status = :status where j.id = :jobId")
+    int updateStatusById(@Param("status") JobStatus status, @Param("jobId") int jobId);
 }

@@ -67,7 +67,7 @@ public class InactiveJobs implements org.quartz.Job {
 
     private void closeExpiredJob(Job job, JobExecutionContext jobExecutionContext) throws Exception {
         log.error("Job has been running for more than 6 hours, cancelling running job {}", job.getId());
-        jobRepository.updateStatusById(JobStatus.failed.name(), job.getId());
+        jobRepository.updateStatusById(JobStatus.failed, job.getId());
         redisTemplate.delete(String.valueOf(job.getId()));
 
         failPendingSteps(job);
