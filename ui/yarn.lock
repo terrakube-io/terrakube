@@ -7229,10 +7229,10 @@ react-is@^18.2.0, react-is@^18.3.1:
   resolved "https://registry.npmjs.org/react-is/-/react-is-18.3.1.tgz"
   integrity sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==
 
-react-js-cron@^5.2.0:
-  version "5.2.0"
-  resolved "https://registry.npmjs.org/react-js-cron/-/react-js-cron-5.2.0.tgz"
-  integrity sha512-+Mxm3cS7qmIoAIz7NVY27jvsJKNZ4tx+H/nNtMUJW4DcKR7jUIL1GP0jOD79K5j86Dq8jvShKJMh30+c8bmVtA==
+react-js-cron@^6.0.2:
+  version "6.0.2"
+  resolved "https://registry.yarnpkg.com/react-js-cron/-/react-js-cron-6.0.2.tgz#2c1f43dc3f25df0d382c0698daefab66109c8cff"
+  integrity sha512-JLrOujYZhfQqnIZk5KGkkzUdK+QuSJBdGS9xRnifdWg8FMgRLod1INnU4vsQxcdjYCylEF6oVfh5WnRDhZ58+Q==
 
 react-markdown@10.1.0:
   version "10.1.0"
