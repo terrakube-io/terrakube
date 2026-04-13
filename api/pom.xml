@@ -19,7 +19,7 @@
         <handlebars.version>4.3.1</handlebars.version>
         <azure.version>6.2.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
-        <msal4j.version>1.24.0</msal4j.version>
+        <msal4j.version>1.24.1</msal4j.version>
         <lombok.version>1.18.44</lombok.version>
         <wiremock.version>4.2.1</wiremock.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
@@ -28,7 +28,7 @@
         <postgresql.version>42.7.10</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.42.29</aws-sdk.version>
+        <aws-sdk.version>2.42.33</aws-sdk.version>
         <gcp-libraries-bom.version>26.79.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.4.1</jedis.version>
