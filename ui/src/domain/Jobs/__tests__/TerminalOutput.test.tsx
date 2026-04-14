@@ -41,10 +41,10 @@ describe("TerminalOutput", () => {
     expect(screen.getByText("Raw")).toBeInTheDocument();
   });
 
-  it("defaults Follow OFF when not running", () => {
+  it("defaults Follow ON when not running", () => {
     render(<TerminalOutput {...defaultProps} isRunning={false} />);
     const followBtn = screen.getByText("Follow").closest("button");
-    expect(followBtn?.className).not.toContain("terminal-toolbar-btn--active");
+    expect(followBtn?.className).toContain("terminal-toolbar-btn--active");
   });
 
   it("defaults Follow ON when running", () => {
@@ -56,13 +56,13 @@ describe("TerminalOutput", () => {
   it("toggles Follow on click", () => {
     render(<TerminalOutput {...defaultProps} isRunning={false} />);
     const followBtn = screen.getByText("Follow").closest("button")!;
-    expect(followBtn.className).not.toContain("terminal-toolbar-btn--active");
-
-    fireEvent.click(followBtn);
     expect(followBtn.className).toContain("terminal-toolbar-btn--active");
 
     fireEvent.click(followBtn);
     expect(followBtn.className).not.toContain("terminal-toolbar-btn--active");
+
+    fireEvent.click(followBtn);
+    expect(followBtn.className).toContain("terminal-toolbar-btn--active");
   });
 
   it("copies stripped text to clipboard", async () => {

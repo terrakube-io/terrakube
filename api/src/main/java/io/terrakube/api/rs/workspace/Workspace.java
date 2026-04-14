@@ -141,7 +141,7 @@ public class Workspace extends GenericAuditFields {
     @OneToOne
     private Agent agent;
     
-    @OneToOne(mappedBy = "workspace", fetch = FetchType.LAZY)
+    @OneToOne(mappedBy = "workspace", fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private Webhook webhook;
 
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)

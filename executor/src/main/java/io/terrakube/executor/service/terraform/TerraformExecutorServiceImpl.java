@@ -48,13 +48,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     boolean enableColorOutput;
     ProcessLogs logsService;
     int redisTimeout;
+    PlanStructuredOutputService planStructuredOutputService;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
         this.redisTemplate = redisTemplate;
         this.logsService = logsService;
+        this.planStructuredOutputService = planStructuredOutputService;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
     }
@@ -123,8 +125,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, workingDirectory);
             boolean executionPlan = false;
+            boolean planCommandExecuted = false;
             int exitCode = 0;
-            boolean scriptBeforeSuccessPlan;
             boolean scriptAfterSuccessPlan;
 
             Consumer<String> planOutput = LogsConsumer.builder()
@@ -135,36 +137,39 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     .lineNumber(new AtomicInteger(0))
                     .build();
 
-            terraformClient.setRedirectErrorStream(true);
-            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, planOutput);
-            executeTerraformInit(
-                    terraformJob,
-                    terraformWorkingDir,
-                    planOutput,
-                    null);
+            boolean initSuccessful = prepareTerraformOperation(terraformJob, terraformWorkingDir, planOutput);
 
-            scriptBeforeSuccessPlan = executePreOperationScripts(terraformJob, terraformWorkingDir, planOutput);
+            if (initSuccessful) {
+                boolean scriptBeforeSuccessPlan = executePreOperationScripts(terraformJob, terraformWorkingDir, planOutput);
 
-            showTerraformMessage(terraformJob, "PLAN", planOutput);
+                showTerraformMessage(terraformJob, "PLAN", planOutput);
 
-            if (scriptBeforeSuccessPlan) {
-                if (isDestroy) {
-                    log.warn("Executor running a plan to destroy resources...");
-                    exitCode = terraformClient.planDestroyDetailExitCode(
-                            getTerraformProcessData(terraformJob, terraformWorkingDir),
-                            planOutput,
-                            null).get();
+                if (scriptBeforeSuccessPlan) {
+                    planCommandExecuted = true;
+                    if (isDestroy) {
+                        log.warn("Executor running a plan to destroy resources...");
+                        exitCode = terraformClient.planDestroyDetailExitCode(
+                                getTerraformProcessData(terraformJob, terraformWorkingDir),
+                                planOutput,
+                                null).get();
+                    } else {
+                        exitCode = terraformClient.planDetailExitCode(
+                                getTerraformProcessData(terraformJob, terraformWorkingDir),
+                                planOutput,
+                                null).get();
+                    }
                 } else {
-                    exitCode = terraformClient.planDetailExitCode(
-                            getTerraformProcessData(terraformJob, terraformWorkingDir),
-                            planOutput,
-                            null).get();
+                    exitCode = 1;
+                    executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, planOutput);
                 }
+            } else {
+                exitCode = 1;
+                executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, planOutput);
             }
 
-            if (exitCode != 1 || terraformJob.isIgnoreError()) {
+            if (planCommandExecuted && (exitCode != 1 || terraformJob.isIgnoreError())) {
                 executionPlan = true;
-            } else {
+            } else if (planCommandExecuted) {
                 executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, planOutput);
             }
 
@@ -178,6 +183,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
                     : "");
+            if (executionPlan) {
+                planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir);
+            }
             result.setPlan(true);
             result.setExitCode(exitCode);
         } catch (IOException | ExecutionException | InterruptedException exception) {
@@ -207,35 +215,29 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             HashMap<String, String> terraformParameters = getWorkspaceParameters(terraformJob.getVariables());
 
             boolean execution = false;
-            boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
-            terraformClient.setRedirectErrorStream(true);
-            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, applyOutput);
-            executeTerraformInit(
-                    terraformJob,
-                    terraformWorkingDir,
-                    applyOutput,
-                    null);
+            boolean initSuccessful = prepareTerraformOperation(terraformJob, terraformWorkingDir, applyOutput);
 
-            scriptBeforeSuccess = executePreOperationScripts(terraformJob, terraformWorkingDir, applyOutput);
+            if (initSuccessful) {
+                boolean scriptBeforeSuccess = executePreOperationScripts(terraformJob, terraformWorkingDir, applyOutput);
 
-            showTerraformMessage(terraformJob, "APPLY", applyOutput);
+                showTerraformMessage(terraformJob, "APPLY", applyOutput);
 
-            if (scriptBeforeSuccess) {
-                TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDir);
-                terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
-                        terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
-                        terraformWorkingDir) ? new HashMap<>() : terraformParameters));
-                execution = terraformClient.apply(
-                        terraformProcessData,
-                        applyOutput,
-                        null).get();
+                if (scriptBeforeSuccess) {
+                    TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDir);
+                    terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
+                            terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
+                            terraformWorkingDir) ? new HashMap<>() : terraformParameters));
+                    execution = terraformClient.apply(
+                            terraformProcessData,
+                            applyOutput,
+                            null).get();
 
-                handleTerraformStateChange(terraformJob, terraformWorkingDir);
-
+                    handleTerraformStateChange(terraformJob, terraformWorkingDir);
+                }
             }
 
-            if(!execution){
+            if (!execution) {
                 executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, applyOutput);
             }
 
@@ -268,27 +270,26 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     .build();
 
             boolean execution = false;
-            boolean scriptBeforeSuccess;
             boolean scriptAfterSuccess;
-            terraformClient.setRedirectErrorStream(true);
-            boolean scriptBeforeInitSuccess = executePreInitScripts(terraformJob, terraformWorkingDir, outputDestroy);
-            executeTerraformInit(
-                    terraformJob,
-                    terraformWorkingDir,
-                    outputDestroy,
-                    null);
+            boolean initSuccessful = prepareTerraformOperation(terraformJob, terraformWorkingDir, outputDestroy);
 
-            scriptBeforeSuccess = executePreOperationScripts(terraformJob, terraformWorkingDir, outputDestroy);
+            if (initSuccessful) {
+                boolean scriptBeforeSuccess = executePreOperationScripts(terraformJob, terraformWorkingDir, outputDestroy);
 
-            showTerraformMessage(terraformJob, "DESTROY", outputDestroy);
+                showTerraformMessage(terraformJob, "DESTROY", outputDestroy);
 
-            if (scriptBeforeSuccess) {
-                execution = terraformClient.destroy(
-                        getTerraformProcessData(terraformJob, terraformWorkingDir),
-                        outputDestroy,
-                        null).get();
+                if (scriptBeforeSuccess) {
+                    execution = terraformClient.destroy(
+                            getTerraformProcessData(terraformJob, terraformWorkingDir),
+                            outputDestroy,
+                            null).get();
 
-                handleTerraformStateChange(terraformJob, terraformWorkingDir);
+                    handleTerraformStateChange(terraformJob, terraformWorkingDir);
+                }
+            }
+
+            if (!execution) {
+                executeOnFailureOperationScripts(terraformJob, terraformWorkingDir, outputDestroy);
             }
 
             log.warn("Terraform destroy Executed Successfully: {}", execution);
@@ -451,8 +452,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return error;
     }
 
-    private String executeTerraformInit(TerraformJob terraformJob, File workingDirectory, Consumer<String> output,
-                                        Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
+    private boolean prepareTerraformOperation(TerraformJob terraformJob, File workingDirectory, Consumer<String> output)
+            throws IOException, ExecutionException, InterruptedException {
+        terraformClient.setRedirectErrorStream(true);
+
+        if (!executePreInitScripts(terraformJob, workingDirectory, output)) {
+            log.warn("Skipping terraform init because before-init scripts failed for Job {}", terraformJob.getJobId());
+            return false;
+        }
+
+        return executeTerraformInit(terraformJob, workingDirectory, output, output);
+    }
+
+    private boolean executeTerraformInit(TerraformJob terraformJob, File workingDirectory, Consumer<String> output,
+                                         Consumer<String> errorOutput) throws IOException, ExecutionException, InterruptedException {
         if (terraformJob.isShowHeader()) {
             initBanner(terraformJob, output);
         }
@@ -460,19 +473,21 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, workingDirectory);
         terraformProcessData.setTerraformEnvironmentVariables(terraformProcessData.getTerraformEnvironmentVariables());
         terraformProcessData.setTerraformVariables(new HashMap<>());
+        boolean initSuccessful;
 
         if (terraformJob.isShowHeader()) {
-            terraformClient.init(terraformProcessData, output, errorOutput).get();
+            initSuccessful = Boolean.TRUE.equals(terraformClient.init(terraformProcessData, output, errorOutput).get());
         } else {
-            terraformClient.init(terraformProcessData, s -> {
+            initSuccessful = Boolean.TRUE.equals(terraformClient.init(terraformProcessData, s -> {
                 log.info(s);
             }, s -> {
                 log.info(s);
-            }).get();
+            }).get());
         }
 
+        log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         Thread.sleep(5000);
-        return terraformProcessData.getTerraformBackendConfigFileName();
+        return initSuccessful;
     }
 
     private HashMap<String, String> getWorkspaceParameters(HashMap<String, String> parameters) {

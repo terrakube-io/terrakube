@@ -25,6 +25,22 @@ public class ImporterTests extends ServerApplicationTests {
     }
 
     @Test
+    void forbiddenGetImporterWorkspaceVarsets() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .header("X-TFC-Url", "https://fake.com")
+                .header("X-TFC-Token", "12345")
+                .header("Content-Type", "application/json")
+                .when()
+                .get("/importer/tfcloud/workspaces/ws-123/varsets")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
     void forbiddenPostImporterWorkspaces() {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))

@@ -12,6 +12,7 @@ Define the following environment variables in your local machine:
 |REACT_CONFIG_REDIRECT        | Redirct URL. Example: http://localhost:3000                          |
 |REACT_CONFIG_REGISTRY_URI    | Terrakube Registry url. Example: https://someurl/open-registry/      |
 |REACT_CONFIG_SCOPE           | Dex Scope (email openid profile offline_access groups)               |
+|REACT_CONFIG_TERRAKUBE_SEND_COOKIES | Send browser cookies with API requests when `true`            |
 
 Run the script to generate .env file in your local
 
@@ -28,6 +29,7 @@ REACT_APP_AUTHORITY=https://dexUrl.com
 REACT_APP_REDIRECT_URI=http://localhost:3000
 REACT_APP_REGISTRY_URI=https://registryUrl.com
 REACT_APP_SCOPE=email openid profile offline_access groups
+REACT_APP_TERRAKUBE_SEND_COOKIES=false
 ```
 
 > Values are only examples
@@ -82,6 +84,7 @@ window._env_ = {
   REACT_APP_REDIRECT_URI: "https://3000-azbuilder-terrakube-c3n4h1c0xul.ws-us88.gitpod.io",
   REACT_APP_REGISTRY_URI: "https://8075-azbuilder-terrakube-c3n4h1c0xul.ws-us88.gitpod.io",
   REACT_APP_SCOPE: "email openid profile offline_access groups",
+  REACT_APP_TERRAKUBE_SEND_COOKIES: "false",
 }
 
 ```

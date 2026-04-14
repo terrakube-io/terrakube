@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Duration;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 
+import io.netty.channel.ChannelOption;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -44,24 +47,43 @@ public class PersistentExecutorService {
             this.webClientBuilder = webClientBuilder;
     }
 
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
+
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
+        HttpClient httpClient = HttpClient.create()
+                .proxyWithSystemProperties()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MS)
+                .responseTimeout(RESPONSE_TIMEOUT);
+
         WebClient webClient = webClientBuilder
-                .clientConnector(
-                        new ReactorClientHttpConnector(
-                                HttpClient.create().proxyWithSystemProperties()))
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
+
+        String executorUrlForRequest;
+        try {
+            executorUrlForRequest = getExecutorUrl(job);
+        } catch (URISyntaxException e) {
+            throw new ExecutionException(e);
+        }
 
         ResponseEntity<ExecutorContext> response = null;
         try {
             response = webClient.post()
-                    .uri(getExecutorUrl(job))
+                    .uri(executorUrlForRequest)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(executorContext)
                     .retrieve()
                     .toEntity(ExecutorContext.class)
                     .block();
         } catch (Exception ex) {
-            throw new ExecutionException(ex);
+            String hint = "";
+            if (ex instanceof WebClientRequestException) {
+                hint = String.format(
+                        " Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).",
+                        executorUrlForRequest);
+            }
+            throw new ExecutionException(new Throwable(ex.getMessage() + hint, ex));
         }
 
         log.debug("Sending Job: /n {}", executorContext.toBuilder()

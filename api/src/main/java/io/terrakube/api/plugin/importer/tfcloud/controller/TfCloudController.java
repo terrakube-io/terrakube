@@ -2,12 +2,14 @@ package io.terrakube.api.plugin.importer.tfcloud.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import io.terrakube.api.plugin.importer.tfcloud.WorkspaceImport;
 import io.terrakube.api.plugin.importer.tfcloud.WorkspaceImportRequest;
 import io.terrakube.api.plugin.importer.tfcloud.services.WorkspaceService;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +21,7 @@ public class TfCloudController {
 
     private final WorkspaceService service;
     private static final String INVALID_URL_MESSAGE = "Invalid Importer URL, only approved URL are allowed please check with your Terrakube admin";
+    private static final String RATE_LIMIT_MESSAGE = "Terraform Cloud API rate limit exceeded. Please wait a moment and try again.";
 
     public TfCloudController(WorkspaceService service) {
         this.service = service;
@@ -41,6 +44,34 @@ public class TfCloudController {
 
     }
 
+    @GetMapping("/workspaces/{workspaceId}/varsets")
+    public ResponseEntity<?> getWorkspaceVarsets(@RequestHeader("X-TFC-Url") String apiUrl,
+            @RequestHeader("X-TFC-Token") String apiToken,
+            @PathVariable String workspaceId) {
+        log.info("Allowed URLs getWorkspaceVarsets: {}", allowedUrls);
+        String[] listUrls = this.allowedUrls.split(",");
+        for (String url : listUrls) {
+            if (apiUrl.startsWith(url)) {
+                return ResponseEntity.ok(service.getWorkspaceVarsets(apiToken, apiUrl, workspaceId));
+            }
+        }
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(INVALID_URL_MESSAGE);
+    }
+
+    @GetMapping("/workspaces/{workspaceId}/sensitive-variables")
+    public ResponseEntity<?> getWorkspaceSensitiveVariables(@RequestHeader("X-TFC-Url") String apiUrl,
+            @RequestHeader("X-TFC-Token") String apiToken,
+            @PathVariable String workspaceId) {
+        log.info("Allowed URLs getWorkspaceSensitiveVariables: {}", allowedUrls);
+        String[] listUrls = this.allowedUrls.split(",");
+        for (String url : listUrls) {
+            if (apiUrl.startsWith(url)) {
+                return ResponseEntity.ok(service.getSensitiveVariables(apiToken, apiUrl, workspaceId));
+            }
+        }
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(INVALID_URL_MESSAGE);
+    }
+
     @PostMapping("/workspaces")
     public ResponseEntity<String> importWorkspaces(@RequestHeader("X-TFC-Url") String apiUrl,@RequestHeader("X-TFC-Token") String apiToken,@RequestBody WorkspaceImportRequest request) {
         log.info("Allowed URLs Import Workspaces: {}", allowedUrls);
@@ -52,6 +83,21 @@ public class TfCloudController {
             }
         }
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(INVALID_URL_MESSAGE);
+    }
+
+    @ExceptionHandler(HttpClientErrorException.TooManyRequests.class)
+    public ResponseEntity<String> handleTooManyRequests(HttpClientErrorException.TooManyRequests exception) {
+        HttpHeaders headers = new HttpHeaders();
+        HttpHeaders responseHeaders = exception.getResponseHeaders();
+        if (responseHeaders != null) {
+            String retryAfter = responseHeaders.getFirst(HttpHeaders.RETRY_AFTER);
+            if (retryAfter != null && !retryAfter.isBlank()) {
+                headers.set(HttpHeaders.RETRY_AFTER, retryAfter);
+            }
+        }
+
+        log.warn("Terraform Cloud importer request hit a rate limit: {}", exception.getMessage());
+        return new ResponseEntity<>(RATE_LIMIT_MESSAGE, headers, HttpStatus.TOO_MANY_REQUESTS);
     }
 
 }

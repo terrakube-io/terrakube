@@ -36,6 +36,10 @@ public class WebhookEvent extends GenericAuditFields {
 
     @Column(name = "template_id")
     private String templateId;
+
+    @Column(name = "path_type")
+    @Enumerated(EnumType.STRING)
+    private WebhookEventPathType pathType = WebhookEventPathType.REGEX;
     
     @Enumerated(EnumType.STRING)
     private WebhookEventType event;

@@ -1,67 +1,98 @@
 package io.terrakube.api.plugin.importer.tfcloud.services;
 
-import io.terrakube.api.plugin.importer.tfcloud.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+
+import io.terrakube.api.plugin.importer.tfcloud.ImportedSensitiveVariable;
+import io.terrakube.api.plugin.importer.tfcloud.VarsetSummary;
+import io.terrakube.api.plugin.importer.tfcloud.VariableResponse.VariableData;
+import io.terrakube.api.plugin.importer.tfcloud.VariableResponse.VariableData.VariableAttributes;
+import io.terrakube.api.plugin.importer.tfcloud.WorkspaceImportRequest;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.repository.*;
+import io.terrakube.api.repository.CollectionRepository;
+import io.terrakube.api.repository.HistoryRepository;
+import io.terrakube.api.repository.OrganizationRepository;
+import io.terrakube.api.repository.ReferenceRepository;
+import io.terrakube.api.repository.TagRepository;
+import io.terrakube.api.repository.VariableRepository;
+import io.terrakube.api.repository.VcsRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.Organization;
-import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.collection.Collection;
+import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.workspace.Workspace;
-import io.terrakube.api.rs.workspace.history.History;
+import io.terrakube.api.rs.workspace.parameters.Variable;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
-
-import java.io.IOException;
-import java.util.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class WorkspaceServiceTest {
 
-    private WorkspaceService workspaceService;
-
     @Mock
     private WorkspaceRepository workspaceRepository;
+
     @Mock
     private HistoryRepository historyRepository;
-    @Mock
-    private VcsRepository vcsRepository;
-    @Mock
-    private OrganizationRepository organizationRepository;
-    @Mock
-    private VariableRepository variableRepository;
-    @Mock
-    private WorkspaceTagRepository workspaceTagRepository;
-    @Mock
-    private TagRepository tagRepository;
+
     @Mock
     private StorageTypeService storageTypeService;
-    @Mock
-    private RestTemplate restTemplate;
 
-    private final String hostname = "terrakube.local";
-    private final String apiToken = "test-token";
-    private final String apiUrl = "https://app.terraform.io/api/v2";
-    private final String organization = "test-org";
+    @Mock
+    private VcsRepository vcsRepository;
+
+    @Mock
+    private OrganizationRepository organizationRepository;
+
+    @Mock
+    private VariableRepository variableRepository;
+
+    @Mock
+    private WorkspaceTagRepository workspaceTagRepository;
+
+    @Mock
+    private TagRepository tagRepository;
+
+    @Mock
+    private CollectionRepository collectionRepository;
+
+    @Mock
+    private ReferenceRepository referenceRepository;
+
+    private WorkspaceService workspaceService;
 
     @BeforeEach
     void setUp() {
         workspaceService = new WorkspaceService(
-                hostname,
+                "localhost:8080",
                 workspaceRepository,
                 historyRepository,
                 storageTypeService,
@@ -69,191 +100,483 @@ class WorkspaceServiceTest {
                 organizationRepository,
                 variableRepository,
                 workspaceTagRepository,
-                tagRepository
-        );
+                tagRepository,
+                collectionRepository,
+                referenceRepository);
+    }
+
+    @Test
+    void shouldFetchAllWorkspaceVarsetsAcrossPages() {
+        RestTemplate restTemplate = new RestTemplate();
         ReflectionTestUtils.setField(workspaceService, "restTemplate", restTemplate);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/varsets?page%5Bsize%5D=50&page%5Bnumber%5D=1"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "data": [
+                            {
+                              "id": "varset-1",
+                              "type": "varsets",
+                              "attributes": {
+                                "name": "shared-prod"
+                              }
+                            }
+                          ],
+                          "meta": {
+                            "pagination": {
+                              "current-page": 1,
+                              "next-page": 2,
+                              "prev-page": null,
+                              "total-pages": 2,
+                              "total-count": 2
+                            }
+                          }
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/varsets?page%5Bsize%5D=50&page%5Bnumber%5D=2"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "data": [
+                            {
+                              "id": "varset-2",
+                              "type": "varsets",
+                              "attributes": {
+                                "name": "shared-common"
+                              }
+                            }
+                          ],
+                          "meta": {
+                            "pagination": {
+                              "current-page": 2,
+                              "next-page": null,
+                              "prev-page": 1,
+                              "total-pages": 2,
+                              "total-count": 2
+                            }
+                          }
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        List<VarsetSummary> varsets = workspaceService.getWorkspaceVarsets(
+                "token",
+                "https://app.terraform.io/api/v2",
+                "ws-123");
+
+        assertThat(varsets)
+                .extracting(VarsetSummary::getName)
+                .containsExactly("shared-prod", "shared-common");
+
+        server.verify();
     }
 
     @Test
-    void testGetWorkspaces() {
-        WorkspaceListResponse response = new WorkspaceListResponse();
-        WorkspaceImport.WorkspaceData data = new WorkspaceImport.WorkspaceData();
-        data.setId("ws-1");
-        response.setData(Collections.singletonList(data));
+    void shouldSkipWorkspaceVarsetsWithNullAttributes() {
+        RestTemplate restTemplate = new RestTemplate();
+        ReflectionTestUtils.setField(workspaceService, "restTemplate", restTemplate);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
 
-        WorkspaceListResponse.WorkspaceMeta meta = new WorkspaceListResponse.WorkspaceMeta();
-        WorkspaceListResponse.WorkspaceMeta.Pagination pagination = new WorkspaceListResponse.WorkspaceMeta.Pagination();
-        pagination.setNextPage(null);
-        meta.setPagination(pagination);
-        response.setMeta(meta);
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/varsets?page%5Bsize%5D=50&page%5Bnumber%5D=1"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "data": [
+                            {
+                              "id": "varset-missing-attributes",
+                              "type": "varsets",
+                              "attributes": null
+                            },
+                            {
+                              "id": "varset-valid",
+                              "type": "varsets",
+                              "attributes": {
+                                "name": "shared-common"
+                              }
+                            }
+                          ],
+                          "meta": {
+                            "pagination": {
+                              "current-page": 1,
+                              "next-page": null,
+                              "prev-page": null,
+                              "total-pages": 1,
+                              "total-count": 2
+                            }
+                          }
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON));
 
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(WorkspaceListResponse.class)))
-                .thenReturn(new ResponseEntity<>(response, HttpStatus.OK));
+        List<VarsetSummary> varsets = workspaceService.getWorkspaceVarsets(
+                "token",
+                "https://app.terraform.io/api/v2",
+                "ws-123");
 
-        List<WorkspaceImport.WorkspaceData> result = workspaceService.getWorkspaces(apiToken, apiUrl, organization);
+        assertThat(varsets)
+                .extracting(VarsetSummary::getName)
+                .containsExactly("shared-common");
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("ws-1", result.get(0).getId());
+        server.verify();
     }
 
     @Test
-    void testGetVariables() {
-        VariableResponse response = new VariableResponse();
-        VariableResponse.VariableData data = new VariableResponse.VariableData();
-        VariableResponse.VariableData.VariableAttributes attributes = new VariableResponse.VariableData.VariableAttributes();
-        attributes.setKey("test-key");
-        data.setAttributes(attributes);
-        response.setData(Collections.singletonList(data));
+    void shouldAttachDedupedCollectionsAndWarnForInvalidOnesDuringImport() {
+        WorkspaceService serviceSpy = spy(workspaceService);
 
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(VariableResponse.class)))
-                .thenReturn(new ResponseEntity<>(response, HttpStatus.OK));
+        UUID organizationId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        UUID validCollectionId = UUID.randomUUID();
+        UUID missingCollectionId = UUID.randomUUID();
+        UUID crossOrgCollectionId = UUID.randomUUID();
 
-        List<VariableResponse.VariableData.VariableAttributes> result = workspaceService.getVariables(apiToken, apiUrl, organization, "test-ws");
+        Organization destinationOrganization = new Organization();
+        destinationOrganization.setId(organizationId);
+        destinationOrganization.setName("destination-org");
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("test-key", result.get(0).getKey());
-    }
+        Organization otherOrganization = new Organization();
+        otherOrganization.setId(UUID.randomUUID());
+        otherOrganization.setName("other-org");
 
-    @Test
-    void testGetCurrentState() {
-        StateVersion stateVersion = new StateVersion();
-        StateVersion.Data data = new StateVersion.Data();
-        StateVersion.Attributes attributes = new StateVersion.Attributes();
-        attributes.setHostedStateDownloadUrl("https://download.url");
-        data.setAttributes(attributes);
-        stateVersion.setData(data);
+        Collection validCollection = new Collection();
+        validCollection.setId(validCollectionId);
+        validCollection.setName("valid-collection");
+        validCollection.setOrganization(destinationOrganization);
 
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(StateVersion.class)))
-                .thenReturn(new ResponseEntity<>(stateVersion, HttpStatus.OK));
+        Collection crossOrgCollection = new Collection();
+        crossOrgCollection.setId(crossOrgCollectionId);
+        crossOrgCollection.setName("foreign-collection");
+        crossOrgCollection.setOrganization(otherOrganization);
 
-        StateVersion.Attributes result = workspaceService.getCurrentState(apiToken, apiUrl, "ws-1");
-
-        assertNotNull(result);
-        assertEquals("https://download.url", result.getHostedStateDownloadUrl());
-    }
-
-    @Test
-    void testGetCurrentStateNotFound() {
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(StateVersion.class)))
-                .thenThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null, null, null));
-
-        StateVersion.Attributes result = workspaceService.getCurrentState(apiToken, apiUrl, "ws-1");
-
-        assertNull(result);
-    }
-
-    @Test
-    void testGetCurrentStateNullResponse() {
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(StateVersion.class)))
-                .thenReturn(new ResponseEntity<>(null, HttpStatus.OK));
-
-        assertThrows(WorkspaceService.NullResponseException.class, () -> {
-            workspaceService.getCurrentState(apiToken, apiUrl, "ws-1");
-        });
-    }
-
-    @Test
-    void testGetTags() {
-        TagResponse response = new TagResponse();
-        TagResponse.TagData data = new TagResponse.TagData();
-        TagResponse.TagData.TagAttributes attributes = new TagResponse.TagData.TagAttributes();
-        attributes.setName("test-tag");
-        data.setAttributes(attributes);
-        response.setData(Collections.singletonList(data));
-
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(TagResponse.class)))
-                .thenReturn(new ResponseEntity<>(response, HttpStatus.OK));
-
-        List<TagResponse.TagData.TagAttributes> result = workspaceService.getTags(apiToken, apiUrl, "ws-1");
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("test-tag", result.get(0).getName());
-    }
-
-    @Test
-    void testDownloadState() {
-        Resource resource = new ByteArrayResource("test-state".getBytes());
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(Resource.class)))
-                .thenReturn(new ResponseEntity<>(resource, HttpStatus.OK));
-
-        Resource result = workspaceService.downloadState(apiToken, "https://download.url");
-
-        assertNotNull(result);
-        verify(restTemplate).exchange(eq("https://download.url"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Resource.class));
-    }
-
-    @Test
-    void testImportWorkspace() throws IOException {
         WorkspaceImportRequest request = new WorkspaceImportRequest();
-        request.setName("test-ws");
-        request.setOrganization("test-org");
-        request.setOrganizationId(UUID.randomUUID().toString());
-        request.setVcsId(UUID.randomUUID().toString());
-        request.setId("ws-tfc-1");
+        request.setId("ws-123");
+        request.setOrganizationId(organizationId.toString());
+        request.setOrganization("source-org");
+        request.setName("imported-workspace");
+        request.setTerraformVersion("1.8.5");
         request.setExecutionMode("remote");
+        request.setDescription("Imported from Terraform Cloud");
+        request.setVariableCollectionIds(List.of(
+                validCollectionId.toString(),
+                validCollectionId.toString(),
+                "not-a-uuid",
+                missingCollectionId.toString(),
+                crossOrgCollectionId.toString()));
 
-        Organization org = new Organization();
-        org.setId(UUID.fromString(request.getOrganizationId()));
-        when(organizationRepository.findById(any())).thenReturn(Optional.of(org));
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(destinationOrganization));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace workspace = invocation.getArgument(0);
+            workspace.setId(workspaceId);
+            return workspace;
+        });
+        when(collectionRepository.findById(validCollectionId)).thenReturn(Optional.of(validCollection));
+        when(collectionRepository.findById(missingCollectionId)).thenReturn(Optional.empty());
+        when(collectionRepository.findById(crossOrgCollectionId)).thenReturn(Optional.of(crossOrgCollection));
 
-        Vcs vcs = new Vcs();
-        vcs.setId(UUID.fromString(request.getVcsId()));
-        when(vcsRepository.findById(any())).thenReturn(Optional.of(vcs));
+        doReturn(Collections.emptyList()).when(serviceSpy).getVariables(anyString(), anyString(), anyString());
+        doReturn(Collections.emptyList()).when(serviceSpy).getTags(anyString(), anyString(), anyString());
+        doReturn(null).when(serviceSpy).getCurrentState(anyString(), anyString(), anyString());
 
-        Workspace workspace = new Workspace();
-        workspace.setId(UUID.randomUUID());
-        workspace.setOrganization(org);
-        when(workspaceRepository.save(any())).thenReturn(workspace);
+        String result = serviceSpy.importWorkspace("token", "https://app.terraform.io/api/v2", request);
 
-        // Variables mock
-        VariableResponse varResponse = new VariableResponse();
-        varResponse.setData(Collections.emptyList());
-        when(restTemplate.exchange(contains("/vars"), eq(HttpMethod.GET), any(HttpEntity.class), eq(VariableResponse.class)))
-                .thenReturn(new ResponseEntity<>(varResponse, HttpStatus.OK));
+        assertThat(result).contains("Workspace created successfully.");
+        assertThat(result).contains("Variable collections linked successfully: 1");
+        assertThat(result).contains("Skipped invalid variable collection ID: not-a-uuid");
+        assertThat(result).contains("Variable collection was not found: " + missingCollectionId);
+        assertThat(result).contains("Skipped variable collection outside the destination organization: " + crossOrgCollectionId);
+        assertThat(result).contains("No variables to import.");
+        assertThat(result).contains("No tags to import.");
+        assertThat(result).contains("No state to import.");
 
-        // Tags mock
-        TagResponse tagResponse = new TagResponse();
-        tagResponse.setData(Collections.emptyList());
-        when(restTemplate.exchange(contains("/tags"), eq(HttpMethod.GET), any(HttpEntity.class), eq(TagResponse.class)))
-                .thenReturn(new ResponseEntity<>(tagResponse, HttpStatus.OK));
+        verify(collectionRepository, times(1)).findById(validCollectionId);
+        verify(referenceRepository, times(1)).save(any(Reference.class));
 
-        // State mock
-        StateVersion stateVersion = new StateVersion();
-        StateVersion.Data stateData = new StateVersion.Data();
-        StateVersion.Attributes stateAttributes = new StateVersion.Attributes();
-        stateAttributes.setHostedStateDownloadUrl("https://state.url");
-        stateAttributes.setHostedJsonStateDownloadUrl("https://state.json.url");
-        stateData.setAttributes(stateAttributes);
-        stateVersion.setData(stateData);
-        when(restTemplate.exchange(contains("/current-state-version"), eq(HttpMethod.GET), any(HttpEntity.class), eq(StateVersion.class)))
-                .thenReturn(new ResponseEntity<>(stateVersion, HttpStatus.OK));
+        ArgumentCaptor<Reference> referenceCaptor = ArgumentCaptor.forClass(Reference.class);
+        verify(referenceRepository).save(referenceCaptor.capture());
+        assertThat(referenceCaptor.getValue().getCollection()).isSameAs(validCollection);
+        assertThat(referenceCaptor.getValue().getWorkspace().getId()).isEqualTo(workspaceId);
+    }
 
-        Resource stateResource = new ByteArrayResource("{}".getBytes());
-        when(restTemplate.exchange(eq("https://state.url"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Resource.class)))
-                .thenReturn(new ResponseEntity<>(stateResource, HttpStatus.OK));
-        when(restTemplate.exchange(eq("https://state.json.url"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Resource.class)))
-                .thenReturn(new ResponseEntity<>(stateResource, HttpStatus.OK));
+    @Test
+    void shouldDefaultExecutionModeToRemoteWhenMissing() {
+        WorkspaceService serviceSpy = spy(workspaceService);
 
-        when(historyRepository.save(any())).thenAnswer(invocation -> {
-            History h = invocation.getArgument(0);
-            if (h.getId() == null) {
-                h.setId(UUID.randomUUID());
-            }
-            return h;
+        UUID organizationId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+
+        Organization destinationOrganization = new Organization();
+        destinationOrganization.setId(organizationId);
+        destinationOrganization.setName("destination-org");
+
+        WorkspaceImportRequest request = new WorkspaceImportRequest();
+        request.setId("ws-123");
+        request.setOrganizationId(organizationId.toString());
+        request.setOrganization("source-org");
+        request.setName("imported-workspace");
+        request.setTerraformVersion("1.8.5");
+        request.setExecutionMode(null);
+        request.setDescription("Imported from Terraform Cloud");
+
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(destinationOrganization));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace workspace = invocation.getArgument(0);
+            workspace.setId(workspaceId);
+            return workspace;
         });
 
-        String result = workspaceService.importWorkspace(apiToken, apiUrl, request);
+        doReturn(Collections.emptyList()).when(serviceSpy).getVariables(anyString(), anyString(), anyString());
+        doReturn(Collections.emptyList()).when(serviceSpy).getTags(anyString(), anyString(), anyString());
+        doReturn(null).when(serviceSpy).getCurrentState(anyString(), anyString(), anyString());
 
-        assertNotNull(result);
-        assertTrue(result.contains("Workspace created successfully"));
-        assertTrue(result.contains("State imported successfully"));
-        
-        verify(workspaceRepository).save(any());
-        verify(historyRepository, atLeastOnce()).save(any());
-        verify(storageTypeService).uploadState(anyString(), anyString(), anyString(), anyString());
-        verify(storageTypeService).uploadTerraformStateJson(anyString(), anyString(), anyString(), anyString());
+        String result = serviceSpy.importWorkspace("token", "https://app.terraform.io/api/v2", request);
+
+        assertThat(result).contains("Workspace created successfully.");
+
+        ArgumentCaptor<Workspace> workspaceCaptor = ArgumentCaptor.forClass(Workspace.class);
+        verify(workspaceRepository).save(workspaceCaptor.capture());
+        assertThat(workspaceCaptor.getValue().getExecutionMode()).isEqualTo(io.terrakube.api.rs.ExecutionMode.remote);
+    }
+
+    @Test
+    void shouldSkipCreatingReferenceWhenCollectionAlreadyLinked() {
+        WorkspaceService serviceSpy = spy(workspaceService);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        UUID validCollectionId = UUID.randomUUID();
+
+        Organization destinationOrganization = new Organization();
+        destinationOrganization.setId(organizationId);
+        destinationOrganization.setName("destination-org");
+
+        Collection validCollection = new Collection();
+        validCollection.setId(validCollectionId);
+        validCollection.setName("valid-collection");
+        validCollection.setOrganization(destinationOrganization);
+
+        WorkspaceImportRequest request = new WorkspaceImportRequest();
+        request.setId("ws-123");
+        request.setOrganizationId(organizationId.toString());
+        request.setOrganization("source-org");
+        request.setName("imported-workspace");
+        request.setTerraformVersion("1.8.5");
+        request.setExecutionMode("remote");
+        request.setDescription("Imported from Terraform Cloud");
+        request.setVariableCollectionIds(List.of(validCollectionId.toString()));
+
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(destinationOrganization));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace workspace = invocation.getArgument(0);
+            workspace.setId(workspaceId);
+            return workspace;
+        });
+        when(collectionRepository.findById(validCollectionId)).thenReturn(Optional.of(validCollection));
+        when(referenceRepository.existsByWorkspaceAndCollection(any(Workspace.class), any(Collection.class))).thenReturn(true);
+
+        doReturn(Collections.emptyList()).when(serviceSpy).getVariables(anyString(), anyString(), anyString());
+        doReturn(Collections.emptyList()).when(serviceSpy).getTags(anyString(), anyString(), anyString());
+        doReturn(null).when(serviceSpy).getCurrentState(anyString(), anyString(), anyString());
+
+        String result = serviceSpy.importWorkspace("token", "https://app.terraform.io/api/v2", request);
+
+        assertThat(result).contains("No new variable collections to link.");
+        verify(referenceRepository, never()).save(any(Reference.class));
+    }
+
+    @Test
+    void shouldReturnSensitiveVariablePreviewsOnly() {
+        RestTemplate restTemplate = new RestTemplate();
+        ReflectionTestUtils.setField(workspaceService, "restTemplate", restTemplate);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/vars"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "data": [
+                            {
+                              "id": "var-1",
+                              "type": "vars",
+                              "attributes": {
+                                "key": "regular_value",
+                                "value": "hello",
+                                "description": "plain text",
+                                "sensitive": false,
+                                "category": "terraform",
+                                "hcl": false
+                              }
+                            },
+                            {
+                              "id": "var-2",
+                              "type": "vars",
+                              "attributes": {
+                                "key": "sensitive_token",
+                                "value": null,
+                                "description": "masked",
+                                "sensitive": true,
+                                "category": "env",
+                                "hcl": false
+                              }
+                            }
+                          ]
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        var previews = workspaceService.getSensitiveVariables(
+                "token",
+                "https://app.terraform.io/api/v2",
+                "ws-123");
+
+        assertThat(previews)
+                .extracting("id", "key", "description", "category")
+                .containsExactly(tuple("var-2", "sensitive_token", "masked", "env"));
+
+        server.verify();
+    }
+
+    @Test
+    void shouldRetryWorkspaceVariableRequestsWhenTerraformCloudRateLimits() {
+        RestTemplate restTemplate = new RestTemplate();
+        ReflectionTestUtils.setField(workspaceService, "restTemplate", restTemplate);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/vars"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, "0")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {
+                                  "errors": [
+                                    {
+                                      "status": "429",
+                                      "title": "Too Many Requests"
+                                    }
+                                  ]
+                                }
+                                """));
+
+        server.expect(requestTo("https://app.terraform.io/api/v2/workspaces/ws-123/vars"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "data": [
+                            {
+                              "id": "var-2",
+                              "type": "vars",
+                              "attributes": {
+                                "key": "sensitive_token",
+                                "value": null,
+                                "description": "masked",
+                                "sensitive": true,
+                                "category": "env",
+                                "hcl": false
+                              }
+                            }
+                          ]
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        var variables = workspaceService.getVariables(
+                "token",
+                "https://app.terraform.io/api/v2",
+                "ws-123");
+
+        assertThat(variables)
+                .extracting(VariableData::getId)
+                .containsExactly("var-2");
+
+        server.verify();
+    }
+
+    @Test
+    void shouldImportSelectedSensitiveVariablesAndMarkEmptyValuesIncomplete() {
+        WorkspaceService serviceSpy = spy(workspaceService);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+
+        Organization destinationOrganization = new Organization();
+        destinationOrganization.setId(organizationId);
+        destinationOrganization.setName("destination-org");
+
+        WorkspaceImportRequest request = new WorkspaceImportRequest();
+        request.setId("ws-123");
+        request.setOrganizationId(organizationId.toString());
+        request.setOrganization("source-org");
+        request.setName("imported-workspace");
+        request.setTerraformVersion("1.8.5");
+        request.setExecutionMode("remote");
+        request.setDescription("Imported from Terraform Cloud");
+
+        ImportedSensitiveVariable selectedSensitiveVariable = new ImportedSensitiveVariable();
+        selectedSensitiveVariable.setSourceVariableId("var-sensitive-keep");
+        selectedSensitiveVariable.setValue("");
+        request.setSensitiveVariables(List.of(selectedSensitiveVariable));
+
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(destinationOrganization));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace workspace = invocation.getArgument(0);
+            workspace.setId(workspaceId);
+            return workspace;
+        });
+
+        doReturn(List.of(
+                buildVariableData("var-plain", "regular_value", "hello", false, "terraform", false),
+                buildVariableData("var-sensitive-keep", "sensitive_token", null, true, "env", false),
+                buildVariableData("var-sensitive-discard", "unused_secret", null, true, "terraform", true)))
+                .when(serviceSpy)
+                .getVariables(anyString(), anyString(), anyString());
+        doReturn(Collections.emptyList()).when(serviceSpy).getTags(anyString(), anyString(), anyString());
+        doReturn(null).when(serviceSpy).getCurrentState(anyString(), anyString(), anyString());
+
+        String result = serviceSpy.importWorkspace("token", "https://app.terraform.io/api/v2", request);
+
+        assertThat(result).contains("Variables imported successfully.");
+        assertThat(result).contains("Imported 1 sensitive variable(s) without a value. They were marked incomplete");
+        assertThat(result).contains("Discarded 1 sensitive variable(s) during import.");
+
+        ArgumentCaptor<Variable> variableCaptor = ArgumentCaptor.forClass(Variable.class);
+        verify(variableRepository, times(2)).save(variableCaptor.capture());
+
+        List<Variable> savedVariables = variableCaptor.getAllValues();
+        assertThat(savedVariables)
+                .extracting(Variable::getKey, Variable::isSensitive, Variable::isIncomplete, Variable::getValue)
+                .containsExactlyInAnyOrder(
+                        tuple("regular_value", false, false, "hello"),
+                        tuple("sensitive_token", true, true, ""));
+    }
+
+    private VariableData buildVariableData(String id, String key, String value, boolean sensitive, String category, boolean hcl) {
+        VariableAttributes attributes = new VariableAttributes();
+        attributes.setKey(key);
+        attributes.setValue(value);
+        attributes.setDescription("description-" + key);
+        attributes.setSensitive(sensitive);
+        attributes.setCategory(category);
+        attributes.setHcl(hcl);
+
+        VariableData variableData = new VariableData();
+        variableData.setId(id);
+        variableData.setType("vars");
+        variableData.setAttributes(attributes);
+        return variableData;
     }
 }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -34,6 +35,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
+import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -75,6 +77,7 @@ public class ScheduleJobTest {
     GitLabWebhookService gitLabWebhookService;
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
+    WorkspaceVariableValidationService workspaceVariableValidationService;
 
     UUID stepId = UUID.randomUUID();
 
@@ -94,6 +97,10 @@ public class ScheduleJobTest {
         gitLabWebhookService = mock(GitLabWebhookService.class, new FailUnkownMethod<GitLabWebhookService>());
         globalVarRepository = mock(GlobalVarRepository.class, new FailUnkownMethod<GlobalVarRepository>());
         variableRepository = mock(VariableRepository.class, new FailUnkownMethod<VariableRepository>());
+        workspaceVariableValidationService = mock(
+                WorkspaceVariableValidationService.class,
+                new FailUnkownMethod<WorkspaceVariableValidationService>());
+        lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
     }
 
     private ScheduleJob subject() {
@@ -112,7 +119,8 @@ public class ScheduleJobTest {
                 gitHubWebhookService,
                 prCommentService,
                 globalVarRepository,
-                variableRepository);
+                variableRepository,
+                workspaceVariableValidationService);
     }
 
     private Job job(JobStatus status) {

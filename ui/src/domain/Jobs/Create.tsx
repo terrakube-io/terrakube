@@ -1,6 +1,7 @@
 import { DeleteOutlined, InfoCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Modal, Select, Space, message, Typography } from "antd";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { Template } from "../types";
@@ -18,6 +19,7 @@ type CreateJobForm = {
 };
 
 export const CreateJob = ({ changeJob, planJob = true }: Props) => {
+  const navigate = useNavigate();
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [visible, setVisible] = useState(false);
@@ -38,7 +40,6 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
 
   const loadBranch = () => {
     axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}`).then((response) => {
-      console.log(response.data);
       const { branch, defaultTemplate } = response.data.data.attributes;
       setDefaultTemplate(defaultTemplate);
       setBranchName(branch);
@@ -85,13 +86,17 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
         },
       })
       .then((response) => {
+        const newJobId = response.data.data.id;
         setVisible(false);
-        changeJob(response.data.data.id);
+        changeJob(newJobId);
+
+        if (organizationId && workspaceId) {
+          navigate(`/organizations/${organizationId}/workspaces/${workspaceId}/runs/${newJobId}`);
+        }
       })
       .catch((error) => {
         message.error("Not able to create job: " + error.response.data.errors[0].detail);
         setVisible(false);
-        console.log(error);
       });
   };
 
@@ -122,9 +127,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
               form.resetFields();
               onCreate(values);
             })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+            .catch(() => {});
         }}
       >
         <Space direction="vertical">

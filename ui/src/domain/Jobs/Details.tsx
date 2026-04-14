@@ -10,7 +10,7 @@ import {
   SyncOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag } from "antd";
+import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
 import { DateTime } from "luxon";
@@ -20,22 +20,37 @@ import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling } from "../../hooks";
 import { Job, JobStep } from "../types";
 import { TerminalOutput } from "./TerminalOutput";
+import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
+import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
+import { StructuredPlanOutput } from "./StructuredPlanOutput";
+import { StructuredPlanOutputByStep, normalizeStructuredPlanOutput, normalizeUITemplates } from "./structuredPlan";
 
 type Props = {
   jobId: string;
+};
+
+const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
+const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
+
+type IncompleteVariableGuard = {
+  title: string;
+  variables: string[];
+  footer?: string;
+  rawMessage: string;
 };
 
 export const DetailsJob = ({ jobId }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [loading, setLoading] = useState(false);
   const [job, setJob] = useState<AxiosResponse<Job>>();
-  const [workspaceSource, setWorkspaceSource] = useState<String>();
-  const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<String>();
-  const [workspaceVcsId, setWorkspaceVcsId] = useState<String>();
-  const [workspaceVcsName, setWorkspaceVcsName] = useState<String>();
+  const [workspaceSource, setWorkspaceSource] = useState<string>();
+  const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<string>();
+  const [workspaceVcsId, setWorkspaceVcsId] = useState<string>();
+  const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [uiType, setUIType] = useState("structured");
-  const [uiTemplates, setUITemplates] = useState<Record<number, string>>({});
+  const [uiTemplates, setUITemplates] = useState<Record<string, string>>({});
+  const [planStructuredOutput, setPlanStructuredOutput] = useState<StructuredPlanOutputByStep>({});
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
@@ -46,16 +61,62 @@ export const DetailsJob = ({ jobId }: Props) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
 
+  const isTerminalJobStatus = (status?: string) => {
+    if (!status) {
+      return false;
+    }
+
+    return TERMINAL_JOB_STATUSES.has(status);
+  };
+
+  const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
+    if (jobOutput == null) {
+      return null;
+    }
+
+    const lines = jobOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+
+    if (lines.length === 0) {
+      return null;
+    }
+
+    const variables = lines
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2).trim())
+      .filter((line) => line !== "");
+
+    const footer = lines.find((line) => line.startsWith("Open the workspace Variables page"));
+
+    if (variables.length === 0 || footer == null) {
+      return null;
+    }
+
+    return {
+      title: lines[0],
+      variables,
+      footer,
+      rawMessage: jobOutput,
+    };
+  };
+
+  const isIncompleteVariableGuardStep = (stepName?: string) => {
+    return stepName === INCOMPLETE_VARIABLE_GUARD_STEP_NAME;
+  };
+
   const outputLog = async (output: string | undefined, status: string, signal: AbortSignal) => {
     if (output != null) {
-      const apiDomain = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname;
+      const outputUrl = getJobOutputRequestUrl(output);
+
       try {
-        if (output.includes(apiDomain)) {
-          const response = await axiosInstance.get(output, { signal });
+        if (isTerrakubeApiUrl(outputUrl)) {
+          const response = await axiosInstance.get(outputUrl, { signal });
           return response.data;
         }
 
-        const response = await axiosClient.get(output, { signal });
+        const response = await axiosClient.get(outputUrl, { signal });
         return response.data;
       } catch {
         return "No logs available";
@@ -66,12 +127,114 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   };
 
+  const renderIncompleteVariableAlert = (guard: IncompleteVariableGuard) => {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="Run stopped before execution"
+        description={
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Typography.Text>{guard.title}</Typography.Text>
+            {guard.variables.length > 0 && (
+              <Space size={[8, 8]} wrap>
+                {guard.variables.map((variable) => {
+                  return (
+                    <Tag key={variable} color="orange">
+                      {variable}
+                    </Tag>
+                  );
+                })}
+              </Space>
+            )}
+            {guard.footer != null && <Typography.Text type="secondary">{guard.footer}</Typography.Text>}
+          </Space>
+        }
+      />
+    );
+  };
+
   const handleComingSoon = () => {
     message.info("Coming Soon!");
   };
 
   const onChange = (e: RadioChangeEvent) => {
     setUIType(e.target.value);
+  };
+
+  const renderConsoleOutput = (item: JobStep) => {
+    return <TerminalOutput outputLog={item.outputLog} stepName={item.name} isRunning={item.status === "running"} />;
+  };
+
+  const renderStepContent = (item: JobStep) => {
+    const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+
+    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
+      return renderConsoleOutput(item);
+    }
+
+    const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
+    const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
+    const hasStructuredView = Boolean(template) || Boolean(structuredChanges);
+
+    if (!hasStructuredView) {
+      return renderConsoleOutput(item);
+    }
+
+    if (uiType !== "structured") {
+      return (
+        <>
+          <div
+            style={{
+              textAlign: "right",
+              padding: "5px",
+            }}
+          >
+            <Radio.Group onChange={onChange} value={uiType} size="small">
+              <Radio.Button value="structured">Structured</Radio.Button>
+              <Radio.Button value="console">Console</Radio.Button>
+            </Radio.Group>
+          </div>
+          {renderConsoleOutput(item)}
+        </>
+      );
+    }
+
+    let structuredContent = renderConsoleOutput(item);
+
+    if (structuredChanges) {
+      structuredContent = <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} />;
+    } else if (template) {
+      structuredContent = <div>{parse(template)}</div>;
+    }
+
+    return (
+      <>
+        <div
+          style={{
+            textAlign: "right",
+            padding: "5px",
+          }}
+        >
+          <Radio.Group onChange={onChange} value={uiType} size="small">
+            <Radio.Button value="structured">Structured</Radio.Button>
+            <Radio.Button value="console">Console</Radio.Button>
+          </Radio.Group>
+        </div>
+        {structuredContent}
+      </>
+    );
+  };
+
+  const renderStepLabel = (item: JobStep) => {
+    return (
+      <span>
+        {getIconStatus(item)}
+        <h3 style={{ display: "inline" }}>
+          &nbsp; {item.name} {item.status}
+        </h3>
+      </span>
+    );
   };
 
   const handleCancel = () => {
@@ -175,12 +338,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     return 0;
   };
 
-  useEffect(() => {
-    setLoading(true);
-    abortJobRequests();
-    abortContextRequests();
-  }, [jobId, abortContextRequests, abortJobRequests]);
-
   const loadJob = useCallback(async () => {
     const requestId = ++jobRequestRef.current;
     const signal = getJobSignal();
@@ -189,13 +346,16 @@ export const DetailsJob = ({ jobId }: Props) => {
       const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
         signal,
       });
-      if (requestId !== jobRequestRef.current) return;
+      if (requestId !== jobRequestRef.current) {
+        return;
+      }
 
       setJob(response.data);
 
       const included = response.data.included ?? [];
       const stepEntries = included.filter((item: any) => item.type === "step");
       const workspaceEntry = included.find((item: any) => item.type === "workspace");
+      const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
       const stepsPromise = Promise.all(
         stepEntries.map(async (stepItem: any) => ({
@@ -204,7 +364,10 @@ export const DetailsJob = ({ jobId }: Props) => {
           status: stepItem.attributes.status,
           output: stepItem.attributes.output,
           name: stepItem.attributes.name,
-          outputLog: await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
+          outputLog:
+            incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
+              ? incompleteVariableGuard.rawMessage
+              : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
         }))
       );
 
@@ -239,7 +402,9 @@ export const DetailsJob = ({ jobId }: Props) => {
         : Promise.resolve(undefined);
 
       const [jobSteps, workspaceData] = await Promise.all([stepsPromise, workspacePromise]);
-      if (requestId !== jobRequestRef.current) return;
+      if (requestId !== jobRequestRef.current) {
+        return;
+      }
 
       if (workspaceData) {
         setWorkspaceSource(workspaceData.source);
@@ -262,14 +427,15 @@ export const DetailsJob = ({ jobId }: Props) => {
   const loadContext = useCallback(async () => {
     const requestId = ++contextRequestRef.current;
     const signal = getContextSignal();
-    const api = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL);
+    const apiOrigin = getPublicApiOrigin();
 
     try {
-      const response = await axiosInstance.get(`${api.protocol}//${api.host}/context/v1/${jobId}`, { signal });
-      if (requestId !== contextRequestRef.current) return;
-      if (response?.data?.terrakubeUI) {
-        setUITemplates(response?.data?.terrakubeUI);
+      const response = await axiosInstance.get(`${apiOrigin}/context/v1/${jobId}`, { signal });
+      if (requestId !== contextRequestRef.current) {
+        return;
       }
+      setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
+      setPlanStructuredOutput(normalizeStructuredPlanOutput(response?.data?.planStructuredOutput));
     } catch (error) {
       if (isAbortError(error)) return;
     }
@@ -283,14 +449,27 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   }, [loadContext, loadJob]);
 
+  useEffect(() => {
+    setLoading(true);
+    abortJobRequests();
+    abortContextRequests();
+
+    if (!jobId) {
+      setLoading(false);
+      return;
+    }
+
+    void refreshJobDetails();
+  }, [abortContextRequests, abortJobRequests, jobId, refreshJobDetails]);
+
   usePolling(
     () => {
       void refreshJobDetails();
     },
     {
       interval: 5000,
-      enabled: Boolean(jobId),
-      immediate: true,
+      enabled: Boolean(jobId) && !isTerminalJobStatus(job?.data?.attributes.status),
+      immediate: false,
     }
   );
   return (
@@ -301,6 +480,15 @@ export const DetailsJob = ({ jobId }: Props) => {
         </Spin>
       ) : (
         <Space direction="vertical" style={{ width: "100%" }}>
+          {(() => {
+            const guard = parseIncompleteVariableGuard(job.data.attributes.output);
+
+            if (guard == null) {
+              return null;
+            }
+
+            return renderIncompleteVariableAlert(guard);
+          })()}
           <div>
             <Tag
               icon={
@@ -404,61 +592,33 @@ export const DetailsJob = ({ jobId }: Props) => {
             ]}
           />
           {steps.length > 0 ? (
-            steps.map((item) => (
-              <>
+            steps.map((item) => {
+              const stepKey = `${item.id}-${item.status}`;
+              const stepLabel = renderStepLabel(item);
+
+              if (!shouldStepBeCollapsible(item)) {
+                return (
+                  <Card key={stepKey} size="small" style={{ width: "100%" }}>
+                    {stepLabel}
+                  </Card>
+                );
+              }
+
+              return (
                 <Collapse
+                  key={stepKey}
                   style={{ width: "100%" }}
-                  defaultActiveKey={item.status === "running" ? ["2"] : []}
+                  defaultActiveKey={shouldStepBeExpandedByDefault(item) ? ["2"] : []}
                   items={[
                     {
                       key: "2",
-                      label: (
-                        <span>
-                          {getIconStatus(item)}
-                          <h3 style={{ display: "inline" }}>
-                            &nbsp; {item.name} {item.status}
-                          </h3>
-                        </span>
-                      ),
-                      children: (
-                        <>
-                          {uiTemplates.hasOwnProperty(item.stepNumber) ? (
-                            <>
-                              <div
-                                style={{
-                                  textAlign: "right",
-                                  padding: "5px",
-                                }}
-                              >
-                                <Radio.Group onChange={onChange} value={uiType} size="small">
-                                  <Radio.Button value="structured">Structured</Radio.Button>
-                                  <Radio.Button value="console">Console</Radio.Button>
-                                </Radio.Group>
-                              </div>
-                              {uiType === "structured" ? (
-                                <div>{parse(uiTemplates[item.stepNumber])}</div>
-                              ) : (
-                                <TerminalOutput
-                                  outputLog={item.outputLog}
-                                  stepName={item.name}
-                                  isRunning={item.status === "running"}
-                                />
-                              )}
-                            </>
-                          ) : (
-                            <TerminalOutput
-                              outputLog={item.outputLog}
-                              stepName={item.name}
-                              isRunning={item.status === "running"}
-                            />
-                          )}
-                        </>
-                      ),
+                      label: stepLabel,
+                      children: renderStepContent(item),
                     },
                   ]}
                 />
-              </>
-            ))
+              );
+            })
           ) : (
             <span />
           )}

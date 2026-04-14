@@ -71,7 +71,7 @@ public class SetupWorkspaceTest {
     private SetupWorkspace standardSetupWorkspaceImpl() {
         WorkspaceSecurity security = Mockito.mock(WorkspaceSecurity.class);
         TerraformExecutor executor = Mockito.mock(TerraformExecutor.class);
-        return new SetupWorkspaceImpl(security, false, executor);
+        return new SetupWorkspaceImpl(security, false, executor, "https://terrakube-api.example.com");
     }
 
     @Test

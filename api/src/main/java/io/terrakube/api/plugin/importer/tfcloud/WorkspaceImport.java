@@ -39,6 +39,7 @@ public class WorkspaceImport {
             private String serviceProvider;
             @JsonProperty("repository-http-url")
             private String repositoryHttpUrl;
+            private String branch;
         }
     }
 }

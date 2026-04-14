@@ -34,4 +34,3 @@ updates:
           - "patch"
     commit-message:
       prefix: "deps"
-
