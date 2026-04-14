@@ -24,7 +24,7 @@
 		<commons-codec>1.21.0</commons-codec>
 		<azure-storage-blob.version>12.33.2</azure-storage-blob.version>
 		<jgit.version>7.6.0.202603022253-r</jgit.version>
-		<bouncy.castle>1.83</bouncy.castle>
+		<bouncy.castle>1.84</bouncy.castle>
 		<lombok.version>1.18.44</lombok.version>
 		<groovy.version>5.0.5</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
