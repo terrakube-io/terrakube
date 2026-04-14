@@ -34,6 +34,7 @@ public class EphemeralExecutorService {
     private static final String EPHEMERAL_CPU_LIMIT = "EPHEMERAL_CPU_LIMIT";
     private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
     private static final String EPHEMERAL_JOB_ENV_VARS = "EPHEMERAL_JOB_ENV_VARS";
+    private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -242,7 +243,13 @@ public class EphemeralExecutorService {
             hasResources = true;
         }
 
+        Optional<String> labelsInfo = Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(LABELS, null));
         Map<String, String> labels = new HashMap<>();
+        log.info("Custom Labels: {}", labelsInfo.isPresent());
+        if(labelsInfo.isPresent()) {
+            labels.putAll(parseKeyValueString(labelsInfo.get()));
+        }
+
         labels.put("terrakube.io/organization", executorContext.getOrganizationId());
         labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());
 
