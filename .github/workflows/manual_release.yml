@@ -17,16 +17,14 @@ on:
           - minor
           - major
 
-permissions:
-  contents: write
-  packages: write
-
 env:
   REGISTRY: ghcr.io
 
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.resolve-version.outputs.version }}
     steps:
@@ -91,6 +89,9 @@ jobs:
   build-and-push-images:
     needs: prepare-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -196,6 +197,8 @@ jobs:
       - prepare-release
       - build-and-push-images
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.prepare-release.outputs.version }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
