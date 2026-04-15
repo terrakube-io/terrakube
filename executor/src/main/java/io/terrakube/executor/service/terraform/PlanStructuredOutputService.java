@@ -65,6 +65,9 @@ public class PlanStructuredOutputService {
             Map<String, Object> context = getCurrentContext(terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes);
             saveContext(terraformJob.getJobId(), updatedContext);
+        } catch (InterruptedException e) {
+            log.error("Interrupted while publishing plan summary", e);
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.warn("Unable to publish structured plan output for job {} step {}", terraformJob.getJobId(),
                     terraformJob.getStepId(), e);
