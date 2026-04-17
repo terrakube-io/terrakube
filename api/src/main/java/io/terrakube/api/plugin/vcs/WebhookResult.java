@@ -25,6 +25,7 @@ public class WebhookResult {
     private String commentBody;
     private String commentCommand;
     private boolean isPrComment;
+    private String prFilesUrl;
 
     public String getNormalizedEvent() {
         String normalizedEvent = "";
