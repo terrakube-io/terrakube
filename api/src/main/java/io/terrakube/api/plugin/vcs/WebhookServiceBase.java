@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.vcs;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Base64;
@@ -75,12 +76,14 @@ public class WebhookServiceBase {
                 return false;
             }
             Mac mac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec secretKeySpec = new SecretKeySpec(token.getBytes(StandardCharsets.UTF_8), "HmacSHA1");
+            SecretKeySpec secretKeySpec = new SecretKeySpec(token.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             mac.init(secretKeySpec);
             byte[] computedHash = mac.doFinal(jsonPayload.getBytes(StandardCharsets.UTF_8));
             String expectedSignature = "sha256=" + bytesToHex(computedHash);
 
-            if (!signatureHeader.equals(expectedSignature)) {
+            if (!MessageDigest.isEqual(
+                    signatureHeader.getBytes(StandardCharsets.UTF_8),
+                    expectedSignature.getBytes(StandardCharsets.UTF_8))) {
                 log.error("Request signature didn't match!");
                 return false;
             }

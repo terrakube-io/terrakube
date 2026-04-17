@@ -379,6 +379,7 @@ export type Webhook = {
 };
 export type WebhookAttributes = {
   remoteHookId: string;
+  migratedV2: boolean;
 };
 export enum WebhookEventType {
   PUSH = "PUSH",
