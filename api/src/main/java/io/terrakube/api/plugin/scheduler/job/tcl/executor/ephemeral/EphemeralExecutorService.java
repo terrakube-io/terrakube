@@ -44,14 +44,21 @@ public class EphemeralExecutorService {
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
-        final List<EnvFromSource> executorEnvVarFromSecret = new ArrayList<>();
+        final List<EnvFromSource> executorEnvFromSources = new ArrayList<>();
         if (ephemeralConfiguration.getSecret() != null) {
             for (String secretName : ephemeralConfiguration.getSecret()) {
+                if (secretName == null) {
+                    continue;
+                }
+                String trimmed = secretName.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
                 SecretEnvSource secretEnvSource = new SecretEnvSource();
-                secretEnvSource.setName(secretName.trim());
+                secretEnvSource.setName(trimmed);
                 EnvFromSource envFromSource = new EnvFromSource();
                 envFromSource.setSecretRef(secretEnvSource);
-                executorEnvVarFromSecret.add(envFromSource);
+                executorEnvFromSources.add(envFromSource);
             }
         }
 
@@ -67,7 +74,7 @@ public class EphemeralExecutorService {
                 configMapEnvSource.setName(trimmed);
                 EnvFromSource configMapEnvFrom = new EnvFromSource();
                 configMapEnvFrom.setConfigMapRef(configMapEnvSource);
-                executorEnvVarFromSecret.add(configMapEnvFrom);
+                executorEnvFromSources.add(configMapEnvFrom);
             }
         }
 
@@ -300,7 +307,7 @@ public class EphemeralExecutorService {
                 .withVolumes(volumes)
                 .addNewContainer()
                 .withName("executor")
-                .withEnvFrom(executorEnvVarFromSecret)
+                .withEnvFrom(executorEnvFromSources)
                 .withImage(ephemeralConfiguration.getImage())
                 .withEnv(executorEnvVarFlags)
                 .withVolumeMounts(volumeMounts)
