@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -135,18 +136,42 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
+    public void mountsEmptySecretListCleanly() throws ExecutionException {
+        config.setSecret(List.of());
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertTrue(container.getEnvFrom().isEmpty());
+    }
+
+    @Test
     public void mountsConfigMapAsEnvFrom() throws ExecutionException {
         ExecutorContext context = context();
-        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_MAP_ENVFROM", "ze-configmap");
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP", "ze-configmap");
 
         subject().send(job(), context);
 
         verify(namespaced, times(1)).resource(job.capture());
         Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
-        // envFrom should have: 1 secret (ze-secret) + 1 configMap (ze-configmap)
         assertEquals(2, container.getEnvFrom().size());
         assertEquals("ze-secret", container.getEnvFrom().get(0).getSecretRef().getName());
         assertEquals("ze-configmap", container.getEnvFrom().get(1).getConfigMapRef().getName());
+    }
+
+    @Test
+    public void mountsMultipleConfigMapsAsEnvFrom() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP", "cm-one, cm-two");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals(3, container.getEnvFrom().size());
+        assertEquals("cm-one", container.getEnvFrom().get(1).getConfigMapRef().getName());
+        assertEquals("cm-two", container.getEnvFrom().get(2).getConfigMapRef().getName());
     }
 
     @Test
@@ -163,12 +188,11 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
-    public void handlesNoPodAnnotations() throws ExecutionException {
+    public void omitsPodTemplateMetadataWhenNoAnnotations() throws ExecutionException {
         subject().send(job(), context());
 
         verify(namespaced, times(1)).resource(job.capture());
-        Map<String, String> podAnnotations = job.getValue().getSpec().getTemplate().getMetadata().getAnnotations();
-        assertTrue(podAnnotations.isEmpty());
+        assertNull(job.getValue().getSpec().getTemplate().getMetadata());
     }
 
     @Test
