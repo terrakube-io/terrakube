@@ -28,18 +28,18 @@
         <postgresql.version>42.7.10</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.42.34</aws-sdk.version>
-        <gcp-libraries-bom.version>26.79.0</gcp-libraries-bom.version>
+        <aws-sdk.version>2.42.37</aws-sdk.version>
+        <gcp-libraries-bom.version>26.80.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.4.1</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
-        <maven-artifact.version>3.9.14</maven-artifact.version>
+        <maven-artifact.version>3.9.15</maven-artifact.version>
         <commons-io.version>2.21.0</commons-io.version>
         <kubernetes-client.version>7.6.1</kubernetes-client.version>
-        <testcontainers.version>2.0.4</testcontainers.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.0.104</buildpack.builder>
         <buildpack.java>paketobuildpacks/java:21.2.0</buildpack.java>
