@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -72,7 +73,7 @@ public class EphemeralExecutorServiceTest {
         config.setNodeSelector(selector);
         config.setNamespace("ze-namespace");
         config.setImage("ze-image:ze-label");
-        config.setSecret("ze-secret");
+        config.setSecret(List.of("ze-secret"));
     }
 
     private EphemeralExecutorService subject() {
@@ -119,6 +120,79 @@ public class EphemeralExecutorServiceTest {
         verify(namespaced, times(1)).resource(job.capture());
         Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
         assertEquals("ze-image:ze-label", container.getImage());
+    }
+
+    @Test
+    public void mountsMultipleSecretsAsEnvVars() throws ExecutionException {
+        config.setSecret(List.of("secret-one", "secret-two"));
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals(2, container.getEnvFrom().size());
+        assertEquals("secret-one", container.getEnvFrom().get(0).getSecretRef().getName());
+        assertEquals("secret-two", container.getEnvFrom().get(1).getSecretRef().getName());
+    }
+
+    @Test
+    public void mountsEmptySecretListCleanly() throws ExecutionException {
+        config.setSecret(List.of());
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertTrue(container.getEnvFrom().isEmpty());
+    }
+
+    @Test
+    public void mountsConfigMapAsEnvFrom() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP", "ze-configmap");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals(2, container.getEnvFrom().size());
+        assertEquals("ze-secret", container.getEnvFrom().get(0).getSecretRef().getName());
+        assertEquals("ze-configmap", container.getEnvFrom().get(1).getConfigMapRef().getName());
+    }
+
+    @Test
+    public void mountsMultipleConfigMapsAsEnvFrom() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP", "cm-one, cm-two");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals(3, container.getEnvFrom().size());
+        assertEquals("cm-one", container.getEnvFrom().get(1).getConfigMapRef().getName());
+        assertEquals("cm-two", container.getEnvFrom().get(2).getConfigMapRef().getName());
+    }
+
+    @Test
+    public void setsPodTemplateAnnotations() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_POD_ANNOTATIONS", "vault.hashicorp.com/agent-inject=true;vault.hashicorp.com/role=terrakube");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Map<String, String> podAnnotations = job.getValue().getSpec().getTemplate().getMetadata().getAnnotations();
+        assertEquals("true", podAnnotations.get("vault.hashicorp.com/agent-inject"));
+        assertEquals("terrakube", podAnnotations.get("vault.hashicorp.com/role"));
+    }
+
+    @Test
+    public void omitsPodTemplateMetadataWhenNoAnnotations() throws ExecutionException {
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        assertNull(job.getValue().getSpec().getTemplate().getMetadata());
     }
 
     @Test
