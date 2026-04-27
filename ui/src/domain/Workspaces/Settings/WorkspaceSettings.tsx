@@ -111,7 +111,7 @@ export const WorkspaceSettings = ({
           onClick={handleMenuClick}
         />
       </Sider>
-      <Content style={{ padding: "0 24px", minHeight: 280, maxWidth: 900 }}>{renderContent()}</Content>
+      <Content style={{ padding: "0 24px", minHeight: 280 }}>{renderContent()}</Content>
     </Layout>
   );
 };
