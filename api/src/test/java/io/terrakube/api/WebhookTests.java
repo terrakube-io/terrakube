@@ -39,6 +39,8 @@ class WebhookTests extends ServerApplicationTests {
     @Autowired
     private WebhookEventRepository webhookEventRepository;
 
+    private String workspaceIdCreated;
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
@@ -46,9 +48,20 @@ class WebhookTests extends ServerApplicationTests {
         wireMockServer.resetAll();
     }
 
+    @org.junit.jupiter.api.AfterEach
+    public void tearDown() {
+        if (workspaceIdCreated != null) {
+            workspaceRepository.findById(UUID.fromString(workspaceIdCreated)).ifPresent(workspace -> {
+                workspace.setDeleted(true);
+                workspaceRepository.save(workspace);
+            });
+        }
+    }
+
     @Test
     void createWebhookFromAtomicOperationsAfterCommit() {
-        String workspaceId = createWorkspace();
+        workspaceIdCreated = createWorkspace();
+        String workspaceId = workspaceIdCreated;
         stubGithubWebhookCreation();
 
         String webhookId = UUID.randomUUID().toString();
@@ -85,7 +98,8 @@ class WebhookTests extends ServerApplicationTests {
 
     @Test
     void createWebhookFromAtomicOperationsWithoutPathTypeDefaultsToRegex() {
-        String workspaceId = createWorkspace();
+        workspaceIdCreated = createWorkspace();
+        String workspaceId = workspaceIdCreated;
         stubGithubWebhookCreation();
 
         String webhookId = UUID.randomUUID().toString();
