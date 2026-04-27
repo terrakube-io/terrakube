@@ -35,6 +35,8 @@ public class EphemeralExecutorService {
     private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
     private static final String EPHEMERAL_JOB_ENV_VARS = "EPHEMERAL_JOB_ENV_VARS";
     private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
+    private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
+    private static final String POD_ANNOTATIONS = "EPHEMERAL_CONFIG_POD_ANNOTATIONS";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -42,11 +44,39 @@ public class EphemeralExecutorService {
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
-        SecretEnvSource secretEnvSource = new SecretEnvSource();
-        secretEnvSource.setName(ephemeralConfiguration.getSecret());
-        EnvFromSource envFromSource = new EnvFromSource();
-        envFromSource.setSecretRef(secretEnvSource);
-        final List<EnvFromSource> executorEnvVarFromSecret = Arrays.asList(envFromSource);
+        final List<EnvFromSource> executorEnvFromSources = new ArrayList<>();
+        if (ephemeralConfiguration.getSecret() != null) {
+            for (String secretName : ephemeralConfiguration.getSecret()) {
+                if (secretName == null) {
+                    continue;
+                }
+                String trimmed = secretName.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+                SecretEnvSource secretEnvSource = new SecretEnvSource();
+                secretEnvSource.setName(trimmed);
+                EnvFromSource envFromSource = new EnvFromSource();
+                envFromSource.setSecretRef(secretEnvSource);
+                executorEnvFromSources.add(envFromSource);
+            }
+        }
+
+        Optional<String> configMapEnvFromNames = Optional.ofNullable(
+                executorContext.getEnvironmentVariables().getOrDefault(ENVFROM_CONFIG_MAP, null));
+        if (configMapEnvFromNames.isPresent()) {
+            for (String configMapName : configMapEnvFromNames.get().split(",")) {
+                String trimmed = configMapName.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+                ConfigMapEnvSource configMapEnvSource = new ConfigMapEnvSource();
+                configMapEnvSource.setName(trimmed);
+                EnvFromSource configMapEnvFrom = new EnvFromSource();
+                configMapEnvFrom.setConfigMapRef(configMapEnvSource);
+                executorEnvFromSources.add(configMapEnvFrom);
+            }
+        }
 
         EnvVar executorFlagBatch = new EnvVar();
         executorFlagBatch.setName("EphemeralFlagBatch");
@@ -117,6 +147,13 @@ public class EphemeralExecutorService {
         log.info("Custom Annotations: {}", annotationsInfo.isPresent());
         if(annotationsInfo.isPresent()) {
             annotations.putAll(parseKeyValueString(annotationsInfo.get()));
+        }
+
+        Optional<String> podAnnotationsInfo = Optional.ofNullable(
+                executorContext.getEnvironmentVariables().getOrDefault(POD_ANNOTATIONS, null));
+        Map<String, String> podAnnotations = new HashMap<>();
+        if (podAnnotationsInfo.isPresent()) {
+            podAnnotations.putAll(parseKeyValueString(podAnnotationsInfo.get()));
         }
 
         Optional<String> serviceAccountInfo = Optional.ofNullable(
@@ -253,7 +290,7 @@ public class EphemeralExecutorService {
         labels.put("terrakube.io/organization", executorContext.getOrganizationId());
         labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());
 
-        io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = new JobBuilder()
+        JobBuilder jobBuilder = new JobBuilder()
                 .withApiVersion("batch/v1")
                 .withNewMetadata()
                 .withName(jobName)
@@ -270,7 +307,7 @@ public class EphemeralExecutorService {
                 .withVolumes(volumes)
                 .addNewContainer()
                 .withName("executor")
-                .withEnvFrom(executorEnvVarFromSecret)
+                .withEnvFrom(executorEnvFromSources)
                 .withImage(ephemeralConfiguration.getImage())
                 .withEnv(executorEnvVarFlags)
                 .withVolumeMounts(volumeMounts)
@@ -281,8 +318,15 @@ public class EphemeralExecutorService {
                 .endSpec()
                 .endTemplate()
                 .withTtlSecondsAfterFinished(30)
-                .endSpec()
-                .build();
+                .endSpec();
+
+        if (!podAnnotations.isEmpty()) {
+            jobBuilder.editSpec().editTemplate().editOrNewMetadata()
+                    .addToAnnotations(podAnnotations)
+                    .endMetadata().endTemplate().endSpec();
+        }
+
+        io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = jobBuilder.build();
 
         try {
             kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
