@@ -19,10 +19,10 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     Optional<List<Workspace>> findWorkspacesByOrganization(Organization organization);
 
     @Query("SELECT w FROM workspace w JOIN w.webhook wh " +
-           "WHERE (LOWER(w.source) = :normalizedSource " +
-           "OR LOWER(w.source) = CONCAT(:normalizedSource, '.git') " +
-           "OR LOWER(w.source) = CONCAT(:normalizedSource, '/') " +
-           "OR LOWER(w.source) = CONCAT(:normalizedSource, '.git/')) " +
+           "WHERE (LOWER(w.source) = LOWER(:normalizedSource) " +
+           "OR LOWER(w.source) = LOWER(CONCAT(:normalizedSource, '.git')) " +
+           "OR LOWER(w.source) = LOWER(CONCAT(:normalizedSource, '/')) " +
+           "OR LOWER(w.source) = LOWER(CONCAT(:normalizedSource, '.git/'))) " +
            "AND wh.migratedV2 = true")
     List<Workspace> findByNormalizedSourceWithMigratedWebhook(@Param("normalizedSource") String normalizedSource);
 
