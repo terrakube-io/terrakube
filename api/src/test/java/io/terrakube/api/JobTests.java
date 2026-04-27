@@ -59,6 +59,8 @@ class JobTests extends ServerApplicationTests {
     @AfterEach
     public void tearDown() {
         devsManageJobs(false);
+        workspace.setDeleted(true);
+        workspaceRepository.save(workspace);
     }
 
     private Team devsManageJobs(boolean canManage) {
