@@ -562,7 +562,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
                     Consolidate webhooks across workspaces sharing this repository
                   </Typography.Text>
                   <Popconfirm
-                    title="Migrate to shared webhook?"
+                    title="Migrate to shared webhook? (Experimental)"
                     description="This will replace the per-workspace webhook with a single shared webhook for this repository."
                     onConfirm={handleMigrateV2}
                     okText="Yes"
