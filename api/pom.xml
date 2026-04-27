@@ -15,12 +15,12 @@
     <description>Spring Boot Terrakube API</description>
     <properties>
         <java.version>25</java.version>
-        <elide.version>7.1.16</elide.version>
+        <elide.version>7.1.17</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
         <azure.version>6.2.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.24.1</msal4j.version>
-        <lombok.version>1.18.44</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
         <wiremock.version>4.2.1</wiremock.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <bouncy.castle>1.84</bouncy.castle>
@@ -28,16 +28,16 @@
         <postgresql.version>42.7.10</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.42.37</aws-sdk.version>
+        <aws-sdk.version>2.42.41</aws-sdk.version>
         <gcp-libraries-bom.version>26.80.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <jedis.version>7.4.1</jedis.version>
+        <jedis.version>7.5.0</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.15</maven-artifact.version>
-        <commons-io.version>2.21.0</commons-io.version>
+        <commons-io.version>2.22.0</commons-io.version>
         <kubernetes-client.version>7.6.1</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
