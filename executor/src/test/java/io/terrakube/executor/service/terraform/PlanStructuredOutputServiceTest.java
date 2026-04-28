@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.terraform.TerraformClient;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,8 @@ class PlanStructuredOutputServiceTest {
 
     private PlanStructuredOutputService subject() {
         WorkspaceSecurity workspaceSecurity = Mockito.mock(WorkspaceSecurity.class);
-        return new PlanStructuredOutputService(workspaceSecurity, new ObjectMapper(), "http://terrakube-api", new TerraformClient());
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        return new PlanStructuredOutputService(workspaceSecurity, new ObjectMapper(), "http://terrakube-api", new TerraformClient(), terrakubeClient);
     }
 
     @Test

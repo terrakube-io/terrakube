@@ -1,9 +1,7 @@
 package io.terrakube.executor.service.workspace;
 
 import java.io.*;
-import java.net.InetSocketAddress;
-import java.net.URL;
-import java.net.URLConnection;
+import java.net.*;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,6 +18,7 @@ import com.azure.core.http.ProxyOptions;
 import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.identity.DefaultAzureCredential;
 import com.azure.identity.DefaultAzureCredentialBuilder;
+import io.terrakube.client.TerrakubeClient;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
@@ -58,15 +57,17 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     boolean enableRegistrySecurity;
     TerraformExecutor terraformExecutor;
     String apiUrl;
+    TerrakubeClient terrakubeClient;
 
     public SetupWorkspaceImpl(WorkspaceSecurity workspaceSecurity,
-            @Value("${io.terrakube.client.enableSecurity}") boolean enableRegistrySecurity,
-            TerraformExecutor terraformExecutor,
-            @Value("${io.terrakube.api.url}") String apiUrl) {
+                              @Value("${io.terrakube.client.enableSecurity}") boolean enableRegistrySecurity,
+                              TerraformExecutor terraformExecutor,
+                              @Value("${io.terrakube.api.url}") String apiUrl, TerrakubeClient terrakubeClient) {
         this.workspaceSecurity = workspaceSecurity;
         this.enableRegistrySecurity = enableRegistrySecurity;
         this.terraformExecutor = terraformExecutor;
         this.apiUrl = apiUrl;
+        this.terrakubeClient = terrakubeClient;
     }
 
     @Override
@@ -77,7 +78,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             if (!terraformJob.getBranch().equals("remote-content")) {
                 downloadWorkspaceGit(workspaceCloneFolder, terraformJob);
             } else {
-                downloadWorkspaceTarGz(workspaceCloneFolder, terraformJob.getSource());
+                downloadWorkspaceTarGz(workspaceCloneFolder, terraformJob.getOrganizationId(), terraformJob.getJobId());
             }
             if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
                 generateSshFolder(workspaceCloneFolder, terraformJob.getModuleSshKey(), SSH_DIRECTORY_FILE_MODULE);
@@ -187,10 +188,11 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 gitCloneFolder.getPath());
     }
 
-    private void downloadWorkspaceTarGz(File tarGzFolder, String source) throws IOException {
+    private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
+        String source = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getOverrideSource();
+        log.info("Download workspace from source: {}", source);
         File terraformTarGz = new File(tarGzFolder.getPath() + "/terraformContent.tar.gz");
-        String resolvedSource = resolveRemoteContentSource(source);
-        URL url = new URL(resolvedSource);
+        URL url = new URI(source).toURL();
         URLConnection urlConnection = url.openConnection();
         urlConnection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
 
@@ -199,30 +201,6 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         }
 
         extractTarGZ(new FileInputStream(terraformTarGz), tarGzFolder.getPath());
-    }
-
-    private String resolveRemoteContentSource(String source) {
-        if (source == null || source.isBlank()) {
-            return source;
-        }
-
-        try {
-            URL sourceUrl = new URL(source);
-            if (!sourceUrl.getProtocol().startsWith("http")) {
-                return source;
-            }
-
-            URL terrakubeApiUrl = new URL(apiUrl);
-            String resolvedSource = new URL(terrakubeApiUrl, sourceUrl.getFile()).toString();
-            if (!resolvedSource.equals(source)) {
-                log.info("Resolved remote content source from {} to {}", source, resolvedSource);
-            }
-            return resolvedSource;
-        } catch (IOException e) {
-            log.warn("Unable to resolve remote content source {}, using original value. {}",
-                    source, e.getMessage());
-            return source;
-        }
     }
 
     public void extractTarGZ(InputStream in, String destinationFilePath) throws IOException {

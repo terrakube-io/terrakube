@@ -71,7 +71,8 @@ public class Job extends GenericAuditFields {
     @Column(name = "tcl")
     private String tcl;
 
-    @Exclude
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
     @Column(name = "override_source")
     private String overrideSource;
 

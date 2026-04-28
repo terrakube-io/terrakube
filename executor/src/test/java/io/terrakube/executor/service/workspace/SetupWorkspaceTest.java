@@ -9,6 +9,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
+import io.terrakube.client.TerrakubeClient;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.tar.TarEntry;
@@ -17,6 +18,7 @@ import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.mockito.Mockito;
 
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -68,16 +70,23 @@ public class SetupWorkspaceTest {
         return job;
     }
 
-    private SetupWorkspace standardSetupWorkspaceImpl() {
+    private SetupWorkspace standardSetupWorkspaceImpl(TerraformJob job) {
         WorkspaceSecurity security = Mockito.mock(WorkspaceSecurity.class);
         TerraformExecutor executor = Mockito.mock(TerraformExecutor.class);
-        return new SetupWorkspaceImpl(security, false, executor, "https://terrakube-api.example.com");
+        TerrakubeClient client = Mockito.mock(TerrakubeClient.class, Answers.RETURNS_DEEP_STUBS);
+
+        if (job != null && "remote-content".equals(job.getBranch())) {
+            Mockito.when(client.getJobById(job.getOrganizationId(), job.getJobId()).getData().getAttributes().getOverrideSource())
+                    .thenReturn(job.getSource());
+        }
+
+        return new SetupWorkspaceImpl(security, false, executor, "https://terrakube-api.example.com", client);
     }
 
     @Test
     public void downloadsAndChecksOutGitRepository() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulGitJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, job.getFolder(), "main.tf");
         Assert.assertTrue(terrformDir.exists());
@@ -85,8 +94,8 @@ public class SetupWorkspaceTest {
 
     @Test
     public void injectsCommitHashInfo() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulGitJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, "commitHash.info");
         Assert.assertTrue(terrformDir.exists());
@@ -94,8 +103,8 @@ public class SetupWorkspaceTest {
 
     @Test
     public void failsWhenAskedToCheckoutABadCommit() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulGitJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         job.setCommitId("nonsense");
         WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
         Assert.assertEquals(RefNotFoundException.class, e.getCause().getClass());
@@ -103,8 +112,8 @@ public class SetupWorkspaceTest {
 
     @Test
     public void reportsFailureOnBadRepository() {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulGitJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         job.setSource("nonsense");
         WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
         Assert.assertEquals(InvalidRemoteException.class, e.getCause().getClass());
@@ -112,8 +121,8 @@ public class SetupWorkspaceTest {
 
     @Test
     public void downloadsAndUnpacksTarGz() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulTarGzJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, "main.tf");
         Assert.assertTrue(terrformDir.exists());
@@ -121,17 +130,17 @@ public class SetupWorkspaceTest {
 
     @Test
     public void reportsFailureonBadTarGz() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulTarGzJob();
         job.setSource("file:/nonsense");
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
         Assert.assertEquals(FileNotFoundException.class, e.getCause().getClass());
     }
 
     @Test
     public void injectsAwsCredentialsWhenAsked() throws Exception {
-        SetupWorkspace setup = standardSetupWorkspaceImpl();
         TerraformJob job = successfulTarGzJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_AWS", "true");
         job.getEnvironmentVariables().put("TERRAKUBE_AWS_CREDENTIALS_FILE", "ze-secret");
         File workspaceDir = setup.prepareWorkspace(job);

@@ -2,6 +2,7 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.client.TerrakubeClient;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
@@ -42,16 +43,19 @@ public class PlanStructuredOutputService {
     private final ObjectMapper objectMapper;
     private final String terrakubeApiUrl;
     TerraformClient terraformClient;
+    TerrakubeClient terrakubeClient;
 
     public PlanStructuredOutputService(
             WorkspaceSecurity workspaceSecurity,
             ObjectMapper objectMapper,
             @Value("${io.terrakube.api.url}") String terrakubeApiUrl,
-            TerraformClient terraformClient) {
+            TerraformClient terraformClient,
+            TerrakubeClient terrakubeClient) {
         this.workspaceSecurity = workspaceSecurity;
         this.objectMapper = objectMapper;
         this.terrakubeApiUrl = terrakubeApiUrl;
         this.terraformClient = terraformClient;
+        this.terrakubeClient = terrakubeClient;
     }
 
     public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir) {
@@ -62,9 +66,9 @@ public class PlanStructuredOutputService {
             }
 
             List<Map<String, Object>> changes = buildChangesFromPlanJson(planJson);
-            Map<String, Object> context = getCurrentContext(terraformJob.getJobId());
+            Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes);
-            saveContext(terraformJob.getJobId(), updatedContext);
+            saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
             Thread.currentThread().interrupt();
@@ -156,13 +160,19 @@ public class PlanStructuredOutputService {
         return updatedContext;
     }
 
-    private Map<String, Object> getCurrentContext(String jobId) {
+    private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         HttpURLConnection connection = null;
         try {
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobId, "GET");
+            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
+            if (jobInfo.getAttributes().getStatus().equals("running")) {
+                log.info("Job {} exists, Terrakube should be able to get the context", jobId);
+            } else {
+                throw new IllegalStateException("Job is not running, cannot get context");
+            }
+            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "GET");
             int statusCode = connection.getResponseCode();
             if (statusCode >= 400) {
-                log.warn("Unable to read context for job {}. Response status: {}", jobId, statusCode);
+                log.warn("Unable to read context for job {}. Response status: {}", jobInfo.getId(), statusCode);
                 return new HashMap<>();
             }
 
@@ -183,10 +193,16 @@ public class PlanStructuredOutputService {
         }
     }
 
-    private void saveContext(String jobId, Map<String, Object> context) {
+    private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
         HttpURLConnection connection = null;
         try {
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobId, "POST");
+            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
+            if (jobInfo.getAttributes().getStatus().equals("running")) {
+                log.info("Job {} exists, Terrakube should be able to save the context", jobId);
+            } else {
+                throw new IllegalStateException("Job is not running, cannot get context");
+            }
+            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "POST");
             connection.setDoOutput(true);
             byte[] data = objectMapper.writeValueAsBytes(context);
             try (OutputStream os = connection.getOutputStream()) {
@@ -212,7 +228,7 @@ public class PlanStructuredOutputService {
         connection.setRequestMethod(method);
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(5));
+        connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setUseCaches(false);
         return connection;
