@@ -31,9 +31,9 @@
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.0.104</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:21.2.0</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.23.0</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.16</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:21.6.0</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.25.0</buildpack.telemetry>
     </properties>
     <build>
         <plugins>
