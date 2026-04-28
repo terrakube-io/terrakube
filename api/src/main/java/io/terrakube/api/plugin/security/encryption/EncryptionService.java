@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Random;
 
 @Service
 @Slf4j
@@ -20,7 +21,7 @@ public class EncryptionService {
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;  // Tag length in bits
     private static final int GCM_IV_LENGTH = 12;  // GCM IV length (recommended is 12 bytes)
-
+    private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${io.terrakube.token.internal}")
     private String internalToken;
@@ -118,7 +119,7 @@ public class EncryptionService {
      */
     private byte[] generateIv() {
         byte[] iv = new byte[GCM_IV_LENGTH]; // AES block size is 16 bytes
-        new SecureRandom().nextBytes(iv);
+        this.secureRandom.nextBytes(iv);
         return iv;
     }
 }
