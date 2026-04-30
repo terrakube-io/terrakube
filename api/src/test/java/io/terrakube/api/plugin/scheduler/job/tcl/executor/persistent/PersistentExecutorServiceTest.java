@@ -12,6 +12,7 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Optional;
 
+import io.terrakube.api.helpers.FailUnkownMethod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,7 +25,6 @@ import org.springframework.web.reactive.function.client.WebClient.RequestBodyUri
 import org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec;
 import org.springframework.web.reactive.function.client.WebClient.ResponseSpec;
 
-import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -75,10 +75,10 @@ public class PersistentExecutorServiceTest {
 
     private PersistentExecutorService subject() {
         return new PersistentExecutorService(
-            "http://default-executor/",
-            globalVarRepository,
-            webClientBuilder
-        );
+                "http://default-executor/",
+                globalVarRepository,
+                webClientBuilder,
+                "ze-executor");
     }
 
     private Job jobOnDefaultExecutor() {

@@ -3,8 +3,13 @@ package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
-import java.util.Optional;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -24,6 +29,8 @@ import io.terrakube.api.rs.job.Job;
 import lombok.extern.slf4j.Slf4j;
 import reactor.netty.http.client.HttpClient;
 
+import javax.crypto.SecretKey;
+
 @Slf4j
 @Service
 public class PersistentExecutorService {
@@ -37,14 +44,19 @@ public class PersistentExecutorService {
     @Autowired
     private WebClient.Builder webClientBuilder;
 
+    @Value("${io.terrakube.token.internal}")
+    private String base64KeyInternal;
+
     // Manual all-args constructor because Lombok will not copy @Value
     public PersistentExecutorService(
         @Value("${io.terrakube.executor.url}") String executorUrl,
         @Autowired GlobalVarRepository globalVarRepository,
-        @Autowired WebClient.Builder webClientBuilder) {
+        @Autowired WebClient.Builder webClientBuilder,
+        @Value("${io.terrakube.token.internal}") String internalJwtSecret) {
             this.executorUrl = executorUrl;
             this.globalVarRepository = globalVarRepository;
             this.webClientBuilder = webClientBuilder;
+            this.base64KeyInternal = internalJwtSecret;
     }
 
     private static final int CONNECT_TIMEOUT_MS = 10_000;
@@ -72,6 +84,7 @@ public class PersistentExecutorService {
             response = webClient.post()
                     .uri(executorUrlForRequest)
                     .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + generateSystemToken())
                     .bodyValue(executorContext)
                     .retrieve()
                     .toEntity(ExecutorContext.class)
@@ -119,5 +132,21 @@ public class PersistentExecutorService {
             log.info("No default executor found, using default executor url {}", this.executorUrl);
             return this.executorUrl;
         }
+    }
+
+    public String generateSystemToken() {
+        return Jwts.builder()
+                .issuer("TERRAKUBE_INTERNAL")
+                .subject(String.format("%s (Token)", "Terrakube Internal"))
+                .audience().add("TERRAKUBE_INTERNAL").and()
+                .id(UUID.randomUUID().toString())
+                .claim("email", "internal@terrakube.io")
+                .claim("email_verified", true)
+                .claim("name", "Terrakube Api")
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(
+                        Instant.now().plus(10, ChronoUnit.SECONDS)
+                        )
+                ).signWith(Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64KeyInternal))).compact();
     }
 }
