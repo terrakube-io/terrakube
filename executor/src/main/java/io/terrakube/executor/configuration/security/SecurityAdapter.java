@@ -24,7 +24,8 @@ public class SecurityAdapter {
     public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.client.secretKey}") String internalJwtSecret) throws Exception {
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> {
-                    authz.anyRequest().authenticated();
+                    authz.requestMatchers("/actuator/**").permitAll()
+                            .anyRequest().authenticated();
                 })
                 .oauth2ResourceServer(oauth2 -> {
                     AuthenticationManagerResolver<HttpServletRequest> authenticationManagerResolver = ExecutorManagerResolver
