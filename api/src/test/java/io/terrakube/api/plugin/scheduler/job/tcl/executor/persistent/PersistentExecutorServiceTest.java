@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Optional;
 
 import io.terrakube.api.helpers.FailUnkownMethod;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -78,7 +79,7 @@ public class PersistentExecutorServiceTest {
                 "http://default-executor/",
                 globalVarRepository,
                 webClientBuilder,
-                "ze-executor");
+                RandomStringUtils.randomAlphanumeric(32));
     }
 
     private Job jobOnDefaultExecutor() {
