@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -12,6 +13,8 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Optional;
 
+import io.terrakube.api.helpers.FailUnkownMethod;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,7 +27,6 @@ import org.springframework.web.reactive.function.client.WebClient.RequestBodyUri
 import org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec;
 import org.springframework.web.reactive.function.client.WebClient.ResponseSpec;
 
-import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -68,17 +70,20 @@ public class PersistentExecutorServiceTest {
         doReturn(requestBodyUriSpec).when(webClient).post();
         doReturn(requestBodySpec).when(requestBodyUriSpec).uri(anyString());
         doReturn(requestBodySpec).when(requestBodySpec).contentType(any(MediaType.class));
+        doReturn(requestBodySpec).when(requestBodySpec).header(anyString(), anyString());
         doReturn(requestHeadersSpec).when(requestBodySpec).bodyValue(any(ExecutorContext.class));
         doReturn(responseSpec).when(requestHeadersSpec).retrieve();
         doReturn(Mono.just(responseEntity)).when(responseSpec).toEntity(ExecutorContext.class);
     }
 
     private PersistentExecutorService subject() {
-        return new PersistentExecutorService(
-            "http://default-executor/",
-            globalVarRepository,
-            webClientBuilder
-        );
+        PersistentExecutorService persistentExecutorService = spy(new PersistentExecutorService(
+                "http://default-executor/",
+                globalVarRepository,
+                webClientBuilder,
+                RandomStringUtils.randomAlphanumeric(32)));
+        doReturn(RandomStringUtils.randomAlphanumeric(64)).when(persistentExecutorService).generateSystemToken();
+        return persistentExecutorService;
     }
 
     private Job jobOnDefaultExecutor() {
