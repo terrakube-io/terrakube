@@ -1,3 +1,4 @@
+import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import { ListWorkspacesResponse, WorkspaceListItem } from "@/modules/workspaces/types";
@@ -24,12 +25,20 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                       lastJobStatus
                       lastJobDate
                       workspaceTag {
-                        edges { 
+                        edges {
                           node {
                             id
                             tagId
                           }
-                        } 
+                        }
+                      }
+                      project {
+                        edges {
+                          node {
+                            id
+                            name
+                          }
+                        }
                       }
                     }
                   }
@@ -76,6 +85,8 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
       normalizedSource: formatSshUrl(element.node.source),
       terraformVersion: element.node.terraformVersion,
       tags: element.node?.workspaceTag?.edges?.map((e: any) => e.node.tagId),
+      projectId: element.node?.project?.edges?.[0]?.node?.id,
+      projectName: element.node?.project?.edges?.[0]?.node?.name,
     };
     return ws;
   });
@@ -93,8 +104,26 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
   };
 }
 
+async function assignWorkspaceToProject(orgId: string, workspaceId: string, projectId: string): Promise<void> {
+  await axiosInstance.patch(
+    `organization/${orgId}/workspace/${workspaceId}/relationships/project`,
+    { data: { type: "project", id: projectId } },
+    { headers: { "Content-Type": "application/vnd.api+json" } }
+  );
+}
+
+async function removeWorkspaceFromProject(orgId: string, workspaceId: string): Promise<void> {
+  await axiosInstance.patch(
+    `organization/${orgId}/workspace/${workspaceId}/relationships/project`,
+    { data: null },
+    { headers: { "Content-Type": "application/vnd.api+json" } }
+  );
+}
+
 const methods = {
   listWorkspaces,
+  assignWorkspaceToProject,
+  removeWorkspaceFromProject,
 };
 
 export default methods;

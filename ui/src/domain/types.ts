@@ -344,6 +344,24 @@ export type FlatSchedule = {
   id: string;
 } & ScheduleAttributes;
 
+// Projects
+export type Project = {
+  id: string;
+  attributes: ProjectAttributes;
+  relationships: { organization: RelationshipItem };
+};
+
+export type ProjectAttributes = {
+  name: string;
+  description?: string;
+} & AuditFieldBase;
+
+export type ProjectModel = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 // Workspaces
 export type Workspace = {
   id: string;
@@ -352,6 +370,7 @@ export type Workspace = {
     organization: RelationshipItem;
     webhook?: RelationshipItem;
     agent?: RelationshipItem;
+    project?: RelationshipItem;
     history?: RelationshipArray;
   };
 };
