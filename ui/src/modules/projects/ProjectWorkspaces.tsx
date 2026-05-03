@@ -50,8 +50,8 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
       if (err?.response?.status === 403) {
         message.error(
           <span>
-            You are not authorized to assign workspaces to projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
+            You are not authorized to assign workspaces to projects. <br /> Please contact your administrator and
+            request the <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
             <a
               target="_blank"
               href="https://docs.terrakube.io/user-guide/organizations/team-management"
@@ -79,8 +79,8 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
       if (err?.response?.status === 403) {
         message.error(
           <span>
-            You are not authorized to remove workspaces from projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
+            You are not authorized to remove workspaces from projects. <br /> Please contact your administrator and
+            request the <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
             <a
               target="_blank"
               href="https://docs.terrakube.io/user-guide/organizations/team-management"
@@ -116,9 +116,7 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
       title: "Repository",
       dataIndex: "normalizedSource",
       key: "normalizedSource",
-      render: (src: string | undefined) => (
-        <Typography.Text type="secondary">{src || "—"}</Typography.Text>
-      ),
+      render: (src: string | undefined) => <Typography.Text type="secondary">{src || "—"}</Typography.Text>,
     },
     {
       title: "",
@@ -131,7 +129,9 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
           cancelText="No"
           placement="left"
         >
-          <Button danger size="small">Remove</Button>
+          <Button danger size="small">
+            Remove
+          </Button>
         </Popconfirm>
       ),
     },
@@ -162,7 +162,10 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
         title="Add workspace to project"
         open={modalOpen}
         onOk={handleAssign}
-        onCancel={() => { setModalOpen(false); setSelectedWorkspaceId(undefined); }}
+        onCancel={() => {
+          setModalOpen(false);
+          setSelectedWorkspaceId(undefined);
+        }}
         confirmLoading={assigning}
         okText="Add"
         okButtonProps={{ disabled: !selectedWorkspaceId }}

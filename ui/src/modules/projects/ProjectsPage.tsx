@@ -83,7 +83,11 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       dataIndex: "name",
       key: "name",
       render: (_: any, record: ProjectModel) => (
-        <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/organizations/${id}/projects/${record.id}`)}>
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => navigate(`/organizations/${id}/projects/${record.id}`)}
+        >
           {record.name}
         </Button>
       ),

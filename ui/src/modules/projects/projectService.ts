@@ -38,8 +38,7 @@ async function listProjects(organizationId: string): Promise<ApiResponse<Project
     };
   }
 
-  const edges =
-    tempData.data?.organization?.edges?.[0]?.node?.project?.edges ?? [];
+  const edges = tempData.data?.organization?.edges?.[0]?.node?.project?.edges ?? [];
 
   return {
     isError: false,
@@ -124,8 +123,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
     };
   }
 
-  const node =
-    tempData.data?.organization?.edges?.[0]?.node?.project?.edges?.[0]?.node;
+  const node = tempData.data?.organization?.edges?.[0]?.node?.project?.edges?.[0]?.node;
 
   return {
     isError: false,

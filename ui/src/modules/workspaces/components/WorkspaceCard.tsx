@@ -32,7 +32,9 @@ export default function WorkspaceCard({ item, tags }: Props) {
               <Col span={24}>
                 <Flex justify="end" wrap gap="small">
                   {item.projectName && (
-                    <Tag icon={<FolderOutlined />} color="blue">{item.projectName}</Tag>
+                    <Tag icon={<FolderOutlined />} color="blue">
+                      {item.projectName}
+                    </Tag>
                   )}
                   <WorkspaceCardTags tags={tags} item={item} />
                 </Flex>
