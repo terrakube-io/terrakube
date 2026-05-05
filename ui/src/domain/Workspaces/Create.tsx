@@ -643,7 +643,7 @@ export const CreateWorkspace = () => {
                   {
                     required: true,
                     pattern: new RegExp(
-                      "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
+                      "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
                     ),
                   },
                 ]}
