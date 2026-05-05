@@ -17,7 +17,7 @@
         <java.version>25</java.version>
         <elide.version>7.1.17</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
-        <azure.version>6.2.0</azure.version>
+        <azure.version>6.3.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.24.1</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
@@ -25,10 +25,10 @@
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <bouncy.castle>1.84</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
-        <postgresql.version>42.7.10</postgresql.version>
+        <postgresql.version>42.7.11</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.43.0</aws-sdk.version>
+        <aws-sdk.version>2.44.1</aws-sdk.version>
         <gcp-libraries-bom.version>26.80.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.5.0</jedis.version>
