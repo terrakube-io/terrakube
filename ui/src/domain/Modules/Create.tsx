@@ -391,7 +391,7 @@ export const CreateModule = () => {
                   {
                     required: true,
                     pattern: new RegExp(
-                      "((git|ssh|http(s)?)|(git@[\\w\\.]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"
+                      "((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"
                     ),
                   },
                 ]}
