@@ -138,6 +138,8 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [currentStateId, setCurrentStateId] = useState("");
   const [actions, setActions] = useState<Action[]>([]);
   const [contextState, setContextState] = useState({});
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const {
     token: { colorBgContainer },
   } = theme.useToken();
@@ -371,7 +373,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
         setTemplates(template.data.data);
         axiosInstance
           .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference`
+            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
           )
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();
@@ -411,6 +413,15 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
               const organizationName = organization.attributes.name;
               setOrganizationName(organizationName);
               sessionStorage.setItem(ORGANIZATION_NAME, organizationName);
+            }
+
+            const proj = response.data.included?.find((item: any) => item.type === "project");
+            if (proj) {
+              setProjectName(proj.attributes?.name ?? null);
+              setProjectId(proj.id ?? null);
+            } else {
+              setProjectName(null);
+              setProjectId(null);
             }
             setOrganizationNameLocal(sessionStorage.getItem(ORGANIZATION_NAME)!);
             setWorkspaceName(response.data.data.attributes.name);
@@ -767,6 +778,15 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                         <span>
                           <ThunderboltOutlined /> Execution Mode: {executionMode}{" "}
                         </span>
+                        <Divider />
+                        <h4>Project</h4>
+                        {projectName && projectId ? (
+                          <Link to={`/organizations/${organizationId}/projects/${projectId}`}>
+                            {projectName}
+                          </Link>
+                        ) : (
+                          <Typography.Text type="secondary">No project</Typography.Text>
+                        )}
                         <Divider />
                         <h4>Tags</h4>
                         <Tags organizationId={organizationId} workspaceId={id!} manageWorkspace={manageWorkspace} />

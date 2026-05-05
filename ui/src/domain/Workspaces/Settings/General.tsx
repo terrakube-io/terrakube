@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Agent, Template, TofuRelease, Workspace } from "../../types";
 import { atomicHeader, compareVersions, genericHeader, getIaCIconById, getIaCNameById, iacTypes } from "../Workspaces";
+import projectService from "@/modules/projects/projectService";
+import { ProjectModel } from "@/domain/types";
 
 const { Text } = Typography;
 
@@ -22,6 +24,7 @@ type UpdateWorkspaceForm = {
   branch: string;
   defaultTemplate?: string;
   executorAgent?: string;
+  project?: string;
 };
 
 export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace }: Props) => {
@@ -31,6 +34,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
   const [selectedIac, setSelectedIac] = useState("");
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
+  const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const [waiting, setWaiting] = useState(false);
 
   const loadVersions = (iacType: string) => {
@@ -55,24 +59,27 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
     const iacType = workspaceData.attributes?.iacType;
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
 
-    // Parallel load: versions and agent list
-    Promise.all([axiosInstance.get(versionsApi), axiosInstance.get(`organization/${organizationId}/agent`)]).then(
-      ([versionsRes, agentsRes]) => {
-        const tfVersions: string[] = [];
-        if (iacType === "tofu") {
-          versionsRes.data.forEach((release: TofuRelease) => {
-            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
-          });
-        } else {
-          for (const version in versionsRes.data.versions) {
-            if (!version.includes("-")) tfVersions.push(version);
-          }
+    // Parallel load: versions, agent list, and projects
+    Promise.all([
+      axiosInstance.get(versionsApi),
+      axiosInstance.get(`organization/${organizationId}/agent`),
+      projectService.listProjects(organizationId),
+    ]).then(([versionsRes, agentsRes, projectsRes]) => {
+      const tfVersions: string[] = [];
+      if (iacType === "tofu") {
+        versionsRes.data.forEach((release: TofuRelease) => {
+          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+        });
+      } else {
+        for (const version in versionsRes.data.versions) {
+          if (!version.includes("-")) tfVersions.push(version);
         }
-        setTerraformVersions(tfVersions.sort(compareVersions).reverse());
-        setAgentList(agentsRes.data.data);
-        setWaiting(false);
       }
-    );
+      setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+      setAgentList(agentsRes.data.data);
+      if (!projectsRes.isError) setProjectList(projectsRes.data);
+      setWaiting(false);
+    });
   }, [organizationId, workspaceData.attributes?.iacType]);
 
   const handleIacChange = (iac: string) => {
@@ -143,6 +150,21 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
           console.log("Workspace agent update failed");
         }
       });
+
+    const bodyProject =
+      values.project && values.project !== "none"
+        ? { data: { type: "project", id: values.project } }
+        : { data: null };
+
+    axiosInstance
+      .patch(`/organization/${organizationId}/workspace/${id}/relationships/project`, bodyProject, genericHeader)
+      .then((response) => {
+        if (response.status === 204) {
+          console.log("Workspace project updated successfully");
+        } else {
+          console.log("Workspace project update failed");
+        }
+      });
   };
 
   return (
@@ -168,6 +190,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
               workspaceData.relationships.agent?.data?.id == null
                 ? "default"
                 : workspaceData.relationships.agent.data?.id,
+            project: workspaceData.relationships.project?.data?.id ?? "none",
           }}
           layout="vertical"
           name="form-settings"
@@ -313,6 +336,26 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
               {orgTemplates.map(function (template) {
                 return <Option key={template?.id}>{template?.attributes?.name}</Option>;
               })}
+            </Select>
+          </Form.Item>
+
+          <Divider />
+
+          {/* Section 5: Project */}
+          <h2>Project</h2>
+          <Text type="secondary">Assign this workspace to a project for easier organization and filtering.</Text>
+
+          <Form.Item
+            name="project"
+            label="Project"
+            extra="Optional. Assigning a project lets you group and filter workspaces."
+            style={{ marginTop: 16 }}
+          >
+            <Select placeholder="No project" disabled={!manageWorkspace}>
+              <Option key="none">(No project)</Option>
+              {projectList.map((p) => (
+                <Option key={p.id}>{p.name}</Option>
+              ))}
             </Select>
           </Form.Item>
 

@@ -1696,7 +1696,7 @@ public class RemoteTfeService {
             organization.getProject().forEach(project -> {
                 ProjectModel projectData = new ProjectModel();
                 projectData.setId(project.getId().toString());
-                projectData.setType("project");
+                projectData.setType("projects");
                 projectData.setAttributes(new HashMap<>());
                 projectData.getAttributes().put("name", project.getName());
                 projectData.setRelationships(new io.terrakube.api.plugin.state.model.project.Relationships());

@@ -36,6 +36,13 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     [filteredWorkspaces, sortOption]
   );
 
+  const projects = useMemo(() => {
+    const seen = new Set<string>();
+    return workspaces
+      .filter((ws) => ws.projectId && !seen.has(ws.projectId) && seen.add(ws.projectId!))
+      .map((ws) => ({ id: ws.projectId!, name: ws.projectName! }));
+  }, [workspaces]);
+
   const handleSortChange = (option: WorkspaceSortOption) => {
     setSortOption(option);
     setStoredWorkspaceSortOption(option);
@@ -92,6 +99,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onTagsLoaded={(t) => setTags(t)}
             sortOption={sortOption}
             onSortChange={handleSortChange}
+            projects={projects}
           />
         )}
         <List

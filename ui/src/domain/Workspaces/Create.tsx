@@ -24,8 +24,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
-import { SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
+import { ProjectModel, SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
 import { compareVersions } from "./Workspaces";
+import projectService from "@/modules/projects/projectService";
+import workspaceService from "@/modules/workspaces/workspaceService";
 const { Content } = Layout;
 const { Step } = Steps;
 
@@ -54,6 +56,7 @@ type CreateWorkspaceForm = {
   iacType: string;
   defaultTemplate: string;
   sshKey?: string;
+  project?: string;
 };
 
 export const CreateWorkspace = () => {
@@ -81,6 +84,7 @@ export const CreateWorkspace = () => {
     id: "terraform",
     name: "Terraform",
   });
+  const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const gitlabItems = [
     {
       label: "Gitlab.com",
@@ -149,13 +153,14 @@ export const CreateWorkspace = () => {
 
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
 
-    // Parallel load: versions, SSH keys, templates, and VCS
+    // Parallel load: versions, SSH keys, templates, VCS, and projects
     Promise.all([
       axiosInstance.get(versionsApi),
       axiosInstance.get(`organization/${organizationId}/ssh`),
       axiosInstance.get(`organization/${organizationId}/template`),
       axiosInstance.get(`organization/${organizationId}/vcs`),
-    ]).then(([versionsRes, sshRes, templatesRes, vcsRes]) => {
+      projectService.listProjects(organizationId!),
+    ]).then(([versionsRes, sshRes, templatesRes, vcsRes, projectsRes]) => {
       // Process versions
       const tfVersions: string[] = [];
       if (iacType.id === "tofu") {
@@ -184,6 +189,10 @@ export const CreateWorkspace = () => {
 
       // Set VCS
       setVCS(vcsRes.data.data);
+
+      // Set projects
+      if (!projectsRes.isError) setProjectList(projectsRes.data);
+
       setLoading(false);
     });
   }, []);
@@ -304,7 +313,7 @@ export const CreateWorkspace = () => {
     });
   };
 
-  const onFinish = (values: CreateWorkspaceForm) => {
+  const onFinish = async (values: CreateWorkspaceForm) => {
     const workspace_lid = uuid();
     const body = {
       "atomic:operations": [
@@ -348,42 +357,44 @@ export const CreateWorkspace = () => {
       };
     }
 
-    axiosInstance
-      .post(`/operations`, body, {
+    try {
+      const response = await axiosInstance.post(`/operations`, body, {
         headers: {
           "Content-Type": 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
           Accept: 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
         },
-      })
-      .then((response) => {
-        if (response.status === 200) {
-          navigate(`/organizations/${organizationId}/workspaces/${response.data["atomic:results"][0].data.id}`);
-        }
-      })
-      .catch((error) => {
-        if (error.response) {
-          if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
-          } else {
-            message.error(
-              <span>An error occurred while submitting the workspace. Please contact your system administrator.</span>
-            );
-          }
-        }
       });
+      if (response.status === 200) {
+        const workspaceId = response.data["atomic:results"][0].data.id;
+        if (values.project && values.project !== "none") {
+          await workspaceService.assignWorkspaceToProject(organizationId!, workspaceId, values.project);
+        }
+        navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
+      }
+    } catch (error: any) {
+      if (error.response) {
+        if (error.response.status === 403) {
+          message.error(
+            <span>
+              You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
+              <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
+              <a
+                target="_blank"
+                href="https://docs.terrakube.io/user-guide/organizations/team-management"
+                rel="noreferrer"
+              >
+                Terrakube documentation
+              </a>
+              .
+            </span>
+          );
+        } else {
+          message.error(
+            <span>An error occurred while submitting the workspace. Please contact your system administrator.</span>
+          );
+        }
+      }
+    }
   };
 
   const handleChange = (currentVal: number) => {
@@ -720,6 +731,18 @@ export const CreateWorkspace = () => {
                   {sshKeys.map(function (sshKey) {
                     return <Option key={sshKey?.id}>{sshKey?.attributes?.name}</Option>;
                   })}
+                </Select>
+              </Form.Item>
+              <Form.Item
+                name="project"
+                label="Project"
+                extra="Optional. Assigning a project lets you group and filter workspaces."
+              >
+                <Select placeholder="(No project)" style={{ width: 250 }}>
+                  <Option key="none">(No project)</Option>
+                  {projectList.map((p) => (
+                    <Option key={p.id}>{p.name}</Option>
+                  ))}
                 </Select>
               </Form.Item>
               <Form.Item>

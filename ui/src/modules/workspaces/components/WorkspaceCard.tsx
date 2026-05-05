@@ -1,5 +1,5 @@
-import { ClockCircleOutlined } from "@ant-design/icons";
-import { Card, Space, Row, Col, Typography, Flex } from "antd";
+import { ClockCircleOutlined, FolderOutlined } from "@ant-design/icons";
+import { Card, Space, Row, Col, Tag, Typography, Flex } from "antd";
 import { DateTime } from "luxon";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
@@ -31,6 +31,11 @@ export default function WorkspaceCard({ item, tags }: Props) {
             <Row justify="start">
               <Col span={24}>
                 <Flex justify="end" wrap gap="small">
+                  {item.projectName && (
+                    <Tag icon={<FolderOutlined />} color="blue">
+                      {item.projectName}
+                    </Tag>
+                  )}
                   <WorkspaceCardTags tags={tags} item={item} />
                 </Flex>
               </Col>

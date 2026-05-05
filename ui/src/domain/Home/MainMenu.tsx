@@ -1,4 +1,4 @@
-import { AppstoreOutlined, CloudOutlined, SettingOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, CloudOutlined, ProjectOutlined, SettingOutlined } from "@ant-design/icons";
 import { Menu } from "antd";
 import "antd/dist/reset.css";
 import { useEffect, useState } from "react";
@@ -103,6 +103,8 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("settings")) {
       setDefaultSelected(["settings"]);
+    } else if (location.pathname.includes("projects")) {
+      setDefaultSelected(["projects"]);
     } else {
       setDefaultSelected(["workspaces"]);
     }
@@ -131,6 +133,12 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
   const items = [
     ...(orgIdFromUrl
       ? [
+          {
+            label: "Projects",
+            key: "projects",
+            icon: <ProjectOutlined />,
+            onClick: () => handleSectionNavigation("projects"),
+          },
           {
             label: "Workspaces",
             key: "workspaces",

@@ -73,8 +73,7 @@ export function useOrgPermissions() {
           managePermission: response.data.managePermission ?? false,
         });
       })
-      .catch((err) => {
-        console.error("Failed to load org permissions:", err);
+      .catch(() => {
         // Keep default (all false) on error — user sees read-only UI
       })
       .finally(() => {

@@ -35,6 +35,8 @@ const CreateOrganization = lazy(() =>
 );
 const OrganizationsPickerPage = lazy(() => import("@/modules/organizations/OrganizationsPickerPage"));
 const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/OrganizationDetailsPage"));
+const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
+const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
 
 // Workspaces
 const CreateWorkspace = lazy(() =>
@@ -82,6 +84,16 @@ const CreateOrganizationRoute = () => {
 const OrganizationsDetailRoute = () => {
   const { organizationName, setOrganizationName } = useAppRouteContext();
   return <OrganizationsDetailPage setOrganizationName={setOrganizationName} organizationName={organizationName} />;
+};
+
+const OrganizationsProjectsRoute = () => {
+  const { organizationName, setOrganizationName } = useAppRouteContext();
+  return <ProjectsPage setOrganizationName={setOrganizationName} organizationName={organizationName} />;
+};
+
+const OrganizationsProjectDetailRoute = () => {
+  const { organizationName, setOrganizationName } = useAppRouteContext();
+  return <ProjectDetailPage setOrganizationName={setOrganizationName} organizationName={organizationName} />;
 };
 
 const WorkspaceDetailsRoute = ({ selectedTab }: { selectedTab?: string }) => {
@@ -243,6 +255,14 @@ const App = () => {
         {
           path: "/organizations/:id/workspaces",
           element: <OrganizationsDetailRoute />,
+        },
+        {
+          path: "/organizations/:id/projects",
+          element: <OrganizationsProjectsRoute />,
+        },
+        {
+          path: "/organizations/:orgid/projects/:id",
+          element: <OrganizationsProjectDetailRoute />,
         },
         {
           path: "/workspaces/create",

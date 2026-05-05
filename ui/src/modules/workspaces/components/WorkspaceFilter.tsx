@@ -27,6 +27,7 @@ type Props = {
   onTagsLoaded: (tags: TagModel[]) => void;
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
+  projects?: { id: string; name: string }[];
 };
 
 enum Additional {
@@ -41,10 +42,12 @@ export default function WorkspaceFilter({
   onTagsLoaded,
   sortOption,
   onSortChange,
+  projects = [],
 }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>(sessionStorage.getItem("filterValue") || "All");
   const [searchFilter, setSearchFilter] = useState(sessionStorage.getItem("searchValue") || "");
   const [tagsFilter, setTagsFilter] = useState<string[]>((sessionStorage.getItem("selectedTags") as any) || []);
+  const [projectFilter, setProjectFilter] = useState<string | null>(sessionStorage.getItem("projectFilter") || null);
   const [tags, setTags] = useState<TagModel[]>([]);
 
   const { execute } = useApiRequest({
@@ -87,12 +90,18 @@ export default function WorkspaceFilter({
       }
     });
 
+    filteredWorkspaces = filteredWorkspaces.filter((workspace) => {
+      if (!projectFilter) return true;
+      if (projectFilter === "__unassigned__") return !workspace.projectId;
+      return workspace.projectId === projectFilter;
+    });
+
     onFiltered(filteredWorkspaces);
   }
 
   useEffect(() => {
     filterItems();
-  }, [statusFilter, tagsFilter]);
+  }, [statusFilter, tagsFilter, projectFilter]);
   useEffect(() => {
     execute();
   }, []);
@@ -237,6 +246,23 @@ export default function WorkspaceFilter({
         </div>
 
         <div className="workspace-filter-right">
+          {projects.length > 0 && (
+            <Select
+              allowClear
+              placeholder="Project"
+              value={projectFilter || undefined}
+              onChange={(val) => {
+                const next = val ?? null;
+                setProjectFilter(next);
+                sessionStorage.setItem("projectFilter", next ?? "");
+              }}
+              options={[
+                { label: "(Unassigned)", value: "__unassigned__" },
+                ...projects.map((p) => ({ label: p.name, value: p.id })),
+              ]}
+              style={{ minWidth: 140 }}
+            />
+          )}
           <Popover
             content={tagsContent}
             trigger="click"
