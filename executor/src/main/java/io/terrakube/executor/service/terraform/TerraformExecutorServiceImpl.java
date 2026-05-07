@@ -588,6 +588,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.info("File terrakube_env does not exist");
         }
 
+        if (terraformJob.getEnvironmentVariables().containsKey("AWS_WEB_IDENTITY_TOKEN_FILE")) {
+            log.info("AWS_WEB_IDENTITY_TOKEN_FILE updating location to: {}", workingDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_aws.txt");
+            terraformJob.getEnvironmentVariables().put("AWS_WEB_IDENTITY_TOKEN_FILE", workingDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_aws.txt");
+        }
+
+        if (terraformJob.getEnvironmentVariables().containsKey("GOOGLE_APPLICATION_CREDENTIALS")) {
+            log.info("GOOGLE_APPLICATION_CREDENTIALS updating location to: {}", workingDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_gcp.json");
+            terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", workingDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_gcp.json");
+        }
+
         return terraformJob.getEnvironmentVariables();
     }
 }
