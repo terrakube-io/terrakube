@@ -3,7 +3,11 @@ FROM node:alpine AS builder
 WORKDIR /app
 COPY package.json .
 COPY yarn.lock .
-RUN yarn
+# Install Yarn (not included in recent node:alpine images)
+RUN npm install -g yarn
+
+# Install dependencies using the exact versions from yarn.lock
+RUN yarn install --frozen-lockfile
 COPY . .
 
 # Increase Node.js memory limit to prevent out of memory errors
