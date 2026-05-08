@@ -172,7 +172,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       setWaiting(false);
       return;
     }
-    if (webhookEnabled && webhookEvents.length == 1) {
+    if (webhookEnabled && webhookEvents.length === 0) {
       message.error("At least one event configuration is required");
       setWaiting(false);
       return;
