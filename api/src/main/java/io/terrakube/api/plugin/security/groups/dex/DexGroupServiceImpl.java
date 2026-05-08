@@ -12,7 +12,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.repository.AccessRepository;
+import io.terrakube.api.repository.ProjectAccessRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 
@@ -29,6 +31,8 @@ public class DexGroupServiceImpl implements GroupService {
     RedisTemplate redisTemplate;
 
     AccessRepository accessRepository;
+
+    ProjectAccessRepository projectAccessRepository;
 
     FederatedRepository federatedRepository;
 
@@ -138,5 +142,14 @@ public class DexGroupServiceImpl implements GroupService {
         Optional<List<Access>> accessList = accessRepository.findAllByWorkspaceOrganizationIdAndNameIn(organization.getId(), groups);
         log.debug("Groups Size: {}, IsPresent: {},  Group Access {}", groups.size(), accessList.isPresent(), accessList.get().isEmpty());
         return !accessList.get().isEmpty();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public boolean isMemberWithProjectAccess(User user, Organization organization){
+        List<String> groups = (List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups");
+        Optional<List<ProjectAccess>> accessList = projectAccessRepository.findAllByProjectOrganizationIdAndNameIn(organization.getId(), groups);
+        log.debug("ProjectAccess check - Groups Size: {}, IsPresent: {}, HasAccess: {}", groups.size(), accessList.isPresent(), accessList.map(l -> !l.isEmpty()).orElse(false));
+        return accessList.map(l -> !l.isEmpty()).orElse(false);
     }
 }

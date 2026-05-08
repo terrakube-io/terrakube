@@ -7,7 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
-import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.team.Team;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,10 +16,10 @@ import java.util.List;
 import java.util.Optional;
 
 @Slf4j
-@SecurityCheck(TeamViewProject.RULE)
-public class TeamViewProject extends OperationCheck<Project> {
+@SecurityCheck(TeamManageProjectAccess.RULE)
+public class TeamManageProjectAccess extends OperationCheck<ProjectAccess> {
 
-    public static final String RULE = "team view project";
+    public static final String RULE = "team manage project access";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -31,20 +31,20 @@ public class TeamViewProject extends OperationCheck<Project> {
     RbacService rbacService;
 
     @Override
-    public boolean ok(Project project, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team view project {}", project.getId());
-        if (authenticatedUser.isSuperUser(requestScope.getUser())) return true;
-        List<Team> teamList = project.getOrganization().getTeam();
+    public boolean ok(ProjectAccess projectAccess, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        log.debug("team manage project access {}", projectAccess.getId());
+        List<Team> teamList = projectAccess.getProject().getOrganization().getTeam();
         for (Team team : teamList) {
             if (authenticatedUser.isServiceAccount(requestScope.getUser())) {
-                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team)) {
                     return true;
+                }
             } else {
-                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team)) {
                     return true;
+                }
             }
         }
         return false;
     }
-
 }

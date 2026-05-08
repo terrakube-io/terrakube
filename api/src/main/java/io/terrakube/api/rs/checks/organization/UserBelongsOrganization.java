@@ -34,8 +34,10 @@ public class UserBelongsOrganization extends OperationCheck<Organization> {
         }else{
             if (isMemberOrganization(requestScope.getUser(), organization)) {
                 return true;
+            } else if (groupService.isMemberWithLimitedAccessV2(requestScope.getUser(), organization)) {
+                return true;
             } else {
-                return groupService.isMemberWithLimitedAccessV2(requestScope.getUser(), organization);
+                return groupService.isMemberWithProjectAccess(requestScope.getUser(), organization);
             }
         }
     }

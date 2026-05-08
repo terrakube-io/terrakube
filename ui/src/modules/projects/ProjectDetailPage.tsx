@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import ProjectWorkspaces from "./ProjectWorkspaces";
+import ProjectAccessTab from "./ProjectAccessTab";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
@@ -234,6 +235,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
       children: [
         { key: "general", label: "General" },
         { key: "workspaces", label: "Workspaces" },
+        { key: "teams", label: "Teams" },
       ],
     },
   ];
@@ -242,6 +244,8 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     switch (activeKey) {
       case "workspaces":
         return <ProjectWorkspaces orgid={orgid!} projectId={id!} />;
+      case "teams":
+        return <ProjectAccessTab orgid={orgid!} projectId={id!} />;
       case "general":
       default:
         return (

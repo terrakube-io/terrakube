@@ -4,15 +4,18 @@ import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 
 import java.sql.Types;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view project")
+@ReadPermission(expression = "team view project OR team project access view project")
 @CreatePermission(expression = "team manage project")
 @UpdatePermission(expression = "team manage project")
 @DeletePermission(expression = "team manage project")
@@ -36,4 +39,7 @@ public class Project extends GenericAuditFields {
 
     @ManyToOne
     private Organization organization;
+
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProjectAccess> projectAccess = new ArrayList<>();
 }
