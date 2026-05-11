@@ -16,9 +16,9 @@ import java.sql.Types;
 import java.util.UUID;
 
 @ReadPermission(expression = "team manage project access")
-@CreatePermission(expression = "user is a superuser")
-@UpdatePermission(expression = "user is a superuser")
-@DeletePermission(expression = "user is a superuser")
+@CreatePermission(expression = "user is a superuser OR team manage project access")
+@UpdatePermission(expression = "user is a superuser OR team manage project access")
+@DeletePermission(expression = "user is a superuser OR team manage project access")
 @Include(rootLevel = false)
 @Getter
 @Setter
