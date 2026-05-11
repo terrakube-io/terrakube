@@ -151,7 +151,10 @@ async function deleteProject(organizationId: string, projectId: string): Promise
   await axiosInstance.delete(`organization/${organizationId}/project/${projectId}`);
 }
 
-async function listProjectAccess(organizationId: string, projectId: string): Promise<ApiResponse<ProjectAccessModel[]>> {
+async function listProjectAccess(
+  organizationId: string,
+  projectId: string
+): Promise<ApiResponse<ProjectAccessModel[]>> {
   const body = {
     query: `{
       project(ids: ["${projectId}"]) {
@@ -235,14 +238,8 @@ async function addProjectAccess(
   });
 }
 
-async function removeProjectAccess(
-  organizationId: string,
-  projectId: string,
-  accessId: string
-): Promise<void> {
-  await axiosInstance.delete(
-    `organization/${organizationId}/project/${projectId}/projectAccess/${accessId}`
-  );
+async function removeProjectAccess(organizationId: string, projectId: string, accessId: string): Promise<void> {
+  await axiosInstance.delete(`organization/${organizationId}/project/${projectId}/projectAccess/${accessId}`);
 }
 
 const methods = {

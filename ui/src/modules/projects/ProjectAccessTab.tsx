@@ -150,10 +150,7 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
 
       <h2>Add Team</h2>
       <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 16 }}>
-        <Form.Item
-          name="teamName"
-          rules={[{ required: true, message: "Team name is required" }]}
-        >
+        <Form.Item name="teamName" rules={[{ required: true, message: "Team name is required" }]}>
           <Select
             showSearch
             placeholder="Select a team"
@@ -185,6 +182,7 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
 
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Teams added here can manage workspaces in this project based on their assigned role.
+        <br />
         This is additive — existing org-level and workspace-level permissions are not affected.
       </Typography.Text>
     </div>
