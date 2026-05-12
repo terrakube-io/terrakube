@@ -43,3 +43,7 @@
     max-width: 350px;
   }
 }
+
+[data-theme="dark"] .pat-section .breadcrumb {
+  color: var(--tk-text-secondary);
+}

@@ -650,3 +650,312 @@
     text-align: left;
   }
 }
+
+/* ==========================================================================
+   Dark Mode Overrides
+   ========================================================================== */
+
+[data-theme="dark"] .structured-plan-shell {
+  background: var(--tk-bg-container);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-summaryArea {
+  border-bottom-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-summaryEmpty {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-summaryMeta {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-toolbar {
+  border-bottom-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-searchInput {
+  background: var(--tk-bg-base);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-searchInput:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+[data-theme="dark"] .structured-plan-searchInput::placeholder {
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-selectWrap {
+  background: var(--tk-bg-base);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-selectWrap:focus-within {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+[data-theme="dark"] .structured-plan-selectIcon,
+[data-theme="dark"] .structured-plan-selectChevron {
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-select {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-checkbox {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-toolbarMeta {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-toolbarButton {
+  background: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-toolbarButton:hover {
+  background: var(--tk-fill-primary);
+}
+
+[data-theme="dark"] .structured-plan-row {
+  border-bottom-color: var(--tk-border-secondary);
+}
+
+[data-theme="dark"] .structured-plan-rowToggle:hover {
+  background: var(--tk-fill-primary);
+}
+
+[data-theme="dark"] .structured-plan-rowToggle:focus-visible {
+  background: var(--tk-fill-primary);
+  box-shadow: inset 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+[data-theme="dark"] .structured-plan-chevron {
+  color: var(--tk-text-secondary);
+}
+
+/* Action icons — dark mode: darker pastel variants */
+[data-theme="dark"] .structured-plan-actionIcon--create {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.3);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .structured-plan-actionIcon--update {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: rgba(56, 139, 253, 0.3);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-actionIcon--replace {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-actionIcon--delete {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.3);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-actionIcon--read,
+[data-theme="dark"] .structured-plan-actionIcon--unknown {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-providerBadge {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-address {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-copyButton {
+  border-left-color: var(--tk-border-secondary);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-copyButton:hover {
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-rowBody {
+  background: var(--tk-bg-container);
+}
+
+[data-theme="dark"] .structured-plan-rowBodyInner {
+  border-left-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-rowCounts {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-diffGroupLabel {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-diffGroupChildren {
+  border-left-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-hiddenCount {
+  color: var(--tk-text-tertiary);
+}
+
+/* Diff rows — dark mode */
+[data-theme="dark"] .structured-plan-diffRow {
+  background: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-diffRow--added {
+  background: rgba(46, 160, 67, 0.08);
+  border-color: rgba(46, 160, 67, 0.25);
+}
+
+[data-theme="dark"] .structured-plan-diffRow--removed {
+  background: rgba(248, 81, 73, 0.08);
+  border-color: rgba(248, 81, 73, 0.25);
+}
+
+[data-theme="dark"] .structured-plan-diffRow--changed {
+  background: rgba(56, 139, 253, 0.08);
+  border-color: rgba(56, 139, 253, 0.25);
+}
+
+[data-theme="dark"] .structured-plan-diffRow--unknown {
+  background: rgba(210, 153, 34, 0.08);
+  border-color: rgba(210, 153, 34, 0.25);
+}
+
+[data-theme="dark"] .structured-plan-diffRow--sensitive {
+  background: rgba(163, 113, 247, 0.08);
+  border-color: rgba(163, 113, 247, 0.25);
+}
+
+[data-theme="dark"] .structured-plan-diffLabel {
+  color: var(--tk-text-primary);
+}
+
+/* Diff markers — dark mode */
+[data-theme="dark"] .structured-plan-diffMarker--added {
+  background: rgba(46, 160, 67, 0.2);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .structured-plan-diffMarker--removed {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-diffMarker--changed {
+  background: rgba(56, 139, 253, 0.2);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-diffMarker--unknown {
+  background: rgba(210, 153, 34, 0.2);
+  color: #e3b341;
+}
+
+[data-theme="dark"] .structured-plan-diffMarker--sensitive {
+  background: rgba(163, 113, 247, 0.2);
+  color: #d2a8ff;
+}
+
+[data-theme="dark"] .structured-plan-diffArrow {
+  color: var(--tk-text-tertiary);
+}
+
+/* Value tokens — dark mode */
+[data-theme="dark"] .structured-plan-valueToken {
+  background: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-valueToken--added {
+  border-color: rgba(46, 160, 67, 0.35);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .structured-plan-valueToken--removed {
+  border-color: rgba(248, 81, 73, 0.35);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-valueToken--changed {
+  border-color: rgba(56, 139, 253, 0.35);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-valueToken--unknown {
+  border-color: rgba(210, 153, 34, 0.35);
+  color: #e3b341;
+}
+
+[data-theme="dark"] .structured-plan-valueToken--sensitive {
+  border-color: rgba(163, 113, 247, 0.35);
+  color: #d2a8ff;
+}
+
+/* Action pills — dark mode */
+[data-theme="dark"] .structured-plan-actionPill--create {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.3);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .structured-plan-actionPill--update {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: rgba(56, 139, 253, 0.3);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-actionPill--replace {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-actionPill--delete {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.3);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-actionPill--read,
+[data-theme="dark"] .structured-plan-actionPill--unknown {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-metaPill {
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+}
