@@ -658,6 +658,7 @@
 [data-theme="dark"] .structured-plan-shell {
   background: var(--tk-bg-container);
   border-color: var(--tk-border-primary);
+  color: var(--tk-text-primary);
 }
 
 [data-theme="dark"] .structured-plan-summaryArea {
