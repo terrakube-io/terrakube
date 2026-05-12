@@ -146,6 +146,34 @@ public class SetupWorkspaceTest {
         File workspaceDir = setup.prepareWorkspace(job);
         File credsFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials_aws.txt");
         Assert.assertTrue(credsFile.exists());
-        Assert.assertEquals(FileUtils.readFileToString(credsFile, Charset.defaultCharset()), "ze-secret");
+        Assert.assertEquals("ze-secret", FileUtils.readFileToString(credsFile, Charset.defaultCharset()));
+        Assert.assertEquals(credsFile.getAbsolutePath(),
+                job.getEnvironmentVariables().get("AWS_WEB_IDENTITY_TOKEN_FILE"));
+    }
+
+    @Test
+    public void injectsGcpCredentialsWhenAsked() throws Exception {
+        TerraformJob job = successfulTarGzJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_GCP", "true");
+        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_FILE", "{\"access_token\":\"ze-jwt\"}");
+        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE",
+                "{\"credential_source\":{\"file\":\"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\"}}");
+
+        File workspaceDir = setup.prepareWorkspace(job);
+        File jwtFile = FileUtils.getFile(workspaceDir, "terrakube_dynamic_credentials.json");
+        File configFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials.json");
+
+        Assert.assertTrue(jwtFile.exists());
+        Assert.assertTrue(configFile.exists());
+        Assert.assertEquals("{\"access_token\":\"ze-jwt\"}",
+                FileUtils.readFileToString(jwtFile, Charset.defaultCharset()));
+        // ${WORKSPACE_DIRECTORY} placeholder must be substituted with the actual clone path.
+        Assert.assertEquals(
+                "{\"credential_source\":{\"file\":\"" + workspaceDir.getAbsolutePath()
+                        + "/terrakube_dynamic_credentials.json\"}}",
+                FileUtils.readFileToString(configFile, Charset.defaultCharset()));
+        Assert.assertEquals(configFile.getAbsolutePath(),
+                job.getEnvironmentVariables().get("GOOGLE_APPLICATION_CREDENTIALS"));
     }
 }
