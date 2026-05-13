@@ -17,7 +17,7 @@ import java.util.UUID;
 
 @ReadPermission(expression = "team view project OR team project access view project")
 @CreatePermission(expression = "team manage project")
-@UpdatePermission(expression = "team manage project")
+@UpdatePermission(expression = "team manage project OR team project admin manages project access field")
 @DeletePermission(expression = "team manage project")
 @Include
 @Getter
@@ -40,6 +40,7 @@ public class Project extends GenericAuditFields {
     @ManyToOne
     private Organization organization;
 
+    @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProjectAccess> projectAccess = new ArrayList<>();
 }

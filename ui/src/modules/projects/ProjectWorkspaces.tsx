@@ -9,9 +9,11 @@ import workspaceService from "@/modules/workspaces/workspaceService";
 type Props = {
   orgid: string;
   projectId: string;
+  manageWorkspace: boolean;
+  canRemoveWorkspace: boolean;
 };
 
-export default function ProjectWorkspaces({ orgid, projectId }: Props) {
+export default function ProjectWorkspaces({ orgid, projectId, manageWorkspace, canRemoveWorkspace }: Props) {
   const [allWorkspaces, setAllWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -128,8 +130,9 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
           okText="Yes"
           cancelText="No"
           placement="left"
+          disabled={!canRemoveWorkspace}
         >
-          <Button danger size="small">
+          <Button danger size="small" disabled={!canRemoveWorkspace}>
             Remove
           </Button>
         </Popconfirm>
@@ -146,7 +149,7 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
         icon={<PlusOutlined />}
         style={{ marginBottom: 16 }}
         onClick={() => setModalOpen(true)}
-        disabled={unassignedWorkspaces.length === 0}
+        disabled={unassignedWorkspaces.length === 0 || !manageWorkspace}
       >
         Add Workspace
       </Button>

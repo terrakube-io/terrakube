@@ -244,6 +244,16 @@ public class RbacV2Service implements RbacService {
         return canPlanJob(access) || canApproveJob(access);
     }
 
+    @Override
+    public boolean canManageProject(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN -> true;
+            case ROLE_WRITE, ROLE_PLAN, ROLE_READ, ROLE_CUSTOM -> false;
+            default -> false;
+        };
+    }
+
     // --- Helpers ---
 
     private String normalizeRole(String role) {

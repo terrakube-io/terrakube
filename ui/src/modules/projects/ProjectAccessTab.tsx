@@ -7,6 +7,7 @@ import projectService, { ProjectAccessModel } from "./projectService";
 type Props = {
   orgid: string;
   projectId: string;
+  canManage: boolean;
 };
 
 type AddTeamForm = {
@@ -27,7 +28,7 @@ function roleColor(role: string): string {
   return ROLES.find((r) => r.value === role)?.color ?? "default";
 }
 
-export default function ProjectAccessTab({ orgid, projectId }: Props) {
+export default function ProjectAccessTab({ orgid, projectId, canManage }: Props) {
   const [accessList, setAccessList] = useState<ProjectAccessModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -123,8 +124,9 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
           okText="Yes"
           cancelText="No"
           placement="left"
+          disabled={!canManage}
         >
-          <Button danger icon={<DeleteOutlined />} size="small">
+          <Button danger icon={<DeleteOutlined />} size="small" disabled={!canManage}>
             Remove
           </Button>
         </Popconfirm>
@@ -143,7 +145,11 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
           columns={columns}
           rowKey="id"
           pagination={false}
-          locale={{ emptyText: "No teams have been granted project-level access." }}
+          locale={{
+            emptyText: canManage
+              ? "No teams have been granted project-level access."
+              : "You don't have permission to view or manage team assignments for this project.",
+          }}
           style={{ marginBottom: 32 }}
         />
       </Spin>
@@ -157,6 +163,7 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
             optionFilterProp="label"
             loading={loadingTeams}
             style={{ minWidth: 220 }}
+            disabled={!canManage}
             options={teams.map((t) => ({
               label: t.name,
               value: t.name,
@@ -165,7 +172,7 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
           />
         </Form.Item>
         <Form.Item name="role" initialValue="write" rules={[{ required: true }]}>
-          <Select style={{ width: 140 }}>
+          <Select style={{ width: 140 }} disabled={!canManage}>
             {ROLES.map((r) => (
               <Select.Option key={r.value} value={r.value}>
                 <Tag color={r.color}>{r.label}</Tag>
@@ -174,7 +181,7 @@ export default function ProjectAccessTab({ orgid, projectId }: Props) {
           </Select>
         </Form.Item>
         <Form.Item>
-          <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+          <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding} disabled={!canManage}>
             Add Team
           </Button>
         </Form.Item>

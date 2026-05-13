@@ -69,4 +69,6 @@ public interface RbacService {
     boolean canApproveJob(ProjectAccess access);
 
     boolean canManageJob(ProjectAccess access);
+
+    boolean canManageProject(ProjectAccess access);
 }

@@ -225,11 +225,6 @@ async function addProjectAccess(
         name: teamName,
         role,
       },
-      relationships: {
-        project: {
-          data: { type: "project", id: projectId },
-        },
-      },
     },
   };
 

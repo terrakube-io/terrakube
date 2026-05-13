@@ -3,13 +3,15 @@ import { Button, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography,
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
-import projectService from "./projectService";
+import projectService, { ProjectAccessModel } from "./projectService";
+import { apiGet } from "@/modules/api/apiWrapper";
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import type { MenuProps } from "antd";
 
 const { Content, Sider } = Layout;
@@ -30,9 +32,18 @@ type GeneralProps = {
   projectId: string;
   project: ProjectModel | null;
   assignedWorkspacesCount: number;
+  manageWorkspace: boolean;
+  canUpdateProject: boolean;
 };
 
-function ProjectGeneralSettings({ orgid, projectId, project, assignedWorkspacesCount }: GeneralProps) {
+function ProjectGeneralSettings({
+  orgid,
+  projectId,
+  project,
+  assignedWorkspacesCount,
+  manageWorkspace,
+  canUpdateProject,
+}: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
@@ -117,7 +128,7 @@ function ProjectGeneralSettings({ orgid, projectId, project, assignedWorkspacesC
             <Input.TextArea rows={5} placeholder="Project description" />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit">
+            <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
               Save settings
             </Button>
           </Form.Item>
@@ -156,13 +167,13 @@ function ProjectGeneralSettings({ orgid, projectId, project, assignedWorkspacesC
           okText="Yes"
           cancelText="No"
           placement="bottom"
-          disabled={assignedWorkspacesCount > 0}
+          disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
         >
           <Button
             type="primary"
             danger
             style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-            disabled={assignedWorkspacesCount > 0}
+            disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
           >
             <Space>
               <DeleteOutlined />
@@ -181,6 +192,30 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const [activeKey, setActiveKey] = useState("general");
   const [assignedWorkspacesCount, setAssignedWorkspacesCount] = useState(0);
   const { token } = theme.useToken();
+  const { permissions } = useOrgPermissions();
+  const [userGroups, setUserGroups] = useState<string[]>([]);
+  const [projectAccessForPerm, setProjectAccessForPerm] = useState<ProjectAccessModel[]>([]);
+
+  useEffect(() => {
+    apiGet<{ groups: string[] }>("/access-token/v1/teams/current-teams").then((res) => {
+      if (!res.isError && res.data?.groups) setUserGroups(res.data.groups);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (orgid && id) {
+      projectService.listProjectAccess(orgid, id).then((res) => {
+        if (!res.isError) setProjectAccessForPerm(res.data ?? []);
+      });
+    }
+  }, [orgid, id]);
+
+  const isProjectAdmin = projectAccessForPerm.some((a) => userGroups.includes(a.name) && a.role === "admin");
+  const isProjectAdminOrWrite = projectAccessForPerm.some(
+    (a) => userGroups.includes(a.name) && (a.role === "admin" || a.role === "write")
+  );
+  const canManageProject = permissions.manageWorkspace || isProjectAdmin;
+  const canRemoveWorkspace = permissions.manageWorkspace || isProjectAdminOrWrite;
 
   const { loading, execute, error } = useApiRequest({
     action: () => projectService.getProject(orgid!, id!),
@@ -243,9 +278,16 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const renderContent = () => {
     switch (activeKey) {
       case "workspaces":
-        return <ProjectWorkspaces orgid={orgid!} projectId={id!} />;
+        return (
+          <ProjectWorkspaces
+            orgid={orgid!}
+            projectId={id!}
+            manageWorkspace={permissions.manageWorkspace}
+            canRemoveWorkspace={canRemoveWorkspace}
+          />
+        );
       case "teams":
-        return <ProjectAccessTab orgid={orgid!} projectId={id!} />;
+        return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":
       default:
         return (
@@ -254,6 +296,8 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             projectId={id!}
             project={project}
             assignedWorkspacesCount={assignedWorkspacesCount}
+            manageWorkspace={permissions.manageWorkspace}
+            canUpdateProject={canManageProject}
           />
         );
     }
