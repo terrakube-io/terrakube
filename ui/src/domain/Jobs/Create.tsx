@@ -28,6 +28,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [branchName, setBranchName] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const onCancel = () => {
     setVisible(false);
   };
@@ -60,6 +61,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   };
 
   const onCreate = (values: CreateJobForm) => {
+    setSubmitting(true);
+
     const body = {
       data: {
         type: "job",
@@ -87,6 +90,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
       })
       .then((response) => {
         const newJobId = response.data.data.id;
+        setSubmitting(false);
         setVisible(false);
         changeJob(newJobId);
 
@@ -95,6 +99,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
         }
       })
       .catch((error) => {
+        setSubmitting(false);
         message.error("Not able to create job: " + error.response.data.errors[0].detail);
         setVisible(false);
       });
@@ -120,6 +125,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
         okText="Start"
         cancelText="Cancel"
         onCancel={onCancel}
+        okButtonProps={{ loading: submitting, disabled: submitting }}
+        cancelButtonProps={{ disabled: submitting }}
         onOk={() => {
           form
             .validateFields()
