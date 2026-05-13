@@ -28,6 +28,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [branchName, setBranchName] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const onCancel = () => {
     setVisible(false);
   };
@@ -60,6 +62,10 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   };
 
   const onCreate = (values: CreateJobForm) => {
+    // Close modal immediately — don't make user wait
+    setVisible(false);
+    setSubmitting(true);
+
     const body = {
       data: {
         type: "job",
@@ -87,7 +93,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
       })
       .then((response) => {
         const newJobId = response.data.data.id;
-        setVisible(false);
+        setSubmitting(false);
         changeJob(newJobId);
 
         if (organizationId && workspaceId) {
@@ -95,8 +101,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
         }
       })
       .catch((error) => {
-        message.error("Not able to create job: " + error.response.data.errors[0].detail);
-        setVisible(false);
+        setSubmitting(false);
+        message.error("Failed to start job: " + error.response.data.errors[0].detail);
       });
   };
 
@@ -109,7 +115,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
           setVisible(true);
         }}
         icon={<PlayCircleOutlined />}
-        disabled={!planJob}
+        disabled={!planJob || submitting}
+        loading={submitting}
       >
         Run now
       </Button>
