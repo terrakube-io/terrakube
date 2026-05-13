@@ -17,6 +17,7 @@ import org.apache.tools.tar.TarOutputStream;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.mockito.Mockito;
@@ -145,7 +146,28 @@ public class SetupWorkspaceTest {
         job.getEnvironmentVariables().put("TERRAKUBE_AWS_CREDENTIALS_FILE", "ze-secret");
         File workspaceDir = setup.prepareWorkspace(job);
         File credsFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials_aws.txt");
-        Assert.assertTrue(credsFile.exists());
-        Assert.assertEquals(FileUtils.readFileToString(credsFile, Charset.defaultCharset()), "ze-secret");
+        Assertions.assertTrue(credsFile.exists());
+        Assertions.assertEquals("ze-secret", FileUtils.readFileToString(credsFile, Charset.defaultCharset()));
+    }
+
+    @Test
+    public void injectsGcpCredentialsWhenAsked() throws Exception {
+        TerraformJob job = successfulTarGzJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_GCP", "true");
+        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_FILE", "{\"access_token\":\"ze-jwt\"}");
+        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE",
+                "{\"credential_source\":{\"file\":\"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\"}}");
+
+        File workspaceDir = setup.prepareWorkspace(job);
+        File jwtFile = FileUtils.getFile(workspaceDir, "terrakube_dynamic_credentials.json");
+        File configFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials.json");
+
+        Assertions.assertTrue(jwtFile.exists());
+        Assertions.assertTrue(configFile.exists());
+        Assertions.assertEquals("{\"access_token\":\"ze-jwt\"}", FileUtils.readFileToString(jwtFile, Charset.defaultCharset()));
+        // ${WORKSPACE_DIRECTORY} placeholder must be substituted with the actual clone path.
+        Assertions.assertEquals("{\"credential_source\":{\"file\":\"" + workspaceDir.getAbsolutePath()
+                + "/terrakube_dynamic_credentials.json\"}}", FileUtils.readFileToString(configFile, Charset.defaultCharset()));
     }
 }
