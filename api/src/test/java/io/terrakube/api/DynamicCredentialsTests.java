@@ -119,7 +119,6 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
 
         assertTrue(result.containsKey("TERRAKUBE_AWS_CREDENTIALS_FILE"));
         assertTrue(result.containsKey("AWS_ROLE_ARN"));
-        assertTrue(result.containsKey("AWS_WEB_IDENTITY_TOKEN_FILE"));
         assertEquals("arn:aws:iam::123456789012:role/test-role", result.get("AWS_ROLE_ARN"));
         assertFalse(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE").isEmpty(), "JWT token should be generated");
     }
@@ -136,7 +135,6 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
 
         assertTrue(result.containsKey("TERRAKUBE_GCP_CREDENTIALS_FILE"));
         assertTrue(result.containsKey("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE"));
-        assertTrue(result.containsKey("GOOGLE_APPLICATION_CREDENTIALS"));
         assertTrue(result.get("TERRAKUBE_GCP_CREDENTIALS_FILE").contains("access_token"));
     }
 

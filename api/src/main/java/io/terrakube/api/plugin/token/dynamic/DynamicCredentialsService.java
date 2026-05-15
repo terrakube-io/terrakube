@@ -166,7 +166,8 @@ public class DynamicCredentialsService {
 
         workspaceEnvVariables.put("TERRAKUBE_AWS_CREDENTIALS_FILE", awsWebIdentityToken);
         workspaceEnvVariables.put("AWS_ROLE_ARN", workspaceEnvVariables.get("WORKLOAD_IDENTITY_ROLE_AWS"));
-        workspaceEnvVariables.put("AWS_WEB_IDENTITY_TOKEN_FILE", getDefaultExecutorPath(job) + "/terrakube_config_dynamic_credentials_aws.txt");
+        // AWS_WEB_IDENTITY_TOKEN_FILE is set by the executor once it knows the absolute
+        // path of the file it wrote (the workspace clone dir is only known there).
 
         return workspaceEnvVariables;
     }
@@ -195,7 +196,7 @@ public class DynamicCredentialsService {
                 "    \"token_url\": \"https://sts.googleapis.com/v1/token\",\n" +
                 "    \"service_account_impersonation_url\": \"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken\",\n" +
                 "    \"credential_source\": {\n" +
-                "      \"file\": \"%s/terrakube_dynamic_credentials.json\",\n" +
+                "      \"file\": \"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\",\n" +
                 "      \"format\": {\n" +
                 "        \"type\": \"json\",\n" +
                 "        \"subject_token_field_name\": \"access_token\"\n" +
@@ -203,19 +204,20 @@ public class DynamicCredentialsService {
                 "    }\n" +
                 "  }";
 
-        String executorDirectory = getDefaultExecutorPath(job);
-
+        // The ${WORKSPACE_DIRECTORY} placeholder is substituted by the executor when
+        // it writes the config to disk (only the executor knows the workspace clone path).
         String audience = workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP");
         String serviceAccountEmail = workspaceEnvVariables.get("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL");
 
-        googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail, executorDirectory);
+        googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail);
 
         log.debug("TERRAKUBE_GCP_CREDENTIALS_FILE: {}", googleCredentialsFile);
         log.debug("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE: {}", googleCredentialConfigFile);
 
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_FILE", googleCredentialsFile);
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE", googleCredentialConfigFile);
-        workspaceEnvVariables.put("GOOGLE_APPLICATION_CREDENTIALS", executorDirectory + "/terrakube_config_dynamic_credentials.json");
+        // GOOGLE_APPLICATION_CREDENTIALS is set by the executor once it knows the absolute
+        // path of the file it wrote (the workspace clone dir is only known there).
 
         return workspaceEnvVariables;
     }
@@ -261,14 +263,5 @@ public class DynamicCredentialsService {
         }
 
         return publicKeyPEM;
-    }
-
-    private static String getDefaultExecutorPath(Job job) {
-        return String.format(
-                "%s/.terraform-spring-boot/executor/%s/%s",
-                FileUtils.getUserDirectoryPath(),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString()
-        );
     }
 }
