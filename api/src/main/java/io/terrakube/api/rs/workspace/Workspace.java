@@ -129,6 +129,7 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace")
     private List<WorkspaceTag> workspaceTag;
 
+    @UpdatePermission(expression = "team manage workspace")
     @OneToOne
     private Project project;
 

@@ -39,19 +39,19 @@ public class TeamViewWorkspace extends OperationCheck<Workspace> {
         log.debug("team view workspace {}", workspace.getId());
         if (authenticatedUser.isSuperUser(requestScope.getUser())) return true;
         List<Team> teamList = workspace.getOrganization().getTeam();
-        if (workspace.getProject() != null) {
-            for (Team team : teamList) {
-                if (authenticatedUser.isServiceAccount(requestScope.getUser())) {
-                    if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
-                        return true;
-                } else {
-                    if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
-                        return true;
-                }
-            }
-            return false;
+        if (workspace.getProject() == null) {
+            return membershipService.checkMembership(requestScope.getUser(), teamList);
         }
-        return membershipService.checkMembership(requestScope.getUser(), teamList);
+        for (Team team : teamList) {
+            if (authenticatedUser.isServiceAccount(requestScope.getUser())) {
+                if (groupService.isServiceMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
+                    return true;
+            } else {
+                if (groupService.isMember(requestScope.getUser(), team.getName()) && rbacService.canManageWorkspace(team))
+                    return true;
+            }
+        }
+        return false;
     }
 
 }

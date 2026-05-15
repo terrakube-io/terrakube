@@ -211,11 +211,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   }, [orgid, id]);
 
   const isProjectAdmin = projectAccessForPerm.some((a) => userGroups.includes(a.name) && a.role === "admin");
-  const isProjectAdminOrWrite = projectAccessForPerm.some(
-    (a) => userGroups.includes(a.name) && (a.role === "admin" || a.role === "write")
-  );
   const canManageProject = permissions.manageWorkspace || isProjectAdmin;
-  const canRemoveWorkspace = permissions.manageWorkspace || isProjectAdminOrWrite;
 
   const { loading, execute, error } = useApiRequest({
     action: () => projectService.getProject(orgid!, id!),
@@ -278,14 +274,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const renderContent = () => {
     switch (activeKey) {
       case "workspaces":
-        return (
-          <ProjectWorkspaces
-            orgid={orgid!}
-            projectId={id!}
-            manageWorkspace={permissions.manageWorkspace}
-            canRemoveWorkspace={canRemoveWorkspace}
-          />
-        );
+        return <ProjectWorkspaces orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":
