@@ -34,6 +34,7 @@ type GeneralProps = {
   assignedWorkspacesCount: number;
   manageWorkspace: boolean;
   canUpdateProject: boolean;
+  onSaved: () => void;
 };
 
 function ProjectGeneralSettings({
@@ -43,6 +44,7 @@ function ProjectGeneralSettings({
   assignedWorkspacesCount,
   manageWorkspace,
   canUpdateProject,
+  onSaved,
 }: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
@@ -59,6 +61,7 @@ function ProjectGeneralSettings({
     try {
       await projectService.updateProject(orgid, projectId, values);
       message.success("Project updated successfully");
+      onSaved();
     } catch (err: any) {
       if (err?.response?.status === 403) {
         message.error(
@@ -122,10 +125,10 @@ function ProjectGeneralSettings({
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input />
+            <Input disabled={!canUpdateProject} />
           </Form.Item>
           <Form.Item name="description" label="Description" extra="Optional">
-            <Input.TextArea rows={5} placeholder="Project description" />
+            <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
@@ -248,7 +251,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const handleTabChange = (key: string) => {
     setActiveKey(key);
     if (key === "general" && orgid && id) {
-      // Reload workspace count when returning to general tab
+      execute();
       workspaceService.listWorkspaces(orgid).then((result) => {
         if (!result.isError) {
           const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
@@ -287,6 +290,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             assignedWorkspacesCount={assignedWorkspacesCount}
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
+            onSaved={execute}
           />
         );
     }

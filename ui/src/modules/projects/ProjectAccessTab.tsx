@@ -154,38 +154,41 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
         />
       </Spin>
 
-      <h2>Add Team</h2>
-      <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 16 }}>
-        <Form.Item name="teamName" rules={[{ required: true, message: "Team name is required" }]}>
-          <Select
-            showSearch
-            placeholder="Select a team"
-            optionFilterProp="label"
-            loading={loadingTeams}
-            style={{ minWidth: 220 }}
-            disabled={!canManage}
-            options={teams.map((t) => ({
-              label: t.name,
-              value: t.name,
-              disabled: accessList.some((a) => a.name === t.name),
-            }))}
-          />
-        </Form.Item>
-        <Form.Item name="role" initialValue="write" rules={[{ required: true }]}>
-          <Select style={{ width: 140 }} disabled={!canManage}>
-            {ROLES.map((r) => (
-              <Select.Option key={r.value} value={r.value}>
-                <Tag color={r.color}>{r.label}</Tag>
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding} disabled={!canManage}>
-            Add Team
-          </Button>
-        </Form.Item>
-      </Form>
+      {canManage && (
+        <>
+          <h2>Add Team</h2>
+          <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 16 }}>
+            <Form.Item name="teamName" rules={[{ required: true, message: "Team name is required" }]}>
+              <Select
+                showSearch
+                placeholder="Select a team"
+                optionFilterProp="label"
+                loading={loadingTeams}
+                style={{ minWidth: 220 }}
+                options={teams.map((t) => ({
+                  label: t.name,
+                  value: t.name,
+                  disabled: accessList.some((a) => a.name === t.name),
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="role" initialValue="write" rules={[{ required: true }]}>
+              <Select style={{ width: 140 }}>
+                {ROLES.map((r) => (
+                  <Select.Option key={r.value} value={r.value}>
+                    <Tag color={r.color}>{r.label}</Tag>
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+                Add Team
+              </Button>
+            </Form.Item>
+          </Form>
+        </>
+      )}
 
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Teams added here can manage workspaces in this project based on their assigned role.
