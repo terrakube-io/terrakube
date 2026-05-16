@@ -41,20 +41,21 @@ const defaultPermissions: OrgPermissionSet = {
  * Returns { permissions, loading } where permissions contains all the
  * granular boolean flags from the backend PermissionSet.
  */
-export function useOrgPermissions() {
+export function useOrgPermissions(orgIdOverride?: string) {
   const { orgid } = useParams<{ orgid: string }>();
+  const orgId = orgIdOverride ?? orgid;
   const [permissions, setPermissions] = useState<OrgPermissionSet>(defaultPermissions);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!orgid) {
+    if (!orgId) {
       setLoading(false);
       return;
     }
 
     const url = `${
       new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${orgid}`;
+    }/access-token/v1/teams/permissions/organization/${orgId}`;
 
     axiosInstance
       .get(url)
@@ -79,7 +80,7 @@ export function useOrgPermissions() {
       .finally(() => {
         setLoading(false);
       });
-  }, [orgid]);
+  }, [orgId]);
 
   return { permissions, loading };
 }

@@ -353,7 +353,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
             extra="Optional. Assigning a project lets you group and filter workspaces."
             style={{ marginTop: 16 }}
           >
-            <Select placeholder="No project" disabled={!orgPermissions.manageWorkspace}>
+            <Select placeholder="No project" disabled={!manageWorkspace}>
               {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
               {projectList.map((p) => (
                 <Option key={p.id}>{p.name}</Option>
