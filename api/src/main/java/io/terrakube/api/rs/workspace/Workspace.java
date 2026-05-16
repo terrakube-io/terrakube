@@ -31,9 +31,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view workspace OR team limited view workspace")
-@CreatePermission(expression = "team manage workspace")
-@UpdatePermission(expression = "team manage workspace OR team limited manage workspace")
+@ReadPermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
+@CreatePermission(expression = "team manage workspace OR team project limited create workspace")
+@UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
@@ -119,7 +119,7 @@ public class Workspace extends GenericAuditFields {
     private List<Schedule> schedule;
 
     @OneToMany(mappedBy = "workspace")
-    @UpdatePermission(expression = "team view workspace OR team limited view workspace")
+    @UpdatePermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
     private List<Job> job;
 
     @Exclude
@@ -129,6 +129,7 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace")
     private List<WorkspaceTag> workspaceTag;
 
+    @UpdatePermission(expression = "team manage workspace OR team project limited reassign workspace")
     @OneToOne
     private Project project;
 

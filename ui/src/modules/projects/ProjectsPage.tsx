@@ -7,6 +7,7 @@ import projectService from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 
 type Props = {
   organizationName: string;
@@ -21,6 +22,7 @@ type ProjectForm = {
 export default function ProjectsPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { permissions } = useOrgPermissions(id);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -112,7 +114,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       ]}
       fluid
       actions={
-        <Button icon={<PlusOutlined />} type="primary" onClick={openCreate}>
+        <Button icon={<PlusOutlined />} type="primary" onClick={openCreate} disabled={!permissions.manageWorkspace}>
           New project
         </Button>
       }

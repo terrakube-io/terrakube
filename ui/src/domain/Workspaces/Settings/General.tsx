@@ -5,6 +5,7 @@ import { Agent, Template, TofuRelease, Workspace } from "../../types";
 import { atomicHeader, compareVersions, genericHeader, getIaCIconById, getIaCNameById, iacTypes } from "../Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { ProjectModel } from "@/domain/types";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 
 const { Text } = Typography;
 
@@ -32,6 +33,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
   const id = workspaceData.id;
   const Option = Select;
   const [selectedIac, setSelectedIac] = useState("");
+  const { permissions: orgPermissions } = useOrgPermissions();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
@@ -352,7 +354,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
             style={{ marginTop: 16 }}
           >
             <Select placeholder="No project" disabled={!manageWorkspace}>
-              <Option key="none">(No project)</Option>
+              {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
               {projectList.map((p) => (
                 <Option key={p.id}>{p.name}</Option>
               ))}

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet author="demo-data" id="demo-project-access">
+
+        <!--
+        ***************
+        ***PROJECT***
+        ***************
+        -->
+        <insert tableName="project">
+            <column name="id"              value="a1b2c3d4-e5f6-7890-abcd-ef1234567890" />
+            <column name="name"            value="demo-project" />
+            <column name="description"     value="Demo project showing project-level team access" />
+            <column name="organization_id" value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+        <!--
+        ********************
+        ***PROJECT ACCESS***
+        ********************
+        -->
+        <insert tableName="project_access">
+            <column name="id"               value="c3d4e5f6-a7b8-9012-cdef-123456789012" />
+            <column name="name"             value="GCP_DEVELOPERS" />
+            <column name="role"             value="write" />
+            <column name="manage_workspace" value="true" />
+            <column name="manage_job"       value="true" />
+            <column name="manage_state"     value="false" />
+            <column name="plan_job"         value="true" />
+            <column name="approve_job"      value="true" />
+            <column name="project_id"       value="a1b2c3d4-e5f6-7890-abcd-ef1234567890" />
+        </insert>
+
+    </changeSet>
+
+    <changeSet author="demo-data" id="demo-project-access-teams">
+
+        <!--
+        *************
+        ***TEAMS***
+        *************
+        -->
+        <insert tableName="team">
+            <column name="id"               value="a1b2c3d4-0001-0000-0000-000000000001" />
+            <column name="name"             value="PROJECT_TEAM_MEMBER" />
+            <column name="manage_workspace" value="false" />
+            <column name="manage_module"    value="false" />
+            <column name="manage_provider"  value="false" />
+            <column name="manage_vcs"       value="false" />
+            <column name="manage_template"  value="false" />
+            <column name="organization_id"  value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"               value="a1b2c3d4-0001-0000-0000-000000000002" />
+            <column name="name"             value="PROJECT_WRITE_MEMBER" />
+            <column name="manage_workspace" value="false" />
+            <column name="manage_module"    value="false" />
+            <column name="manage_provider"  value="false" />
+            <column name="manage_vcs"       value="false" />
+            <column name="manage_template"  value="false" />
+            <column name="organization_id"  value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"               value="a1b2c3d4-0001-0000-0000-000000000003" />
+            <column name="name"             value="PROJECT_ADMIN_MEMBER" />
+            <column name="manage_workspace" value="false" />
+            <column name="manage_module"    value="false" />
+            <column name="manage_provider"  value="false" />
+            <column name="manage_vcs"       value="false" />
+            <column name="manage_template"  value="false" />
+            <column name="organization_id"  value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+    </changeSet>
+
+</databaseChangeLog>

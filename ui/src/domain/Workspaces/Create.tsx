@@ -20,14 +20,13 @@ import { IconContext } from "react-icons";
 import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { ProjectModel, SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
 import { compareVersions } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
-import workspaceService from "@/modules/workspaces/workspaceService";
 const { Content } = Layout;
 const { Step } = Steps;
 
@@ -146,6 +145,9 @@ export const CreateWorkspace = () => {
     },
   ];
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedProjectId = searchParams.get("projectId");
+
   useEffect(() => {
     setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME));
     setLoading(true);
@@ -191,7 +193,12 @@ export const CreateWorkspace = () => {
       setVCS(vcsRes.data.data);
 
       // Set projects
-      if (!projectsRes.isError) setProjectList(projectsRes.data);
+      if (!projectsRes.isError) {
+        setProjectList(projectsRes.data);
+        if (preselectedProjectId) {
+          form.setFieldsValue({ project: preselectedProjectId });
+        }
+      }
 
       setLoading(false);
     });
@@ -357,6 +364,15 @@ export const CreateWorkspace = () => {
       };
     }
 
+    if (values.project && values.project !== "none") {
+      (body["atomic:operations"][0].data.relationships as any)["project"] = {
+        data: {
+          type: "project",
+          id: values.project,
+        },
+      };
+    }
+
     try {
       const response = await axiosInstance.post(`/operations`, body, {
         headers: {
@@ -366,9 +382,6 @@ export const CreateWorkspace = () => {
       });
       if (response.status === 200) {
         const workspaceId = response.data["atomic:results"][0].data.id;
-        if (values.project && values.project !== "none") {
-          await workspaceService.assignWorkspaceToProject(organizationId!, workspaceId, values.project);
-        }
         navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
       }
     } catch (error: any) {
@@ -739,7 +752,7 @@ export const CreateWorkspace = () => {
                 extra="Optional. Assigning a project lets you group and filter workspaces."
               >
                 <Select placeholder="(No project)" style={{ width: 250 }}>
-                  <Option key="none">(No project)</Option>
+                  {!preselectedProjectId && <Option key="none">(No project)</Option>}
                   {projectList.map((p) => (
                     <Option key={p.id}>{p.name}</Option>
                   ))}
