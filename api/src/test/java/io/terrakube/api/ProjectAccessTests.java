@@ -1,5 +1,6 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.team.Team;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
@@ -7,17 +8,34 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
+import java.util.UUID;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.given;
 import static org.mockito.Mockito.when;
 
 public class ProjectAccessTests extends ServerApplicationTests {
 
     private static final String ORG_ID = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
+    private static final String TEMPLATE_REF = "2db36f7c-f549-4341-a789-315d47eb061d";
+    private static final String DEVS_TEAM_ID = "58529721-425e-44d7-8b0d-1d515043c2f7";
 
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        wireMockServer.resetAll();
+        stubFor(post(urlPathEqualTo("/api/v1/terraform-rs"))
+                .willReturn(aResponse().withStatus(HttpStatus.ACCEPTED.value()).withBody("")));
+    }
+
+    private void setDevsJobPermissions(boolean enabled) {
+        Team team = teamRepository.findById(UUID.fromString(DEVS_TEAM_ID)).get();
+        team.setManageJob(enabled);
+        team.setPlanJob(enabled);
+        team.setApproveJob(enabled);
+        team.setRole("custom");
+        teamRepository.save(team);
     }
 
     @Test
@@ -926,6 +944,483 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
                 .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectBId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void viewJobWithProjectLevelAccess() {
+        String projectId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"viewJobWithProjectLevelAccess\",\n" +
+                        "      \"description\": \"Integration test project\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"viewJobWithProjectLevelAccess\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"project\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"project\",\n" +
+                        "          \"id\": \"" + projectId + "\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/workspace")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        setDevsJobPermissions(true);
+        String jobId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"job\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"templateReference\": \"" + TEMPLATE_REF + "\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"workspace\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"workspace\",\n" +
+                        "          \"id\": \"" + workspaceId + "\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/job")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Before project access: PROJECT_PLAN_MEMBER (not an org team member) gets 403
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_PLAN_MEMBER"))
+                .when()
+                .get("/api/v1/organization/" + ORG_ID + "/job/" + jobId)
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Grant PROJECT_PLAN_MEMBER read role on the project
+        String accessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_PLAN_MEMBER\",\n" +
+                        "      \"role\": \"read\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // After project access: PROJECT_PLAN_MEMBER can view the job
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_PLAN_MEMBER"))
+                .when()
+                .get("/api/v1/organization/" + ORG_ID + "/job/" + jobId)
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+
+        // Cleanup
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + accessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Job has no @DeletePermission; delete steps first to avoid FK_JOB_STEP constraint
+        stepRepository.deleteAll(stepRepository.findByJobId(Integer.parseInt(jobId)));
+        jobRepository.deleteById(Integer.parseInt(jobId));
+        setDevsJobPermissions(false);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void planJobWithProjectPlanRole() {
+        String projectId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"planJobWithProjectPlanRole\",\n" +
+                        "      \"description\": \"Integration test project for plan role\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"planJobWithProjectPlanRole\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"project\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"project\",\n" +
+                        "          \"id\": \"" + projectId + "\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/workspace")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Grant PROJECT_TEAM_MEMBER read role (canPlanJob=false)
+        String readAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_TEAM_MEMBER\",\n" +
+                        "      \"role\": \"read\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        String jobPayload = "{\n" +
+                "  \"data\": {\n" +
+                "    \"type\": \"job\",\n" +
+                "    \"attributes\": {\n" +
+                "      \"templateReference\": \"" + TEMPLATE_REF + "\"\n" +
+                "    },\n" +
+                "    \"relationships\": {\n" +
+                "      \"workspace\": {\n" +
+                "        \"data\": {\n" +
+                "          \"type\": \"workspace\",\n" +
+                "          \"id\": \"" + workspaceId + "\"\n" +
+                "        }\n" +
+                "      }\n" +
+                "    }\n" +
+                "  }\n" +
+                "}";
+
+        // Read role cannot create (plan) a job
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_TEAM_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body(jobPayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/job")
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Grant PROJECT_PLAN_MEMBER plan role (canPlanJob=true)
+        String planAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_PLAN_MEMBER\",\n" +
+                        "      \"role\": \"plan\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Plan role can create (plan) a job
+        String jobId = given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_PLAN_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body(jobPayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/job")
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Cleanup
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + planAccessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + readAccessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Job has no @DeletePermission; delete steps first to avoid FK_JOB_STEP constraint
+        stepRepository.deleteAll(stepRepository.findByJobId(Integer.parseInt(jobId)));
+        jobRepository.deleteById(Integer.parseInt(jobId));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void approveJobWithProjectWriteRole() {
+        String projectId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"approveJobWithProjectWriteRole\",\n" +
+                        "      \"description\": \"Integration test project for approve role\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"approveJobWithProjectWriteRole\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"project\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"project\",\n" +
+                        "          \"id\": \"" + projectId + "\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/workspace")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        setDevsJobPermissions(true);
+        String jobId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"job\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"templateReference\": \"" + TEMPLATE_REF + "\"\n" +
+                        "    },\n" +
+                        "    \"relationships\": {\n" +
+                        "      \"workspace\": {\n" +
+                        "        \"data\": {\n" +
+                        "          \"type\": \"workspace\",\n" +
+                        "          \"id\": \"" + workspaceId + "\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/job")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+        setDevsJobPermissions(false);
+
+        // Grant PROJECT_PLAN_MEMBER plan role (canApproveJob=false)
+        String planAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_PLAN_MEMBER\",\n" +
+                        "      \"role\": \"plan\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Plan role cannot approve a job (canApproveJob=false)
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_PLAN_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\": {\"type\": \"job\", \"id\": \"" + jobId + "\", \"attributes\": {\"status\": \"approved\"}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG_ID + "/job/" + jobId)
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Grant PROJECT_WRITE_MEMBER write role (canApproveJob=true)
+        String writeAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_WRITE_MEMBER\",\n" +
+                        "      \"role\": \"write\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Write role can approve a job (canApproveJob=true)
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_WRITE_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\": {\"type\": \"job\", \"id\": \"" + jobId + "\", \"attributes\": {\"status\": \"approved\"}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG_ID + "/job/" + jobId)
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Cleanup
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + writeAccessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + planAccessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Job has no @DeletePermission; delete steps first to avoid FK_JOB_STEP constraint
+        stepRepository.deleteAll(stepRepository.findByJobId(Integer.parseInt(jobId)));
+        jobRepository.deleteById(Integer.parseInt(jobId));
+        setDevsJobPermissions(false);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId)
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
