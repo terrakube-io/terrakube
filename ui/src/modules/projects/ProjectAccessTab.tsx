@@ -1,5 +1,5 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Popconfirm, Select, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, Form, Popconfirm, Select, Space, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import projectService, { ProjectAccessModel } from "./projectService";
@@ -18,14 +18,38 @@ type AddTeamForm = {
 type TeamOption = { id: string; name: string };
 
 const ROLES = [
-  { value: "admin", label: "Admin", color: "red" },
-  { value: "write", label: "Write", color: "orange" },
-  { value: "plan", label: "Plan", color: "blue" },
-  { value: "read", label: "Read", color: "default" },
+  {
+    value: "admin",
+    label: "Admin",
+    color: "red",
+    description: "Full control — manages workspaces, runs plans and approvals, controls project team access.",
+  },
+  {
+    value: "write",
+    label: "Write",
+    color: "orange",
+    description: "Can manage workspaces, and queue and apply plans.",
+  },
+  {
+    value: "plan",
+    label: "Plan",
+    color: "blue",
+    description: "Can queue plans to propose changes but cannot approve or apply them.",
+  },
+  {
+    value: "read",
+    label: "Read",
+    color: "default",
+    description: "Read-only access. Cannot make any changes.",
+  },
 ];
 
 function roleColor(role: string): string {
   return ROLES.find((r) => r.value === role)?.color ?? "default";
+}
+
+function roleDescription(role: string): string {
+  return ROLES.find((r) => r.value === role)?.description ?? "";
 }
 
 export default function ProjectAccessTab({ orgid, projectId, canManage }: Props) {
@@ -34,6 +58,9 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   const [adding, setAdding] = useState(false);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingRole, setEditingRole] = useState<string>("");
+  const [savingRole, setSavingRole] = useState(false);
   const [form] = Form.useForm<AddTeamForm>();
 
   const load = async () => {
@@ -100,6 +127,33 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
     }
   };
 
+  const onEditRole = (record: ProjectAccessModel) => {
+    setEditingId(record.id);
+    setEditingRole(record.role);
+  };
+
+  const onSaveRole = async (record: ProjectAccessModel) => {
+    if (editingRole === record.role) {
+      setEditingId(null);
+      return;
+    }
+    setSavingRole(true);
+    try {
+      await projectService.updateProjectAccess(orgid, projectId, record.id, editingRole);
+      message.success(`Role for "${record.name}" updated to ${editingRole}`);
+      setEditingId(null);
+      await load();
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        message.error("You are not authorized to manage project team access.");
+      } else {
+        message.error(err?.message ?? "Failed to update role");
+      }
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
   const columns = [
     {
       title: "Team",
@@ -111,7 +165,62 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
       title: "Role",
       dataIndex: "role",
       key: "role",
-      render: (role: string) => <Tag color={roleColor(role)}>{role ?? "custom"}</Tag>,
+      render: (role: string, record: ProjectAccessModel) => {
+        if (canManage && editingId === record.id) {
+          return (
+            <Space>
+              <Select
+                size="small"
+                value={editingRole}
+                onChange={setEditingRole}
+                style={{ width: 200 }}
+                options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+                optionRender={(opt) => {
+                  const r = ROLES.find((x) => x.value === opt.value);
+                  if (!r) return opt.label;
+                  return (
+                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                      <Tag color={r.color}>{r.label}</Tag>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
+                        {r.description}
+                      </Typography.Text>
+                    </Space>
+                  );
+                }}
+                labelRender={(item) => {
+                  const r = ROLES.find((x) => x.value === item.value);
+                  return r ? <Tag color={r.color}>{r.label}</Tag> : <span>{item.label}</span>;
+                }}
+              />
+              <Button type="primary" size="small" loading={savingRole} onClick={() => onSaveRole(record)}>
+                Save
+              </Button>
+              <Button size="small" onClick={() => setEditingId(null)}>
+                Cancel
+              </Button>
+            </Space>
+          );
+        }
+        return (
+          <Space>
+            <Tooltip title={roleDescription(role)}>
+              <Tag color={roleColor(role)} style={{ cursor: "default" }}>
+                {role ?? "custom"}
+              </Tag>
+            </Tooltip>
+            {canManage && (
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: "auto" }}
+                onClick={() => onEditRole(record)}
+              >
+                Change
+              </Button>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: "",
@@ -157,7 +266,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
       {canManage && (
         <>
           <h2>Add Team</h2>
-          <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 16 }}>
+          <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 8 }}>
             <Form.Item name="teamName" rules={[{ required: true, message: "Team name is required" }]}>
               <Select
                 showSearch
@@ -173,13 +282,26 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
               />
             </Form.Item>
             <Form.Item name="role" initialValue="write" rules={[{ required: true }]}>
-              <Select style={{ width: 140 }}>
-                {ROLES.map((r) => (
-                  <Select.Option key={r.value} value={r.value}>
-                    <Tag color={r.color}>{r.label}</Tag>
-                  </Select.Option>
-                ))}
-              </Select>
+              <Select
+                style={{ width: 200 }}
+                options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+                optionRender={(opt) => {
+                  const r = ROLES.find((x) => x.value === opt.value);
+                  if (!r) return opt.label;
+                  return (
+                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                      <Tag color={r.color}>{r.label}</Tag>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
+                        {r.description}
+                      </Typography.Text>
+                    </Space>
+                  );
+                }}
+                labelRender={(item) => {
+                  const r = ROLES.find((x) => x.value === item.value);
+                  return r ? <Tag color={r.color}>{r.label}</Tag> : <span>{String(item.label ?? "")}</span>;
+                }}
+              />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
@@ -190,7 +312,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
         </>
       )}
 
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 16 }}>
         Teams added here can manage workspaces in this project based on their assigned role.
         <br />
         This is additive — existing org-level and workspace-level permissions are not affected.

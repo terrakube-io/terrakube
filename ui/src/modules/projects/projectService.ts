@@ -237,6 +237,24 @@ async function removeProjectAccess(organizationId: string, projectId: string, ac
   await axiosInstance.delete(`organization/${organizationId}/project/${projectId}/projectAccess/${accessId}`);
 }
 
+async function updateProjectAccess(
+  organizationId: string,
+  projectId: string,
+  accessId: string,
+  role: string
+): Promise<void> {
+  const body = {
+    data: {
+      id: accessId,
+      type: "project_access",
+      attributes: { role },
+    },
+  };
+  await axiosInstance.patch(`organization/${organizationId}/project/${projectId}/projectAccess/${accessId}`, body, {
+    headers: { "Content-Type": "application/vnd.api+json" },
+  });
+}
+
 const methods = {
   listProjects,
   getProject,
@@ -245,6 +263,7 @@ const methods = {
   deleteProject,
   listProjectAccess,
   addProjectAccess,
+  updateProjectAccess,
   removeProjectAccess,
 };
 
