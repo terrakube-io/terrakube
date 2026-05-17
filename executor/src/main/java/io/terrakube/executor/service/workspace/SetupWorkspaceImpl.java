@@ -98,7 +98,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {
                 setupAwsDynamicCredentials(
                         workspaceCloneFolder,
-                        terraformJob.getEnvironmentVariables().get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+                        terraformJob.getEnvironmentVariables().get("TERRAKUBE_AWS_CREDENTIALS_FILE"),
+                        terraformJob);
             }
             return workspaceCloneFolder;
         } catch (Exception e) {
@@ -107,11 +108,12 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     }
 
     private void setupAwsDynamicCredentials(File workspaceCloneFolder,
-            String awsCredentialsFileContent) throws IOException {
+            String awsCredentialsFileContent, TerraformJob terraformJob) throws IOException {
         log.info("Generating AWS dynamic credentials files inside the workspace execution");
         File credentialsFile = new File(workspaceCloneFolder, "terrakube_config_dynamic_credentials_aws.txt");
         log.info("Writing AWS dynamic credentials to {}", credentialsFile.getAbsolutePath());
         FileUtils.writeStringToFile(credentialsFile, awsCredentialsFileContent, Charset.defaultCharset());
+        terraformJob.getEnvironmentVariables().put("AWS_WEB_IDENTITY_TOKEN_FILE", credentialsFile.getAbsolutePath());
         log.info("AWS_WEB_IDENTITY_TOKEN_FILE set to {}", credentialsFile.getAbsolutePath());
     }
 

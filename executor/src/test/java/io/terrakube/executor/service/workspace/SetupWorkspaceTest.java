@@ -148,6 +148,8 @@ public class SetupWorkspaceTest {
         File credsFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials_aws.txt");
         Assertions.assertTrue(credsFile.exists());
         Assertions.assertEquals("ze-secret", FileUtils.readFileToString(credsFile, Charset.defaultCharset()));
+        Assertions.assertEquals(credsFile.getAbsolutePath(),
+                job.getEnvironmentVariables().get("AWS_WEB_IDENTITY_TOKEN_FILE"));
     }
 
     @Test
@@ -169,5 +171,7 @@ public class SetupWorkspaceTest {
         // ${WORKSPACE_DIRECTORY} placeholder must be substituted with the actual clone path.
         Assertions.assertEquals("{\"credential_source\":{\"file\":\"" + workspaceDir.getAbsolutePath()
                 + "/terrakube_dynamic_credentials.json\"}}", FileUtils.readFileToString(configFile, Charset.defaultCharset()));
+        Assertions.assertEquals(configFile.getAbsolutePath(),
+                job.getEnvironmentVariables().get("GOOGLE_APPLICATION_CREDENTIALS"));
     }
 }
