@@ -3,9 +3,10 @@ import {
   UserOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  ExclamationCircleOutlined,
+  CloseSquareOutlined,
   StopOutlined,
   SyncOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { FlatJob, JobStatus } from "../../../domain/types";
 import { useState, useEffect, useCallback } from "react";
@@ -115,7 +116,28 @@ export default function RunList({ jobs, onRunClick }: Props) {
     return "Terraform";
   };
 
-  const renderStatusTag = (status: JobStatus, statusColor: string) => (
+  const getStatusTagColor = (status: JobStatus): string => {
+    switch (status) {
+      case JobStatus.Completed:
+        return "success";
+      case JobStatus.NoChanges:
+        return "purple";
+      case JobStatus.Running:
+        return "processing";
+      case JobStatus.WaitingApproval:
+        return "warning";
+      case JobStatus.Failed:
+        return "error";
+      case JobStatus.Cancelled:
+        return "error";
+      case JobStatus.Rejected:
+        return "error";
+      default:
+        return "default";
+    }
+  };
+
+  const renderStatusTag = (status: JobStatus) => (
     <Tag
       icon={
         status === JobStatus.Completed ? (
@@ -125,16 +147,18 @@ export default function RunList({ jobs, onRunClick }: Props) {
         ) : status === JobStatus.Running ? (
           <SyncOutlined spin />
         ) : status === JobStatus.WaitingApproval ? (
-          <ExclamationCircleOutlined />
+          <WarningOutlined />
+        ) : status === JobStatus.Failed ? (
+          <CloseSquareOutlined />
         ) : status === JobStatus.Cancelled ? (
           <StopOutlined />
-        ) : status === JobStatus.Failed ? (
-          <StopOutlined />
+        ) : status === JobStatus.Rejected ? (
+          <CloseSquareOutlined />
         ) : (
           <ClockCircleOutlined />
         )
       }
-      color={statusColor}
+      color={getStatusTagColor(status)}
     >
       {status.toLowerCase()}
     </Tag>
@@ -170,7 +194,7 @@ export default function RunList({ jobs, onRunClick }: Props) {
           <List.Item
             actions={[
               <div key="status" style={{ textAlign: "right" }}>
-                {renderStatusTag(item.status, item.statusColor)}
+                {renderStatusTag(item.status)}
                 <div>
                   <Tooltip title={formatDate((item as any).createdDate)}>
                     <span className="metadata">{item.latestChange}</span>
