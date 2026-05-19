@@ -301,9 +301,11 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
             migratedV2: true,
           },
         },
+      }, {
+        headers: { "Content-Type": "application/vnd.api+json" },
       })
       .then((response) => {
-        if (response.status === 200) {
+        if (response.status === 200 || response.status === 204) {
           setMigratedV2(true);
           message.success("Migrated to shared webhook successfully");
         } else {
@@ -329,9 +331,11 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
             migratedV2: false,
           },
         },
+      }, {
+        headers: { "Content-Type": "application/vnd.api+json" },
       })
       .then((response) => {
-        if (response.status === 200) {
+        if (response.status === 200 || response.status === 204) {
           setMigratedV2(false);
           message.success("Reverted to per-workspace webhook");
         } else {
