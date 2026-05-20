@@ -43,6 +43,7 @@ import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -329,6 +330,7 @@ class RepoWebhookServiceTest {
             event1.setEvent(WebhookEventType.PUSH);
             event1.setBranch("main");
             event1.setPath("*");
+            event1.setPathType(WebhookEventPathType.PATTERN);
             event1.setTemplateId("template-1");
             wh1.setEvents(List.of(event1));
 
@@ -336,6 +338,7 @@ class RepoWebhookServiceTest {
             event2.setEvent(WebhookEventType.PUSH);
             event2.setBranch("main");
             event2.setPath("*");
+            event2.setPathType(WebhookEventPathType.PATTERN);
             event2.setTemplateId("template-2");
             wh2.setEvents(List.of(event2));
 
@@ -431,6 +434,7 @@ class RepoWebhookServiceTest {
             event1.setEvent(WebhookEventType.PULL_REQUEST);
             event1.setBranch("feature-branch");
             event1.setPath("*.tf");
+            event1.setPathType(WebhookEventPathType.PATTERN);
             event1.setTemplateId("pr-template-1");
             wh1.setEvents(List.of(event1));
 
@@ -438,6 +442,7 @@ class RepoWebhookServiceTest {
             event2.setEvent(WebhookEventType.PULL_REQUEST);
             event2.setBranch("feature-branch");
             event2.setPath("*.tf");
+            event2.setPathType(WebhookEventPathType.PATTERN);
             event2.setTemplateId("pr-template-2");
             wh2.setEvents(List.of(event2));
 
@@ -530,13 +535,13 @@ class RepoWebhookServiceTest {
 
             WebhookEvent event1 = new WebhookEvent();
             event1.setEvent(WebhookEventType.RELEASE);
-            event1.setBranch("v1.*"); // Test glob matching
+            event1.setBranch("v1.*"); // Test regex matching
             event1.setTemplateId("release-template-1");
             wh1.setEvents(List.of(event1));
 
             WebhookEvent event2 = new WebhookEvent();
             event2.setEvent(WebhookEventType.RELEASE);
-            event2.setBranch("*");
+            event2.setBranch(".*");
             event2.setTemplateId("release-template-2");
             wh2.setEvents(List.of(event2));
 
@@ -718,6 +723,7 @@ class RepoWebhookServiceTest {
             event1.setEvent(WebhookEventType.PUSH);
             event1.setBranch("main");
             event1.setPath("*");
+            event1.setPathType(WebhookEventPathType.PATTERN);
             event1.setTemplateId("template-1");
             wh1.setEvents(List.of(event1));
             ws1.setWebhook(wh1);
@@ -729,6 +735,7 @@ class RepoWebhookServiceTest {
             event2.setEvent(WebhookEventType.PUSH);
             event2.setBranch("main");
             event2.setPath("*");
+            event2.setPathType(WebhookEventPathType.PATTERN);
             event2.setTemplateId("template-2");
             wh2.setEvents(List.of(event2));
             ws2.setWebhook(wh2);
@@ -780,6 +787,7 @@ class RepoWebhookServiceTest {
             event2.setEvent(WebhookEventType.PUSH);
             event2.setBranch("main");
             event2.setPath("*");
+            event2.setPathType(WebhookEventPathType.PATTERN);
             event2.setTemplateId("template-2");
             wh2.setEvents(List.of(event2));
             ws2.setWebhook(wh2);
