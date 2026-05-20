@@ -29,10 +29,10 @@
 		<groovy.version>5.0.6</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>5.5.1</jcolor.version>
-		<aws-sdk.version>2.44.4</aws-sdk.version>
+		<aws-sdk.version>2.44.9</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.18</slf4j.version>
-		<gcp-libraries-bom.version>26.81.0</gcp-libraries-bom.version>
+		<gcp-libraries-bom.version>26.83.0</gcp-libraries-bom.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
 		<jedis.version>7.5.0</jedis.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
