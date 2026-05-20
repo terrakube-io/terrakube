@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.vcs;
 import java.util.List;
 
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventPathType;
 
 import org.junit.jupiter.api.Test;
 
@@ -17,8 +18,13 @@ class WebhookEventMatcherTest {
     }
 
     private WebhookEvent eventWithPath(String path) {
+        return eventWithPath(path, WebhookEventPathType.REGEX);
+    }
+
+    private WebhookEvent eventWithPath(String path, WebhookEventPathType pathType) {
         WebhookEvent event = new WebhookEvent();
         event.setPath(path);
+        event.setPathType(pathType);
         return event;
     }
 
@@ -30,8 +36,8 @@ class WebhookEventMatcherTest {
     }
 
     @Test
-    void checkBranch_globMatch_returnsTrue() {
-        assertThat(WebhookEventMatcher.checkBranch("main-branch", eventWithBranch("main*"))).isTrue();
+    void checkBranch_regexMatch_returnsTrue() {
+        assertThat(WebhookEventMatcher.checkBranch("main-branch", eventWithBranch("main.*"))).isTrue();
     }
 
     @Test
@@ -41,7 +47,7 @@ class WebhookEventMatcherTest {
 
     @Test
     void checkBranch_commaSeparatedList_matchesAny() {
-        WebhookEvent event = eventWithBranch("main, develop, release/*");
+        WebhookEvent event = eventWithBranch("main, develop, release/.*");
         assertThat(WebhookEventMatcher.checkBranch("develop", event)).isTrue();
         assertThat(WebhookEventMatcher.checkBranch("release/1.0", event)).isTrue();
         assertThat(WebhookEventMatcher.checkBranch("feature/foo", event)).isFalse();
@@ -52,19 +58,37 @@ class WebhookEventMatcherTest {
     @Test
     void checkFileChanges_fileMatchesPattern_returnsTrue() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("src/main/App.java"), eventWithPath("src/main/*"))).isTrue();
+                List.of("src/main/App.java"), eventWithPath("src/main/*", WebhookEventPathType.PATTERN))).isTrue();
     }
 
     @Test
     void checkFileChanges_noFileMatches_returnsFalse() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("docs/README.md"), eventWithPath("src/*"))).isFalse();
+                List.of("docs/README.md"), eventWithPath("src/*", WebhookEventPathType.PATTERN))).isFalse();
     }
 
     @Test
     void checkFileChanges_multiplePatterns_oneMatches_returnsTrue() {
         assertThat(WebhookEventMatcher.checkFileChanges(
-                List.of("terraform/main.tf"), eventWithPath("src/*,terraform/*"))).isTrue();
+                List.of("terraform/main.tf"), eventWithPath("src/*,terraform/*", WebhookEventPathType.PATTERN))).isTrue();
+    }
+
+    @Test
+    void checkFileChanges_regexFileMatchesPattern_returnsTrue() {
+        assertThat(WebhookEventMatcher.checkFileChanges(
+                List.of("src/main/App.java"), eventWithPath("src/main/.*"))).isTrue();
+    }
+
+    @Test
+    void checkFileChanges_regexNoFileMatches_returnsFalse() {
+        assertThat(WebhookEventMatcher.checkFileChanges(
+                List.of("docs/README.md"), eventWithPath("src/.*"))).isFalse();
+    }
+
+    @Test
+    void checkFileChanges_regexMultiplePatterns_oneMatches_returnsTrue() {
+        assertThat(WebhookEventMatcher.checkFileChanges(
+                List.of("terraform/main.tf"), eventWithPath("src/.*,terraform/.*"))).isTrue();
     }
 
     // --- glob matching tests ---
