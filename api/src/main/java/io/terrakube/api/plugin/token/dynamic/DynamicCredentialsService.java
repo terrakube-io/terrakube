@@ -140,7 +140,6 @@ public class DynamicCredentialsService {
                         .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
                         .signWith(getPrivateKey(), Jwts.SIG.RS512)
                         .compact();
-                log.info("Dynamic Credentials JWT Token: {}", jwtToken);
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
