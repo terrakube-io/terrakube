@@ -486,12 +486,12 @@ export const CreateWorkspace = () => {
             <Space className="chooseType" direction="vertical">
               <h3>Choose your IaC type </h3>
               <List
-                grid={{ gutter: 5, column: 5 }}
+                grid={{ gutter: 16, column: 4 }}
                 dataSource={iacTypes}
                 renderItem={(item) => (
                   <List.Item>
                     <Card
-                      style={{ width: "150px", textAlign: "center" }}
+                      style={{ textAlign: "center" }}
                       hoverable
                       onClick={() => handleIacTypeClick(item)}
                     >
