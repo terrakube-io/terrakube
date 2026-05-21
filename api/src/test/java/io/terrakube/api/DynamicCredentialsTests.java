@@ -163,7 +163,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
                 .body("keys[0].kty", org.hamcrest.Matchers.equalTo("RSA"))
                 .body("keys[0].kid", org.hamcrest.Matchers.equalTo("03446895-220d-47e1-9564-4eeaa3691b42"))
                 .body("keys[0].use", org.hamcrest.Matchers.equalTo("sig"))
-                .body("keys[0].alg", org.hamcrest.Matchers.equalTo("RS256"))
+                .body("keys[0].alg", org.hamcrest.Matchers.equalTo("RS512"))
                 .body("keys[0].n", notNullValue())
                 .body("keys[0].e", notNullValue());
     }
@@ -214,7 +214,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
                 .body("issuer", org.hamcrest.Matchers.equalTo("https://localhost:8080"))
                 .body("jwks_uri", org.hamcrest.Matchers.equalTo("https://localhost:8080/.well-known/jwks"))
                 .body("response_types_supported", hasItem("id_token"))
-                .body("id_token_signing_alg_values_supported", hasItem("RS256"))
+                .body("id_token_signing_alg_values_supported", hasItem("RS512"))
                 .body("scopes_supported", hasItem("openid"))
                 .body("subject_types_supported", hasItem("public"));
     }
