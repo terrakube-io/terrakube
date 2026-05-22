@@ -7,6 +7,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig(() => {
   return {
+    // Use relative asset URLs so the same build can be hosted at / or a subpath such as /ui/.
+    base: "./",
     server: {
       host: true,
       allowedHosts: true,

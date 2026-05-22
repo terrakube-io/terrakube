@@ -1,3 +1,5 @@
+import { withBasePath } from "../../config/basePath";
+
 const AWSIcons = [
   // AWS Compute
   { type: "aws_ec2_", path: "/providers/aws/Arch_Compute/32/Arch_Amazon-EC2_32.svg" },
@@ -340,36 +342,36 @@ export function getServiceIcon(providerType: string, resourceType: string) {
     case "registry.terraform.io/hashicorp/google":
       return getGCPIcon(resourceType);
     default:
-      return "/providers/terraform.svg";
+      return withBasePath("/providers/terraform.svg");
   }
 }
 
 const getAWSIcon = (resourceType: string) => {
   // search exact match
   let icon = AWSIcons.find((icon) => resourceType === icon.type);
-  if (icon) return icon.path;
+  if (icon) return withBasePath(icon.path);
 
   // search partial match
   icon = AWSIcons.find((icon) => resourceType.includes(icon.type));
-  return icon ? icon.path : "/providers/aws/AWS.svg";
+  return withBasePath(icon ? icon.path : "/providers/aws/AWS.svg");
 };
 
 const getAzureIcon = (resourceType: string) => {
   // search exact match
   let icon = AzureIcons.find((icon) => resourceType === icon.type);
-  if (icon) return icon.path;
+  if (icon) return withBasePath(icon.path);
 
   // search partial match
   icon = AzureIcons.find((icon) => resourceType.includes(icon.type));
-  return icon ? icon.path : "/providers/azurerm/Azure.svg";
+  return withBasePath(icon ? icon.path : "/providers/azurerm/Azure.svg");
 };
 
 const getGCPIcon = (resourceType: string) => {
   // search exact match
   let icon = GCPIcons.find((icon) => resourceType === icon.type);
-  if (icon) return icon.path;
+  if (icon) return withBasePath(icon.path);
 
   // search partial match
   icon = GCPIcons.find((icon) => resourceType.includes(icon.type));
-  return icon ? icon.path : "/providers/google.svg";
+  return withBasePath(icon ? icon.path : "/providers/google.svg");
 };

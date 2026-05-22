@@ -1,4 +1,5 @@
 import { Flex, Typography, Card } from "antd";
+import { useNavigate } from "react-router-dom";
 import stringToDeterministicColor from "@/modules/utils/stringToDeterministicColor";
 import { OrganizationModel } from "../../types";
 import { getFaIcon, FaBuilding } from "@/config/iconList";
@@ -31,6 +32,7 @@ type Props = {
 };
 
 export default function OrganizationGridItem({ organization }: Props) {
+  const navigate = useNavigate();
   const { iconName, color } = parseIconField(organization.icon, organization.id);
 
   const handleOrganizationClick = (e: React.MouseEvent) => {
@@ -40,8 +42,7 @@ export default function OrganizationGridItem({ organization }: Props) {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, organization.id);
     sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
 
-    // Navigate with full page reload
-    window.location.href = `/organizations/${organization.id}/workspaces`;
+    navigate(`/organizations/${organization.id}/workspaces`);
   };
 
   return (

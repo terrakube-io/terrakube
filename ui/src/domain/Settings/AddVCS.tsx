@@ -9,6 +9,7 @@ import { useParams } from "react-router-dom";
 import { v1 as uuidv1 } from "uuid";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
+import { getUiRedirectUri } from "../../config/basePath";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import "./Settings.css";
 
@@ -732,7 +733,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           callback: uuid,
           endpoint: values.endpoint,
           apiUrl: values.apiUrl,
-          redirectUrl: `${window._env_.REACT_APP_REDIRECT_URI}/organizations/${orgid}/settings/vcs`,
+          redirectUrl: `${getUiRedirectUri()}/organizations/${orgid}/settings/vcs`,
           status: connectionType === "OAUTH" || getVcsType(vcsType) != "AZURE_SP_MI" ? "PENDING" : "COMPLETED",
         },
       },
