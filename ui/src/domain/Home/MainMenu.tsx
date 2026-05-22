@@ -113,10 +113,9 @@ export const MainMenu = ({ organizationName, setOrganizationName, themeMode }: P
   const handleClick = (e: { key: string }) => {
     if (e.key === "new") navigate("/organizations/create");
     else {
-      // Use the helper function for organization change (with full page reload)
+      // Use the helper function for organization change
       ensureOrganizationName(e.key, "", setOrganizationName, () => {
-        // Navigate after setting organization name with full page reload
-        window.location.href = `/organizations/${e.key}/workspaces`;
+        navigate(`/organizations/${e.key}/workspaces`);
       });
     }
   };
