@@ -5,6 +5,7 @@ import java.util.List;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 
 import lombok.extern.slf4j.Slf4j;
@@ -19,25 +20,45 @@ public final class WebhookEventMatcher {
         String[] branchList = webhookEvent.getBranch().split(",");
         for (String branch : branchList) {
             branch = branch.trim();
-            if (globMatch(webhookBranch, branch)) {
-                return true;
+            try {
+                if (webhookBranch.matches(branch)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                log.warn("Invalid branch pattern '{}': {}", branch, e.getMessage());
             }
         }
         return false;
     }
 
     public static boolean checkFileChanges(List<String> files, WebhookEvent webhookEvent) {
+        WebhookEventPathType pathType = webhookEvent.getPathType() != null
+                ? webhookEvent.getPathType()
+                : WebhookEventPathType.REGEX;
         String[] triggeredPath = webhookEvent.getPath().split(",");
         for (String file : files) {
             for (int i = 0; i < triggeredPath.length; i++) {
-                if (globMatch(file, triggeredPath[i].trim())) {
-                    log.info("Changed file {} matches set trigger pattern {}", file, triggeredPath[i]);
+                String pattern = triggeredPath[i].trim();
+                if (matchPath(file, pattern, pathType)) {
+                    log.info("Changed file {} matches set trigger pattern {}", file, pattern);
                     return true;
                 }
             }
         }
         log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
         return false;
+    }
+
+    static boolean matchPath(String file, String pattern, WebhookEventPathType pathType) {
+        if (pathType == WebhookEventPathType.REGEX) {
+            try {
+                return file.matches(pattern);
+            } catch (Exception e) {
+                log.warn("Invalid regex pattern '{}': {}", pattern, e.getMessage());
+                return false;
+            }
+        }
+        return globMatch(file, pattern);
     }
 
     static boolean globMatch(String input, String globPattern) {

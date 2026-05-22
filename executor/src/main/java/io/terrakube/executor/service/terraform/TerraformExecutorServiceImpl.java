@@ -569,7 +569,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return sshKeyFile;
     }
 
-    private HashMap<String, String> loadTempEnvironmentVariables(File workingDirectory, TerraformJob terraformJob) {
+    public HashMap<String, String> loadTempEnvironmentVariables(File executorTempDirectory, File workingDirectory, TerraformJob terraformJob) {
         String workingEnvTemp = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
         Path pathEnv = Paths.get(workingEnvTemp);
         if (Files.exists(pathEnv)) {
@@ -586,6 +586,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
         } else {
             log.info("File terrakube_env does not exist");
+        }
+
+        if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {
+            log.info("AWS_WEB_IDENTITY_TOKEN_FILE updating location to: {}", executorTempDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_aws.txt");
+            terraformJob.getEnvironmentVariables().put("AWS_WEB_IDENTITY_TOKEN_FILE", executorTempDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials_aws.txt");
+        }
+
+        if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
+            log.info("GOOGLE_APPLICATION_CREDENTIALS updating location to: {}", executorTempDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
+            terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", executorTempDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
         }
 
         return terraformJob.getEnvironmentVariables();

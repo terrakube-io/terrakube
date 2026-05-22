@@ -1,5 +1,6 @@
 import { Button, ConfigProvider, Typography, theme } from "antd";
 import { mgr } from "../../config/authConfig";
+import { getUiRedirectUri } from "../../config/basePath";
 import {
   ColorSchemeOption,
   ThemeMode,
@@ -32,7 +33,7 @@ const LoginContent = () => {
         <img src={logo} alt="Terrakube" className="login-logo" />
         <Title level={3}>Sign in to Terrakube</Title>
         <Text type="secondary">Click below to continue with your identity provider.</Text>
-        <Button type="primary" block size="large" onClick={() => mgr.signinRedirect()}>
+        <Button type="primary" block size="large" onClick={() => mgr.signinRedirect({ state: getUiRedirectUri() })}>
           Sign in
         </Button>
       </div>

@@ -9,6 +9,7 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { VcsModel, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
+import { EditVCS } from "./EditVCS";
 import "./Settings.css";
 const { Paragraph } = Typography;
 
@@ -21,11 +22,19 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState(vcsMode != null ? vcsMode : "list");
+  const [mode, setMode] = useState<"list" | "new" | "edit">(
+    vcsMode != null ? (vcsMode as "list" | "new" | "edit") : "list"
+  );
   const [vcs, setVCS] = useState<VcsModel[]>([]);
+  const [editVcsId, setEditVcsId] = useState<string | undefined>(undefined);
 
   const onAddVCS = () => {
     setMode("new");
+  };
+
+  const onEditVCS = (id: string) => {
+    setEditVcsId(id);
+    setMode("edit");
   };
 
   const renderVCSLogo = (vcs: VcsType) => {
@@ -148,7 +157,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
     <div className="setting">
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
-      ) : mode != "new" ? (
+      ) : mode === "list" ? (
         <div>
           {" "}
           <h1 style={{ paddingBottom: "10px" }}>
@@ -184,8 +193,13 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
                       </span>
                     }
                     actions={[
-                      <div style={{ float: "right" }}>
-                        <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
+                      <div key="actions" style={{ float: "right" }}>
+                        <Button
+                          type="default"
+                          icon={<EditOutlined />}
+                          disabled={!managePermission}
+                          onClick={() => onEditVCS(item.id)}
+                        >
                           Edit Client
                         </Button>
                         &nbsp;&nbsp;&nbsp;
@@ -304,8 +318,10 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
             />
           )}
         </div>
-      ) : (
+      ) : mode === "new" ? (
         <AddVCS setMode={setMode} loadVCS={loadVCS} />
+      ) : (
+        <EditVCS vcsId={editVcsId!} setMode={setMode} loadVCS={loadVCS} />
       )}
     </div>
   );

@@ -10,6 +10,7 @@ Define the following environment variables in your local machine:
 |REACT_CONFIG_CLIENT_ID       | Dex Issuer Application ID                                            |
 |REACT_CONFIG_AUTHORITY       | Dex Issuer (From http://dexURl/.well-knownopenid-configuration)      |
 |REACT_CONFIG_REDIRECT        | Redirct URL. Example: http://localhost:3000                          |
+|REACT_CONFIG_BASE_PATH       | UI base path. Use / for root or /ui for subpath deployments          |
 |REACT_CONFIG_REGISTRY_URI    | Terrakube Registry url. Example: https://someurl/open-registry/      |
 |REACT_CONFIG_SCOPE           | Dex Scope (email openid profile offline_access groups)               |
 |REACT_CONFIG_TERRAKUBE_SEND_COOKIES | Send browser cookies with API requests when `true`            |
@@ -27,6 +28,7 @@ REACT_APP_TERRAKUBE_API_URL=https://terrakubeUrl/api/v1/
 REACT_APP_CLIENT_ID=terrakube-app
 REACT_APP_AUTHORITY=https://dexUrl.com
 REACT_APP_REDIRECT_URI=http://localhost:3000
+REACT_APP_BASE_PATH=/
 REACT_APP_REGISTRY_URI=https://registryUrl.com
 REACT_APP_SCOPE=email openid profile offline_access groups
 REACT_APP_TERRAKUBE_SEND_COOKIES=false
@@ -82,6 +84,7 @@ window._env_ = {
   REACT_APP_CLIENT_ID: "example-app",
   REACT_APP_AUTHORITY: "https://5556-azbuilder-terrakube-c3n4h1c0xul.ws-us88.gitpod.io/dex",
   REACT_APP_REDIRECT_URI: "https://3000-azbuilder-terrakube-c3n4h1c0xul.ws-us88.gitpod.io",
+  REACT_APP_BASE_PATH: "/",
   REACT_APP_REGISTRY_URI: "https://8075-azbuilder-terrakube-c3n4h1c0xul.ws-us88.gitpod.io",
   REACT_APP_SCOPE: "email openid profile offline_access groups",
   REACT_APP_TERRAKUBE_SEND_COOKIES: "false",

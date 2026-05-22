@@ -4,6 +4,7 @@ import { IconContext } from "react-icons";
 import { SiBitbucket, SiTerraform } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import axiosInstance from "../../config/axiosConfig";
+import { withBasePath } from "../../config/basePath";
 import { VcsType } from "../types";
 
 export const genericHeader = {
@@ -125,6 +126,6 @@ export const iacTypes = [
   {
     id: "tofu",
     name: "OpenTofu",
-    icon: <img width="18px" src="/providers/opentofu.png" alt="OpenTofu" />,
+    icon: <img width="18px" src={withBasePath("/providers/opentofu.png")} alt="OpenTofu" />,
   },
 ];

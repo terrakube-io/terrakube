@@ -27,6 +27,7 @@ import axiosInstance from "../../config/axiosConfig";
 import { ProjectModel, SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
 import { compareVersions } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
+import { withBasePath } from "../../config/basePath";
 const { Content } = Layout;
 const { Step } = Steps;
 
@@ -435,9 +436,9 @@ export const CreateWorkspace = () => {
         id: "terraform",
         name: "Terraform",
         description: "Create an empty template. So you can define your template from scratch.",
-        icon: "/providers/terraform.svg",
+        icon: withBasePath("/providers/terraform.svg"),
       },
-      { id: "tofu", name: "OpenTofu", icon: "/providers/opentofu.png" },
+      { id: "tofu", name: "OpenTofu", icon: withBasePath("/providers/opentofu.png") },
     ];
 
     setIacTypes(iacTypes);
@@ -486,12 +487,12 @@ export const CreateWorkspace = () => {
             <Space className="chooseType" direction="vertical">
               <h3>Choose your IaC type </h3>
               <List
-                grid={{ gutter: 5, column: 5 }}
+                grid={{ gutter: 16, column: 4 }}
                 dataSource={iacTypes}
                 renderItem={(item) => (
                   <List.Item>
                     <Card
-                      style={{ width: "150px", textAlign: "center" }}
+                      style={{ textAlign: "center" }}
                       hoverable
                       onClick={() => handleIacTypeClick(item)}
                     >

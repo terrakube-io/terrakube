@@ -126,21 +126,20 @@ public class DynamicCredentialsService {
             try {
                 Instant now = Instant.now();
                 jwtToken = Jwts.builder()
-                        .setSubject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
-                        .setAudience(tokenAudience)
-                        .setId(UUID.randomUUID().toString())
-                        .setHeaderParam("kid", kid)
+                        .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
+                        .audience().add(tokenAudience).and()
+                        .id(UUID.randomUUID().toString())
+                        .header().add("kid", kid).and()
                         .claim("terrakube_workspace_id", workspaceId)
                         .claim("terrakube_organization_id", organizationId)
                         .claim("terrakube_workspace_name", workspaceName)
                         .claim("terrakube_organization_name", organizationName)
                         .claim("terrakube_job_id", String.valueOf(jobId))
-                        .setIssuedAt(Date.from(now))
-                        .setIssuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
-                        .setExpiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
-                        .signWith(getPrivateKey())
+                        .issuedAt(Date.from(now))
+                        .issuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
+                        .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
+                        .signWith(getPrivateKey(), Jwts.SIG.RS512)
                         .compact();
-
             } catch (Exception e) {
                 log.error(e.getMessage());
             }

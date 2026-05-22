@@ -2,7 +2,7 @@ import { Button, Empty, Flex } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import "antd/dist/reset.css";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
 import { OrganizationModel } from "./types";
@@ -13,6 +13,7 @@ import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 export default function OrganizationsPickerPage() {
   const [organizations, setOrganizations] = useState<OrganizationModel[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
   const orgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
 
   const [loading, setLoading] = useState(false);
@@ -43,7 +44,7 @@ export default function OrganizationsPickerPage() {
 
   async function initPage() {
     // Skip redirect if explicitly navigating to /organizations
-    if (window.location.pathname === "/organizations") {
+    if (location.pathname === "/organizations") {
       await execute();
       return;
     }
@@ -53,7 +54,7 @@ export default function OrganizationsPickerPage() {
     } else {
       const orgName = sessionStorage.getItem(ORGANIZATION_NAME);
       if (orgName) {
-        window.location.href = `/organizations/${orgId}/workspaces`;
+        navigate(`/organizations/${orgId}/workspaces`, { replace: true });
       } else {
         navigate(`/organizations/${orgId}/workspaces`, { replace: true });
       }
@@ -62,16 +63,16 @@ export default function OrganizationsPickerPage() {
 
   useEffect(() => {
     initPage();
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (organizations.length === 1) {
       const organization = organizations[0];
       sessionStorage.setItem(ORGANIZATION_ARCHIVE, organization.id);
       sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
-      window.location.href = `/organizations/${organization.id}/workspaces`;
+      navigate(`/organizations/${organization.id}/workspaces`, { replace: true });
     }
-  }, [organizations]);
+  }, [navigate, organizations]);
 
   return (
     <PageWrapper
