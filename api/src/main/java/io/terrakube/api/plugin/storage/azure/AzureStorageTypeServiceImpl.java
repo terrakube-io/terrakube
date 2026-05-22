@@ -46,6 +46,43 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+        if (!containerClient.exists()) {
+            containerClient.create();
+        }
+        String blobName = String.format("%s/%s/%s.tfoutput", organizationId, jobId, stepId);
+        log.info("uploadStepOutput {}", blobName);
+        containerClient.getBlobClient(blobName).upload(BinaryData.fromBytes(output), true);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] planContent) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
+        if (!containerClient.exists()) {
+            containerClient.create();
+        }
+        String blobName = String.format("%s/%s/%s/%s/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId);
+        log.info("uploadTerraformPlan {}", blobName);
+        containerClient.getBlobClient(blobName).upload(BinaryData.fromBytes(planContent), true);
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
+        String blobName = String.format("%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("deleteCurrentTerraformState {}", blobName);
+        try {
+            BlobClient blobClient = containerClient.getBlobClient(blobName);
+            if (blobClient.exists()) {
+                blobClient.delete();
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
         BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
         log.info("Searching: /tfstate/{}/{}/{}/{}/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId);

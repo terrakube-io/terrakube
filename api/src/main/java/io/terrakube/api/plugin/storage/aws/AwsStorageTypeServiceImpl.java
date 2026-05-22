@@ -74,6 +74,39 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        String blobKey = String.format(BUCKET_LOCATION_OUTPUT, organizationId, jobId, stepId);
+        log.info("uploadStepOutput {}", blobKey);
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+        s3client.putObject(putObjectRequest, RequestBody.fromBytes(output));
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] planContent) {
+        String blobKey = String.format(BUCKET_STATE_LOCATION, organizationId, workspaceId, jobId, stepId);
+        log.info("uploadTerraformPlan {}", blobKey);
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+        s3client.putObject(putObjectRequest, RequestBody.fromBytes(planContent));
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String blobKey = String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("deleteCurrentTerraformState {}", blobKey);
+        try {
+            s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(blobKey).build());
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
         return downloadObjectFromBucket(bucketName, String.format(BUCKET_STATE_LOCATION, organizationId, workspaceId, jobId, stepId));
     }

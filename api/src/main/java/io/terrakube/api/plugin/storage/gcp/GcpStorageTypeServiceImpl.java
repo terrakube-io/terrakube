@@ -52,6 +52,33 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        String blobKey = String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId);
+        log.info("uploadStepOutput {}", blobKey);
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
+        storage.create(blobInfo, output);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] planContent) {
+        String blobKey = String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId);
+        log.info("uploadTerraformPlan {}", blobKey);
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
+        storage.create(blobInfo, planContent);
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);
+        log.info("deleteCurrentTerraformState {}", currentStateKey);
+        try {
+            storage.delete(BlobId.of(bucketName, currentStateKey));
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
         log.info("getTerraformPlan {}", String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId));
         byte[] response = new byte[0];

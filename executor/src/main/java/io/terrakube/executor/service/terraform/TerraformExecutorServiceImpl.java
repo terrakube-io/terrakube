@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.terraform;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.plugin.tfstate.StateUploadFailedException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
@@ -180,9 +181,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             waitForStreamCompletion(terraformJob.getJobId(), 300);
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
-            result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
-                    terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
-                    : "");
+            try {
+                result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
+                        terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
+                        : "");
+            } catch (StateUploadFailedException uploadFailure) {
+                surfaceUploadFailure(uploadFailure, planOutput, jobErrorOutput, result);
+                result.setExitCode(1);
+                return result;
+            }
             if (executionPlan) {
                 planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir);
             }
@@ -233,7 +240,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             applyOutput,
                             null).get();
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    try {
+                        handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    } catch (StateUploadFailedException uploadFailure) {
+                        result = generateJobResult(false, terraformOutput.toString(), terraformErrorOutput.toString());
+                        surfaceUploadFailure(uploadFailure, applyOutput, terraformErrorOutput, result);
+                        return result;
+                    }
                 }
             }
 
@@ -284,7 +297,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             outputDestroy,
                             null).get();
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    try {
+                        handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    } catch (StateUploadFailedException uploadFailure) {
+                        result = generateJobResult(false, jobOutput.toString(), jobErrorOutput.toString());
+                        surfaceUploadFailure(uploadFailure, outputDestroy, jobErrorOutput, result);
+                        return result;
+                    }
                 }
             }
 
@@ -452,6 +471,32 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return error;
     }
 
+    /**
+     * Surface a state/plan/output upload failure to the user. The exception
+     * already carries a user-facing message; we echo it to the step output
+     * stream (so it shows up in the live UI logs), append it to the job error
+     * log, and mark the result as failed.
+     */
+    private void surfaceUploadFailure(StateUploadFailedException uploadFailure,
+                                      Consumer<String> output,
+                                      TextStringBuilder errorBuffer,
+                                      ExecutorJobResult result) {
+        log.error("State upload failed: {}", uploadFailure.getMessage(), uploadFailure);
+        AnsiFormat color = enableColorOutput
+                ? new AnsiFormat(RED_TEXT(), BLACK_BACK(), BOLD())
+                : new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
+        String banner = colorize(STEP_SEPARATOR, color);
+        output.accept("");
+        output.accept(banner);
+        output.accept(colorize("ERROR: " + uploadFailure.getMessage(), color));
+        output.accept(banner);
+        errorBuffer.appendln("");
+        errorBuffer.appendln(uploadFailure.getMessage());
+        result.setSuccessfulExecution(false);
+        result.setOutputErrorLog(errorBuffer.toString());
+        result.setExitCode(1);
+    }
+
     private boolean prepareTerraformOperation(TerraformJob terraformJob, File executorTempDirectory, File terraformWorkingDirectory, Consumer<String> output)
             throws IOException, ExecutionException, InterruptedException {
         terraformClient.setRedirectErrorStream(true);
@@ -549,7 +594,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
                 .terraformVariables(terraformJob.getVariables())
-                .terraformEnvironmentVariables(loadTempEnvironmentVariables(terraformWorkingDirectory, terraformJob))
+                .terraformEnvironmentVariables(loadTempEnvironmentVariables(executorTempDirectory, terraformWorkingDirectory, terraformJob))
                 .workingDirectory(terraformWorkingDirectory)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())

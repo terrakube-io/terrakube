@@ -43,6 +43,8 @@ The key features of Terrakube are:
 
 - **Remote Backend:** Terrakube supports both `remote backend` and `cloud` block so you can run your workflow directly from the Terraform / OpenTofu CLI.
 
+- **API-Routed Agents (no direct bucket access):** Run executors (agents) that need only outbound HTTPS to the Terrakube API — the agent never connects to GCS / S3 / Azure Blob directly. Terraform uses an `http` backend pointing at the API, and all plan binaries, state history, and step output are streamed through the API which is the only side that talks to the configured object store. Includes a DB-backed workspace lock, sha-256 integrity on every upload, optional read-back verification, and 3-attempt retries before the job is failed with a visible error. Useful when the agent runs in a different cloud / VPC than the server.
+
 ### Getting Started
 
 ### Installation
@@ -52,6 +54,28 @@ The key features of Terrakube are:
 - [Test Terrakube using Minikube](https://docs.terrakube.io/getting-started/deployment/minikube-+-https)
 - [Test Terrakube using Gitpod](https://docs.terrakube.io/getting-started/getting-started)
 - [Develop Terrakube using VS Code Devcontainers](.devcontainer/README.md)
+
+### Enabling API-Routed Agents
+
+This is opt-in per executor. The API server keeps its existing `TerraformStorageType=GCP|AWS|AZURE|LOCAL` — it remains the only process that talks to the bucket. On each executor that should run "air-gapped" from the bucket, set:
+
+```
+TerraformStateType=ApiTerraformStateImpl
+TerrakubeApiUrl=https://<your-terrakube-api>
+InternalSecret=<same value as the API server>
+# Optional, default true. When true the executor GETs each just-uploaded
+# object back from the API and re-hashes it locally to confirm what the
+# storage backend persisted matches what was produced. Disable only if the
+# extra GET traffic is undesirable.
+TerraformStateApiVerifyReadBack=true
+```
+
+What this changes:
+- Terraform uses an `http` backend pointing at the API, so `terraform plan/apply` itself never opens a connection to GCS / S3 / Azure Blob.
+- Plan binaries, state history (raw + JSON) and step output are PUT to the API; the API is the only side that writes to the configured object store.
+- Concurrent runs on the same workspace serialise through a DB-backed lock (`workspace_state_lock` table, added by the bundled Liquibase migration on first start).
+- Every upload carries an `X-Content-Sha256` header. The API rejects payloads whose received hash doesn't match the announced hash (HTTP 409) without writing anything to storage. The executor retries up to 3 times before failing the job with a visible error in the step output — your infrastructure is never silently shifted by a half-transferred state.
+- Existing executors that talk directly to GCS / S3 / Azure / local disk are unaffected; the new mode is selected only when `TerraformStateType=ApiTerraformStateImpl`.
 
 ### Documentation
 To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/) 

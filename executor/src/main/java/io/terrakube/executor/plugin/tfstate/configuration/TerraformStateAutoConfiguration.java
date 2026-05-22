@@ -10,6 +10,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.plugin.tfstate.api.ApiTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateImpl;
@@ -17,7 +18,9 @@ import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import lombok.AllArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Base64;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -49,7 +52,7 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService) {
+    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, WorkspaceSecurity workspaceSecurity, @Value("${io.terrakube.api.url}") String apiUrl, @Value("${io.terrakube.executor.plugin.tfstate.api.verifyReadBack:true}") boolean apiVerifyReadBack) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -142,6 +145,17 @@ public class TerraformStateAutoConfiguration {
                     } catch (IOException e) {
                         log.error(e.getMessage());
                     }
+                    break;
+                case ApiTerraformStateImpl:
+                    log.info("Configuring TerraformState to route storage through the Terrakube API ({}, verifyReadBack={})", apiUrl, apiVerifyReadBack);
+                    terraformState = ApiTerraformStateImpl.builder()
+                            .terrakubeClient(terrakubeClient)
+                            .terraformStatePathService(terraformStatePathService)
+                            .terraformOutputPathService(terraformOutputPathService)
+                            .workspaceSecurity(workspaceSecurity)
+                            .apiUrl(apiUrl)
+                            .verifyReadBack(apiVerifyReadBack)
+                            .build();
                     break;
                 default:
                     terraformState = LocalTerraformStateImpl.builder()
