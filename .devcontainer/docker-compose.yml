@@ -246,6 +246,7 @@ services:
       - 8090
       - 3000
     container_name: terrakube-dev
+    privileged: true
     build:
       context: .
       dockerfile: Dockerfile

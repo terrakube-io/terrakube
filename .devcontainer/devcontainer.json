@@ -19,7 +19,8 @@
     "ghcr.io/devcontainers/features/terraform:1": {
       "terragrunt": "none",
       "tflint": "none"
-    }
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:3": {}
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
@@ -38,7 +39,8 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "hashicorp.terraform",
-        "rangav.vscode-thunder-client"
+        "rangav.vscode-thunder-client",
+        "ms-azuretools.vscode-docker"
       ],
       "settings": {
         "java.configuration.updateBuildConfiguration": "automatic",
