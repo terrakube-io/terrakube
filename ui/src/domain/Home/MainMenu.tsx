@@ -1,6 +1,5 @@
 import { AppstoreOutlined, CloudOutlined, ProjectOutlined, SettingOutlined } from "@ant-design/icons";
 import { Menu } from "antd";
-import "antd/dist/reset.css";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";

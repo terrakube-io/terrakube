@@ -6,8 +6,8 @@ import { Cron } from "react-js-cron";
 import "react-js-cron/dist/styles.css";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
+import * as C2Q from "cron-to-quartz";
 import { FlatSchedule, Template } from "../types";
-const C2Q = require("cron-to-quartz");
 
 type ScheduleForm = {
   templateId: string;

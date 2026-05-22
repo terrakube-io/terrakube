@@ -1,13 +1,15 @@
 #=> Build container
-FROM node:alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
-COPY package.json .
-COPY yarn.lock .
-# Install Yarn (not included in recent node:alpine images)
-RUN npm install -g yarn
+
+# Enable Corepack so it picks up the Yarn version pinned in
+# package.json's packageManager field.
+RUN corepack enable
+
+COPY package.json yarn.lock .yarnrc.yml ./
 
 # Install dependencies using the exact versions from yarn.lock
-RUN yarn install --frozen-lockfile
+RUN yarn install --immutable
 COPY . .
 
 # Increase Node.js memory limit to prevent out of memory errors

@@ -1,12 +1,34 @@
-import { antdIcons, getIcon } from "./config/iconList";
-import { transform } from "@babel/standalone";
-import { Collapse, DatePicker, Typography } from "antd";
-import { DateTime } from "luxon";
 import React, { Component, ErrorInfo, ReactNode, useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import { Crosshair, Hint, HorizontalGridLines, LineSeries, VerticalGridLines, XAxis, XYPlot, YAxis } from "react-vis";
-import "react-vis/dist/style.css";
+import {
+  SiDocker,
+  SiGithub,
+  SiGooglecloud,
+  SiGrafana,
+  SiKubernetes,
+  SiOpenai,
+  SiPrometheus,
+  SiTerraform,
+} from "react-icons/si";
+import { VscAzure } from "react-icons/vsc";
+import { antdIcons, getIcon } from "./config/iconList";
 import axiosInstance from "./config/axiosConfig";
+// Heavy deps (sucrase, antd, luxon, react-markdown, react-vis)
+// are loaded lazily inside loadComponent() — they would otherwise dominate the main bundle.
+// Compiled components are cached by action string so re-renders skip the transpile step entirely.
+const compiledComponentCache = new Map<string, any>();
+// react-icons are statically imported by name so the bundler tree-shakes them down to a
+// handful of icons instead of pulling the entire react-icons/si set (~2500 icons / 5 MB).
+const exposedReactIcons = {
+  SiDocker,
+  SiGithub,
+  SiGooglecloud,
+  SiGrafana,
+  SiKubernetes,
+  SiOpenai,
+  SiPrometheus,
+  SiTerraform,
+  VscAzure,
+} as const;
 
 // List of antd components to consider for dynamic importing
 const antdComponents = [
@@ -73,96 +95,41 @@ const antdComponents = [
   "Upload",
 ];
 
-const { Panel } = Collapse;
-const { Paragraph, Text } = Typography;
-const { RangePicker } = DatePicker;
-// List of antd icons to consider for dynamic importing
 const antdIconNames = Object.keys(antdIcons).filter((name) => name.endsWith("Outlined"));
 
-// Function to identify required antd components
-const getRequiredAntdComponents = (componentString: string) => {
-  return antdComponents.filter((component) => componentString.includes(component));
+const getRequiredAntdComponents = (componentString: string) =>
+  antdComponents.filter((component) => componentString.includes(component));
+
+const getRequiredAntdIcons = (componentString: string) =>
+  antdIconNames.filter((icon) => componentString.includes(icon));
+
+const pickAntdComponents = (mod: Record<string, unknown>, names: string[]) => {
+  const out: Record<string, unknown> = {};
+  for (const name of names) out[name] = mod[name];
+  return out;
 };
 
-// Function to identify required antd icons
-const getRequiredAntdIcons = (componentString: string) => {
-  return antdIconNames.filter((icon) => componentString.includes(icon));
-};
-
-// Function to dynamically import antd components
-const importAntdComponents = async (components: string[]) => {
-  // Import the entire antd library instead of individual components
-  try {
-    const antd = await import("antd");
-
-    const importedComponents: Record<string, any> = {};
-    components.forEach((component: string) => {
-      // Access the component directly from the antd object
-      importedComponents[component] = antd[component as keyof typeof antd];
-    });
-    return importedComponents;
-  } catch (error) {
-    console.error(`Error importing antd components:`, error);
-    return {};
+const resolveAntdIcons = (names: string[]) => {
+  const out: Record<string, unknown> = {};
+  for (const name of names) {
+    out[name] = antdIcons[name as keyof typeof antdIcons] ?? getIcon(name);
   }
+  return out;
 };
 
-// Function to dynamically import antd icons
-const importAntdIcons = async (icons: any) => {
-  const importedIcons: Record<string, any> = {};
+const reactIconNames = Object.keys(exposedReactIcons);
 
-  icons.forEach((icon: string) => {
-    if (antdIcons[icon as keyof typeof antdIcons]) {
-      importedIcons[icon] = antdIcons[icon as keyof typeof antdIcons];
-    } else {
-      importedIcons[icon] = getIcon(icon);
-    }
-  });
+const getRequiredReactIcons = (componentString: string) =>
+  reactIconNames.filter((name) => componentString.includes(name));
 
-  return importedIcons;
-};
-
-// List of react-icons to consider for dynamic importing
-const reactIcons = [
-  "VscAzure",
-  "SiAmazonaws",
-  "SiGithub",
-  "SiGrafana",
-  "SiKubernetes",
-  "SiTerraform",
-  "SiDocker",
-  "SiPrometheus",
-  "SiGooglecloud",
-  "SiOpenai",
-];
-
-// Function to identify required react-icons components
-const getRequiredReactIcons = (componentString: string) => {
-  return reactIcons.filter((icon) => componentString.includes(icon));
-};
-
-// Function to dynamically import react-icons components
-const importReactIcons = async (icons: string[]) => {
-  if (icons.length === 0) return {};
-
-  try {
-    const siModule = await import("react-icons/si");
-    const typedSiModule = siModule as Record<string, any>;
-    const importedIcons: Record<string, any> = {};
-
-    icons.forEach((icon: string) => {
-      if (typedSiModule[icon]) {
-        importedIcons[icon] = typedSiModule[icon];
-      } else {
-        console.error(`Icon ${icon} not found in react-icons/si`);
-      }
-    });
-
-    return importedIcons;
-  } catch (error) {
-    console.error("Error importing react-icons:", error);
-    return {};
+const pickReactIcons = (names: string[]) => {
+  const out: Record<string, unknown> = {};
+  for (const name of names) {
+    const icon = exposedReactIcons[name as keyof typeof exposedReactIcons];
+    if (icon) out[name] = icon;
+    else console.error(`Icon ${name} not exposed by ActionLoader`);
   }
+  return out;
 };
 
 type Props = {
@@ -201,41 +168,59 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadComponent = async () => {
       try {
-        const componentString = decodeURIComponent(escape(window.atob(action)));
-        console.debug("Decoded Component String:", componentString);
+        const cached = compiledComponentCache.get(action);
+        if (cached) {
+          if (cancelled) return;
+          setComponent(() => cached);
+          setError(null);
+          return;
+        }
 
-        // Import entire antd library upfront
-        const antd = await import("antd");
+        const componentString = decodeURIComponent(escape(window.atob(action)));
+
+        // All heavy deps loaded lazily so they stay out of the main bundle.
+        const [{ transform }, antd, reactVis, ReactMarkdownModule, luxon] = await Promise.all([
+          import("sucrase"),
+          import("antd"),
+          import("react-vis"),
+          import("react-markdown"),
+          import("luxon"),
+        ]);
+        await import("react-vis/dist/style.css");
+
+        if (cancelled) return;
+
+        const { DateTime } = luxon;
+        const ReactMarkdown = (ReactMarkdownModule as any).default ?? ReactMarkdownModule;
+        const antdAny = antd as any;
+        const { Panel } = antdAny.Collapse;
+        const { Paragraph, Text } = antdAny.Typography;
+        const { RangePicker } = antdAny.DatePicker;
+        const { Crosshair, Hint, HorizontalGridLines, LineSeries, VerticalGridLines, XAxis, XYPlot, YAxis } =
+          reactVis as any;
 
         const requiredAntdComponents = getRequiredAntdComponents(componentString);
         const requiredAntdIcons = getRequiredAntdIcons(componentString);
         const requiredReactIcons = getRequiredReactIcons(componentString);
 
-        console.debug("Required Antd Components:", requiredAntdComponents);
-        console.debug("Required Antd Icons:", requiredAntdIcons);
-        console.debug("Required React Icons:", requiredReactIcons);
+        const importedAntdComponents = pickAntdComponents(antd as Record<string, unknown>, requiredAntdComponents);
+        const importedIcons = resolveAntdIcons(requiredAntdIcons);
+        const importedReactIcons = pickReactIcons(requiredReactIcons);
 
-        const [, importedIcons, importedReactIcons] = await Promise.all([
-          importAntdComponents(requiredAntdComponents),
-          importAntdIcons(requiredAntdIcons),
-          importReactIcons(requiredReactIcons),
-        ]);
-
-        // Transform JSX to JavaScript
         let transpiledCode = transform(componentString, {
-          presets: ["react"],
+          transforms: ["jsx"],
+          production: true,
         }).code;
-        console.debug("Transpiled Code:", transpiledCode);
 
-        // Remove the last semicolon
         const lastSemicolonIndex = transpiledCode!.lastIndexOf(";");
         if (lastSemicolonIndex !== -1) {
           transpiledCode = transpiledCode!.slice(0, lastSemicolonIndex);
         }
 
-        // Create a context with all required components from antd
         const scopeContext: Record<string, any> = {
           React,
           useEffect,
@@ -255,43 +240,35 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
           RangePicker,
           DateTime,
           ReactMarkdown,
-          // Add all of antd components to the context
-          ...antd,
+          ...(antd as Record<string, unknown>),
+          ...importedAntdComponents,
+          ...importedIcons,
+          ...importedReactIcons,
         };
 
-        // Add the imported icons
-        for (const icon of requiredAntdIcons) {
-          if (importedIcons[icon]) {
-            scopeContext[icon] = importedIcons[icon];
-          }
-        }
-
-        // Add the imported react-icons
-        for (const icon of requiredReactIcons) {
-          if (importedReactIcons[icon]) {
-            scopeContext[icon] = importedReactIcons[icon];
-          }
-        }
-
-        // Create the component function with the entire context
         const functionParams = Object.keys(scopeContext);
         const functionArgs = functionParams.map((key) => scopeContext[key]);
 
         const createComponent = new Function(...functionParams, `return (${transpiledCode})`);
-
         const component = createComponent(...functionArgs);
-        console.debug("Component Function:", component);
 
+        compiledComponentCache.set(action, component);
+
+        if (cancelled) return;
         setComponent(() => component);
         setError(null);
-      } catch (error) {
-        console.error("Error creating component:", error);
-        setError(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Error creating component:", err);
+        setError(`Error: ${err instanceof Error ? err.message : String(err)}`);
         setComponent(() => () => <div>Error loading component</div>);
       }
     };
 
     loadComponent();
+    return () => {
+      cancelled = true;
+    };
   }, [action]);
 
   if (error) {

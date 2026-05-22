@@ -44,7 +44,7 @@ import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
 import { HiOutlineExternalLink } from "react-icons/hi";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import ActionLoader from "../../ActionLoader.js";
+const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
@@ -612,17 +612,18 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                           }, [])
                           .filter((action) => action?.attributes.type === "Workspace/Action")
                           .map((action, index) => (
-                            <ActionLoader
-                              key={index}
-                              action={action?.attributes.action}
-                              context={{
-                                workspace: workspace,
-                                state: contextState,
-                                resources: resources,
-                                apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                                settings: action.settings,
-                              }}
-                            />
+                            <Suspense key={index} fallback={<LoadingFallback />}>
+                              <ActionLoader
+                                action={action?.attributes.action}
+                                context={{
+                                  workspace: workspace,
+                                  state: contextState,
+                                  resources: resources,
+                                  apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                                  settings: action.settings,
+                                }}
+                              />
+                            </Suspense>
                           ))}
                       <Button
                         type="default"

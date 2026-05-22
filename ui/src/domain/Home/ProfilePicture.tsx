@@ -1,6 +1,5 @@
 import { PoweroffOutlined, QuestionCircleOutlined, UserOutlined } from "@ant-design/icons";
 import { Avatar, Dropdown, message } from "antd";
-import "antd/dist/reset.css";
 import { ItemType } from "antd/es/menu/interface";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";

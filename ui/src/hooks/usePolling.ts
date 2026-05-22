@@ -28,38 +28,28 @@ export function usePolling(callback: () => void | Promise<void>, options: UsePol
       return;
     }
 
-    if (immediate) {
-      savedCallback.current();
-    }
-
-    intervalRef.current = setInterval(() => {
-      savedCallback.current();
-    }, interval);
-
-    return () => {
-      clearPolling();
+    const start = () => {
+      if (intervalRef.current) return;
+      if (immediate) savedCallback.current();
+      intervalRef.current = setInterval(() => {
+        savedCallback.current();
+      }, interval);
     };
-  }, [interval, enabled, immediate, clearPolling]);
-
-  useEffect(() => {
-    if (!enabled) return;
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         clearPolling();
       } else {
-        if (immediate) {
-          savedCallback.current();
-        }
-        intervalRef.current = setInterval(() => {
-          savedCallback.current();
-        }, interval);
+        start();
       }
     };
 
+    if (!document.hidden) start();
     document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearPolling();
     };
   }, [interval, enabled, immediate, clearPolling]);
 

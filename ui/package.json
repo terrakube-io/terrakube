@@ -5,25 +5,17 @@
   "type": "module",
   "dependencies": {
     "@ant-design/icons": "^6.2.3",
-    "@babel/core": "^7.29.0",
-    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
-    "@babel/preset-env": "^7.29.5",
-    "@babel/standalone": "^7.29.4",
     "@monaco-editor/react": "^4.7.0",
     "ansi-to-react": "^6.2.6",
     "antd": "^6.4.3",
     "axios": "^1.16.1",
     "buffer": "^6.0.3",
-    "core-js-pure": "^3.49.0",
     "cron-to-quartz": "^1.4.11",
     "cronstrue": "^3.14.0",
-    "dotenv": "^17.4.2",
-    "dotenv-expand": "^13.0.0",
     "github-markdown-css": "^5.9.0",
     "hcl2-parser": "^1.0.3",
     "html-react-parser": "^6.1.1",
     "html-to-image": "^1.11.13",
-    "loader-utils": "3.3.1",
     "luxon": "^3.7.2",
     "minimatch": "^10.2.5",
     "oidc-client-ts": "3.5.0",
@@ -37,8 +29,9 @@
     "react-vis": "^1.12.1",
     "reactflow": "^11.11.3",
     "redux": "^5.0.1",
-    "remark-gfm": "4.0.1",
     "rehype-raw": "^7.0.0",
+    "remark-gfm": "4.0.1",
+    "sucrase": "^3.35.1",
     "unzipit": "^2.0.1",
     "uuid": "^14.0.0",
     "web-vitals": "^5.2.0"
@@ -46,6 +39,7 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
+    "build:analyze": "ANALYZE=1 vite build",
     "serve": "vite preview --port 3000",
     "test": "jest",
     "lint:check": "eslint ./src",
@@ -77,12 +71,10 @@
     ]
   },
   "devDependencies": {
-    "@rollup/plugin-dynamic-import-vars": "^2.1.5",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/babel__standalone": "^7.1.9",
     "@types/jest": "^30.0.0",
     "@types/luxon": "^3.7.1",
     "@types/node": "^25.9.1",
@@ -113,8 +105,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
-    "vite": "^8.0.13",
-    "vite-plugin-commonjs": "^0.10.4",
-    "vite-tsconfig-paths": "^6.1.1"
-  }
+    "vite": "^8.0.13"
+  },
+  "packageManager": "yarn@4.15.0"
 }

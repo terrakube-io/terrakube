@@ -1,5 +1,4 @@
 import { Button, Flex, List, Space } from "antd";
-import "antd/dist/reset.css";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
