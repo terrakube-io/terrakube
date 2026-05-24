@@ -36,13 +36,6 @@ cn: Eugene
 mail: gcp@example.com
 userpassword: gcp
 
-dn: cn=limited,ou=users,dc=example,dc=org
-objectClass: inetOrgPerson
-sn: Limited
-cn: Access
-mail: limited@example.com
-userpassword: limited
-
 # Group definitions.
 
 dn: ou=Groups,dc=example,dc=org
@@ -73,8 +66,3 @@ dn: cn=GCP_DEVELOPERS,ou=Groups,dc=example,dc=org
 objectClass: groupOfNames
 cn: GCP_DEVELOPERS
 member: cn=eugene,ou=users,dc=example,dc=org
-
-dn: cn=LIMITED_ACCESS,ou=Groups,dc=example,dc=org
-objectClass: groupOfNames
-cn: LIMITED_ACCESS
-member: cn=limited,ou=users,dc=example,dc=org
