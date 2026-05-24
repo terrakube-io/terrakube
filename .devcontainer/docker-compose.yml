@@ -12,7 +12,6 @@ x-terrakube_dns: &terrakube_dns
 #  - "terrakube-registry.${DOMAIN}:${HOST_GATEWAY}"
 #  - "terrakube-dex.${DOMAIN}:${HOST_GATEWAY}"
 
-
 #### Container Environment Variables #####
 
 x-api: &api_env
@@ -91,13 +90,6 @@ x-registry: &registry_env
   AppClientId: example-app
   AppIssuerUri: https://terrakube-dex.${DOMAIN}/dex
   SERVICE_BINDING_ROOT: /mnt/platform/bindings
-
-x-ldap: &ldap_env
-  LDAP_TLS_VERIFY_CLIENT: try
-  LDAP_ADMIN_USERNAME: "admin"
-  LDAP_ADMIN_PASSWORD: "admin"
-  LDAP_ROOT: "dc=example,dc=org"
-  LDAP_CUSTOM_LDIF_DIR: "/ldifs"
 
 x-minio: &minio_env
   MINIO_ROOT_USER: ${TK_OUTPUT_ACCESS_KEY}
@@ -184,9 +176,7 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-registry-http.service: terrakube-registry-https
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
-
-x-traefik_dex_labels: &traefik_dex_labels
-  traefik.enable: true
+  ## Terrakube DEX service
   ## Terrakube DEX HTTPS
   traefik.http.routers.terrakube-dex-https.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-https.entrypoints: websecure
@@ -244,6 +234,7 @@ services:
       - 8075
       - 8090
       - 3000
+      - 5556
     container_name: terrakube-dev
     privileged: true
     build:
@@ -252,26 +243,6 @@ services:
     volumes:
       - ..:/workspaces/terrakube:cached
       - 'maven_data:/home/vscode/.m2'
-    networks:
-      - terrakube-network
-  terrakube-dex:
-    image: ghcr.io/dexidp/dex:${TK_DEX_VERSION}
-    #extra_hosts: *terrakube_hosts
-    labels: *traefik_dex_labels
-    container_name: terrakube-dex
-    environment:
-      - TK_DEX_ISSUER=${TK_DEX_ISSUER}
-      - TK_DEX_STATIC_CLIENT=${TK_DEX_STATIC_CLIENT}
-    volumes:
-      - ./config-ldap.yaml:/etc/dex/config.docker.yaml
-    networks:
-      - terrakube-network
-  ldap-service:
-    image: bitnamilegacy/openldap:${TK_LDAP_VERSION}
-    container_name: terrakube-ldap-service
-    environment: *ldap_env
-    volumes:
-      - ./config-ldap.ldif:/ldifs/config-ldap.ldif
     networks:
       - terrakube-network
   minio:
@@ -307,15 +278,15 @@ services:
       - 5432:5432
     networks:
       - terrakube-network
-  mssql-service:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: mssql-service
-    restart: unless-stopped
-    environment:
-      - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=P@ssw0rd!
-    networks:
-      - terrakube-network
+  #mssql-service:
+  #  image: mcr.microsoft.com/mssql/server:2022-latest
+  #  container_name: mssql-service
+  #  restart: unless-stopped
+  #  environment:
+  #    - ACCEPT_EULA=Y
+  #    - MSSQL_SA_PASSWORD=P@ssw0rd!
+  #  networks:
+  #    - terrakube-network
 volumes:
   minio_data:
   redis_data:

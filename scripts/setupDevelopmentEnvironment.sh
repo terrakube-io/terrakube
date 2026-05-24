@@ -401,23 +401,6 @@ function generateUiConfigFile() {
 
 }
 
-function generateDexConfiguration() {
-	cp scripts/template/dex/template-config-ldap.yaml scripts/setup/dex/config-ldap.yaml
-
-	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		jwtIssuer=$(gp url 5556)
-		uiRedirect=$(gp url 3000)
-	else
-		jwtIssuer="http://localhost:5556"
-		uiRedirect="http://localhost:3000"
-	fi
-
-	sed -i "s+TEMPLATE_GITPOD_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/dex/config-ldap.yaml
-	sed -i "s+TEMPLATE_GITPOD_REDIRECT+$uiRedirect+gi" scripts/setup/dex/config-ldap.yaml
-
-}
-
 function generateThunderClientConfiguration() {
 	USER=$(whoami)
 	if [ "$USER" = "gitpod" ]; then
@@ -470,15 +453,40 @@ function generateDexConfiguration() {
 		touch .devcontainer/.env-dex
 	fi
 
-	if [ "$USER" = "gitpod" ]; then
-		TK_DEX_ISSUER="$(gp url 5556)/dex"
-		TK_DEX_API=$(gp url 8080)
-		TK_DEX_REGISTRY=$(gp url 8075)
+	echo "Generating code spaces dex urls dynamically"
+	if [ "$CODESPACES" = "true" ]; then
+	  echo "Generating code spaces dex urls dynamically"
+		TK_DEX_ISSUER="https://$CODESPACE_NAME-5556.app.github.dev/dex"
+		TK_DEX_API="https://$CODESPACE_NAME-8080.app.github.dev"
+		TK_DEX_REGISTRY="https://$CODESPACE_NAME-8075.app.github.dev"
 	elif [ "$USER" = "vscode" ]; then
-		touch .devcontainer/.env-dex
-		echo "TK_DEX_VERSION=v2.42.0" >>.devcontainer/.env-dex
-		echo "TK_DEX_ISSUER=https://terrakube-dex.platform.local/dex" >>.devcontainer/.env-dex
-		echo "TK_DEX_STATIC_CLIENT=c3RhdGljQ2xpZW50czoKICAtIGlkOiBleGFtcGxlLWFwcAogICAgcmVkaXJlY3RVUklzOgogICAgICAtICdodHRwczovL3RlcnJha3ViZS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAnaHR0cHM6Ly90ZXJyYWt1YmUtYXBpLnBsYXRmb3JtLmxvY2FsJwogICAgICAtICdodHRwczovL3RlcnJha3ViZS1yZWdpc3RyeS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAvZGV2aWNlL2NhbGxiYWNrCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDAvbG9naW4nCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDEvbG9naW4nCiAgICBuYW1lOiBFeGFtcGxlIEFwcAogICAgcHVibGljOiB0cnVl" >>.devcontainer/.env-dex
+	  	if [ -e scripts/setup/dex/.env ]; then
+    		echo "File exists."
+    		rm -rf scripts/setup/dex/.env
+    	else
+    		echo "File does not exist."
+    		touch scripts/setup/dex/.env
+    	fi
+		echo "TK_DEX_VERSION=v2.42.0" >> scripts/setup/dex/.env
+		echo "TK_DEX_ISSUER=https://terrakube-dex.platform.local/dex" >> scripts/setup/dex/.env
+		echo "TK_DEX_STATIC_CLIENT=c3RhdGljQ2xpZW50czoKICAtIGlkOiBleGFtcGxlLWFwcAogICAgcmVkaXJlY3RVUklzOgogICAgICAtICdodHRwczovL3RlcnJha3ViZS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAnaHR0cHM6Ly90ZXJyYWt1YmUtYXBpLnBsYXRmb3JtLmxvY2FsJwogICAgICAtICdodHRwczovL3RlcnJha3ViZS1yZWdpc3RyeS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAvZGV2aWNlL2NhbGxiYWNrCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDAvbG9naW4nCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDEvbG9naW4nCiAgICBuYW1lOiBFeGFtcGxlIEFwcAogICAgcHVibGljOiB0cnVl" >> scripts/setup/dex/.env
+
+    cd scripts/setup/dex
+    source .env
+    docker-compose up -d
+    cd ../../..
+    echo "Waiting for dex-service to be ready..."
+    for i in {1..60}; do
+      if curl -s localhost:5556 > /dev/null; then
+        echo "dex-service is ready."
+        break
+      fi
+      sleep 1
+      if [ $i -eq 60 ]; then
+        echo "Timed out waiting for dex-service."
+        exit 1
+      fi
+    done
 	fi
 }
 
