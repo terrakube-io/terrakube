@@ -14,8 +14,7 @@
       "version": "25.0.1-librca"
     },
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "22",
-      "installYarnUsingApt": true
+      "version": "24"
     },
     "ghcr.io/devcontainers/features/terraform:1": {
       "terragrunt": "none",

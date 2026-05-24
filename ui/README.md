@@ -43,8 +43,9 @@ Run the script env.sh to generate static configuration file env-config.js inside
 Build/Start the application:
 
 ```bash
+corepack enable
 yarn install
-yarn dev
+yarn start
 ```
 
 ## Docker Support

@@ -1,4 +1,5 @@
 #!/bin/bash
 
-cd ui 
+cd ui
+corepack enable
 yarn install

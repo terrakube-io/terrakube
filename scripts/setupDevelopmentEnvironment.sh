@@ -539,7 +539,7 @@ rm private_temp.pem
 # Install UI dependencies for devcontainer
 if [ "$USER" = "vscode" ]; then
 	echo "Installing UI dependencies..."
-	cd ui && yarn install && cd ..
+	cd ui && corepack enable && yarn install && cd ..
 fi
 
 echo "Setup Development Environment Completed"

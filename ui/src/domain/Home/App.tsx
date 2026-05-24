@@ -186,8 +186,8 @@ const AppLayout = () => {
   };
 
   return (
-    <ConfigProvider key={`${colorScheme}-${themeMode}`} theme={getThemeConfig(colorScheme, themeMode)}>
-      <Layout className="layout mh-100" key={organizationName || "no-org"}>
+    <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
+      <Layout className="layout mh-100">
         <Header>
           <a>
             <img className="logo" src={logo} alt="Logo"></img>

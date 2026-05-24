@@ -1,6 +1,5 @@
 import { Button, Empty, Flex } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import "antd/dist/reset.css";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
