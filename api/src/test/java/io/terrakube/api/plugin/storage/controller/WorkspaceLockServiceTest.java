@@ -48,12 +48,12 @@ class WorkspaceLockServiceTest {
 
     @Test
     void tryAcquireUsesSetIfAbsentWithConfiguredTtl() {
-        when(valueOps.setIfAbsent("tflock:ws-1", "{\"ID\":\"abc\"}", 5L, TimeUnit.MINUTES)).thenReturn(true);
+        when(valueOps.setIfAbsent("tflock:ws-1", "{\"ID\":\"abc\"}", 5L, TimeUnit.SECONDS)).thenReturn(true);
 
         boolean acquired = subject.tryAcquire("ws-1", "{\"ID\":\"abc\"}");
 
         assertTrue(acquired);
-        verify(valueOps).setIfAbsent("tflock:ws-1", "{\"ID\":\"abc\"}", 5L, TimeUnit.MINUTES);
+        verify(valueOps).setIfAbsent("tflock:ws-1", "{\"ID\":\"abc\"}", 5L, TimeUnit.SECONDS);
     }
 
     @Test
@@ -70,9 +70,22 @@ class WorkspaceLockServiceTest {
     }
 
     @Test
-    void refreshExtendsTtlOnKey() {
-        subject.refresh("ws-1");
-        verify(redisTemplate).expire("tflock:ws-1", 5L, TimeUnit.MINUTES);
+    void refreshExtendsTtlAndReturnsTrueWhenKeyExists() {
+        when(redisTemplate.expire("tflock:ws-1", 5L, TimeUnit.SECONDS)).thenReturn(true);
+        assertTrue(subject.refresh("ws-1"));
+        verify(redisTemplate).expire("tflock:ws-1", 5L, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void refreshReturnsFalseWhenKeyAlreadyExpired() {
+        when(redisTemplate.expire("tflock:ws-1", 5L, TimeUnit.SECONDS)).thenReturn(false);
+        assertFalse(subject.refresh("ws-1"));
+    }
+
+    @Test
+    void refreshReturnsFalseDefensivelyWhenRedisReturnsNull() {
+        when(redisTemplate.expire("tflock:ws-1", 5L, TimeUnit.SECONDS)).thenReturn(null);
+        assertFalse(subject.refresh("ws-1"));
     }
 
     @Test

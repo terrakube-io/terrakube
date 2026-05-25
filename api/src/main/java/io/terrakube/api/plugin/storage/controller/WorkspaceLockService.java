@@ -13,8 +13,11 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Redis-backed storage for the per-workspace terraform state lock. Stores the
- * raw lock JSON body terraform sends, keyed by workspace id, with a TTL so a
- * crashed agent never leaves a workspace locked forever.
+ * raw lock JSON body terraform sends, keyed by workspace id, with a short TTL.
+ * The executor running the operation drives a heartbeat that calls
+ * {@link #refresh(String)} every minute so a healthy run holds the lock for
+ * the duration of even very long applies, while a crashed or partitioned
+ * executor lets the lock expire and frees the workspace for the next run.
  */
 @Service
 @Slf4j
@@ -24,12 +27,12 @@ public class WorkspaceLockService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final long lockTtlMinutes;
+    private final long lockTtlSeconds;
 
     public WorkspaceLockService(RedisTemplate<String, Object> redisTemplate,
-                                @Value("${io.terrakube.api.http-backend.lock-ttl-minutes:30}") long lockTtlMinutes) {
+                                @Value("${io.terrakube.api.http-backend.lock-ttl-seconds:300}") long lockTtlSeconds) {
         this.redisTemplate = redisTemplate;
-        this.lockTtlMinutes = lockTtlMinutes;
+        this.lockTtlSeconds = lockTtlSeconds;
     }
 
     public Optional<String> getLockInfo(String workspaceId) {
@@ -47,12 +50,20 @@ public class WorkspaceLockService {
      */
     public boolean tryAcquire(String workspaceId, String lockInfoJson) {
         Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(key(workspaceId), lockInfoJson, lockTtlMinutes, TimeUnit.MINUTES);
+                .setIfAbsent(key(workspaceId), lockInfoJson, lockTtlSeconds, TimeUnit.SECONDS);
         return Boolean.TRUE.equals(acquired);
     }
 
-    public void refresh(String workspaceId) {
-        redisTemplate.expire(key(workspaceId), lockTtlMinutes, TimeUnit.MINUTES);
+    /**
+     * Extend the TTL on an existing lock. Driven by the executor's heartbeat
+     * thread once a minute; long applies stay locked as long as the executor
+     * keeps the heartbeat alive. Returns {@code true} only when the key
+     * existed and the TTL was extended — a {@code false} return tells the
+     * caller (and the executor's heartbeat loop) that the lock has been lost.
+     */
+    public boolean refresh(String workspaceId) {
+        Boolean refreshed = redisTemplate.expire(key(workspaceId), lockTtlSeconds, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(refreshed);
     }
 
     public void release(String workspaceId) {

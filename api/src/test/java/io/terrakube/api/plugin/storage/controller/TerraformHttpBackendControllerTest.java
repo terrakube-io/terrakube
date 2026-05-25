@@ -160,6 +160,7 @@ class TerraformHttpBackendControllerTest {
     @Test
     void postStateSucceedsAndRefreshesLockWhenLockMatches() throws Exception {
         when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"matching-lock\"}"));
+        when(lockService.refresh(WORKSPACE)).thenReturn(true);
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"version\":4}".getBytes(StandardCharsets.UTF_8));
@@ -168,8 +169,9 @@ class TerraformHttpBackendControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(storage).uploadState(eq(ORG), eq(WORKSPACE), eq("{\"version\":4}"), eq("live"));
-        // Long applies write state once at the end. Refreshing TTL on the matching
-        // post keeps the lock alive through subsequent steps in the same operation.
+        // The executor's heartbeat is the primary TTL-keeper, but the state POST
+        // also opportunistically refreshes so a single-step run that happens to
+        // skip a heartbeat tick still completes cleanly.
         verify(lockService).refresh(WORKSPACE);
     }
 
@@ -290,5 +292,36 @@ class TerraformHttpBackendControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(lockService).release(WORKSPACE);
+    }
+
+    @Test
+    void heartbeatReturns401WhenUnauthorized() {
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, new MockHttpServletRequest());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(lockService, never()).refresh(WORKSPACE);
+    }
+
+    @Test
+    void heartbeatReturnsOkWhenLockRefreshed() {
+        when(lockService.refresh(WORKSPACE)).thenReturn(true);
+
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, withBasic(validToken()));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).refresh(WORKSPACE);
+    }
+
+    @Test
+    void heartbeatReturns410WhenLockHasExpired() {
+        // TTL elapsed during a network partition — the executor needs a strong
+        // signal to abort the in-flight terraform op rather than continue and
+        // overlap with whoever acquires next.
+        when(lockService.refresh(WORKSPACE)).thenReturn(false);
+
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, withBearer(validToken()));
+
+        assertEquals(HttpStatus.GONE, response.getStatusCode());
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        assertEquals("{\"error\":\"lock-lost\"}", response.getBody());
     }
 }

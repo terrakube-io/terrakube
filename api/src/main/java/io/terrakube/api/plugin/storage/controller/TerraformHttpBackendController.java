@@ -157,6 +157,33 @@ public class TerraformHttpBackendController {
         return ResponseEntity.ok("");
     }
 
+    /**
+     * Executor-driven heartbeat. The lock TTL is short (~5 min) so a crashed
+     * executor frees the workspace, but a healthy executor holding a long
+     * apply needs to keep its lock alive. Each ping refreshes the TTL.
+     *
+     * Responds {@code 200} when the lock was found and refreshed, {@code 410}
+     * when no lock exists — the executor should treat 410 as a signal that it
+     * lost the lock (TTL elapsed during a network partition) and abort the
+     * in-flight terraform operation rather than continue to write state that
+     * the API will reject.
+     */
+    @PostMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/lock/heartbeat")
+    public ResponseEntity<String> heartbeat(@PathVariable("organizationId") String organizationId,
+                                            @PathVariable("workspaceId") String workspaceId,
+                                            HttpServletRequest request) {
+        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        boolean refreshed = lockService.refresh(workspaceId);
+        if (refreshed) {
+            return ResponseEntity.ok("");
+        }
+        log.warn("Heartbeat for workspace {}: no lock to refresh (TTL likely elapsed)", workspaceId);
+        return ResponseEntity.status(HttpStatus.GONE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":\"lock-lost\"}");
+    }
+
     private boolean isAuthorized(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
         if (header == null) {
