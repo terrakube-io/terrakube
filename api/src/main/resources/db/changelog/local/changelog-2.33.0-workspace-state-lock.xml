@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2.33.0-workspace-state-lock" author="terrakube">
+        <createTable tableName="workspace_state_lock">
+            <column name="workspace_id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="lock_id" type="varchar(128)"/>
+            <column name="lock_info" type="clob"/>
+            <column name="acquired_at" type="timestamp"/>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>
