@@ -103,5 +103,4 @@
     <include file="/db/changelog/local/changelog-2.31.0-variable-incomplete.xml" />
     <include file="db/changelog/local/changelog-2.31.0-repo-webhooks.xml"/>
     <include file="/db/changelog/local/changelog-2.32.0-project-access.xml"/>
-    <include file="/db/changelog/local/changelog-2.33.0-workspace-state-lock.xml"/>
 </databaseChangeLog>

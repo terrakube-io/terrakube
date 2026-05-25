@@ -5,8 +5,6 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.io.Encoders;
 import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.repository.WorkspaceStateLockRepository;
-import io.terrakube.api.rs.workspace.state.lock.WorkspaceStateLock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -19,13 +17,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,7 +34,7 @@ class TerraformHttpBackendControllerTest {
     private static final String WORKSPACE = "11111111-1111-1111-1111-111111111111";
 
     private StorageTypeService storage;
-    private WorkspaceStateLockRepository lockRepo;
+    private WorkspaceLockService lockService;
     private TerraformHttpBackendController controller;
     private String secretBase64Url;
     private SecretKey key;
@@ -45,12 +42,27 @@ class TerraformHttpBackendControllerTest {
     @BeforeEach
     void setUp() {
         storage = mock(StorageTypeService.class);
-        lockRepo = mock(WorkspaceStateLockRepository.class);
-        // Generate a fresh HS256 key for each test and feed it to the controller
-        // in the same Base64URL form the API config supplies.
+        lockService = mock(WorkspaceLockService.class);
+        // HS256 matches NimbusJwtDecoder.withSecretKey(...).macAlgorithm(HS256)
+        // — the same wiring DexAuthenticationManagerResolver uses for internal tokens.
         key = Jwts.SIG.HS256.key().build();
         secretBase64Url = Encoders.BASE64URL.encode(key.getEncoded());
-        controller = new TerraformHttpBackendController(storage, lockRepo, secretBase64Url);
+        controller = new TerraformHttpBackendController(storage, lockService, secretBase64Url);
+
+        // Tests interact with the controller's calls into the service, but the
+        // controller also asks the service to parse the lock id out of the body
+        // it received. Stub that with a tiny grep so the assertion focus stays
+        // on controller behaviour rather than JSON plumbing.
+        when(lockService.readLockId(anyString()))
+                .thenAnswer(inv -> {
+                    String body = inv.getArgument(0);
+                    if (body == null || body.isBlank()) return null;
+                    int idx = body.indexOf("\"ID\":\"");
+                    if (idx < 0) return null;
+                    int start = idx + "\"ID\":\"".length();
+                    int end = body.indexOf("\"", start);
+                    return end < 0 ? null : body.substring(start, end);
+                });
     }
 
     private String validToken() {
@@ -58,6 +70,7 @@ class TerraformHttpBackendControllerTest {
         return Jwts.builder()
                 .subject("executor")
                 .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
                 .signWith(signingKey)
                 .compact();
     }
@@ -117,11 +130,7 @@ class TerraformHttpBackendControllerTest {
 
     @Test
     void postStateRejectsWithLockMismatch() throws Exception {
-        WorkspaceStateLock held = new WorkspaceStateLock();
-        held.setWorkspaceId(UUID.fromString(WORKSPACE));
-        held.setLockId("holder-lock");
-        held.setLockInfo("{\"ID\":\"holder-lock\"}");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(held));
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{}".getBytes(StandardCharsets.UTF_8));
@@ -131,11 +140,12 @@ class TerraformHttpBackendControllerTest {
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
         verify(storage, never()).uploadState(any(), any(), any(), any());
+        verify(lockService, never()).refresh(WORKSPACE);
     }
 
     @Test
     void postStateSucceedsWhenNoLockExists() throws Exception {
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.empty());
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"version\":4}".getBytes(StandardCharsets.UTF_8));
@@ -144,14 +154,12 @@ class TerraformHttpBackendControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(storage).uploadState(eq(ORG), eq(WORKSPACE), eq("{\"version\":4}"), eq("live"));
+        verify(lockService, never()).refresh(WORKSPACE);
     }
 
     @Test
-    void postStateSucceedsWhenLockMatches() throws Exception {
-        WorkspaceStateLock held = new WorkspaceStateLock();
-        held.setWorkspaceId(UUID.fromString(WORKSPACE));
-        held.setLockId("matching-lock");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(held));
+    void postStateSucceedsAndRefreshesLockWhenLockMatches() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"matching-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"version\":4}".getBytes(StandardCharsets.UTF_8));
@@ -160,6 +168,9 @@ class TerraformHttpBackendControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(storage).uploadState(eq(ORG), eq(WORKSPACE), eq("{\"version\":4}"), eq("live"));
+        // Long applies write state once at the end. Refreshing TTL on the matching
+        // post keeps the lock alive through subsequent steps in the same operation.
+        verify(lockService).refresh(WORKSPACE);
     }
 
     @Test
@@ -170,8 +181,8 @@ class TerraformHttpBackendControllerTest {
     }
 
     @Test
-    void lockCreatesNewLockWhenNoneHeld() throws Exception {
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.empty());
+    void lockReturnsOkWhenAcquireSucceeds() throws Exception {
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(true);
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -179,16 +190,13 @@ class TerraformHttpBackendControllerTest {
         ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockRepo).saveAndFlush(any(WorkspaceStateLock.class));
+        verify(lockService).tryAcquire(WORKSPACE, "{\"ID\":\"client-lock\"}");
     }
 
     @Test
     void lockIsIdempotentForSameHolder() throws Exception {
-        WorkspaceStateLock existing = new WorkspaceStateLock();
-        existing.setWorkspaceId(UUID.fromString(WORKSPACE));
-        existing.setLockId("client-lock");
-        existing.setLockInfo("{\"ID\":\"client-lock\"}");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(existing));
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"client-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -196,16 +204,12 @@ class TerraformHttpBackendControllerTest {
         ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockRepo, never()).saveAndFlush(any(WorkspaceStateLock.class));
     }
 
     @Test
     void lockReturns409WhenHeldByDifferentClient() throws Exception {
-        WorkspaceStateLock existing = new WorkspaceStateLock();
-        existing.setWorkspaceId(UUID.fromString(WORKSPACE));
-        existing.setLockId("holder-lock");
-        existing.setLockInfo("{\"ID\":\"holder-lock\"}");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(existing));
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -214,52 +218,40 @@ class TerraformHttpBackendControllerTest {
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
-        verify(lockRepo, never()).saveAndFlush(any(WorkspaceStateLock.class));
     }
 
     @Test
-    void lockReturns409OnConcurrentInsertRace() throws Exception {
-        // First findById: nothing. We try to insert and the DB rejects (race).
-        // Second findById: the winner is now visible.
-        UUID wsUuid = UUID.fromString(WORKSPACE);
-        WorkspaceStateLock winner = new WorkspaceStateLock();
-        winner.setWorkspaceId(wsUuid);
-        winner.setLockId("winning-lock");
-        winner.setLockInfo("{\"ID\":\"winning-lock\"}");
-        when(lockRepo.findById(wsUuid))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(winner));
-        doThrow(new RuntimeException("constraint violation"))
-                .when(lockRepo).saveAndFlush(any(WorkspaceStateLock.class));
+    void lockReturns409WithFallbackBodyWhenKeyExpiredBetweenSetAndReadBack() throws Exception {
+        // tryAcquire returned false (someone won the race) but the winning entry
+        // expired before we could read it back. The controller still has to say 409
+        // and supply *some* JSON body — default to {}.
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
 
         MockHttpServletRequest request = withBasic(validToken());
-        request.setContent("{\"ID\":\"loser-lock\"}".getBytes(StandardCharsets.UTF_8));
+        request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
 
         ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
-        assertEquals("{\"ID\":\"winning-lock\"}", response.getBody());
+        assertEquals("{}", response.getBody());
     }
 
     @Test
     void unlockReturnsOkWhenNothingHeld() throws Exception {
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.empty());
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"any\"}".getBytes(StandardCharsets.UTF_8));
 
         ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockRepo, never()).deleteById(any());
+        verify(lockService, never()).release(WORKSPACE);
     }
 
     @Test
     void unlockReturns409OnIdMismatch() throws Exception {
-        WorkspaceStateLock held = new WorkspaceStateLock();
-        held.setWorkspaceId(UUID.fromString(WORKSPACE));
-        held.setLockId("holder-lock");
-        held.setLockInfo("{\"ID\":\"holder-lock\"}");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(held));
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"other-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -268,15 +260,12 @@ class TerraformHttpBackendControllerTest {
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
-        verify(lockRepo, never()).deleteById(any());
+        verify(lockService, never()).release(WORKSPACE);
     }
 
     @Test
-    void unlockDeletesWhenIdMatches() throws Exception {
-        WorkspaceStateLock held = new WorkspaceStateLock();
-        held.setWorkspaceId(UUID.fromString(WORKSPACE));
-        held.setLockId("holder-lock");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(held));
+    void unlockReleasesWhenIdMatches() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"holder-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -284,24 +273,22 @@ class TerraformHttpBackendControllerTest {
         ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockRepo).deleteById(UUID.fromString(WORKSPACE));
+        verify(lockService).release(WORKSPACE);
     }
 
     @Test
-    void unlockWithoutIdInBodyDeletesHeldLock() throws Exception {
-        // terraform force-unlock can send an empty body or different ID.
-        // When no ID is supplied (null after parse), the controller honors the unlock.
-        WorkspaceStateLock held = new WorkspaceStateLock();
-        held.setWorkspaceId(UUID.fromString(WORKSPACE));
-        held.setLockId("holder-lock");
-        when(lockRepo.findById(UUID.fromString(WORKSPACE))).thenReturn(Optional.of(held));
+    void unlockWithoutIdInBodyReleasesHeldLock() throws Exception {
+        // terraform force-unlock can send an empty body. When no ID is supplied
+        // the controller honors the unlock — operator override path.
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent(new byte[0]);
 
         ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
 
+        assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockRepo).deleteById(UUID.fromString(WORKSPACE));
+        verify(lockService).release(WORKSPACE);
     }
 }
