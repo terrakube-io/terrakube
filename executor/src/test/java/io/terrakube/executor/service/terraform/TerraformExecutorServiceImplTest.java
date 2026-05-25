@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.terraform;
 
+import io.terrakube.executor.plugin.tfstate.StateUploadFailedException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -107,5 +108,30 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertTrue(result.getOutputLog().contains("init stderr"));
+    }
+
+    @Test
+    void planSurfacesStateUploadFailureFromSaveTerraformPlan() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        // exit 2 = plan succeeded with changes, so executionPlan is true and saveTerraformPlan is called
+        when(terraformClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        when(terraformState.saveTerraformPlan(anyString(), anyString(), anyString(), anyString(), any(File.class)))
+                .thenThrow(new StateUploadFailedException("API rejected upload: HTTP 500"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        // The upload failure is appended to the error buffer (and surfaced via
+        // surfaceUploadFailure -> setOutputErrorLog) so the failed job carries
+        // the user-facing reason. The success-path outputLog snapshot was taken
+        // before the catch block, so we don't assert on it here.
+        assertTrue(result.getOutputErrorLog().contains("API rejected upload: HTTP 500"),
+                "Expected error log to include the upload failure reason, got: " + result.getOutputErrorLog());
     }
 }
