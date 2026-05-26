@@ -160,6 +160,18 @@ public class ExecutorService {
             executorContext.setBranch(job.getOverrideBranch());
         }
 
+        // A remote-content workspace requires a tarball URL (job.overrideSource set by
+        // the Terraform CLI configuration-version upload, or workspace.source set by the
+        // same flow). A manual UI run against such a workspace will arrive here with both
+        // null and would NPE later inside the executor when constructing the download URL.
+        if ("remote-content".equals(executorContext.getBranch())
+                && (executorContext.getSource() == null || executorContext.getSource().isBlank())) {
+            throw new ExecutionException(
+                    "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
+                            + "' has branch 'remote-content' but no configuration has been uploaded. "
+                            + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
+        }
+
         if (job.getWorkspace().getModuleSshKey() != null) {
             String moduleSshId = job.getWorkspace().getModuleSshKey();
             Optional<Ssh> ssh = sshRepository.findById(UUID.fromString(moduleSshId));

@@ -195,6 +195,12 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
         String source = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getOverrideSource();
         log.info("Download workspace from source: {}", source);
+        if (source == null || source.isBlank()) {
+            throw new IOException(
+                    "No configuration tarball URL is set for job " + jobId
+                            + " (overrideSource is null). The workspace branch is 'remote-content' but no configuration"
+                            + " has been uploaded — upload it via the terraform CLI or attach a VCS connection before running.");
+        }
         File terraformTarGz = new File(tarGzFolder.getPath() + "/terraformContent.tar.gz");
         URL url = new URI(source).toURL();
         URLConnection urlConnection = url.openConnection();
