@@ -31,7 +31,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * TerraformState implementation that routes every state/plan/output write to
@@ -83,6 +88,110 @@ public class ApiTerraformStateImpl implements TerraformState {
      */
     @lombok.Builder.Default
     boolean verifyReadBack = true;
+
+    /**
+     * Seconds between heartbeat pings to the API. Should be well under the
+     * API-side lock TTL ({@code io.terrakube.api.http-backend
+     * .lock-ttl-seconds}, default 300) so a single missed ping never lets
+     * the lock expire. With the defaults a healthy run pings 5 times per
+     * TTL window — tolerates 3+ consecutive failures before giving up.
+     */
+    @lombok.Builder.Default
+    long heartbeatIntervalSeconds = 60L;
+
+    /**
+     * If no heartbeat has succeeded for this many seconds, the executor
+     * aborts the in-flight terraform operation rather than continue to write
+     * state the API will reject. Must be smaller than the API lock TTL so
+     * we cancel before the lock is reassigned. Default 180s = 3 missed
+     * heartbeats at 60s cadence, leaving a 120s margin under the 300s lock
+     * TTL for the API to free the lock cleanly.
+     */
+    @lombok.Builder.Default
+    long heartbeatAbortAfterSeconds = 180L;
+
+    private final transient AtomicLong lastSuccessfulHeartbeatMillis = new AtomicLong(0L);
+    private final transient AtomicBoolean heartbeatRunning = new AtomicBoolean(false);
+    private transient ScheduledExecutorService heartbeatScheduler;
+    private transient ScheduledFuture<?> heartbeatTask;
+
+    @Override
+    public synchronized void startHeartbeat(String organizationId, String workspaceId) {
+        if (!heartbeatRunning.compareAndSet(false, true)) {
+            log.warn("Heartbeat already running for workspace {} — startHeartbeat called twice without stop", workspaceId);
+            return;
+        }
+        lastSuccessfulHeartbeatMillis.set(System.currentTimeMillis());
+        heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "tf-lock-heartbeat-" + workspaceId);
+            thread.setDaemon(true);
+            return thread;
+        });
+        String url = String.format("%s/tfstate/v1/http-backend/organization/%s/workspace/%s/lock/heartbeat",
+                apiUrl, organizationId, workspaceId);
+        log.info("Starting lock heartbeat for workspace {} every {}s (abort after {}s)",
+                workspaceId, heartbeatIntervalSeconds, heartbeatAbortAfterSeconds);
+        heartbeatTask = heartbeatScheduler.scheduleAtFixedRate(
+                () -> sendHeartbeat(url, workspaceId),
+                heartbeatIntervalSeconds, heartbeatIntervalSeconds, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public synchronized void stopHeartbeat() {
+        if (!heartbeatRunning.compareAndSet(true, false)) {
+            return;
+        }
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(false);
+            heartbeatTask = null;
+        }
+        if (heartbeatScheduler != null) {
+            heartbeatScheduler.shutdownNow();
+            heartbeatScheduler = null;
+        }
+        log.info("Stopped lock heartbeat");
+    }
+
+    @Override
+    public void checkHeartbeatHealth() {
+        if (!heartbeatRunning.get()) return;
+        long lastOk = lastSuccessfulHeartbeatMillis.get();
+        long elapsedSec = (System.currentTimeMillis() - lastOk) / 1000L;
+        if (elapsedSec > heartbeatAbortAfterSeconds) {
+            String message = String.format(
+                    "Lost contact with the Terrakube API for %ds (threshold %ds); aborting the run so the workspace lock can be reassigned safely.",
+                    elapsedSec, heartbeatAbortAfterSeconds);
+            throw new StateUploadFailedException(message);
+        }
+    }
+
+    private void sendHeartbeat(String url, String workspaceId) {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(IO_TIMEOUT_MS);
+            conn.setReadTimeout(IO_TIMEOUT_MS);
+            conn.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(5));
+            conn.setRequestProperty("Content-Length", "0");
+            conn.setDoOutput(true);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(new byte[0]);
+            }
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                lastSuccessfulHeartbeatMillis.set(System.currentTimeMillis());
+                log.debug("Heartbeat OK for workspace {}", workspaceId);
+            } else if (code == HttpURLConnection.HTTP_GONE) {
+                // 410 from the API means the lock TTL elapsed before this ping arrived.
+                // Don't update lastSuccessful — let checkHeartbeatHealth abort the run.
+                log.warn("Heartbeat for workspace {}: API reports lock-lost (HTTP 410); run will abort on next health check", workspaceId);
+            } else {
+                log.warn("Heartbeat for workspace {} returned HTTP {}", workspaceId, code);
+            }
+        } catch (IOException e) {
+            log.warn("Heartbeat for workspace {} failed: {}", workspaceId, e.getMessage());
+        }
+    }
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {

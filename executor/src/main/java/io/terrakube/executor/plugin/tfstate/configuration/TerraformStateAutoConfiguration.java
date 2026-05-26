@@ -52,7 +52,7 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, WorkspaceSecurity workspaceSecurity, @Value("${io.terrakube.api.url}") String apiUrl, @Value("${io.terrakube.executor.plugin.tfstate.api.verifyReadBack:true}") boolean apiVerifyReadBack) {
+    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, WorkspaceSecurity workspaceSecurity, @Value("${io.terrakube.api.url}") String apiUrl, @Value("${io.terrakube.executor.plugin.tfstate.api.verifyReadBack:true}") boolean apiVerifyReadBack, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatIntervalSeconds:60}") long heartbeatIntervalSeconds, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatAbortAfterSeconds:180}") long heartbeatAbortAfterSeconds) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -147,7 +147,8 @@ public class TerraformStateAutoConfiguration {
                     }
                     break;
                 case ApiTerraformStateImpl:
-                    log.info("Configuring TerraformState to route storage through the Terrakube API ({}, verifyReadBack={})", apiUrl, apiVerifyReadBack);
+                    log.info("Configuring TerraformState to route storage through the Terrakube API ({}, verifyReadBack={}, heartbeat={}s/abortAfter={}s)",
+                            apiUrl, apiVerifyReadBack, heartbeatIntervalSeconds, heartbeatAbortAfterSeconds);
                     terraformState = ApiTerraformStateImpl.builder()
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
@@ -155,6 +156,8 @@ public class TerraformStateAutoConfiguration {
                             .workspaceSecurity(workspaceSecurity)
                             .apiUrl(apiUrl)
                             .verifyReadBack(apiVerifyReadBack)
+                            .heartbeatIntervalSeconds(heartbeatIntervalSeconds)
+                            .heartbeatAbortAfterSeconds(heartbeatAbortAfterSeconds)
                             .build();
                     break;
                 default:

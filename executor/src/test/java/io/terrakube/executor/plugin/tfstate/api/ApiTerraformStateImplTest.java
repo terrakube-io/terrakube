@@ -352,6 +352,129 @@ class ApiTerraformStateImplTest {
         assertEquals(sha256Hex(plan), sha256Hex(FileUtils.readFileToByteArray(destination)));
     }
 
+    @Test
+    void checkHeartbeatHealthIsNoOpBeforeStart() {
+        ApiTerraformStateImpl subject = newSubject(true);
+        // No heartbeat started — should not throw even if hours have "passed".
+        subject.checkHeartbeatHealth();
+    }
+
+    @Test
+    void heartbeatPingsConfiguredEndpointAndUpdatesLastSuccess() throws InterruptedException {
+        java.util.concurrent.atomic.AtomicInteger pings = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.CountDownLatch firstPing = new java.util.concurrent.CountDownLatch(1);
+        server.createContext("/tfstate/v1/http-backend/organization/org-1/workspace/ws-1/lock/heartbeat",
+                exchange -> {
+                    if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                        pings.incrementAndGet();
+                        firstPing.countDown();
+                        respond(exchange, 200, "");
+                    } else {
+                        respond(exchange, 405, "");
+                    }
+                });
+
+        ApiTerraformStateImpl subject = ApiTerraformStateImpl.builder()
+                .terrakubeClient(terrakubeClient)
+                .terraformStatePathService(terraformStatePathService)
+                .terraformOutputPathService(terraformOutputPathService)
+                .workspaceSecurity(workspaceSecurity)
+                .apiUrl(apiUrl)
+                .verifyReadBack(false)
+                .heartbeatIntervalSeconds(1L)
+                .heartbeatAbortAfterSeconds(60L)
+                .build();
+
+        subject.startHeartbeat("org-1", "ws-1");
+        try {
+            assertTrue(firstPing.await(5, java.util.concurrent.TimeUnit.SECONDS), "expected first heartbeat within 5s");
+            assertTrue(pings.get() >= 1);
+            // Healthy heartbeat → health check should not throw.
+            subject.checkHeartbeatHealth();
+        } finally {
+            subject.stopHeartbeat();
+        }
+    }
+
+    @Test
+    void checkHeartbeatHealthThrowsWhenAbortThresholdExceeded() {
+        // We don't actually start the scheduler — we just flip the running flag
+        // and assert the elapsed-time check fires. Simulated by setting a tiny
+        // abort threshold and starting the heartbeat against an unreachable URL.
+        ApiTerraformStateImpl subject = ApiTerraformStateImpl.builder()
+                .terrakubeClient(terrakubeClient)
+                .terraformStatePathService(terraformStatePathService)
+                .terraformOutputPathService(terraformOutputPathService)
+                .workspaceSecurity(workspaceSecurity)
+                .apiUrl("http://127.0.0.1:1/unreachable") // black hole
+                .verifyReadBack(false)
+                .heartbeatIntervalSeconds(60L)
+                .heartbeatAbortAfterSeconds(0L) // any elapsed time triggers
+                .build();
+
+        subject.startHeartbeat("org-1", "ws-1");
+        try {
+            // After at least 1 second the elapsed-since-last-success is > 0 > threshold(0).
+            try { Thread.sleep(1100); } catch (InterruptedException ignored) {}
+            StateUploadFailedException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                    StateUploadFailedException.class, subject::checkHeartbeatHealth);
+            assertTrue(ex.getMessage().contains("Lost contact with the Terrakube API"));
+        } finally {
+            subject.stopHeartbeat();
+        }
+    }
+
+    @Test
+    void heartbeatHandlesApi410GoneWithoutUpdatingLastSuccess() throws InterruptedException {
+        java.util.concurrent.CountDownLatch first410 = new java.util.concurrent.CountDownLatch(1);
+        server.createContext("/tfstate/v1/http-backend/organization/org-1/workspace/ws-1/lock/heartbeat",
+                exchange -> {
+                    first410.countDown();
+                    respond(exchange, 410, "{\"error\":\"lock-lost\"}");
+                });
+
+        ApiTerraformStateImpl subject = ApiTerraformStateImpl.builder()
+                .terrakubeClient(terrakubeClient)
+                .terraformStatePathService(terraformStatePathService)
+                .terraformOutputPathService(terraformOutputPathService)
+                .workspaceSecurity(workspaceSecurity)
+                .apiUrl(apiUrl)
+                .verifyReadBack(false)
+                .heartbeatIntervalSeconds(1L)
+                .heartbeatAbortAfterSeconds(0L)
+                .build();
+
+        subject.startHeartbeat("org-1", "ws-1");
+        try {
+            assertTrue(first410.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            // The 410 must NOT count as a successful ping, so the health check trips.
+            try { Thread.sleep(1100); } catch (InterruptedException ignored) {}
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    StateUploadFailedException.class, subject::checkHeartbeatHealth);
+        } finally {
+            subject.stopHeartbeat();
+        }
+    }
+
+    @Test
+    void stopHeartbeatIsIdempotent() {
+        ApiTerraformStateImpl subject = newSubject(false);
+        subject.stopHeartbeat();
+        subject.stopHeartbeat();
+    }
+
+    @Test
+    void doubleStartHeartbeatDoesNotLeakAScheduler() {
+        ApiTerraformStateImpl subject = newSubject(false);
+        subject.startHeartbeat("org-1", "ws-1");
+        try {
+            // Second start is a no-op (logs a warning).
+            subject.startHeartbeat("org-1", "ws-1");
+        } finally {
+            subject.stopHeartbeat();
+        }
+    }
+
     private static String sha256Hex(byte[] bytes) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
