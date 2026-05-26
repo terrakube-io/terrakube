@@ -16,8 +16,9 @@ services:
       LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "admin"
       LDAP_TLS: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-    - ./config-ldap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/config-ldap.ldif
+    - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
     - 389:389
     networks:
@@ -44,6 +45,7 @@ services:
       - POSTGRES_USER=terrakube
       - POSTGRES_PASSWORD=terrakubepassword
       - POSTGRES_DB=terrakubedb
+      - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
       - '5432:5432'
 

@@ -97,6 +97,9 @@ x-ldap: &ldap_env
   LDAP_DOMAIN: "example.org"
   LDAP_ADMIN_PASSWORD: "admin"
   LDAP_TLS: "false"
+  # Keep bootstrap config so osixia skips the post-setup rm, which fails on the
+  # single-file LDIF bind mount ("Device or resource busy").
+  LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
 
 x-minio: &minio_env
   MINIO_ROOT_USER: ${TK_OUTPUT_ACCESS_KEY}
@@ -267,7 +270,7 @@ services:
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
-      - ./config-ldap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/config-ldap.ldif
+      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     networks:
       - terrakube-network
   minio:
@@ -311,6 +314,7 @@ services:
       - POSTGRES_USER=${TK_POSTGRESQL_USERNAME}
       - POSTGRES_PASSWORD=${TK_POSTGRESQL_PASSWORD}
       - POSTGRES_DB=${TK_POSTGRESQL_DATABASE_NAME}
+      - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - postgresql_data:/var/lib/postgresql/data
     ports:

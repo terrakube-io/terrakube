@@ -39,8 +39,9 @@ services:
       LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "admin"
       LDAP_TLS: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-      - ./config-ldap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/config-ldap.ldif
+      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
       - 389:389
   minio:
