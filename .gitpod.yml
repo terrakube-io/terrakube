@@ -69,7 +69,7 @@ ports:
     onOpen: ignore
     visibility: public
   - name: OpenLDAP
-    port: 1389
+    port: 389
     onOpen: ignore
   - name: TerrakubeAPI
     port: 8080

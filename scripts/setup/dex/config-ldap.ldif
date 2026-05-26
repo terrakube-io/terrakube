@@ -1,9 +1,3 @@
-dn: dc=example,dc=org
-dc: example
-objectClass: dcObject
-objectClass: organization
-o: Example, Inc
-
 dn: ou=users,dc=example,dc=org
 ou: users
 objectClass: organizationalunit

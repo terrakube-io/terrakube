@@ -2,7 +2,8 @@ version: '2'
 
 services:
   minio:
-    image: docker.io/bitnami/minio:2025
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -11,9 +12,13 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_SERVER_URL: 'GITPOD_MINIO_URL'
       MINIO_BROWSER_REDIRECT_URL: 'GITPOD_MINIO_CONSOLE_URL'
-      MINIO_DEFAULT_BUCKETS: 'sample'
     volumes:
       - 'minio_data:/data'
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 minioadmin minioadmin; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/sample; exit 0;"]
 
 volumes:
   minio_data:
