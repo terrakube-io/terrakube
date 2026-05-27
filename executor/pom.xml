@@ -28,7 +28,7 @@
 		<lombok.version>1.18.46</lombok.version>
 		<groovy.version>5.0.6</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
-		<jcolor.version>5.5.1</jcolor.version>
+		<jcolor.version>6.0.0</jcolor.version>
 		<aws-sdk.version>2.44.12</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.18</slf4j.version>
