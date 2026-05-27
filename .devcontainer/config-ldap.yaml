@@ -17,7 +17,7 @@ connectors:
       # The following configurations seem to work with OpenLDAP:
       #
       # 1) Plain LDAP, without TLS:
-      host: terrakube-ldap-service:1389
+      host: terrakube-ldap-service:389
       insecureNoSSL: true
       insecureSkipVerify: true
       #

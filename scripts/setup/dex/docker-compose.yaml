@@ -10,36 +10,42 @@ services:
     networks:
       - dex
   ldap-service:
-    image: bitnami/openldap:2.6.4-debian-11-r4
+    image: osixia/openldap:1.5.0
     environment:
-      LDAP_TLS_VERIFY_CLIENT: try
-      LDAP_ADMIN_USERNAME: "admin"
+      LDAP_ORGANISATION: "Example, Inc"
+      LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "admin"
-      LDAP_ROOT: "dc=example,dc=org"
-      LDAP_CUSTOM_LDIF_DIR: "/ldifs"
+      LDAP_TLS: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-    - ./config-ldap.ldif:/ldifs/config-ldap.ldif
+    - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
-    - 1389:1389
+    - 389:389
     networks:
       - dex
   redis-service:
-    image: bitnami/redis:7.0.10
-    environment:
-      - REDIS_REPLICATION_MODE=master
-      - REDIS_PASSWORD=password123456
-      - REDIS_MASTER_PASSWORD=password123456
-      - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+    image: valkey/valkey:8-alpine
+    command:
+      - valkey-server
+      - --requirepass
+      - password123456
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - FLUSHALL
+      - ""
     ports:
       - '6379:6379'
     volumes:
-      - 'redis_data:/bitnami/redis/data'
+      - 'redis_data:/data'
   postgresql-service:
-    image: docker.io/bitnami/postgresql:15
+    image: postgres:15
     environment:
-      - POSTGRESQL_USERNAME=terrakube
-      - POSTGRESQL_PASSWORD=terrakubepassword
-      - POSTGRESQL_DATABASE=terrakubedb
+      - POSTGRES_USER=terrakube
+      - POSTGRES_PASSWORD=terrakubepassword
+      - POSTGRES_DB=terrakubedb
+      - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
       - '5432:5432'
 

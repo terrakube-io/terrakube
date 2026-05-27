@@ -1,10 +1,10 @@
 version: "3.8"
 services:
   terrakube-ui:
-    image: bitnami/nginx:latest
+    image: nginx:alpine
     volumes:
       - /workspace/terrakube/ui/build:/app
-      - /workspace/terrakube/ui/conf/conf.d/bitnami.conf /opt/bitnami/nginx/conf/server_blocks/my_server_block.conf
+      - /workspace/terrakube/ui/conf/conf.d/bitnami.conf:/etc/nginx/conf.d/default.conf
       - /workspace/terrakube/ui/env-config.js /app/env-config.js
     ports:
-      - 3000:8080
+      - 3000:80

@@ -94,16 +94,17 @@ x-registry: &registry_env
   SERVICE_BINDING_ROOT: /mnt/platform/bindings
 
 x-ldap: &ldap_env
-  LDAP_TLS_VERIFY_CLIENT: try
-  LDAP_ADMIN_USERNAME: "admin"
+  LDAP_ORGANISATION: "Example, Inc"
+  LDAP_DOMAIN: "example.org"
   LDAP_ADMIN_PASSWORD: "admin"
-  LDAP_ROOT: "dc=example,dc=org"
-  LDAP_CUSTOM_LDIF_DIR: "/ldifs"
+  LDAP_TLS: "false"
+  # Keep bootstrap config so osixia skips the post-setup rm, which fails on the
+  # single-file LDIF bind mount ("Device or resource busy").
+  LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
 
 x-minio: &minio_env
   MINIO_ROOT_USER: ${TK_OUTPUT_ACCESS_KEY}
   MINIO_ROOT_PASSWORD: ${TK_OUTPUT_SECRET_KEY}
-  MINIO_DEFAULT_BUCKETS: ${TK_OUTPUT_BUCKET_NAME}
 
 x-ui: &ui_env
   REACT_APP_TERRAKUBE_API_URL: https://terrakube-api.${DOMAIN}/api/v1/
@@ -286,36 +287,49 @@ services:
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
   ldap-service:
-    image: bitnamilegacy/openldap:${TK_LDAP_VERSION}
+    image: osixia/openldap:${TK_LDAP_VERSION}
     container_name: terrakube-ldap-service
     environment: *ldap_env
     volumes:
-      - ./config-ldap.ldif:/ldifs/config-ldap.ldif
+      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
   minio:
     container_name: terrakube-minio
-    image: docker.io/bitnamilegacy/minio:${TK_MINIO_VERSION}
+    image: minio/minio:${TK_MINIO_VERSION}
+    command: server /data --console-address ":9001"
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
+  minio-init:
+    image: minio/mc
+    container_name: terrakube-minio-init
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 ${TK_OUTPUT_ACCESS_KEY} ${TK_OUTPUT_SECRET_KEY}; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/${TK_OUTPUT_BUCKET_NAME}; exit 0;"]
   redis-service:
-    image: bitnamilegacy/redis:${TK_REDIS_VERSION}
+    image: valkey/valkey:${TK_REDIS_VERSION}
     container_name: ${TK_REDIS_CONTAINER_NAME}
-    environment:
-      - REDIS_REPLICATION_MODE=master
-      - REDIS_PASSWORD=${TK_REDIS_PASSWORD}
-      - REDIS_MASTER_PASSWORD=${TK_REDIS_PASSWORD}
-      - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+    command:
+      - valkey-server
+      - --requirepass
+      - ${TK_REDIS_PASSWORD}
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - FLUSHALL
+      - ""
     volumes:
-      - 'redis_data:/bitnami/redis/data'
+      - 'redis_data:/data'
   postgresql-service:
-    image: docker.io/bitnamilegacy/postgresql:${TK_POSTGRESQL_VERSION}
+    image: postgres:${TK_POSTGRESQL_VERSION}
     container_name: postgresql-service
     environment:
-      - POSTGRESQL_USERNAME=${TK_POSTGRESQL_USERNAME}
-      - POSTGRESQL_PASSWORD=${TK_POSTGRESQL_PASSWORD}
-      - POSTGRESQL_DATABASE=${TK_POSTGRESQL_DATABASE_NAME}
+      - POSTGRES_USER=${TK_POSTGRESQL_USERNAME}
+      - POSTGRES_PASSWORD=${TK_POSTGRESQL_PASSWORD}
+      - POSTGRES_DB=${TK_POSTGRESQL_DATABASE_NAME}
+      - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      - postgresql_data:/bitnamilegacy/postgresql
+      - postgresql_data:/var/lib/postgresql/data
 volumes:
   minio_data:
   redis_data:

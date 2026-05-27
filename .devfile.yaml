@@ -43,18 +43,18 @@ components:
   
   - name: openldap
     container:
-      image: bitnami/openldap:2.6.3
+      image: osixia/openldap:1.5.0
       memoryLimit: 256Mi
       mountSources: true
       env:
-      - name: "LDAP_ADMIN_USERNAME"
-        value: "admin"
+      - name: "LDAP_ORGANISATION"
+        value: "Example, Inc"
+      - name: "LDAP_DOMAIN"
+        value: "example.org"
       - name: "LDAP_ADMIN_PASSWORD"
         value: "admin"
-      - name: "LDAP_ROOT"
-        value: "dc=example,dc=org"
-      - name: "LDAP_CUSTOM_LDIF_DIR"
-        value: "/projects/terrakube/scripts/setup/dex/"
+      - name: "LDAP_TLS"
+        value: "false"
 
   - name: dex
     container:
