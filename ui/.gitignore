@@ -32,4 +32,3 @@ package-lock.json
 /public/env-config.js
 env-config.js
 .env-local
-/.yarn

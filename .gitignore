@@ -60,5 +60,3 @@ terraform.tfstate.backup
 variables.auto.tfvars
 
 liquibase.properties
-
-ui/.yarn/install-state.gz
