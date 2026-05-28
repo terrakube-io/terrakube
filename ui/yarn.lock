@@ -654,7 +654,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@eslint/js@npm:9.39.4":
+"@eslint/js@npm:9.39.4, @eslint/js@npm:^9.39.4":
   version: 9.39.4
   resolution: "@eslint/js@npm:9.39.4"
   checksum: 10c0/5aa7dea2cbc5decf7f5e3b0c6f86a084ccee0f792d288ca8e839f8bc1b64e03e227068968e49b26096e6f71fd857ab6e42691d1b993826b9a3883f1bdd7a0e46
@@ -3355,6 +3355,7 @@ __metadata:
   resolution: "azb-client@workspace:."
   dependencies:
     "@ant-design/icons": "npm:^6.2.3"
+    "@eslint/js": "npm:^9.39.4"
     "@monaco-editor/react": "npm:^4.7.0"
     "@testing-library/dom": "npm:^10.4.1"
     "@testing-library/jest-dom": "npm:^6.9.1"
