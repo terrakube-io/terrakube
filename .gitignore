@@ -61,4 +61,4 @@ variables.auto.tfvars
 
 liquibase.properties
 
-ui/.yarn
+ui/.yarn/install-state.gz
