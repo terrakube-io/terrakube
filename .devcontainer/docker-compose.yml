@@ -185,9 +185,6 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-registry-http.service: terrakube-registry-https
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
-
-x-traefik_dex_labels: &traefik_dex_labels
-  traefik.enable: true
   ## Terrakube DEX HTTPS
   traefik.http.routers.terrakube-dex-https.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-https.entrypoints: websecure
@@ -201,13 +198,10 @@ x-traefik_dex_labels: &traefik_dex_labels
   traefik.http.middlewares.terrakube-dex-redirect-https.redirectscheme.scheme: https
   ## Allow CORs from Terrakube UI
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowmethods: GET, PATCH, PUT, POST, DELETE, HEAD, OPTIONS
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders: >
-    Content-Type, Accept, Authorization, X-Requested-With, Origin, *
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolalloworiginlist: https://terrakube.${DOMAIN}
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders: Content-Type, Accept, Authorization, X-Requested-With, Origin, *
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolalloworiginlist: https://terrakube.platform.local
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowcredentials: true
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders: >
-    Cache-Control, Content-Language, Content-Length, Content-Type, Expires, Last-Modified,
-    Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders: Cache-Control, Content-Language, Content-Length, Content-Type, Expires, Last-Modified, Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolmaxage: 86400
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.addvaryheader: true
 
@@ -245,6 +239,7 @@ services:
       - 8075
       - 8090
       - 3000
+      - 5556
     container_name: terrakube-dev
     privileged: true
     build:
@@ -253,26 +248,6 @@ services:
     volumes:
       - ..:/workspaces/terrakube:cached
       - 'maven_data:/home/vscode/.m2'
-    networks:
-      - terrakube-network
-  terrakube-dex:
-    image: ghcr.io/dexidp/dex:${TK_DEX_VERSION}
-    #extra_hosts: *terrakube_hosts
-    labels: *traefik_dex_labels
-    container_name: terrakube-dex
-    environment:
-      - TK_DEX_ISSUER=${TK_DEX_ISSUER}
-      - TK_DEX_STATIC_CLIENT=${TK_DEX_STATIC_CLIENT}
-    volumes:
-      - ./config-ldap.yaml:/etc/dex/config.docker.yaml
-    networks:
-      - terrakube-network
-  ldap-service:
-    image: osixia/openldap:${TK_LDAP_VERSION}
-    container_name: terrakube-ldap-service
-    environment: *ldap_env
-    volumes:
-      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     networks:
       - terrakube-network
   minio:

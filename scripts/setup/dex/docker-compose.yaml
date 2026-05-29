@@ -1,14 +1,12 @@
-version: "3.8"
 services:
   dex-service:
     image: ghcr.io/dexidp/dex:v2.32.0
     container_name: dex-service
     volumes:
-    - ./config-ldap.yaml:/etc/dex/config.docker.yaml
+      - ./config-ldap.yaml:/etc/dex/config.docker.yaml
     ports:
       - 5556:5556
-    networks:
-      - dex
+
   ldap-service:
     image: osixia/openldap:1.5.0
     environment:
@@ -18,40 +16,9 @@ services:
       LDAP_TLS: "false"
       LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-    - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
+      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
-    - 389:389
-    networks:
-      - dex
-  redis-service:
-    image: valkey/valkey:8-alpine
-    command:
-      - valkey-server
-      - --requirepass
-      - password123456
-      - --rename-command
-      - FLUSHDB
-      - ""
-      - --rename-command
-      - FLUSHALL
-      - ""
-    ports:
-      - '6379:6379'
-    volumes:
-      - 'redis_data:/data'
-  postgresql-service:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=terrakube
-      - POSTGRES_PASSWORD=terrakubepassword
-      - POSTGRES_DB=terrakubedb
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    ports:
-      - '5432:5432'
-
-networks:
-  dex:
-    name: dex
+      - 389:389
 
 volumes:
   data1-1:
