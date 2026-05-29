@@ -185,15 +185,17 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-registry-http.service: terrakube-registry-https
   traefik.http.routers.terrakube-registry-http.middlewares: terrakube-registry-redirect-https
   traefik.http.middlewares.terrakube-registry-redirect-https.redirectscheme.scheme: https
-  ## Terrakube DEX HTTPS
+  # Terrakube DEX HTTPS
   traefik.http.routers.terrakube-dex-https.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-https.entrypoints: websecure
   traefik.http.routers.terrakube-dex-https.middlewares: terrakube-dex-allow-origin
   traefik.http.routers.terrakube-dex-https.tls: true
+  traefik.http.routers.terrakube-dex-https.service: terrakube-dex-https
   traefik.http.services.terrakube-dex-https.loadbalancer.server.port: 5556
   ## Redirect to HTTPS
   traefik.http.routers.terrakube-dex-http.rule: Host(`terrakube-dex.${DOMAIN}`)
   traefik.http.routers.terrakube-dex-http.entrypoints: web
+  traefik.http.routers.terrakube-dex-http.service: terrakube-dex-https
   traefik.http.routers.terrakube-dex-http.middlewares: terrakube-dex-redirect-https
   traefik.http.middlewares.terrakube-dex-redirect-https.redirectscheme.scheme: https
   ## Allow CORs from Terrakube UI
