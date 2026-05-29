@@ -13,6 +13,7 @@ type Props = {
   workspaceData: Workspace;
   orgTemplates: Template[];
   manageWorkspace: boolean;
+  onWorkspaceUpdate?: () => void;
 };
 
 type UpdateWorkspaceForm = {
@@ -28,7 +29,7 @@ type UpdateWorkspaceForm = {
   project?: string;
 };
 
-export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace }: Props) => {
+export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const organizationId = workspaceData.relationships.organization.data.id;
   const id = workspaceData.id;
   const Option = Select;
@@ -117,6 +118,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace 
       axiosInstance.post("/operations", body, atomicHeader).then((response) => {
         if (response.status === 200) {
           message.success("workspace updated successfully");
+          onWorkspaceUpdate?.();
         } else {
           message.error("workspace update failed");
         }
