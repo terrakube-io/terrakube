@@ -59,9 +59,10 @@ type Props = {
   manageWorkspace: boolean;
   orgTemplates: Template[];
   vcsProvider?: VcsType;
+  onWorkspaceUpdate?: () => void;
 };
 
-export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageWorkspace }: Props) => {
+export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [waiting, setWaiting] = useState(true);
@@ -170,6 +171,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       message.success("Webhook disabled successfully");
       setWebhookEvents([]);
       setWaiting(false);
+      onWorkspaceUpdate?.();
       return;
     }
     if (webhookEnabled && webhookEvents.length === 0) {
@@ -287,6 +289,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       setWebhookEvents([...webhookEvents]);
       setWaiting(false);
       message.success("Webhook saved successfully");
+      onWorkspaceUpdate?.();
     });
   };
   const handleMigrateV2 = () => {

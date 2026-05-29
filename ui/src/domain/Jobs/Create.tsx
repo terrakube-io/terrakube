@@ -45,6 +45,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
       const { branch, defaultTemplate } = response.data.data.attributes;
       setDefaultTemplate(defaultTemplate);
       setBranchName(branch);
+      form.setFieldsValue({ templateId: defaultTemplate, branchName: branch });
     });
   };
 
@@ -112,6 +113,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
         type="primary"
         htmlType="button"
         onClick={() => {
+          loadBranch();
           setVisible(true);
         }}
         icon={<PlayCircleOutlined />}

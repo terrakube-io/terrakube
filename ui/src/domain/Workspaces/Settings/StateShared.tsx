@@ -10,6 +10,7 @@ const { Text } = Typography;
 type Props = {
   workspace: Workspace;
   manageWorkspace: boolean;
+  onWorkspaceUpdate?: () => void;
 };
 
 type UpdateStateSharedForm = {
@@ -21,7 +22,7 @@ interface SharedWorkspace {
   name: string;
 }
 
-export const WorkspaceStateShared = ({ workspace, manageWorkspace }: Props) => {
+export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const [form] = Form.useForm();
   const globalRemoteState = Form.useWatch("globalRemoteState", form);
   const organizationId = workspace.relationships.organization.data.id;
@@ -139,6 +140,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace }: Props) => {
     if (response.status === 200) {
       setSharedWorkspaces(updatedWorkspaces);
       message.success("Shared workspaces updated successfully");
+      onWorkspaceUpdate?.();
     } else {
       throw new Error("Update failed");
     }
@@ -167,6 +169,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace }: Props) => {
       .then((response) => {
         if (response.status === 200) {
           message.success("Workspace updated successfully");
+          onWorkspaceUpdate?.();
         } else {
           message.error("Workspace update failed");
         }

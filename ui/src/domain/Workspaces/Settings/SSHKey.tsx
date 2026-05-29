@@ -10,9 +10,10 @@ const { Text } = Typography;
 type Props = {
   workspace: Workspace;
   manageWorkspace: boolean;
+  onWorkspaceUpdate?: () => void;
 };
 
-export const WorkspaceSSHKey = ({ workspace, manageWorkspace }: Props) => {
+export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const organizationId = workspace.relationships.organization.data.id;
   const id = workspace.id;
   const Option = Select;
@@ -52,6 +53,7 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace }: Props) => {
       .then((response) => {
         if (response.status === 200) {
           message.success("SSH key updated successfully");
+          onWorkspaceUpdate?.();
         } else {
           message.error("SSH key update failed");
         }

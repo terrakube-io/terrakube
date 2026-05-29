@@ -44,7 +44,7 @@ export const WorkspaceSettings = ({
     switch (activeKey) {
       case "general":
         return (
-          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} />
+          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />
         );
       case "locking":
         return (
@@ -55,7 +55,7 @@ export const WorkspaceSettings = ({
           />
         );
       case "sshkey":
-        return <WorkspaceSSHKey workspace={workspace} manageWorkspace={manageWorkspace} />;
+        return <WorkspaceSSHKey workspace={workspace} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />;
       case "webhook":
         return (
           <WorkspaceWebhook
@@ -63,15 +63,16 @@ export const WorkspaceSettings = ({
             vcsProvider={vcsProvider}
             orgTemplates={orgTemplates}
             manageWorkspace={manageWorkspace}
+            onWorkspaceUpdate={handleWorkspaceUpdate}
           />
         );
       case "advanced":
         return <WorkspaceAdvanced workspace={workspace} manageWorkspace={manageWorkspace} />;
       case "state-shared":
-        return <WorkspaceStateShared workspace={workspace} manageWorkspace={manageWorkspace} />;
+        return <WorkspaceStateShared workspace={workspace} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />;
       default:
         return (
-          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} />
+          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />
         );
     }
   };
