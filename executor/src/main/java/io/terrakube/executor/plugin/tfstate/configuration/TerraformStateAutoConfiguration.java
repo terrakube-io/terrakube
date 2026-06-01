@@ -52,7 +52,7 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, WorkspaceSecurity workspaceSecurity, @Value("${io.terrakube.api.url}") String apiUrl, @Value("${io.terrakube.executor.plugin.tfstate.api.verifyReadBack:true}") boolean apiVerifyReadBack, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatIntervalSeconds:60}") long heartbeatIntervalSeconds, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatAbortAfterSeconds:180}") long heartbeatAbortAfterSeconds) {
+    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, WorkspaceSecurity workspaceSecurity, @Value("${io.terrakube.api.url}") String apiUrl, @Value("${io.terrakube.executor.plugin.tfstate.api.verifyReadBack:true}") boolean apiVerifyReadBack, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatIntervalSeconds:60}") long heartbeatIntervalSeconds, @Value("${io.terrakube.executor.plugin.tfstate.api.heartbeatAbortAfterSeconds:180}") long heartbeatAbortAfterSeconds, @Value("${io.terrakube.executor.plugin.tfstate.api.backendTokenLifetimeMinutes:60}") int apiBackendTokenLifetimeMinutes, @Value("${io.terrakube.executor.plugin.tfstate.api.allowInsecureApiUrl:false}") boolean apiAllowInsecureApiUrl) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -147,8 +147,12 @@ public class TerraformStateAutoConfiguration {
                     }
                     break;
                 case ApiTerraformStateImpl:
-                    log.info("Configuring TerraformState to route storage through the Terrakube API ({}, verifyReadBack={}, heartbeat={}s/abortAfter={}s)",
-                            apiUrl, apiVerifyReadBack, heartbeatIntervalSeconds, heartbeatAbortAfterSeconds);
+                    // Air-gapped routing sends the workspace JWT and full state through this URL.
+                    // Refuse to start on a non-https endpoint (which would put both on the wire in
+                    // cleartext) unless the operator explicitly opts into insecure transport for dev.
+                    requireSecureApiUrl(apiUrl, apiAllowInsecureApiUrl);
+                    log.info("Configuring TerraformState to route storage through the Terrakube API ({}, verifyReadBack={}, heartbeat={}s/abortAfter={}s, backendTokenLifetime={}m)",
+                            apiUrl, apiVerifyReadBack, heartbeatIntervalSeconds, heartbeatAbortAfterSeconds, apiBackendTokenLifetimeMinutes);
                     terraformState = ApiTerraformStateImpl.builder()
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
@@ -158,6 +162,7 @@ public class TerraformStateAutoConfiguration {
                             .verifyReadBack(apiVerifyReadBack)
                             .heartbeatIntervalSeconds(heartbeatIntervalSeconds)
                             .heartbeatAbortAfterSeconds(heartbeatAbortAfterSeconds)
+                            .backendTokenLifetimeMinutes(apiBackendTokenLifetimeMinutes)
                             .build();
                     break;
                 default:
@@ -177,5 +182,22 @@ public class TerraformStateAutoConfiguration {
 
     private AwsBasicCredentials getAwsBasicCredentials(AwsTerraformStateProperties awsTerraformStateProperties) {
         return AwsBasicCredentials.create(awsTerraformStateProperties.getAccessKey(), awsTerraformStateProperties.getSecretKey());
+    }
+
+    private void requireSecureApiUrl(String apiUrl, boolean allowInsecure) {
+        boolean https = apiUrl != null && apiUrl.toLowerCase().startsWith("https://");
+        if (https) {
+            return;
+        }
+        if (allowInsecure) {
+            log.warn("API state routing is using a non-https URL ({}); the workspace JWT and terraform state travel in CLEARTEXT. "
+                    + "io.terrakube.executor.plugin.tfstate.api.allowInsecureApiUrl=true — do not use this outside local development.", apiUrl);
+            return;
+        }
+        throw new IllegalStateException(String.format(
+                "API state routing requires an https:// URL but io.terrakube.api.url is '%s'. "
+                        + "Refusing to send the workspace token and terraform state over cleartext. "
+                        + "Set io.terrakube.executor.plugin.tfstate.api.allowInsecureApiUrl=true only for local development.",
+                apiUrl));
     }
 }

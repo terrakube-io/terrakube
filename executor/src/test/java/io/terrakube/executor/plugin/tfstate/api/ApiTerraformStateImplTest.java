@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -63,6 +62,7 @@ class ApiTerraformStateImplTest {
         terraformOutputPathService = mock(TerraformOutputPathService.class);
         workspaceSecurity = mock(WorkspaceSecurity.class);
         when(workspaceSecurity.generateAccessToken(anyInt())).thenReturn("test-token");
+        when(workspaceSecurity.generateAccessToken(anyString(), anyInt())).thenReturn("ws-scoped-token");
 
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.start();
@@ -130,7 +130,8 @@ class ApiTerraformStateImplTest {
 
     @Test
     void getBackendStateFileWritesHttpBackendOverride(@TempDir Path tempDir) throws IOException {
-        when(workspaceSecurity.generateAccessToken(anyInt())).thenReturn("jwt-token");
+        // The backend password must come from the workspace-scoped overload, not the org-wide one.
+        when(workspaceSecurity.generateAccessToken(eq("ws-1"), anyInt())).thenReturn("jwt-token");
         ApiTerraformStateImpl subject = newSubject(true);
 
         String filename = subject.getBackendStateFile("org-1", "ws-1", tempDir.toFile(), "1.5.0");
@@ -138,7 +139,7 @@ class ApiTerraformStateImplTest {
         assertEquals("api_backend_override.tf", filename);
         File backendFile = new File(tempDir.toFile(), filename);
         assertTrue(backendFile.exists());
-        String hcl = FileUtils.readFileToString(backendFile, Charset.defaultCharset());
+        String hcl = FileUtils.readFileToString(backendFile, StandardCharsets.UTF_8);
         assertTrue(hcl.contains("backend \"http\""));
         assertTrue(hcl.contains("address        = \"" + apiUrl + "/tfstate/v1/http-backend/organization/org-1/workspace/ws-1/state\""));
         assertTrue(hcl.contains("lock_address   = \"" + apiUrl + "/tfstate/v1/http-backend/organization/org-1/workspace/ws-1/lock\""));
@@ -146,6 +147,9 @@ class ApiTerraformStateImplTest {
         assertTrue(hcl.contains("lock_method    = \"POST\""));
         assertTrue(hcl.contains("unlock_method  = \"DELETE\""));
         assertTrue(hcl.contains("password       = \"jwt-token\""));
+        // Scoped, not the org-wide minutes-only overload.
+        verify(workspaceSecurity).generateAccessToken(eq("ws-1"), anyInt());
+        verify(workspaceSecurity, org.mockito.Mockito.never()).generateAccessToken(anyInt());
     }
 
     @Test
@@ -240,6 +244,33 @@ class ApiTerraformStateImplTest {
     }
 
     @Test
+    void saveTerraformPlanSucceedsWhenReadBackGetIsTransientlyUnavailable(@TempDir Path tempDir) throws IOException {
+        byte[] plan = new byte[]{7, 7, 7};
+        FileUtils.writeByteArrayToFile(new File(tempDir.toFile(), "terraformLibrary.tfPlan"), plan);
+
+        // PUT is accepted (201) but the read-back GET keeps failing transiently (500).
+        // A flaky read must NOT re-PUT the body or fail the job — the announced hash
+        // already covered transit integrity, so the upload should still succeed.
+        AtomicInteger puts = new AtomicInteger();
+        server.createContext("/tfstate/v1/organization/org-1/workspace/ws-1/jobId/job-1/step/step-1/terraform.tfstate",
+                exchange -> {
+                    if ("PUT".equalsIgnoreCase(exchange.getRequestMethod())) {
+                        puts.incrementAndGet();
+                        exchange.getRequestBody().readAllBytes();
+                        respond(exchange, 201, "");
+                    } else {
+                        respond(exchange, 500, "read unavailable");
+                    }
+                });
+
+        ApiTerraformStateImpl subject = newSubject(true);
+        String url = subject.saveTerraformPlan("org-1", "ws-1", "job-1", "step-1", tempDir.toFile());
+
+        assertNotNull(url);
+        assertEquals(1, puts.get(), "a transient read-back failure must not trigger a re-PUT");
+    }
+
+    @Test
     void saveOutputReturnsPathServiceUrlAndUploads() {
         server.createContext("/tfoutput/v1/organization/org-1/job/job-1/step/step-1", echoingStorage());
         when(terraformOutputPathService.getOutputPath("org-1", "job-1", "step-1"))
@@ -301,6 +332,26 @@ class ApiTerraformStateImplTest {
         assertEquals(2, uploadedPaths.size(), "expected one raw + one json upload");
         assertTrue(uploadedPaths.stream().anyMatch(p -> p.endsWith("/terraform.tfstate")));
         assertTrue(uploadedPaths.stream().anyMatch(p -> p.endsWith("/terraform.json.tfstate")));
+    }
+
+    @Test
+    void saveStateJsonDoesNotCreateHistoryRowWhenUploadFails() {
+        // The history PUT always fails — the row must never be created, or it would
+        // dangle pointing at an object that was never stored.
+        server.createContext("/tfstate/v1/organization/org-1/workspace/ws-1/history/",
+                exchange -> respond(exchange, 500, "boom"));
+        when(terraformStatePathService.getStateJsonPath(anyString(), anyString(), anyString()))
+                .thenReturn("https://example/state.json");
+
+        ApiTerraformStateImpl subject = newSubject(false);
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("org-1");
+        job.setWorkspaceId("ws-1");
+        job.setJobId("job-1");
+
+        assertThrows(StateUploadFailedException.class,
+                () -> subject.saveStateJson(job, "{\"apply\":1}", "{\"raw\":1}"));
+        verify(terrakubeClient, org.mockito.Mockito.never()).createHistory(any(HistoryRequest.class), any(), any());
     }
 
     @Test

@@ -25,11 +25,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -55,7 +53,6 @@ public class ApiTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String BACKEND_FILE_NAME = "api_backend_override.tf";
-    private static final int TOKEN_LIFETIME_MINUTES = 60 * 24; // 1 day, comfortably longer than any single job
     private static final int IO_TIMEOUT_MS = 60_000;
     private static final int MAX_UPLOAD_ATTEMPTS = 3;
     private static final long INITIAL_BACKOFF_MS = 500L;
@@ -74,6 +71,17 @@ public class ApiTerraformStateImpl implements TerraformState {
 
     @NonNull
     String apiUrl;
+
+    /**
+     * Lifetime (minutes) of the workspace-scoped JWT written as the terraform
+     * http-backend {@code password}. Terraform holds this static token for the
+     * whole run and re-sends it on the final state write/unlock, so it must
+     * outlast the longest plausible apply — but it is scoped to a single
+     * workspace, so a leak only exposes that one workspace, and only until it
+     * expires. Default 60 minutes.
+     */
+    @lombok.Builder.Default
+    int backendTokenLifetimeMinutes = 60;
 
     /**
      * When {@code true} the executor GETs each just-PUT object back from the API
@@ -202,8 +210,11 @@ public class ApiTerraformStateImpl implements TerraformState {
             String lockAddress = String.format("%s/tfstate/v1/http-backend/organization/%s/workspace/%s/lock",
                     apiUrl, organizationId, workspaceId);
 
-            // long-lived JWT bound to this workspace; the API validates it against the internal HMAC secret
-            String token = workspaceSecurity.generateAccessToken(TOKEN_LIFETIME_MINUTES);
+            // Workspace-scoped JWT used as the http-backend password. The API validates the
+            // signature against the internal HMAC secret and (companion API change) enforces
+            // that the token's workspaceId claim matches the workspace in the request path,
+            // so a leaked backend file cannot reach another workspace's state.
+            String token = workspaceSecurity.generateAccessToken(workspaceId, backendTokenLifetimeMinutes);
 
             TextStringBuilder hcl = new TextStringBuilder();
             hcl.appendln("terraform {");
@@ -221,11 +232,13 @@ public class ApiTerraformStateImpl implements TerraformState {
             File backendFile = new File(
                     FilenameUtils.separatorsToSystem(
                             workingDirectory.getAbsolutePath().concat("/").concat(BACKEND_FILE_NAME)));
-            FileUtils.writeStringToFile(backendFile, hcl.toString(), Charset.defaultCharset());
+            FileUtils.writeStringToFile(backendFile, hcl.toString(), StandardCharsets.UTF_8);
             return BACKEND_FILE_NAME;
         } catch (IOException e) {
-            log.error("Could not write http-backend override: {}", e.getMessage());
-            return null;
+            // Air-gapped mode: without this override file terraform would silently fall back
+            // to a local backend (or no backend), losing the state route entirely. Fail hard.
+            throw new StateUploadFailedException(
+                    "Could not write http-backend override file " + BACKEND_FILE_NAME + ": " + e.getMessage(), e);
         }
     }
 
@@ -282,9 +295,22 @@ public class ApiTerraformStateImpl implements TerraformState {
             return;
         }
 
-        // 1) create the history row via the existing API client; it returns a UUID we use as historyId.
+        // historyId is a client-generated UUID; the history PUT endpoint stores bytes at a
+        // path derived from it and does not require a pre-existing DB row.
         String stateFilename = UUID.randomUUID().toString();
 
+        // 1) PUT raw + json to the history endpoints, integrity-checked. On hash mismatch or
+        //    repeated transport failure the helper throws StateUploadFailedException and the
+        //    API never commits the bytes — so we must NOT have written a history row yet, or
+        //    it would dangle pointing at an object that was never stored.
+        String rawUrl = String.format("%s/tfstate/v1/organization/%s/workspace/%s/history/%s/terraform.tfstate",
+                apiUrl, terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
+        String jsonUrl = String.format("%s/tfstate/v1/organization/%s/workspace/%s/history/%s/terraform.json.tfstate",
+                apiUrl, terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
+        putBytesWithIntegrity(rawUrl, rawState.getBytes(StandardCharsets.UTF_8), "application/json", "state history (raw)", verifyReadBack);
+        putBytesWithIntegrity(jsonUrl, applyJSON.getBytes(StandardCharsets.UTF_8), "application/json", "state history (json)", verifyReadBack);
+
+        // 2) only now record the history row, so it can only ever reference bytes that landed.
         HistoryRequest historyRequest = new HistoryRequest();
         History newHistory = new History();
         newHistory.setType("history");
@@ -299,17 +325,6 @@ public class ApiTerraformStateImpl implements TerraformState {
         historyRequest.setData(newHistory);
 
         terrakubeClient.createHistory(historyRequest, terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-
-        // 2) PUT raw + json to the new history endpoints, integrity-checked.
-        //    On hash mismatch or repeated transport failure the helper throws
-        //    StateUploadFailedException and the API never commits the bytes,
-        //    so the workspace state remains unchanged.
-        String rawUrl = String.format("%s/tfstate/v1/organization/%s/workspace/%s/history/%s/terraform.tfstate",
-                apiUrl, terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
-        String jsonUrl = String.format("%s/tfstate/v1/organization/%s/workspace/%s/history/%s/terraform.json.tfstate",
-                apiUrl, terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
-        putBytesWithIntegrity(rawUrl, rawState.getBytes(StandardCharsets.UTF_8), "application/json", "state history (raw)", verifyReadBack);
-        putBytesWithIntegrity(jsonUrl, applyJSON.getBytes(StandardCharsets.UTF_8), "application/json", "state history (json)", verifyReadBack);
         log.info("State history uploaded for workspace {} (historyId={})", terraformJob.getWorkspaceId(), stateFilename);
     }
 
@@ -326,21 +341,17 @@ public class ApiTerraformStateImpl implements TerraformState {
     }
 
     /**
-     * PUT the payload with an X-Content-Sha256 header so the API can verify
-     * what it received before committing. Retries up to MAX_UPLOAD_ATTEMPTS on
-     * transport failures and on HTTP 409 (server-detected hash mismatch). If
-     * every attempt fails, throws {@link StateUploadFailedException} with a
-     * user-facing message — the caller is responsible for marking the job as
-     * failed so the operator sees what went wrong.
-     */
-    /**
-     * PUT the payload with an X-Content-Sha256 header so the API can verify
-     * the announced hash against the bytes it received. When {@code readBack}
-     * is true we additionally GET the same URL after a successful PUT and
-     * re-hash the response — this catches the case where the announced hash
-     * and the body agree (the API accepts the upload) but the bytes the
-     * storage backend actually persisted differ from what we intended. Both
-     * failures are retried in the same loop, up to MAX_UPLOAD_ATTEMPTS.
+     * PUT the payload with an X-Content-Sha256 header so the API can verify the
+     * announced hash against the bytes it received before committing. Retries up
+     * to MAX_UPLOAD_ATTEMPTS on transport failures and on HTTP 409 (server-detected
+     * hash mismatch). If every attempt fails, throws {@link StateUploadFailedException}
+     * with a user-facing message — the caller marks the job failed so the operator
+     * sees what went wrong.
+     *
+     * When {@code readBack} is true a successful PUT is followed by an independent
+     * {@link #verifyReadBack} pass. A transient GET hiccup there does NOT re-PUT the
+     * (already committed) body or fail the job — only a confirmed hash mismatch does,
+     * since the announced X-Content-Sha256 already covers transit integrity.
      */
     private void putBytesWithIntegrity(String urlString, byte[] body, String contentType, String label, boolean readBack) {
         String sha = sha256Hex(body);
@@ -363,34 +374,20 @@ public class ApiTerraformStateImpl implements TerraformState {
                 }
                 lastCode = conn.getResponseCode();
                 if (lastCode >= 200 && lastCode < 300) {
-                    if (readBack) {
-                        String observed = fetchAndHash(urlString);
-                        if (observed == null) {
-                            lastDetail = "read-back GET failed";
-                            log.warn("Read-back GET failed for {} on attempt {}/{}", label, attempt, MAX_UPLOAD_ATTEMPTS);
-                        } else if (!observed.equalsIgnoreCase(sha)) {
-                            lastCode = -2;
-                            lastDetail = String.format("read-back hash mismatch (expected=%s, observed=%s)", sha, observed);
-                            log.warn("Read-back integrity check FAILED for {}: {}", label, lastDetail);
-                        } else {
-                            if (attempt > 1) {
-                                log.info("Upload of {} succeeded with read-back verification on retry {}/{}", label, attempt, MAX_UPLOAD_ATTEMPTS);
-                            } else {
-                                log.info("Upload of {} verified end-to-end (sha256={})", label, sha);
-                            }
-                            return;
-                        }
+                    if (attempt > 1) {
+                        log.info("Upload of {} accepted by API on retry {}/{}", label, attempt, MAX_UPLOAD_ATTEMPTS);
                     } else {
-                        if (attempt > 1) {
-                            log.info("Upload of {} succeeded on retry {}/{}", label, attempt, MAX_UPLOAD_ATTEMPTS);
-                        }
-                        return;
+                        log.info("Upload of {} accepted by API (sha256={})", label, sha);
                     }
-                } else {
-                    lastDetail = readErrorBody(conn);
-                    log.warn("Upload of {} attempt {}/{} returned HTTP {} (detail={})",
-                            label, attempt, MAX_UPLOAD_ATTEMPTS, lastCode, lastDetail);
+                    // PUT committed; read-back is a separate concern with its own retry policy.
+                    if (readBack) {
+                        verifyReadBack(urlString, sha, label);
+                    }
+                    return;
                 }
+                lastDetail = readErrorBody(conn);
+                log.warn("Upload of {} attempt {}/{} returned HTTP {} (detail={})",
+                        label, attempt, MAX_UPLOAD_ATTEMPTS, lastCode, lastDetail);
             } catch (IOException e) {
                 lastIo = e;
                 log.warn("Upload of {} attempt {}/{} failed: {}", label, attempt, MAX_UPLOAD_ATTEMPTS, e.getMessage());
@@ -402,8 +399,6 @@ public class ApiTerraformStateImpl implements TerraformState {
         String reason;
         if (lastCode == 409) {
             reason = "API rejected the payload because the sha-256 did not match what was announced (transfer was corrupted in flight)";
-        } else if (lastCode == -2) {
-            reason = "the server accepted the upload but the read-back GET returned different bytes (" + lastDetail + ")";
         } else if (lastCode > 0) {
             reason = "API responded HTTP " + lastCode + (lastDetail != null ? " (" + lastDetail + ")" : "");
         } else {
@@ -416,10 +411,43 @@ public class ApiTerraformStateImpl implements TerraformState {
     }
 
     /**
+     * After a committed PUT, GET the same URL back and compare hashes. The GET is
+     * retried independently of the upload so a transient read hiccup never re-PUTs
+     * the body. The job fails ONLY on a confirmed hash mismatch — the server is
+     * serving different bytes than we sent, which a re-PUT would not fix. If every
+     * read-back attempt fails to complete (transport/non-2xx), we log and accept
+     * the upload: the announced X-Content-Sha256 the API already validated covers
+     * transit integrity.
+     */
+    private void verifyReadBack(String urlString, String expectedSha, String label) {
+        for (int attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+            String observed = fetchAndHash(urlString);
+            if (observed == null) {
+                log.warn("Read-back GET for {} could not complete on attempt {}/{}", label, attempt, MAX_UPLOAD_ATTEMPTS);
+                if (attempt < MAX_UPLOAD_ATTEMPTS) {
+                    sleepBackoff(attempt);
+                }
+                continue;
+            }
+            if (observed.equalsIgnoreCase(expectedSha)) {
+                log.info("Upload of {} verified end-to-end (sha256={})", label, expectedSha);
+                return;
+            }
+            String message = String.format(
+                    "Read-back verification of %s at %s failed (read-back mismatch: expected=%s, observed=%s): "
+                            + "the server stored different bytes than were sent. Workspace state may be corrupt.",
+                    label, urlString, expectedSha, observed);
+            log.error(message);
+            throw new StateUploadFailedException(message);
+        }
+        log.warn("Could not read {} back after {} attempts to verify; relying on the announced X-Content-Sha256 the API already validated.",
+                label, MAX_UPLOAD_ATTEMPTS);
+    }
+
+    /**
      * GET the given URL and return the hex sha-256 of the body. Returns
      * {@code null} on any transport error or non-2xx response so the caller
-     * can treat it as a verification failure indistinguishable from a hash
-     * mismatch (both retryable).
+     * can retry the read independently of the upload.
      */
     private String fetchAndHash(String urlString) {
         try {
@@ -473,10 +501,5 @@ public class ApiTerraformStateImpl implements TerraformState {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
-    }
-
-    @SuppressWarnings("unused")
-    private static String basicAuthHeader(String user, String token) {
-        return "Basic " + Base64.getEncoder().encodeToString((user + ":" + token).getBytes(StandardCharsets.UTF_8));
     }
 }
