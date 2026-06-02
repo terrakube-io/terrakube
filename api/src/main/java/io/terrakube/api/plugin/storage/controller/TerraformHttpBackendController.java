@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -25,6 +26,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -39,6 +41,9 @@ import java.util.Optional;
 @Slf4j
 @RequestMapping("/tfstate/v1/http-backend")
 public class TerraformHttpBackendController {
+
+    /** Issuer/audience minted by the executor's internal-token signer. */
+    private static final String INTERNAL_ISSUER = "TerrakubeInternal";
 
     private final StorageTypeService storageTypeService;
     private final WorkspaceLockService lockService;
@@ -58,7 +63,7 @@ public class TerraformHttpBackendController {
     public ResponseEntity<byte[]> getState(@PathVariable("organizationId") String organizationId,
                                            @PathVariable("workspaceId") String workspaceId,
                                            HttpServletRequest request) {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         byte[] data = storageTypeService.getCurrentTerraformState(organizationId, workspaceId);
         if (data == null || data.length == 0) {
@@ -72,7 +77,7 @@ public class TerraformHttpBackendController {
                                             @PathVariable("workspaceId") String workspaceId,
                                             @RequestParam(value = "ID", required = false) String lockId,
                                             HttpServletRequest request) throws IOException {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         Optional<String> heldLockInfo = lockService.getLockInfo(workspaceId);
         if (heldLockInfo.isPresent()) {
@@ -101,7 +106,7 @@ public class TerraformHttpBackendController {
     public ResponseEntity<String> deleteState(@PathVariable("organizationId") String organizationId,
                                               @PathVariable("workspaceId") String workspaceId,
                                               HttpServletRequest request) {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         storageTypeService.deleteCurrentTerraformState(organizationId, workspaceId);
         return ResponseEntity.ok("");
     }
@@ -110,7 +115,7 @@ public class TerraformHttpBackendController {
     public ResponseEntity<String> lock(@PathVariable("organizationId") String organizationId,
                                        @PathVariable("workspaceId") String workspaceId,
                                        HttpServletRequest request) throws IOException {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         String body = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String incomingLockId = lockService.readLockId(body);
@@ -136,7 +141,7 @@ public class TerraformHttpBackendController {
     public ResponseEntity<String> unlock(@PathVariable("organizationId") String organizationId,
                                          @PathVariable("workspaceId") String workspaceId,
                                          HttpServletRequest request) throws IOException {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         String body = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String incomingLockId = lockService.readLockId(body);
@@ -146,14 +151,23 @@ public class TerraformHttpBackendController {
             return ResponseEntity.ok("");
         }
         String heldLockId = lockService.readLockId(heldLockInfo.get());
-        // force-unlock (terraform force-unlock) sends no body or a different ID; honor it
         if (incomingLockId != null && heldLockId != null && !heldLockId.equals(incomingLockId)) {
             log.warn("Unlock id mismatch on workspace {}: holder={}, requester={}", workspaceId, heldLockId, incomingLockId);
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(heldLockInfo.get());
         }
-        lockService.release(workspaceId);
+        if (incomingLockId == null) {
+            // terraform force-unlock sends no/empty body — operator override path.
+            // No holder id to match against, so release unconditionally.
+            lockService.release(workspaceId);
+            return ResponseEntity.ok("");
+        }
+        // Normal unlock: compare-and-delete against the exact value we just read, so a
+        // late unlock cannot remove a lock another executor acquired in the meantime.
+        if (!lockService.releaseIfMatches(workspaceId, heldLockInfo.get())) {
+            log.info("Unlock for workspace {}: lock already changed or released by the time we deleted; treating as success", workspaceId);
+        }
         return ResponseEntity.ok("");
     }
 
@@ -172,7 +186,7 @@ public class TerraformHttpBackendController {
     public ResponseEntity<String> heartbeat(@PathVariable("organizationId") String organizationId,
                                             @PathVariable("workspaceId") String workspaceId,
                                             HttpServletRequest request) {
-        if (!isAuthorized(request)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!isAuthorized(request, workspaceId)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         boolean refreshed = lockService.refresh(workspaceId);
         if (refreshed) {
@@ -184,7 +198,15 @@ public class TerraformHttpBackendController {
                 .body("{\"error\":\"lock-lost\"}");
     }
 
-    private boolean isAuthorized(HttpServletRequest request) {
+    /**
+     * Validates the request's internal JWT and binds it to {@code workspaceId}.
+     * Signature + expiry are checked by the decoder; on top of that we require
+     * the {@code TerrakubeInternal} issuer and audience and a {@code workspaceId}
+     * claim that matches the workspace in the path. Holding an internal-signed
+     * token is therefore no longer org-wide access — a token minted for one
+     * workspace cannot touch another's state or lock.
+     */
+    private boolean isAuthorized(HttpServletRequest request, String workspaceId) {
         String header = request.getHeader("Authorization");
         if (header == null) {
             return false;
@@ -204,13 +226,28 @@ public class TerraformHttpBackendController {
             return false;
         }
         if (token == null || token.isBlank()) return false;
+        Jwt jwt;
         try {
-            internalJwtDecoder.decode(token);
-            return true;
+            jwt = internalJwtDecoder.decode(token);
         } catch (JwtException e) {
             log.warn("Rejected http-backend request: invalid token ({})", e.getMessage());
             return false;
         }
+        if (!INTERNAL_ISSUER.equals(jwt.getClaimAsString("iss"))) {
+            log.warn("Rejected http-backend request for workspace {}: unexpected issuer {}", workspaceId, jwt.getClaimAsString("iss"));
+            return false;
+        }
+        List<String> audience = jwt.getAudience();
+        if (audience == null || !audience.contains(INTERNAL_ISSUER)) {
+            log.warn("Rejected http-backend request for workspace {}: unexpected audience {}", workspaceId, audience);
+            return false;
+        }
+        String tokenWorkspaceId = jwt.getClaimAsString("workspaceId");
+        if (tokenWorkspaceId == null || !tokenWorkspaceId.equals(workspaceId)) {
+            log.warn("Rejected http-backend request: token scoped to workspace {} but path targets {}", tokenWorkspaceId, workspaceId);
+            return false;
+        }
+        return true;
     }
 
 }

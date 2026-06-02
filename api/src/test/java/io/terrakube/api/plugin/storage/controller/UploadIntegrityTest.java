@@ -57,6 +57,25 @@ class UploadIntegrityTest {
     }
 
     @Test
+    void verifyRejectsAbsentHeaderWith400WhenRequired() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        ResponseEntity<String> response = UploadIntegrity.verify(request, "hello".getBytes(StandardCharsets.UTF_8), true);
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        assertTrue(response.getBody().contains("\"error\":\"missing-integrity-header\""));
+    }
+
+    @Test
+    void verifyPassesWhenRequiredHeaderPresentAndMatches() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(UploadIntegrity.HEADER, HELLO_SHA256);
+        assertNull(UploadIntegrity.verify(request, "hello".getBytes(StandardCharsets.UTF_8), true));
+    }
+
+    @Test
     void verifyRejectsMismatchWith409AndJsonBody() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(UploadIntegrity.HEADER, "deadbeef");

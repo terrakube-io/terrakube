@@ -74,7 +74,7 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         try {
             storage.delete(BlobId.of(bucketName, currentStateKey));
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("Failed to delete current terraform state {} (org={}, ws={})", currentStateKey, organizationId, workspaceId, e);
         }
     }
 

@@ -102,7 +102,7 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
         try {
             s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(blobKey).build());
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("Failed to delete current terraform state {} (org={}, ws={})", blobKey, organizationId, workspaceId, e);
         }
     }
 

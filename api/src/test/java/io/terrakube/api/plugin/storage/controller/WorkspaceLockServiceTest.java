@@ -4,7 +4,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -13,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -92,6 +96,34 @@ class WorkspaceLockServiceTest {
     void releaseDeletesKey() {
         subject.release("ws-1");
         verify(redisTemplate).delete("tflock:ws-1");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void releaseIfMatchesDeletesWhenValueStillMatches() {
+        when(redisTemplate.execute(any(RedisScript.class),
+                eq(Collections.singletonList("tflock:ws-1")), eq("{\"ID\":\"abc\"}")))
+                .thenReturn(1L);
+
+        assertTrue(subject.releaseIfMatches("ws-1", "{\"ID\":\"abc\"}"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void releaseIfMatchesReturnsFalseWhenAnotherHolderHasTheLock() {
+        // The compare-and-delete found a different value (someone else re-acquired)
+        // and deleted nothing — the late unlock must NOT report a removal.
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(0L);
+
+        assertFalse(subject.releaseIfMatches("ws-1", "{\"ID\":\"abc\"}"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void releaseIfMatchesReturnsFalseDefensivelyWhenRedisReturnsNull() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(null);
+
+        assertFalse(subject.releaseIfMatches("ws-1", "{\"ID\":\"abc\"}"));
     }
 
     @Test

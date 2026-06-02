@@ -17,6 +17,8 @@ import java.security.NoSuchAlgorithmException;
  *
  * If the header is absent the check is skipped — preserves backward
  * compatibility with the existing archive PUTs that have no integrity story.
+ * Callers that treat the header as a security control (the air-gapped state
+ * endpoints) can pass {@code requireHeader=true} to reject unverified uploads.
  */
 @Slf4j
 final class UploadIntegrity {
@@ -26,14 +28,34 @@ final class UploadIntegrity {
     private UploadIntegrity() {}
 
     /**
+     * Header-optional variant: absent header means "skip the check".
+     *
      * @return a populated ResponseEntity describing the mismatch when the
      *         expected and actual digests diverge; {@code null} when the
      *         payload is safe to commit (either header was absent or the
      *         digest matched).
      */
     static ResponseEntity<String> verify(HttpServletRequest request, byte[] body) {
+        return verify(request, body, false);
+    }
+
+    /**
+     * @param requireHeader when {@code true}, an absent/blank {@link #HEADER} is
+     *        rejected with 400 instead of silently skipping the check — closes the
+     *        "omit the header to downgrade to unverified" gap for endpoints that
+     *        rely on integrity as a control.
+     * @return a populated ResponseEntity describing the failure (missing header or
+     *         digest mismatch); {@code null} when the payload is safe to commit.
+     */
+    static ResponseEntity<String> verify(HttpServletRequest request, byte[] body, boolean requireHeader) {
         String expected = request.getHeader(HEADER);
         if (expected == null || expected.isBlank()) {
+            if (requireHeader) {
+                log.warn("Upload rejected: {} header is required but was absent", HEADER);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(String.format("{\"error\":\"missing-integrity-header\",\"header\":\"%s\"}", HEADER));
+            }
             return null;
         }
         String actual = sha256Hex(body);

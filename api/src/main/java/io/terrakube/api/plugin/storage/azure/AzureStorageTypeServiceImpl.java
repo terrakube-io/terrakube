@@ -78,7 +78,7 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
                 blobClient.delete();
             }
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("Failed to delete current terraform state {} (org={}, ws={})", blobName, organizationId, workspaceId, e);
         }
     }
 

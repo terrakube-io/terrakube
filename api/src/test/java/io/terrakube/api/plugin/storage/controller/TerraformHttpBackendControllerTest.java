@@ -66,13 +66,23 @@ class TerraformHttpBackendControllerTest {
     }
 
     private String validToken() {
+        return tokenFor("TerrakubeInternal", "TerrakubeInternal", WORKSPACE);
+    }
+
+    /** Mint an internal-style token with explicit issuer/audience/workspaceId so the
+     *  scope checks in isAuthorized can be exercised positively and negatively. */
+    private String tokenFor(String issuer, String audience, String workspaceId) {
         SecretKey signingKey = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(secretBase64Url));
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject("executor")
+                .issuer(issuer)
+                .audience().add(audience).and()
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + 60_000))
-                .signWith(signingKey)
-                .compact();
+                .expiration(new Date(System.currentTimeMillis() + 60_000));
+        if (workspaceId != null) {
+            builder.claim("workspaceId", workspaceId);
+        }
+        return builder.signWith(signingKey).compact();
     }
 
     private MockHttpServletRequest withBasic(String token) {
@@ -98,6 +108,35 @@ class TerraformHttpBackendControllerTest {
     @Test
     void getStateReturns401WhenTokenIsInvalid() {
         ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer("not-a-real-jwt"));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenTokenScopedToDifferentWorkspace() {
+        String otherWorkspaceToken = tokenFor("TerrakubeInternal", "TerrakubeInternal",
+                "22222222-2222-2222-2222-222222222222");
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(otherWorkspaceToken));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenWorkspaceClaimMissing() {
+        String unscopedToken = tokenFor("TerrakubeInternal", "TerrakubeInternal", null);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(unscopedToken));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenIssuerNotInternal() {
+        String wrongIssuer = tokenFor("SomeoneElse", "TerrakubeInternal", WORKSPACE);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(wrongIssuer));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenAudienceNotInternal() {
+        String wrongAudience = tokenFor("TerrakubeInternal", "SomeoneElse", WORKSPACE);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(wrongAudience));
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
     }
 
@@ -249,6 +288,7 @@ class TerraformHttpBackendControllerTest {
         ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(lockService, never()).release(WORKSPACE);
+        verify(lockService, never()).releaseIfMatches(anyString(), anyString());
     }
 
     @Test
@@ -266,8 +306,9 @@ class TerraformHttpBackendControllerTest {
     }
 
     @Test
-    void unlockReleasesWhenIdMatches() throws Exception {
+    void unlockCompareAndDeletesWhenIdMatches() throws Exception {
         when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+        when(lockService.releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}")).thenReturn(true);
 
         MockHttpServletRequest request = withBasic(validToken());
         request.setContent("{\"ID\":\"holder-lock\"}".getBytes(StandardCharsets.UTF_8));
@@ -275,13 +316,31 @@ class TerraformHttpBackendControllerTest {
         ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(lockService).release(WORKSPACE);
+        // Atomic compare-and-delete against the exact held value, not a blind delete.
+        verify(lockService).releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}");
+        verify(lockService, never()).release(WORKSPACE);
     }
 
     @Test
-    void unlockWithoutIdInBodyReleasesHeldLock() throws Exception {
-        // terraform force-unlock can send an empty body. When no ID is supplied
-        // the controller honors the unlock — operator override path.
+    void unlockStillReturnsOkWhenLockChangedBeforeCompareAndDelete() throws Exception {
+        // Another executor re-acquired between our read and delete: releaseIfMatches
+        // removes nothing, but the unlock is still reported OK (our lock is already gone).
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+        when(lockService.releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}")).thenReturn(false);
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"holder-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}");
+    }
+
+    @Test
+    void unlockWithoutIdInBodyForceReleasesHeldLock() throws Exception {
+        // terraform force-unlock can send an empty body. With no ID to match against,
+        // the controller honors an unconditional release — operator override path.
         when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
 
         MockHttpServletRequest request = withBasic(validToken());
@@ -292,6 +351,7 @@ class TerraformHttpBackendControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(lockService).release(WORKSPACE);
+        verify(lockService, never()).releaseIfMatches(anyString(), anyString());
     }
 
     @Test

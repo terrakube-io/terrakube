@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +27,12 @@ import java.util.concurrent.TimeUnit;
 public class WorkspaceLockService {
 
     private static final String KEY_PREFIX = "tflock:";
+
+    // Atomic compare-and-delete: only remove the lock if it still holds the exact
+    // value the caller observed. Closes the TOCTOU between getLockInfo and release.
+    private static final RedisScript<Long> RELEASE_IF_MATCHES = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class);
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -68,6 +77,20 @@ public class WorkspaceLockService {
 
     public void release(String workspaceId) {
         redisTemplate.delete(key(workspaceId));
+    }
+
+    /**
+     * Compare-and-delete: removes the lock only when its current value is exactly
+     * {@code expectedLockInfo} (the value the caller read a moment earlier). If
+     * another executor has since acquired the workspace, the stored value differs
+     * and nothing is deleted. Returns {@code true} when this caller's lock was the
+     * one removed. The lock value is set once on acquire and only TTL-refreshed
+     * afterward, so an exact-value match unambiguously identifies the same holder.
+     */
+    public boolean releaseIfMatches(String workspaceId, String expectedLockInfo) {
+        Long removed = redisTemplate.execute(RELEASE_IF_MATCHES,
+                Collections.singletonList(key(workspaceId)), expectedLockInfo);
+        return removed != null && removed > 0;
     }
 
     public String readLockId(String body) {
