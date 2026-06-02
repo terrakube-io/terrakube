@@ -179,7 +179,10 @@ public class ApiTerraformStateImpl implements TerraformState {
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(IO_TIMEOUT_MS);
             conn.setReadTimeout(IO_TIMEOUT_MS);
-            conn.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(5));
+            // Workspace-scoped, like the backend password — the API binds this token's
+            // workspaceId claim to the path workspace, so the heartbeat can only refresh
+            // its own lock, not any other workspace's.
+            conn.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(workspaceId, 5));
             conn.setRequestProperty("Content-Length", "0");
             conn.setDoOutput(true);
             try (OutputStream os = conn.getOutputStream()) {

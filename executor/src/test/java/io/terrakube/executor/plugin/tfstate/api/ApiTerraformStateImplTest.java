@@ -442,6 +442,9 @@ class ApiTerraformStateImplTest {
             assertTrue(pings.get() >= 1);
             // Healthy heartbeat → health check should not throw.
             subject.checkHeartbeatHealth();
+            // The heartbeat must use the workspace-scoped token overload so the API can
+            // bind it to ws-1; the unscoped generateAccessToken(int) would be rejected.
+            verify(workspaceSecurity, org.mockito.Mockito.atLeastOnce()).generateAccessToken(eq("ws-1"), anyInt());
         } finally {
             subject.stopHeartbeat();
         }
