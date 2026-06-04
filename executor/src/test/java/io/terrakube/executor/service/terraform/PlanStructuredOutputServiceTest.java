@@ -2,16 +2,23 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.terraform.TerraformClient;
+import io.terrakube.terraform.TerraformProcessData;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +28,43 @@ class PlanStructuredOutputServiceTest {
         WorkspaceSecurity workspaceSecurity = Mockito.mock(WorkspaceSecurity.class);
         TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
         return new PlanStructuredOutputService(workspaceSecurity, new ObjectMapper(), "http://terrakube-api", new TerraformClient(), terrakubeClient);
+    }
+
+    private TerraformProcessData captureShowPlanJsonData(boolean tofu) throws Exception {
+        TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
+        Mockito.when(terraformClient.showPlanJson(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(WorkspaceSecurity.class),
+                new ObjectMapper(),
+                "http://terrakube-api",
+                terraformClient,
+                Mockito.mock(TerrakubeClient.class));
+
+        TerraformJob job = new TerraformJob();
+        job.setJobId("1");
+        job.setStepId("step-1");
+        job.setTerraformVersion("1.11.5");
+        job.setTofu(tofu);
+
+        service.getPlanAsJson(job, new File("/tmp"));
+
+        ArgumentCaptor<TerraformProcessData> captor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        Mockito.verify(terraformClient).showPlanJson(captor.capture(), Mockito.any(), Mockito.any());
+        return captor.getValue();
+    }
+
+    @Test
+    void readsPlanJsonWithTofuBinaryForOpenTofuWorkspaces() throws Exception {
+        assertTrue(captureShowPlanJsonData(true).isTofu(),
+                "Structured plan output must read the plan with the tofu binary for OpenTofu workspaces");
+    }
+
+    @Test
+    void readsPlanJsonWithTerraformBinaryForTerraformWorkspaces() throws Exception {
+        assertFalse(captureShowPlanJsonData(false).isTofu(),
+                "Structured plan output must read the plan with the terraform binary for Terraform workspaces");
     }
 
     @Test
