@@ -87,6 +87,7 @@ public class PlanStructuredOutputService {
                 .terraformVersion(terraformJob.getTerraformVersion())
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
+                .tofu(terraformJob.isTofu())
                 .build();
 
         boolean success = terraformClient.showPlanJson(terraformProcessData, (Consumer<String>) planOutput::append, (Consumer<String>) planErrorOutput::append).get();
