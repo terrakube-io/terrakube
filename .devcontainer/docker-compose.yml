@@ -300,15 +300,15 @@ services:
       - 5432:5432
     networks:
       - terrakube-network
-  mssql-service:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: mssql-service
-    restart: unless-stopped
-    environment:
-      - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=P@ssw0rd!
-    networks:
-      - terrakube-network
+#  mssql-service:
+#    image: mcr.microsoft.com/mssql/server:2022-latest
+#    container_name: mssql-service
+#    restart: unless-stopped
+#    environment:
+#      - ACCEPT_EULA=Y
+#      - MSSQL_SA_PASSWORD=P@ssw0rd!
+#    networks:
+#      - terrakube-network
 volumes:
   minio_data:
   redis_data:

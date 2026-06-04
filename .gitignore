@@ -40,7 +40,7 @@ scripts/setup/dex/config-ldap.yaml
 .envUi
 .envAzure
 .envGcp
-GITPOD.md
+DEVCONTAINER.md
 CHE.md
 .devcontainer/.env-dex
 
