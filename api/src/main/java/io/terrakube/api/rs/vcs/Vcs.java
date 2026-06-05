@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.yahoo.elide.annotation.*;
+import io.terrakube.api.rs.hooks.vcs.VcsManageHook;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
@@ -31,6 +32,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 @CreatePermission(expression = "team manage vcs")
 @UpdatePermission(expression = "team manage vcs")
 @DeletePermission(expression = "team manage vcs")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = VcsManageHook.class)
 @Include(rootLevel = false)
 @Getter
 @Setter
