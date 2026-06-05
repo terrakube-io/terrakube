@@ -21,16 +21,13 @@ public class TeamProjectLimitedViewJob extends OperationCheck<Job> {
     public static final String RULE = "team project limited view job";
 
     @Autowired
-    AuthenticatedUser authenticatedUser;
-
-    @Autowired
     MembershipService membershipService;
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team project limited view job {}", job.getId());
         if (job.getWorkspace() == null){
-            log.warn("Workspace is null for job {}", job.getId());
+            log.warn("Workspace is null for job {} this is some invalida data", job.getId());
             return false;
         }
         Project project = job.getWorkspace().getProject();
