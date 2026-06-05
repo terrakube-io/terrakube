@@ -2,6 +2,7 @@ package io.terrakube.api;
 
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WebhookRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
@@ -40,6 +41,8 @@ class WebhookTests extends ServerApplicationTests {
     private WebhookEventRepository webhookEventRepository;
 
     private String workspaceIdCreated;
+    @Autowired
+    private WorkspaceRepository workspaceRepository;
 
     @BeforeEach
     public void setup() {
@@ -94,6 +97,15 @@ class WebhookTests extends ServerApplicationTests {
         Assertions.assertEquals(WebhookEventPathType.PATTERN, persistedEvents.get(0).getPathType());
 
         wireMockServer.verify(1, postRequestedFor(urlEqualTo("/repos/acme/repo/hooks")));
+
+        workspaceRepository.findById(UUID.fromString(workspaceIdCreated))
+                .ifPresent(workspace -> {
+                            Vcs vcs = workspace.getVcs();
+                            workspace.setVcs(null);
+                            workspaceRepository.save(workspace);
+                            vcsRepository.delete(vcs);
+                        }
+                );
     }
 
     @Test
@@ -132,6 +144,15 @@ class WebhookTests extends ServerApplicationTests {
         Assertions.assertEquals(WebhookEventPathType.REGEX, persistedEvents.get(0).getPathType());
 
         wireMockServer.verify(1, postRequestedFor(urlEqualTo("/repos/acme/repo/hooks")));
+
+        workspaceRepository.findById(UUID.fromString(workspaceIdCreated))
+                .ifPresent(workspace -> {
+                            Vcs vcs = workspace.getVcs();
+                            workspace.setVcs(null);
+                            workspaceRepository.save(workspace);
+                            vcsRepository.delete(vcs);
+                        }
+                );
     }
 
     private void stubGithubWebhookCreation() {
