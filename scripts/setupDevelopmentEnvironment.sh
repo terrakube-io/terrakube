@@ -447,10 +447,4 @@ openssl rsa -in private_temp.pem -outform PEM -pubout -out public.pem
 openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in private_temp.pem -out private.pem
 rm private_temp.pem
 
-# Install UI dependencies for devcontainer
-if [ "$USER" = "vscode" ]; then
-	echo "Installing UI dependencies..."
-	cd ui  && yarn install && cd ..
-fi
-
 echo "Setup Development Environment Completed"
