@@ -1,59 +1,50 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "docker-compose-up",
-            "type": "shell",
-            "command": "docker-compose up -d",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts/setup/devcontainer"
-            }
-        },
-        {
-            "label": "setup-env",
-            "type": "shell",
-            "command": "./scripts/setupDevelopmentEnvironment.sh",
-            "args": [
-                "-s",
-                "LOCAL",
-                "-d",
-                "H2"
-            ],
-            "dependsOn": [
-                "docker-compose-up"
-            ],
-            "group": {
-                "isDefault": true,
-                "kind": "build"
-            }
-        },
-        {
-            "label": "setup-env2",
-            "type": "shell",
-            "command": "./scripts/setupDevelopmentEnvironment.sh",
-            "args": ["-s", "MINIO", "-d", "POSTGRESQL"],
-            "dependsOn": [
-                "docker-compose-up"
-            ],
-            "group": {
-                "isDefault": true,
-                "kind": "build"
-            }
-        },
-        {
-            "label": "setup-env3",
-            "type": "shell",
-            "command": "./scripts/setupDevelopmentEnvironment.sh",
-            "args": ["-s", "MINIO", "-d", "MSSQL"],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
-        {
-            "label": "install-ui-dependencies",
-            "type": "shell",
-            "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && corepack enable && yarn install && cd ..; fi"
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "docker-compose-up",
+      "type": "shell",
+      "command": "docker-compose up -d",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts/setup/devcontainer"
+      }
+    },
+    {
+      "label": "setup-env",
+      "type": "shell",
+      "command": "./scripts/setupDevelopmentEnvironment.sh",
+      "args": ["-s", "LOCAL", "-d", "H2"],
+      "dependsOn": ["docker-compose-up"],
+      "group": {
+        "isDefault": true,
+        "kind": "build"
+      }
+    },
+    {
+      "label": "setup-env2",
+      "type": "shell",
+      "command": "./scripts/setupDevelopmentEnvironment.sh",
+      "args": ["-s", "MINIO", "-d", "POSTGRESQL"],
+      "dependsOn": ["docker-compose-up"],
+      "group": {
+        "isDefault": true,
+        "kind": "build"
+      }
+    },
+    {
+      "label": "setup-env3",
+      "type": "shell",
+      "command": "./scripts/setupDevelopmentEnvironment.sh",
+      "args": ["-s", "MINIO", "-d", "MSSQL"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "yarn-install",
+      "type": "shell",
+      "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && corepack enable && yarn install && cd ..; fi"
+    }
+  ]
 }
