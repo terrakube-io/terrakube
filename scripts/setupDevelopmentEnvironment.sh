@@ -386,7 +386,7 @@ function generateWorkspaceInformation() {
 
 	sed -i "s+DEVCONTAINER_WORKSPACE_UI+$WORKSPACE_UI+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_WORKSPACE_API+$WORKSPACE_API+gi" DEVCONTAINER.md
-	sed -i "s+DEVCONTAINER_WORKSPACE_REGISTRY+$WORKSPACE_REGISTRY+gi" GDEVCONTAINERITPOD.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_REGISTRY+$WORKSPACE_REGISTRY+gi" DEVCONTAINERITPOD.md
 	sed -i "s+DEVCONTAINER_WORKSPACE_EXECUTOR+$WORKSPACE_EXECUTOR+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_WORKSPACE_DEX+$WORKSPACE_DEX+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_LOGIN_REGISTRY+$WORKSPACE_LOGIN_REGISTRY+gi" DEVCONTAINER.md
@@ -450,7 +450,7 @@ rm private_temp.pem
 # Install UI dependencies for devcontainer
 if [ "$USER" = "vscode" ]; then
 	echo "Installing UI dependencies..."
-	cd ui && corepack enable && yarn install && cd ..
+	cd ui  && yarn install && cd ..
 fi
 
 echo "Setup Development Environment Completed"

@@ -49,6 +49,11 @@
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "install-ui-dependencies",
+            "type": "shell",
+            "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && corepack enable && yarn install && cd ..; fi"
         }
     ]
 }
