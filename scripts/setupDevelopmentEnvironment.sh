@@ -382,7 +382,7 @@ function generateWorkspaceInformation() {
 	WORKSPACE_DEX="https://$CODESPACE_NAME-5556.app.github.dev"
 	WORKSPACE_MINIO="https://$CODESPACE_NAME-9000.app.github.dev"
 	WORKSPACE_CONSOLE_MINIO="https://$CODESPACE_NAME-9001.app.github.dev"
-	WORKSPACE_LOGIN_REGISTRY=$("https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
+	WORKSPACE_LOGIN_REGISTRY=$(echo "https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
 
 	sed -i "s+DEVCONTAINER_WORKSPACE_UI+$WORKSPACE_UI+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_WORKSPACE_API+$WORKSPACE_API+gi" DEVCONTAINER.md
