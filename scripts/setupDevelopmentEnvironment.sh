@@ -361,15 +361,14 @@ function generateDexConfiguration() {
 	if [ "$CODESPACES" = "true" ]; then
 		jwtIssuer="https://$CODESPACE_NAME-5556.app.github.dev"
 		uiRedirect="https://$CODESPACE_NAME-3000.app.github.dev"
-	else if [ "$USER" = "vscode" ]; then
-	  "Echo using local devcontainer"
+	elif [ "$USER" = "vscode" ]; then
+	  echo "Echo using local devcontainer"
 		jwtIssuer="https://terrakube-dex.platform.local"
 		uiRedirect="https://terrakube.platform.local"
 	fi
 
 	sed -i "s+TEMPLATE_DEVCONTAINER_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/devcontainer/config-ldap.yaml
 	sed -i "s+TEMPLATE_DEVCONTAINER_REDIRECT+$uiRedirect+gi" scripts/setup/devcontainer/config-ldap.yaml
-
 }
 
 function generateWorkspaceInformation() {

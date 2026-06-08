@@ -2,31 +2,29 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "setup-java",
+            "label": "docker-compose-up",
             "type": "shell",
-            "command": "  if [ \"$USER\" = \"gitpod\" ]; then source \"$HOME/.sdkman/bin/sdkman-init.sh\" && sdk install java 21.0.6-tem && sdk install maven 3.9.0; else echo \"Using JDK from devcontainer setup\"; fi",
-            "group": {
-                "kind": "build",
-                "isDefault": true
+            "command": "docker-compose up -d",
+            "options": {
+                "cwd": "${workspaceFolder}/scripts/setup/devcontainer"
             }
         },
-{
-        "label": "yarn-install",
-        "type": "shell",
-        "command": "  if [ \"$USER\" = \"gitpod\" ]; then cd ui && yarn install; else echo \"Using Node from devcontainer setup\"; fi ",
-        "group": {
-            "kind": "build",
-            "isDefault": true
-        }
-    },
         {
             "label": "setup-env",
             "type": "shell",
             "command": "./scripts/setupDevelopmentEnvironment.sh",
-            "args": ["-s", "LOCAL", "-d", "H2"],
+            "args": [
+                "-s",
+                "LOCAL",
+                "-d",
+                "H2"
+            ],
+            "dependsOn": [
+                "docker-compose-up"
+            ],
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "isDefault": true,
+                "kind": "build"
             }
         },
         {
@@ -34,9 +32,12 @@
             "type": "shell",
             "command": "./scripts/setupDevelopmentEnvironment.sh",
             "args": ["-s", "MINIO", "-d", "POSTGRESQL"],
+            "dependsOn": [
+                "docker-compose-up"
+            ],
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "isDefault": true,
+                "kind": "build"
             }
         },
         {
