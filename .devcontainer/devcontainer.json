@@ -60,31 +60,38 @@
   "portsAttributes": {
     "8080": {
       "label": "Terrakube API",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "3000": {
       "label": "Terrakube UI",
-      "onAutoForward": "notify"
+      "onAutoForward": "notify",
+      "visibility": "public"
     },
     "8075": {
       "label": "Terrakube Registry",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "8090": {
       "label": "Terrakube Executor",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "5556": {
       "label": "Dex OIDC",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "9000": {
       "label": "MinIO API",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "9001": {
       "label": "MinIO Console",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     }
   }
 }
