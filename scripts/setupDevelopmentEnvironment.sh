@@ -296,11 +296,7 @@ function generateUiVars() {
 
 	REACT_CONFIG_CLIENT_ID="example-app"
 	REACT_CONFIG_SCOPE="email openid profile offline_access groups"
-	if [ "$USER" = "gitpod" ]; then
-		REACT_APP_TERRAKUBE_VERSION=v$(git describe --tags --abbrev=0)
-	else
-		REACT_APP_TERRAKUBE_VERSION="devcontainer"
-	fi
+	REACT_APP_TERRAKUBE_VERSION="devcontainer"
 
 	rm -f .envUi
 
