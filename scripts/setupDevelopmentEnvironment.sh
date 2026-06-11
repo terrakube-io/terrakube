@@ -24,6 +24,7 @@ function generateApiVars() {
 		TerrakubeHostname=$(echo "https://$CODESPACE_NAME-8080.app.github.dev" | sed "s+https://++g")
 		DexIssuerUri="https://$CODESPACE_NAME-5556.app.github.dev/dex"
 		TerrakubeUiURL="https://$CODESPACE_NAME-3000.app.github.dev"
+		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
 	elif [ "$USER" = "vscode" ]; then
 		TerrakubeHostname="terrakube-api.platform.local"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
