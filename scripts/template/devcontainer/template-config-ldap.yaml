@@ -1,4 +1,4 @@
-issuer: TEMPLATE_GITPOD_JWT_ISSUER/dex
+issuer: TEMPLATE_DEVCONTAINER_JWT_ISSUER/dex
 
 storage:
   type: memory
@@ -65,7 +65,7 @@ connectors:
 staticClients:
 - id: example-app
   redirectURIs:
-  - 'TEMPLATE_GITPOD_REDIRECT'
+  - 'TEMPLATE_DEVCONTAINER_REDIRECT'
   - '/device/callback'
   - 'http://localhost:10000/login'
   - 'http://localhost:10001/login'

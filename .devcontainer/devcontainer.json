@@ -19,7 +19,8 @@
     "ghcr.io/devcontainers/features/terraform:1": {
       "terragrunt": "none",
       "tflint": "none"
-    }
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:3": {}
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
@@ -38,7 +39,8 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "hashicorp.terraform",
-        "rangav.vscode-thunder-client"
+        "rangav.vscode-thunder-client",
+        "ms-azuretools.vscode-docker"
       ],
       "settings": {
         "java.configuration.updateBuildConfiguration": "automatic",
@@ -54,35 +56,42 @@
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   "remoteUser": "vscode",
-  "forwardPorts": [8080, 3000, 8075, 8090, 5556, 9000, 9001],
+  "forwardPorts": [8080, 3000, 8075, 8090, 5556, 9000, 9001, 5556],
   "portsAttributes": {
     "8080": {
       "label": "Terrakube API",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "3000": {
       "label": "Terrakube UI",
-      "onAutoForward": "notify"
+      "onAutoForward": "notify",
+      "visibility": "public"
     },
     "8075": {
       "label": "Terrakube Registry",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "8090": {
       "label": "Terrakube Executor",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "5556": {
       "label": "Dex OIDC",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "9000": {
       "label": "MinIO API",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     },
     "9001": {
       "label": "MinIO Console",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     }
   }
 }

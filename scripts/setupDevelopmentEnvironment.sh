@@ -20,26 +20,24 @@ done
 
 function generateApiVars() {
 	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		TerrakubeHostname=$(gp url 8080 | sed "s+https://++g")
-		AzBuilderExecutorUrl="$(gp url 8090)/api/v1/terraform-rs"
-		DexIssuerUri="$(gp url 5556)/dex"
-		TerrakubeUiURL=$(gp url 3000)
-		TerrakubeRedisHostname=localhost
+	if [ "$CODESPACES" = "true" ]; then
+		TerrakubeHostname=$(echo "https://$CODESPACE_NAME-8080.app.github.dev" | sed "s+https://++g")
+		DexIssuerUri="https://$CODESPACE_NAME-5556.app.github.dev/dex"
+		TerrakubeUiURL="https://$CODESPACE_NAME-3000.app.github.dev"
+		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
 	elif [ "$USER" = "vscode" ]; then
 		TerrakubeHostname="terrakube-api.platform.local"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
 		DexIssuerUri="https://terrakube-dex.platform.local/dex"
 		TerrakubeUiURL="https://terrakube.platform.local"
-		TerrakubeRedisHostname=terrakube-redis
 	else
 		TerrakubeHostname="localhost:8080"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
 		DexIssuerUri="http://localhost:5556/dex"
 		TerrakubeUiURL="http://localhost:3000"
-		TerrakubeRedisHostname=terrakube-redis
 	fi
 
+  TerrakubeRedisHostname=terrakube-redis
 	GroupValidationType="DEX"
 	UserValidationType="DEX"
 	AuthenticationValidationType="DEX"
@@ -49,7 +47,7 @@ function generateApiVars() {
 
 	DexClientId="example-app"
 
-	TerrakubeToolsRepository=https://github.com/AzBuilder/terrakube-extensions.git
+	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
 
 	JAVA_TOOL_OPTIONS="-Xmx512m -Xms256m"
@@ -61,19 +59,8 @@ function generateApiVars() {
 		DatasourceDatabase="terrakubedb"
 		DatasourceUser="terrakube"
 		DatasourceSchema="public"
-		if [ "$USER" = "gitpod" ]; then
-			DatasourceHostname="localhost"
-		else
-			DatasourceHostname="postgresql-service"
-		fi
+		DatasourceHostname="postgresql-service"
 		DatasourcePassword="terrakubepassword"
-	elif [ "$database_value" = "MSSQL" ]; then
-		ApiDataSourceType="SQL_AZURE"
-		DatasourceHostname="mssql-service"
-		DatasourcePassword="P@ssw0rd!"
-		DatasourceUser="sa"
-		DatasourceDatabase=terrakube
-		DatasourceSchema=dbo
 	else
 		ApiDataSourceType="H2"
 	fi
@@ -84,16 +71,7 @@ function generateApiVars() {
 		AwsStorageSecretKey="minioadmin"
 		AwsStorageBucketName="sample"
 		AwsStorageRegion="us-east-1"
-		if [ "$USER" = "gitpod" ]; then
-			AwsEndpoint="http://localhost:9000"
-		else
-			AwsEndpoint="http://minio:9000"
-		fi
-	elif [ "$storage_value" = "AZURITE" ]; then
-		StorageType="AZURE"
-		AzureAccountName="devstoreaccount1"
-		AzureAccountKey="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KmkZyjwDkOxg=="
-		AzureConnectionString="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-service:10000/devstoreaccount1;"
+		AwsEndpoint="http://minio:9000"
 	else
 		StorageType="LOCAL"
 	fi
@@ -145,21 +123,18 @@ function generateApiVars() {
 
 function generateExecutorVars() {
 	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		AzBuilderApiUrl=$(gp url 8080)
-		TerrakubeRegistryDomain=$(gp url 8075 | sed "s+https://++g")
-		TerrakubeApiUrl=$(gp url 8080)
-		TerrakubeRedisHostname=localhost
-	elif [ "$USER" = "vscode" ]; then
+	if [ "$CODESPACES" = "true" ]; then
+  	AzBuilderApiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
+    TerrakubeRegistryDomain=$(echo "https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
+    TerrakubeApiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
+  elif [ "$USER" = "vscode" ]; then
 		AzBuilderApiUrl="https://terrakube-api.platform.local"
 		TerrakubeRegistryDomain="terrakube-registry.platform.local"
 		TerrakubeApiUrl="https://terrakube-api.platform.local"
-		TerrakubeRedisHostname=terrakube-redis
 	else
 		AzBuilderApiUrl="http://localhost:8080"
 		TerrakubeRegistryDomain="localhost:8075"
 		TerrakubeApiUrl="http://localhost:8080"
-		TerrakubeRedisHostname=terrakube-redis
 	fi
 
 	if [ "$storage_value" = "MINIO" ]; then
@@ -174,30 +149,19 @@ function generateExecutorVars() {
 		AwsTerraformOutputSecretKey="minioadmin"
 		AwsTerraformOutputBucketName="sample"
 		AwsTerraformOutputRegion="us-east-1"
-
-		if [ "$USER" = "gitpod" ]; then
-			AwsEndpoint="http://localhost:9000"
-		else
-			AwsEndpoint="http://minio:9000"
-		fi
-	elif [ "$storage_value" = "AZURITE" ]; then
-		StorageType="AZURE"
-		TerraformOutputType=AzureTerraformOutputImpl
-		TerraformStateType=AzureTerraformStateImpl
-		AzureAccountName="devstoreaccount1"
-		AzureAccountKey="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KmkZyjwDkOxg=="
-		AzureConnectionString="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-service:10000/devstoreaccount1;"
-	else
+		AwsEndpoint="http://minio:9000"
+  else
 		TerraformStateType=LocalTerraformStateImpl
 		TerraformOutputType=LocalTerraformOutputImpl
 	fi
 
+  TerrakubeRedisHostname=terrakube-redis
 	TerrakubeEnableSecurity=true
 	InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
 
 	ExecutorFlagBatch=false
 	ExecutorFlagDisableAcknowledge=false
-	TerrakubeToolsRepository=https://github.com/AzBuilder/terrakube-extensions.git
+	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
 
 	# Use unique JMX port for executor (45557) to avoid conflicts with other Java apps
@@ -252,12 +216,12 @@ function generateExecutorVars() {
 
 function generateRegistryVars() {
 	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		AzBuilderRegistry=$(gp url 8075)
-		AzBuilderApiUrl=$(gp url 8080)
-		DexIssuerUri="$(gp url 5556)/dex"
-		TerrakubeUiURL=$(gp url 3000)
-		AppIssuerUri="$(gp url 5556)/dex"
+	if [ "$CODESPACES" = "true" ]; then
+		AzBuilderRegistry="https://$CODESPACE_NAME-8075.app.github.dev"
+		AzBuilderApiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
+		DexIssuerUri="https://$CODESPACE_NAME-5556.app.github.dev/dex"
+		TerrakubeUiURL="https://$CODESPACE_NAME-3000.app.github.dev"
+		AppIssuerUri="https://$CODESPACE_NAME-5556.app.github.dev/dex"
 	elif [ "$USER" = "vscode" ]; then
 		AzBuilderRegistry="https://terrakube-registry.platform.local"
 		AzBuilderApiUrl="https://terrakube-api.platform.local"
@@ -278,18 +242,8 @@ function generateRegistryVars() {
 		AwsStorageSecretKey="minioadmin"
 		AwsStorageBucketName="sample"
 		AwsStorageRegion="us-east-1"
-
-		if [ "$USER" = "gitpod" ]; then
-			AwsEndpoint="http://localhost:9000"
-		else
-			AwsEndpoint="http://terrakube-minio:9000"
-		fi
-	elif [ "$storage_value" = "AZURITE" ]; then
-		RegistryStorageType="AzureStorageImpl"
-		AzureAccountName="devstoreaccount1"
-		AzureAccountKey="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KmkZyjwDkOxg=="
-		AzureConnectionString="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-service:10000/devstoreaccount1;"
-	else
+		AwsEndpoint="http://terrakube-minio:9000"
+  else
 		RegistryStorageType=Local
 	fi
 
@@ -329,11 +283,11 @@ function generateRegistryVars() {
 
 function generateUiVars() {
 	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		REACT_CONFIG_TERRAKUBE_URL="$(gp url 8080)/api/v1/"
-		REACT_CONFIG_REDIRECT=$(gp url 3000)
-		REACT_CONFIG_REGISTRY_URI=$(gp url 8075)
-		REACT_CONFIG_AUTHORITY="$(gp url 5556)/dex"
+	if [ "$CODESPACES" = "true" ]; then
+		REACT_CONFIG_TERRAKUBE_URL="https://$CODESPACE_NAME-8080.app.github.dev/api/v1/"
+		REACT_CONFIG_REDIRECT="https://$CODESPACE_NAME-3000.app.github.dev"
+		REACT_CONFIG_REGISTRY_URI="https://$CODESPACE_NAME-8075.app.github.dev"
+		REACT_CONFIG_AUTHORITY="https://$CODESPACE_NAME-5556.app.github.dev/dex"
 	else
 		REACT_CONFIG_TERRAKUBE_URL="https://terrakube-api.platform.local/api/v1/"
 		REACT_CONFIG_REDIRECT="https://terrakube.platform.local"
@@ -343,11 +297,7 @@ function generateUiVars() {
 
 	REACT_CONFIG_CLIENT_ID="example-app"
 	REACT_CONFIG_SCOPE="email openid profile offline_access groups"
-	if [ "$USER" = "gitpod" ]; then
-		REACT_APP_TERRAKUBE_VERSION=v$(git describe --tags --abbrev=0)
-	else
-		REACT_APP_TERRAKUBE_VERSION="devcontainer"
-	fi
+	REACT_APP_TERRAKUBE_VERSION="devcontainer"
 
 	rm -f .envUi
 
@@ -402,129 +352,87 @@ function generateUiConfigFile() {
 }
 
 function generateDexConfiguration() {
-	cp scripts/template/dex/template-config-ldap.yaml scripts/setup/dex/config-ldap.yaml
+	cp scripts/template/devcontainer/template-config-ldap.yaml scripts/setup/devcontainer/config-ldap.yaml
 
 	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		jwtIssuer=$(gp url 5556)
-		uiRedirect=$(gp url 3000)
-	else
-		jwtIssuer="http://localhost:5556"
-		uiRedirect="http://localhost:3000"
+	if [ "$CODESPACES" = "true" ]; then
+		jwtIssuer="https://$CODESPACE_NAME-5556.app.github.dev"
+		uiRedirect="https://$CODESPACE_NAME-3000.app.github.dev"
+	elif [ "$USER" = "vscode" ]; then
+	  echo "Echo using local devcontainer"
+		jwtIssuer="https://terrakube-dex.platform.local"
+		uiRedirect="https://terrakube.platform.local"
 	fi
 
-	sed -i "s+TEMPLATE_GITPOD_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/dex/config-ldap.yaml
-	sed -i "s+TEMPLATE_GITPOD_REDIRECT+$uiRedirect+gi" scripts/setup/dex/config-ldap.yaml
-
-}
-
-function generateThunderClientConfiguration() {
-	USER=$(whoami)
-	if [ "$USER" = "gitpod" ]; then
-		jwtIssuer="$(gp url 5556)/dex"
-		terrakubeApi=$(gp url 8080)
-		terrakubeRegistry=$(gp url 8075)
-	else
-		jwtIssuer="http://localhost:5556"
-		terrakubeApi="http://localhost:8080"
-		terrakubeRegistry="http://localhost:8075"
-	fi
-
-	rm -f thunder-tests/thunderEnvironment.json
-	cp scripts/template/thunder-tests/thunderEnvironment.json thunder-tests/
-	sed -i "s+TEMPLATE_GITPOD_JWT_ISSUER+$jwtIssuer+gi" thunder-tests/thunderEnvironment.json
-	sed -i "s+TEMPLATE_GITPOD_API+$terrakubeApi+gi" thunder-tests/thunderEnvironment.json
-	sed -i "s+TEMPLATE_GITPOD_REGISTRY+$terrakubeRegistry+gi" thunder-tests/thunderEnvironment.json
+	sed -i "s+TEMPLATE_DEVCONTAINER_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/devcontainer/config-ldap.yaml
+	sed -i "s+TEMPLATE_DEVCONTAINER_REDIRECT+$uiRedirect+gi" scripts/setup/devcontainer/config-ldap.yaml
 }
 
 function generateWorkspaceInformation() {
-	rm -f GITPO.md
-	cp scripts/template/gitpod/GITPOD_TEMPLATE.md GITPOD.md
+	rm -f devcontainer.md
+	cp scripts/template/DEVCONTAINER_TEMPLATE.md DEVCONTAINER.md
 
-	WORKSPACE_API=$(gp url 8080)
-	WORKSPACE_REGISTRY=$(gp url 8075)
-	WORKSPACE_EXECUTOR=$(gp url 8090)
-	WORKSPACE_UI=$(gp url 3000)
-	WORKSPACE_DEX=$(gp url 5556)
-	WORKSPACE_MINIO=$(gp url 9000)
-	WORKSPACE_CONSOLE_MINIO=$(gp url 9001)
-	WORKSPACE_LOGIN_REGISTRY=$(gp url 8075 | sed "s+https://++g")
+	WORKSPACE_API="https://$CODESPACE_NAME-8080.app.github.dev"
+	WORKSPACE_REGISTRY="https://$CODESPACE_NAME-8075.app.github.dev"
+	WORKSPACE_EXECUTOR="https://$CODESPACE_NAME-8090.app.github.dev"
+	WORKSPACE_UI="https://$CODESPACE_NAME-3000.app.github.dev"
+	WORKSPACE_DEX="https://$CODESPACE_NAME-5556.app.github.dev"
+	WORKSPACE_MINIO="https://$CODESPACE_NAME-9000.app.github.dev"
+	WORKSPACE_CONSOLE_MINIO="https://$CODESPACE_NAME-9001.app.github.dev"
+	WORKSPACE_LOGIN_REGISTRY=$(echo "https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
 
-	sed -i "s+GITPOD_WORKSPACE_UI+$WORKSPACE_UI+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_API+$WORKSPACE_API+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_REGISTRY+$WORKSPACE_REGISTRY+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_EXECUTOR+$WORKSPACE_EXECUTOR+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_DEX+$WORKSPACE_DEX+gi" GITPOD.md
-	sed -i "s+GITPOD_LOGIN_REGISTRY+$WORKSPACE_LOGIN_REGISTRY+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_MINIO+$WORKSPACE_MINIO+gi" GITPOD.md
-	sed -i "s+GITPOD_WORKSPACE_CONSOLE_MINIO+$WORKSPACE_CONSOLE_MINIO+gi" GITPOD.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_UI+$WORKSPACE_UI+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_API+$WORKSPACE_API+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_REGISTRY+$WORKSPACE_REGISTRY+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_EXECUTOR+$WORKSPACE_EXECUTOR+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_DEX+$WORKSPACE_DEX+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_LOGIN_REGISTRY+$WORKSPACE_LOGIN_REGISTRY+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_MINIO+$WORKSPACE_MINIO+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_CONSOLE_MINIO+$WORKSPACE_CONSOLE_MINIO+gi" DEVCONTAINER.md
 }
 
-function generateDexConfiguration() {
-
-	if [ -e .devcontainer/.env-dex ]; then
-		echo "File exists."
-		rm -rf .devcontainer/.env-dex
-	else
-		echo "File does not exist."
-		touch .devcontainer/.env-dex
-	fi
-
-	if [ "$USER" = "gitpod" ]; then
-		TK_DEX_ISSUER="$(gp url 5556)/dex"
-		TK_DEX_API=$(gp url 8080)
-		TK_DEX_REGISTRY=$(gp url 8075)
-	elif [ "$USER" = "vscode" ]; then
-		touch .devcontainer/.env-dex
-		echo "TK_DEX_VERSION=v2.42.0" >>.devcontainer/.env-dex
-		echo "TK_DEX_ISSUER=https://terrakube-dex.platform.local/dex" >>.devcontainer/.env-dex
-		echo "TK_DEX_STATIC_CLIENT=c3RhdGljQ2xpZW50czoKICAtIGlkOiBleGFtcGxlLWFwcAogICAgcmVkaXJlY3RVUklzOgogICAgICAtICdodHRwczovL3RlcnJha3ViZS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAnaHR0cHM6Ly90ZXJyYWt1YmUtYXBpLnBsYXRmb3JtLmxvY2FsJwogICAgICAtICdodHRwczovL3RlcnJha3ViZS1yZWdpc3RyeS5wbGF0Zm9ybS5sb2NhbCcKICAgICAgLSAvZGV2aWNlL2NhbGxiYWNrCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDAvbG9naW4nCiAgICAgIC0gJ2h0dHA6Ly9sb2NhbGhvc3Q6MTAwMDEvbG9naW4nCiAgICBuYW1lOiBFeGFtcGxlIEFwcAogICAgcHVibGljOiB0cnVl" >>.devcontainer/.env-dex
-	fi
-}
-
-if [ "$USER" != "gitpod" ] && [ "$USER" == "vscode" ]; then
-	openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
-
-	if keytool -list -cacerts -storepass "changeit" | grep -q "custom-ca"; then
-		echo "Alias $ALIAS exists. Deleting it first..."
-		keytool -delete -alias "custom-ca" -cacerts -storepass "changeit" -noprompt
-	fi
-
-	keytool -import -alias custom-ca -cacerts -file /workspaces/terrakube/.devcontainer/rootCA.der -storepass "changeit" -noprompt
-
-	#  export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-service:10000/devstoreaccount1;"
-	#
-	#  az storage container create --name registry
-	#  az storage container create --name tfstate
-	#  az storage container create --name tfoutput
-
-	SApassword=P@ssw0rd!
-
-	# Parameters
-	dacpath=$1
-
-	for i in {1..30}; do
-		sqlcmd -S mssql-service -U sa -P $SApassword -d master -C -Q "SELECT * FROM SYS.DATABASES" >/dev/null
-		if [ $? -eq 0 ]; then
-			sqlcmd -S mssql-service -U sa -P P@ssw0rd! -i /workspaces/terrakube/scripts/init-mssql.sql -C
-			echo "mssql ready"
-			break
-		else
-			echo "mssql not ready yet..."
-			sleep 1
-		fi
-	done
-fi
+#if [ "$USER" != "gitpod" ] && [ "$USER" == "vscode" ]; then
+#	openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
+#
+#	if keytool -list -cacerts -storepass "changeit" | grep -q "custom-ca"; then
+#		echo "Alias $ALIAS exists. Deleting it first..."
+#		keytool -delete -alias "custom-ca" -cacerts -storepass "changeit" -noprompt
+#	fi
+#
+#	keytool -import -alias custom-ca -cacerts -file /workspaces/terrakube/.devcontainer/rootCA.der -storepass "changeit" -noprompt
+#
+#	#  export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-service:10000/devstoreaccount1;"
+#	#
+#	#  az storage container create --name registry
+#	#  az storage container create --name tfstate
+#	#  az storage container create --name tfoutput
+#
+#	SApassword=P@ssw0rd!
+#
+#	# Parameters
+#	dacpath=$1
+#
+#	for i in {1..30}; do
+#		sqlcmd -S mssql-service -U sa -P $SApassword -d master -C -Q "SELECT * FROM SYS.DATABASES" >/dev/null
+#		if [ $? -eq 0 ]; then
+#			sqlcmd -S mssql-service -U sa -P P@ssw0rd! -i /workspaces/terrakube/scripts/init-mssql.sql -C
+#			echo "mssql ready"
+#			break
+#		else
+#			echo "mssql not ready yet..."
+#			sleep 1
+#		fi
+#	done
+#fi
 
 generateApiVars
 generateRegistryVars
 generateExecutorVars
 generateUiVars
 generateDexConfiguration
-generateThunderClientConfiguration
 
 USER=$(whoami)
-if [ "$USER" = "gitpod" ]; then
+	if [ "$CODESPACES" = "true" ]; then
 	generateWorkspaceInformation
 fi
 
@@ -535,11 +443,5 @@ openssl genrsa -out private_temp.pem 2048
 openssl rsa -in private_temp.pem -outform PEM -pubout -out public.pem
 openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in private_temp.pem -out private.pem
 rm private_temp.pem
-
-# Install UI dependencies for devcontainer
-if [ "$USER" = "vscode" ]; then
-	echo "Installing UI dependencies..."
-	cd ui && corepack enable && yarn install && cd ..
-fi
 
 echo "Setup Development Environment Completed"

@@ -45,9 +45,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
     dpkg -i bao_2.2.2_linux_${BAO_ARCH}.deb && \
     rm bao_2.2.2_linux_${BAO_ARCH}.deb
 
-COPY rootCA.pem /usr/local/share/ca-certificates/root.crt
+COPY rootCA.pem* /usr/local/share/ca-certificates/root.crt
 
 RUN update-ca-certificates
 
+RUN mkdir -p /home/vscode/.m2 && chown -R vscode:vscode /home/vscode/.m2
 
 ENTRYPOINT ["sleep", "infinity"]
