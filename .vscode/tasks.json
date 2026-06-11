@@ -44,7 +44,7 @@
     {
       "label": "yarn-install",
       "type": "shell",
-      "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && corepack enable && yarn install && cd ..; fi"
+      "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 && corepack enable && yarn install && cd ..; fi"
     }
   ]
 }
