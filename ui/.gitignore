@@ -33,3 +33,4 @@ package-lock.json
 env-config.js
 .env-local
 .yarn/*
+scripts/setup/devcontainer/config-ldap.yaml
