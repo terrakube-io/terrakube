@@ -7,6 +7,7 @@ import io.terrakube.api.rs.webhook.WebhookEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -38,6 +39,7 @@ public class WebhookService {
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
     BitBucketWebhookService bitBucketWebhookService;
+    AzDevOpsWebhookService azDevOpsWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     ObjectMapper objectMapper;
@@ -74,6 +76,11 @@ public class WebhookService {
             case BITBUCKET:
                 webhookResult = bitBucketWebhookService.processWebhook(jsonPayload, headers,
                         base64WorkspaceId);
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                webhookResult = azDevOpsWebhookService.processWebhook(jsonPayload, headers,
+                        base64WorkspaceId, workspace);
                 break;
             default:
                 break;
@@ -163,6 +170,53 @@ public class WebhookService {
         return savedJob;
     }
 
+    /**
+     * Triggers a plan for a push detected by outbound polling, reusing the same event matching and
+     * job scheduling as an inbound webhook. Returns true when a job was created.
+     */
+    @Transactional
+    public boolean triggerPolledPush(UUID webhookId, WebhookResult webhookResult) {
+        Webhook webhook = webhookRepository.findById(webhookId).orElse(null);
+        if (webhook == null) {
+            log.warn("Polled webhook {} no longer exists", webhookId);
+            return false;
+        }
+        Workspace workspace = webhook.getWorkspace();
+        try {
+            WebhookEvent matchedEvent = findMatchingPushEventForPoll(webhookResult, webhook);
+            log.info("Polled push for workspace {}, using template with id {}", workspace.getName(),
+                    matchedEvent.getTemplateId());
+            Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
+            sendCommitStatus(savedJob);
+            return true;
+        } catch (IllegalArgumentException e) {
+            log.info("No matching push event for polled commit on workspace {}: {}", workspace.getName(),
+                    e.getMessage());
+            return false;
+        } catch (Exception e) {
+            log.error("Error creating job for polled push on workspace {}", workspace.getName(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Event matching for polled pushes: the branch must match, and the path filter is applied only
+     * when the changed files are known. When the file list is empty/unknown (the diff couldn't be
+     * resolved) a detected commit still triggers, so polling reliably runs on any new commit rather
+     * than silently dropping it.
+     */
+    private WebhookEvent findMatchingPushEventForPoll(WebhookResult result, Webhook webhook) {
+        return webhookEventRepository
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH)
+                .stream()
+                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
+                        && (result.getFileChanges() == null || result.getFileChanges().isEmpty()
+                                || checkFileChanges(result.getFileChanges(), webhookEvent)))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No PUSH webhook event matches branch " + result.getBranch()));
+    }
+
     private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
         WebhookEventType eventType = result.isPrComment()
                 ? WebhookEventType.PULL_REQUEST
@@ -207,6 +261,10 @@ public class WebhookService {
             case BITBUCKET:
                 webhookRemoteId = bitBucketWebhookService.createOrUpdateWebhook(workspace, persistedWebhook);
                 break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                webhookRemoteId = azDevOpsWebhookService.createOrUpdateWebhook(workspace, persistedWebhook);
+                break;
             default:
                 break;
         }
@@ -242,6 +300,10 @@ public class WebhookService {
                 break;
             case BITBUCKET:
                 bitBucketWebhookService.deleteWebhook(workspace, webhook.getRemoteHookId());
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                azDevOpsWebhookService.deleteWebhook(workspace, webhook.getRemoteHookId());
                 break;
             default:
                 break;
@@ -294,6 +356,10 @@ public class WebhookService {
                 break;
             case GITLAB:
                 gitLabWebhookService.sendCommitStatus(job, JobStatus.pending);
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.pending);
                 break;
             default:
                 break;

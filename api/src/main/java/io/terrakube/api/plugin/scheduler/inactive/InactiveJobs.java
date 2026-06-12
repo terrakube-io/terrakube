@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import lombok.AllArgsConstructor;
@@ -33,6 +34,7 @@ public class InactiveJobs implements org.quartz.Job {
     private final JobRepository jobRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final GitHubWebhookService gitHubWebhookService;
+    private final AzDevOpsWebhookService azDevOpsWebhookService;
     private final StepRepository stepRepository;
 
     @Transactional
@@ -100,6 +102,11 @@ public class InactiveJobs implements org.quartz.Job {
             case GITLAB:
                 log.info("Updating VCS information for GITLAB on job {}", job.getId());
                 gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                log.info("Updating VCS information for AZURE_DEVOPS on job {}", job.getId());
+                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.unknown);
                 break;
             default:
                 break;
