@@ -1,180 +1,140 @@
-## Terrakube Ready to Code.
-We use Gitpod to develop the platform. You can have a complete development environment to test all the components and features with one click using the following button.
+## Terrakube GitHub codespaces.
 
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod&style=flat-square)](https://gitpod.io/#https://github.com/terrakube-io/terrakube)
+GitHub Codespaces
 
-Running Terrakube in Gitpod is like running the platform in any Kubernetes distribution in Azure, Aws or GCP, so you will be able to use all the features available with one single click without installing any software in your computer and the environment should be ready in only 1 or 2 minute.
+This page contains the configuration for a development container using GitHub Codespaces that provides a consistent environment for working with Terrakube.
 
-> Terrakube API uses an in memory database, it will be deleted and preloaded with default information in every startup.
+The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
+Features
 
-### Gitpod Environment Information.
-A file called ***GITPOD.md*** will have the information for the entire workspace
+* Java 25 (Liberica)
+* Maven 3.9.9
+* Node.js 24.x with Yarn
+* VS Code extensions for Java, JavaScript/TypeScript
 
-![image](https://user-images.githubusercontent.com/4461895/181385377-c25610e5-f39b-48f4-aa5c-3bfafce54794.png)
+Prerequisites
 
-The configuration is generated dynamically using the following bash script. This is executed by Gitpod in the environment startup process.
+* GitHub Account
 
-```bash
-./scripts/setupDevelopmentEnvironment.sh
-```
-> If for some reason we need to execute the script again, it needs to be executed form the ***/workspace/terrakube*** folder
+Prepare project
 
-The development environment will have the following information:
+The first step is to create a GitHub fork to work with Terrakube
 
-| Groups               | 
-|----------------------|
-| TERRAKUBE_ADMIN      | 
-| TERRAKUBE_DEVELOPERS | 
-| AZURE_DEVELOPERS     | 
-| AWS_DEVELOPERS       | 
-| GCP_DEVELOPERS       | 
+<img width="763" height="186" alt="image" src="https://github.com/user-attachments/assets/f945a48b-4915-44f6-a2e2-aba67a28cd31" />
 
-| User              |  Password | Member Of                             |
-|-------------------|-----------|---------------------------------------|
-| admin@example.com | admin     | TERRAKUBE_ADMIN, TERRAKUBE_DEVELOPERS |
-| aws@example.com   | aws       | AWS_DEVELOPERS                        |
-| azure@example.com | azure     | AZURE_DEVELOPERS                      |
-| gcp@example.com   | gcp       | GCP_DEVELOPERS                        |
+Once you have created a fork you need to create a new branch to work for any new Terrakube feature
 
-### Start Development Environment
-To run all the Terrakube components run the following task:
+<img width="578" height="568" alt="image" src="https://github.com/user-attachments/assets/ed41d850-a903-4fcd-8216-839c07f640c5" />
 
-![image](https://user-images.githubusercontent.com/4461895/181374024-a8f546ba-dbf7-4ac9-a74b-04ff8759f165.png)
+Open a new GitHub workspace using "new with options"
 
-After a couple of seconds all the components will be running, you can start/stop/restart any component as needed.
+<img width="506" height="366" alt="image" src="https://github.com/user-attachments/assets/5f918b51-cdf2-4af7-85a4-2335a21b2a41" />
 
-![image](https://user-images.githubusercontent.com/4461895/181374080-c7486a32-b4f2-41d3-9112-5861e3fdc8d9.png)
+Select a 4 CPU configuration like the following.
 
-### Login Development Environment
-After the application startup is completed, we can login to the development environment, to get the URL you can execute the following command:
-```bash
-gp url 3000
-```
-The Terrakube login will look like this example:
+<img width="709" height="434" alt="image" src="https://github.com/user-attachments/assets/254799e9-fc67-4f41-ac86-b3d3982762e1" />
 
-![image](https://user-images.githubusercontent.com/4461895/181138967-401c142a-9366-4d1b-8506-1c667f5ab543.png)
+Dev container setup will take a couple of minutes.
 
-### Dex Authentication.
-The Gitpod environment is using an OpenLDAP tha is connected to a Dex using the LDAP connector.
-The OpenLDAP configuration(users and groups) can be found in the following file:
-```
-scripts/setup/dex/config-ldap.ldif
-```
-The Dex configuration file is generated dynamically and will be available in the following file:
-```
-scripts/setup/dex/config-ldap.yaml
-```  
-The template that is used to generate the Dex configuration file can be found in this path:
-```
-scripts/template/dex/template-config-ldap.yaml
-```
-Dex login page should look like this example:
+<img width="1488" height="466" alt="image" src="https://github.com/user-attachments/assets/82b18842-2655-4e6a-842a-2fc4b165d821" />
 
-![image](https://user-images.githubusercontent.com/4461895/181138996-f6ae507f-c3cf-460a-bc12-60ed6cb2e159.png)
+Once the environment setup is completed, you will see the following message
 
-### Sample Organizations
-The development environment will be preloaded with 4 organizations(azure, gcp, aws and simple), this information is loaded inside the API startup and the scripts to load the information can be found in the following xml files
-```
-api/src/main/resources/db/changelog/demo-data/aws.xml
-api/src/main/resources/db/changelog/demo-data/gcp.xml
-api/src/main/resources/db/changelog/demo-data/azure.xml
-api/src/main/resources/db/changelog/demo-data/simple.xml
-```
-![image](https://user-images.githubusercontent.com/4461895/181139038-ff3c449a-7c4a-4346-b1d1-08a150b99307.png)
+<img width="1417" height="311" alt="image" src="https://github.com/user-attachments/assets/70d89f7b-86c1-47a0-9048-7d52c5da5033" />
 
-### Sample Teams
-Depending of the selected organization and user you will see different information available.
-![image](https://user-images.githubusercontent.com/4461895/181139272-3d73ece3-718c-43ec-aaaf-8cff7ddef227.png)
+Now we can run the new development environment
 
-### Sample Modules
-Each organization is preloaded with some modules that can be found in Github like the following:
+<img width="411" height="366" alt="image" src="https://github.com/user-attachments/assets/125ca36d-a195-4168-b1ad-145eb3961da4" />
 
-![image](https://user-images.githubusercontent.com/4461895/181139092-c82fb7b1-6423-4159-ba74-8d842468ab75.png)
+You need to accept using the Java "Standard Mode".
 
-![image](https://user-images.githubusercontent.com/4461895/181139125-8cbe1cc8-9149-4ab7-bd5f-a5430bafb792.png)
+<img width="468" height="134" alt="image" src="https://github.com/user-attachments/assets/55959647-fb84-4480-bc9d-d5dfc8acabd6" />
 
-![image](https://user-images.githubusercontent.com/4461895/181139149-a052e4b0-ad63-49f9-bb52-8dfbb1c54915.png)
+The dev container will download all the maven dependencies, this could take a couple of minutes
 
-### Templates
-Each organization is preloaded with the following templates to run Terrakube jobs:
+<img width="501" height="156" alt="image" src="https://github.com/user-attachments/assets/269031b2-7469-459d-af39-04172b9ebff6" />
 
-![image](https://user-images.githubusercontent.com/4461895/181139239-ee39bb71-e52d-43ca-b791-075701d4d9eb.png)
+Once all dependencies are downloaded, you can see the four component running like the following
 
-For more information of how to use templates please refer to the following [repository](https://github.com/terrakube-io/terrakube-extensions)
+<img width="405" height="236" alt="image" src="https://github.com/user-attachments/assets/b53db619-81d7-468a-8089-ad0cd9a829e0" />
 
-### Workspaces
-All the organization have different empty workspaces, the ***Simple*** organization can be used for testing because the workspace is using a basic terraform file with the following resources:
-- null_resource
-- time_sleep
+If not you can simply start the ui, api, registry and executor one by one using the following menu
 
-Other workspaces can be created but they will be deleted on each restart unless are added inside the initialization scripts:
-```
-api/src/main/resources/db/changelog/demo-data/simple.xml
-```
-![image](https://user-images.githubusercontent.com/4461895/181139337-624bdfcc-684b-4531-9cac-6cc6455232de.png)
+<img width="403" height="188" alt="image" src="https://github.com/user-attachments/assets/50d7e2f7-8112-4ab8-88fb-9bcdd6eaa9b2" />
 
-### API Testing
-Gitpod has the ***thunder-client*** installed to easily test the API without using the UI.
+After we have the components running, we need to change the port configuration, we need to make sure DEX, the api, registry and ui are using public ports.
 
-![image](https://user-images.githubusercontent.com/4461895/181368786-86e18f0f-f04a-49cd-a7c3-345329f2550e.png)
+<img width="1341" height="314" alt="image" src="https://github.com/user-attachments/assets/eba70773-6a70-41bf-b0da-f7857b8a3f27" />
 
-All the environment variables for the collection are generated on each Gitpod workspace startup
-The environment variables template can be found in the following directory:
-```
-scripts/template/thunder-tests/thunderEnvironment.json
-```
-![image](https://user-images.githubusercontent.com/4461895/181370059-449ea154-ebff-4da7-b498-46cee1437f42.png)
+Example:
 
-To authenticate the thunder client you can use Dex Device Code Authentication using the following request
-![image](https://user-images.githubusercontent.com/4461895/181369061-41cf588c-c5de-41cf-8c81-2d09ae34d416.png)
+<img width="1390" height="312" alt="image" src="https://github.com/user-attachments/assets/51dcbf89-8bbe-4e51-bcf3-1e7516a42074" />
 
-The response should look like the following and you can use the ***verification_uri_complete*** to finish the device authentication.
-```
-{
-  "device_code": "htlj4w73ftjfplinifqntp7ept6xaratvgauu2nj3nldlcgxjym",
-  "user_code": "HLMH-WKXX",
-  "verification_uri": "https://5556-terrakube-io-terrakube-XXXXX.ws-us54.gitpod.io/dex/device",
-  "verification_uri_complete": "https://5556-terrakube-io-terrakube-XXXX.ws-us54.gitpod.io/dex/device?user_code=HLMH-WKXX",
-  "expires_in": 300,
-  "interval": 5
-}
-```
-![image](https://user-images.githubusercontent.com/4461895/181369527-9fe35c68-9753-4c59-886a-871795549a56.png)
-![image](https://user-images.githubusercontent.com/4461895/181369588-5a9d26f5-bcf8-439c-8aaa-03ab2eff5a1f.png)
+In the end it should look like this using public ports:
 
-Once the Dex device code authentication is completed you can use the following request to get the access token.
+<img width="1390" height="312" alt="image" src="https://github.com/user-attachments/assets/18daccf3-cb00-4faa-a9c0-fc324a58c6b6" />
 
-![image](https://user-images.githubusercontent.com/4461895/181369778-e183a4d6-2506-4960-8824-08b66b4ee1c5.png)
+The development environment automatically creates "DEVCONTAINER.md" that contains all the URL for each component.
 
-Now you can call any method available in the API without the UI
+<img width="455" height="497" alt="image" src="https://github.com/user-attachments/assets/895491b1-9f73-4988-8b6e-b647b5367816" />
 
-![image](https://user-images.githubusercontent.com/4461895/181369869-eddae1d5-0b13-4e6a-b484-3fcefc665d4d.png)
+You will need to visit the URL for dex, ui, api and registry in order to accept that we need to use a public port for our environment.
 
-### Terraform Login Protocol
-Terraform login protocol can be tested using the ***thunder-client*** collection:
+<img width="599" height="400" alt="image" src="https://github.com/user-attachments/assets/123b9ba0-fc39-4e0d-a15b-374e0133ed43" />
 
-![image](https://user-images.githubusercontent.com/4461895/181377967-b0178cf5-9378-4305-a6c8-d516c6882f12.png)
+You will see a message like this and click "continue"
 
-The response should look similar to the following:
+<img width="607" height="600" alt="image" src="https://github.com/user-attachments/assets/33f926eb-3b40-4313-bdcb-6da3cc8c5ab5" />
 
-![image](https://user-images.githubusercontent.com/4461895/181378021-61ec1041-842c-4b58-bcb3-14df2aeb3ad3.png)
+Once you click continue
 
-### Terraform Module Protocol
-There is one example of terraform module protocol inside the ***thunder-client*** collection that you can be used for testing purposes executing the following two request.
+<img width="728" height="439" alt="image" src="https://github.com/user-attachments/assets/b1be27ec-1f6c-4c35-9e3e-eef7a8c17d0a" />
 
-![image](https://user-images.githubusercontent.com/4461895/181378277-c58250be-1dec-4351-a91e-ae66e0417826.png)
+You need to do the same for the other components: api, registry, executor and dex
 
-The response should look like the following:
+<img width="728" height="439" alt="image" src="https://github.com/user-attachments/assets/2d43ec01-695d-4130-9aa5-8ec57e585f9e" />
 
-- Getting versions for the module
+Now you can go back to the UI and click "Sign in"
 
-![image](https://user-images.githubusercontent.com/4461895/181378462-e2ddb743-5dfe-40f9-b780-db948635f237.png)
+<img width="426" height="320" alt="image" src="https://github.com/user-attachments/assets/2ad9ccaa-7244-486d-bf67-dcc8882536e7" />
 
-- Getting zip file for the module
+This will redirect you to dex where you can use "admin@example.com" and "admin" to complete the login.
 
-![image](https://user-images.githubusercontent.com/4461895/181378504-39aa618f-2d5f-4873-a4c5-3c4e64795191.png)
+<img width="741" height="269" alt="image" src="https://github.com/user-attachments/assets/dee55756-9c1f-4e68-95fa-c675cceb15dd" />
 
-### OpenAPI Spec
-The specification can be obtained using the following request:
+Grant DEX access
 
-![image](https://user-images.githubusercontent.com/4461895/181378782-4cd46efc-a4ea-472f-9547-9e1d22cc91e5.png)
+<img width="1205" height="500" alt="image" src="https://github.com/user-attachments/assets/fd2e033d-8375-4bf6-a8c7-22631bc60e7b" />
+
+Now you can start testing the development environment and do any required changes
+
+<img width="1718" height="671" alt="image" src="https://github.com/user-attachments/assets/cfb05782-702b-42f9-95ab-e2ef7d65d76d" />
+
+If you need to update the code for any java component, you can simply click "Stop"
+
+<img width="600" height="228" alt="image" src="https://github.com/user-attachments/assets/33d2b784-c714-4cb2-adb6-b91b29a1774d" />
+
+Start a new instance
+
+<img width="493" height="165" alt="image" src="https://github.com/user-attachments/assets/f4ddbb1d-dbcb-4a92-99c9-b196cbb65505" />
+
+Once all the changes are completed, we pick the files an push the changes to our feature branch
+
+<img width="795" height="324" alt="image" src="https://github.com/user-attachments/assets/b077cc33-0cf8-481d-a6a3-089b500a6eea" />
+
+You can return to GitHub and create a new pull request to the Terrakube main repository
+
+<img width="1043" height="374" alt="image" src="https://github.com/user-attachments/assets/34ba80e3-728c-4a1b-8c31-9c4b777268a8" />
+
+In the end the pull request will look like this.
+
+<img width="1193" height="703" alt="image" src="https://github.com/user-attachments/assets/30df9e2a-6127-4372-848e-cb9fd5c7ee8e" />
+
+Now you have completed your open source contribution to Terrakube 🙂
+
+Finally you can go to GitHub and delete your codespace.
+
+<img width="430" height="678" alt="image" src="https://github.com/user-attachments/assets/453c88d5-ff41-4b06-8dd0-4e5ea3c0124a" />
+
+
+
