@@ -6,5 +6,6 @@ public enum JobVia {
    Github,
    Gitlab,
    Bitbucket,
+   AzureDevops,
    Schedule
 }
