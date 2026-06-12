@@ -7,7 +7,6 @@
 
 <div id="badges" align="center">
 
-[![gitpod](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod&style=flat-square)](https://gitpod.io/#https://github.com/terrakube-io/terrakube)
 [![Build](https://github.com/terrakube-io/terrakube/actions/workflows/pull_request.yml/badge.svg)](https://github.com/terrakube-io/terrakube/actions/workflows/pull_request.yml)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=AzBuilder_azb-server&metric=coverage)](https://sonarcloud.io/dashboard?id=AzBuilder_azb-server)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/terrakube-io/terrakube/blob/main/LICENSE)
@@ -17,7 +16,11 @@
 
 </div>
 
+## GitHub Development Environment
 
+To quickly test Terrakube without having to install anything in your computer use the following:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new/terrakube-io/terrakube)
 
 ### Features
 The key features of Terrakube are:
