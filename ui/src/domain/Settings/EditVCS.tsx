@@ -74,7 +74,7 @@ const renderVCSType = (vcs: VcsTypeExtended): string => {
     case "GITHUB_ENTERPRISE":
       return "GitHub Enterprise";
     case "GITHUB_APP":
-      return "Github App";
+      return "GitHub App";
     default:
       return "GitHub";
   }

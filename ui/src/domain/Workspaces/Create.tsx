@@ -87,21 +87,21 @@ export const CreateWorkspace = () => {
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const gitlabItems = [
     {
-      label: "Gitlab.com",
+      label: "GitLab.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB);
       },
     },
     {
-      label: "Gitlab Community Edition",
+      label: "GitLab Community Edition",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
       },
     },
     {
-      label: "Gitlab Enterprise Edition",
+      label: "GitLab Enterprise Edition",
       key: "3",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
@@ -111,14 +111,14 @@ export const CreateWorkspace = () => {
 
   const githubItems = [
     {
-      label: "Github.com",
+      label: "GitHub.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB);
       },
     },
     {
-      label: "Github Enterprise",
+      label: "GitHub Enterprise",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
@@ -600,7 +600,7 @@ export const CreateWorkspace = () => {
                     <Dropdown menu={{ items: githubItems }}>
                       <Button size="large">
                         <Space>
-                          <GithubOutlined /> Github <DownOutlined />
+                          <GithubOutlined /> GitHub <DownOutlined />
                         </Space>
                       </Button>
                     </Dropdown>
@@ -608,7 +608,7 @@ export const CreateWorkspace = () => {
                       <Button size="large">
                         <Space>
                           <GitlabOutlined />
-                          Gitlab <DownOutlined />
+                          GitLab <DownOutlined />
                         </Space>
                       </Button>
                     </Dropdown>

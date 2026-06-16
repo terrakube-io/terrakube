@@ -4,7 +4,7 @@ GitHub Codespaces
 
 This page contains the configuration for a development container using GitHub Codespaces that provides a consistent environment for working with Terrakube.
 
-The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
+The Dev Containers setup includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
 Features
 
 * Java 25 (Liberica)
@@ -34,7 +34,7 @@ Select a 4 CPU configuration like the following.
 
 <img width="709" height="434" alt="image" src="https://github.com/user-attachments/assets/254799e9-fc67-4f41-ac86-b3d3982762e1" />
 
-Dev container setup will take a couple of minutes.
+Dev Containers setup will take a couple of minutes.
 
 <img width="1488" height="466" alt="image" src="https://github.com/user-attachments/assets/82b18842-2655-4e6a-842a-2fc4b165d821" />
 
@@ -50,7 +50,7 @@ You need to accept using the Java "Standard Mode".
 
 <img width="468" height="134" alt="image" src="https://github.com/user-attachments/assets/55959647-fb84-4480-bc9d-d5dfc8acabd6" />
 
-The dev container will download all the maven dependencies, this could take a couple of minutes
+The Dev Containers environment will download all the maven dependencies, this could take a couple of minutes
 
 <img width="501" height="156" alt="image" src="https://github.com/user-attachments/assets/269031b2-7469-459d-af39-04172b9ebff6" />
 
@@ -62,7 +62,7 @@ If not you can simply start the ui, api, registry and executor one by one using 
 
 <img width="403" height="188" alt="image" src="https://github.com/user-attachments/assets/50d7e2f7-8112-4ab8-88fb-9bcdd6eaa9b2" />
 
-After we have the components running, we need to change the port configuration, we need to make sure DEX, the api, registry and ui are using public ports.
+After we have the components running, we need to change the port configuration, we need to make sure Dex, the api, registry and ui are using public ports.
 
 <img width="1341" height="314" alt="image" src="https://github.com/user-attachments/assets/eba70773-6a70-41bf-b0da-f7857b8a3f27" />
 
@@ -102,7 +102,7 @@ This will redirect you to dex where you can use "admin@example.com" and "admin" 
 
 <img width="741" height="269" alt="image" src="https://github.com/user-attachments/assets/dee55756-9c1f-4e68-95fa-c675cceb15dd" />
 
-Grant DEX access
+Grant Dex access
 
 <img width="1205" height="500" alt="image" src="https://github.com/user-attachments/assets/fd2e033d-8375-4bf6-a8c7-22631bc60e7b" />
 

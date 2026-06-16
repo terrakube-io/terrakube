@@ -255,7 +255,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         if (response.getStatusCode().value() == 201) {
             log.info("Job status sent successfully to GitHub");
         } else {
-            log.error(String.format("Failed to send job status to Github, message %s", response.getBody()));
+            log.error(String.format("Failed to send job status to GitHub, message %s", response.getBody()));
         }
 
         // Optional: Check if the commit is part of a PR and send status to the PR as

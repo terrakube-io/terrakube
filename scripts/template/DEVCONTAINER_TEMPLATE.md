@@ -1,4 +1,4 @@
-# Devcontainer Workspace Information
+# Dev Containers Workspace Information
 
 Endpoints:
 
@@ -17,10 +17,10 @@ Executor:
 Dex Authentication:
 - DEVCONTAINER_WORKSPACE_DEX
 
-Minio Endpoint:
+MinIO Endpoint:
 - DEVCONTAINER_WORKSPACE_MINIO
 
-Minio Console:
+MinIO Console:
 - DEVCONTAINER_WORKSPACE_CONSOLE_MINIO
 
 Terraform Protocols

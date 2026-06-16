@@ -173,7 +173,7 @@ public class TokenService {
         // If the token is already set, return it, normally this is oAuth token
         if (token!=null && !token.isEmpty()) return token;
         
-        // Otherwise, get the token from other table, currently only Github is supported.
+        // Otherwise, get the token from other table, currently only GitHub is supported.
         return  gitHubTokenService.getAccessToken(vcs, ownerAndRepo);
     }
 
@@ -195,7 +195,7 @@ public class TokenService {
 
         URI uri = new URI(gitPath);
         String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
-        // Otherwise, get the token from other table, currently only Github is supported.
+        // Otherwise, get the token from other table, currently only GitHub is supported.
         return  gitHubTokenService.getAccessToken(vcs, ownerAndRepo);
     }
 }
