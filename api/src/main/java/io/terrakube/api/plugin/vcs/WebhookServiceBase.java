@@ -40,7 +40,7 @@ public class WebhookServiceBase {
     }
 
     /*
-    Gitlab is a special case, the repos URL could be
+    GitLab is a special case, the repos URL could be
     https://gitlab.com/myuser/simple-terraform -> Normal repo
     https://gitlab.com/terraform2745926/simple-terraform -> Repo inside project
     https://gitlab.com/terraform2745926/test/simple-terraform -> Repo inside project and subgroup

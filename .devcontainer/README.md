@@ -1,6 +1,6 @@
 # Terrakube Development Container
 
-This directory contains the configuration for a development container that provides a consistent environment for working with Terrakube. The devcontainer includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
+This directory contains the configuration for a development container that provides a consistent environment for working with Terrakube. The Dev Containers setup includes all the necessary tools and dependencies to develop both the Java backend, TypeScript frontend components and includes terraform CLI.
 
 > **Note:** This setup has been tested on Ubuntu-based distributions and macOS (including Apple Silicon). Windows and GitHub Codespaces support may vary.
 
@@ -20,7 +20,7 @@ This directory contains the configuration for a development container that provi
 
 #### Local Development Domains
 
-To use the devcontainer we need to setup the following domains in our local computer:
+To use the Dev Containers setup we need to setup the following domains in our local computer:
 
 ```shell
 terrakube.platform.local
@@ -42,7 +42,7 @@ The local CA is now installed in the system trust store! ⚡️
 The local CA is now installed in the Firefox trust store (requires browser restart)! 🦊
 ```
 
-#### Create Docker Network for the devcontainer
+#### Create Docker Network for the Dev Containers environment
 
 ```bash
 docker network create terrakube-network -d bridge --subnet 10.25.25.0/24 --gateway 10.25.25.254
@@ -61,7 +61,7 @@ Update the /etc/hosts file adding the following entries:
 10.25.25.253 terrakube-dex.platform.local
 ```
 
-### Opening the Project in a Dev Container
+### Opening the Project in Dev Containers
 
 1. Clone the Terrakube repository and run the project:
    ```bash
@@ -90,7 +90,7 @@ Update the /etc/hosts file adding the following entries:
 
 ## Ports
 
-The devcontainer forwards the following ports:
+The Dev Containers environment forwards the following ports:
 - 8080: Terrakube API 
 - 8075: Terrakube Registry
 - 8090: Terrakube Executor
@@ -99,6 +99,6 @@ The devcontainer forwards the following ports:
 
 ## Customization
 
-You can customize the devcontainer by modifying:
+You can customize the Dev Containers setup by modifying:
 - `.devcontainer/devcontainer.json`: VS Code settings and extensions
 - `.devcontainer/Dockerfile`: Container image configuration

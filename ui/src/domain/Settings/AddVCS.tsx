@@ -114,28 +114,28 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       case "GITHUB_ENTERPRISE":
         return "GitHub Enterprise";
       case "GITHUB_APP":
-        return "Github App";
+        return "GitHub App";
       default:
         return "GitHub";
     }
   };
   const gitlabItems = [
     {
-      label: "Gitlab.com",
+      label: "GitLab.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB);
       },
     },
     {
-      label: "Gitlab Community Edition",
+      label: "GitLab Community Edition",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
       },
     },
     {
-      label: "Gitlab Enterprise Edition",
+      label: "GitLab Enterprise Edition",
       key: "3",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
@@ -145,14 +145,14 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
 
   const githubItems = [
     {
-      label: "Github.com (GitHub App)",
+      label: "GitHub.com (GitHub App)",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
       },
     },
     {
-      label: "Github.com (oAuth App)",
+      label: "GitHub.com (oAuth App)",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB);
@@ -804,7 +804,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <Dropdown menu={{ items: githubItems }}>
               <Button size="large">
                 <Space>
-                  <GithubOutlined /> Github <DownOutlined />
+                  <GithubOutlined /> GitHub <DownOutlined />
                 </Space>
               </Button>
             </Dropdown>
@@ -812,7 +812,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
               <Button size="large">
                 <Space>
                   <GitlabOutlined />
-                  Gitlab <DownOutlined />
+                  GitLab <DownOutlined />
                 </Space>
               </Button>
             </Dropdown>

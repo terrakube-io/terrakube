@@ -197,7 +197,7 @@ export const ImportWorkspace = () => {
       },
     },
     {
-      title: "Vcs Provider",
+      title: "VCS Provider",
       dataIndex: ["attributes", "vcs-repo", "service-provider"],
       sorter: {
         compare: (a: WorkspaceRecord, b: WorkspaceRecord) => {
@@ -211,7 +211,7 @@ export const ImportWorkspace = () => {
       },
     },
     {
-      title: "Vcs Identifier",
+      title: "VCS Identifier",
       dataIndex: ["attributes", "vcs-repo", "identifier"],
     },
   ];
@@ -232,21 +232,21 @@ export const ImportWorkspace = () => {
   ];
   const gitlabItems = [
     {
-      label: "Gitlab.com",
+      label: "GitLab.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB);
       },
     },
     {
-      label: "Gitlab Community Edition",
+      label: "GitLab Community Edition",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
       },
     },
     {
-      label: "Gitlab Enterprise Edition",
+      label: "GitLab Enterprise Edition",
       key: "3",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
@@ -256,14 +256,14 @@ export const ImportWorkspace = () => {
 
   const githubItems = [
     {
-      label: "Github.com",
+      label: "GitHub.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB);
       },
     },
     {
-      label: "Github Enterprise",
+      label: "GitHub Enterprise",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
@@ -1011,7 +1011,7 @@ export const ImportWorkspace = () => {
                       <Dropdown menu={{ items: githubItems }}>
                         <Button size="large">
                           <Space>
-                            <GithubOutlined /> Github <DownOutlined />
+                            <GithubOutlined /> GitHub <DownOutlined />
                           </Space>
                         </Button>
                       </Dropdown>
@@ -1019,7 +1019,7 @@ export const ImportWorkspace = () => {
                         <Button size="large">
                           <Space>
                             <GitlabOutlined />
-                            Gitlab <DownOutlined />
+                            GitLab <DownOutlined />
                           </Space>
                         </Button>
                       </Dropdown>

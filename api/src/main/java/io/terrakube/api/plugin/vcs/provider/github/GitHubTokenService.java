@@ -84,7 +84,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         }
 
 
-        log.info("Calling Github API");
+        log.info("Calling GitHub API");
 
         GitHubToken gitHubToken = client.post().uri(uriBuilder -> uriBuilder.path("/login/oauth/access_token")
                         .queryParam("client_id", clientId)

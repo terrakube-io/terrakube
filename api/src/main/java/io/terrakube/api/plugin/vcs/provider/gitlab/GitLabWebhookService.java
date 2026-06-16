@@ -101,16 +101,16 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
                         for (String gitlabmodified : commitData.getModified()) {
                             finalResult.getFileChanges().add(gitlabmodified);
-                            log.info("Modified Gitlab Object: {}", gitlabmodified);
+                            log.info("Modified GitLab Object: {}", gitlabmodified);
                         }
 
                         for (String gitlabRemoved : commitData.getRemoved()) {
                             finalResult.getFileChanges().add(gitlabRemoved);
-                            log.info("Removed Gitlab Object: {}", gitlabRemoved);
+                            log.info("Removed GitLab Object: {}", gitlabRemoved);
                         }
 
                         for (String gitlabAdded : commitData.getAdded()) {
-                            log.info("New Gitlab Object: {}", gitlabAdded);
+                            log.info("New GitLab Object: {}", gitlabAdded);
                             finalResult.getFileChanges().add(gitlabAdded);
                         }
                     });
@@ -446,13 +446,13 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     log.error("Error parsing JSON response", e);
                 }
 
-                log.info("Gitlab Hook created successfully for workspace {}/{} with id {}", workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
+                log.info("GitLab Hook created successfully for workspace {}/{} with id {}", workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
             }
         } else {
             URI gitlabUri = UriComponentsBuilder.fromHttpUrl(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks/" + webhook.getRemoteHookId()).build(true).toUri();
             response = restTemplate.exchange(
                     gitlabUri, HttpMethod.PUT, entity, String.class);
-            log.info("Gitlab Hook updating Status {} for workspace {}/{} with id {}", response.getStatusCode(), workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
+            log.info("GitLab Hook updating Status {} for workspace {}/{} with id {}", response.getStatusCode(), workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
         }
 
         return remoteHookId;

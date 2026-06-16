@@ -330,7 +330,7 @@ export const CreateModule = () => {
                       }}
                       size="large"
                     >
-                      Github
+                      GitHub
                     </Button>
                     <Button
                       icon={<GitlabOutlined />}
@@ -339,7 +339,7 @@ export const CreateModule = () => {
                       }}
                       size="large"
                     >
-                      Gitlab
+                      GitLab
                     </Button>
                     <Button
                       icon={<SiBitbucket />}
