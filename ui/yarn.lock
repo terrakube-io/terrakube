@@ -3545,7 +3545,6 @@ __metadata:
     eslint-plugin-react-refresh: "npm:^0.5.3"
     github-markdown-css: "npm:^5.9.0"
     globals: "npm:^17.6.0"
-    hcl2-parser: "npm:^1.0.3"
     html-react-parser: "npm:^6.1.3"
     html-to-image: "npm:^1.11.13"
     identity-obj-proxy: "npm:^3.0.0"
@@ -5836,13 +5835,6 @@ __metadata:
     property-information: "npm:^7.0.0"
     space-separated-tokens: "npm:^2.0.0"
   checksum: 10c0/18dc8064e5c3a7a2ae862978e626b97a254e1c8a67ee9d0c9f06d373bba155ed805fc5b5ce21b990fb7bc174624889e5e1ce1cade264f1b1d58b48f994bc85ce
-  languageName: node
-  linkType: hard
-
-"hcl2-parser@npm:^1.0.3":
-  version: 1.0.3
-  resolution: "hcl2-parser@npm:1.0.3"
-  checksum: 10c0/5c5d9b12ec7f84864122e387af41df183666d9d01da6a922631fa0e5f4530b5856fdfb156346b3c23519f2bfc9bb051e8c520d4614d9935c6539d70bce1bb521
   languageName: node
   linkType: hard
 

@@ -57,6 +57,58 @@ const Markdown = lazy(async () => {
   return { default: MarkdownWithPlugins };
 });
 
+type HclAttrs = Record<string, unknown>;
+type HclObject = Record<string, Record<string, unknown>>;
+
+function parseHcl(input: string): [HclObject] {
+  const result: HclObject = {};
+
+  const text = input
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/#[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+
+  const blockRe = /\b(variable|output|resource)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = blockRe.exec(text)) !== null) {
+    const [, type, label1, label2] = m;
+    const bodyStart = m.index + m[0].length;
+    let depth = 1, pos = bodyStart;
+    while (pos < text.length && depth > 0) {
+      if (text[pos] === "{") depth++;
+      else if (text[pos] === "}") depth--;
+      pos++;
+    }
+    const body = text.slice(bodyStart, pos - 1);
+    const attrs: HclAttrs = {};
+
+    for (const a of body.matchAll(/^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"/gm)) {
+      attrs[a[1]] = a[2];
+    }
+    for (const a of body.matchAll(/^\s*(\w+)\s*=\s*([^"\n{[\s#][^\n#]*)/gm)) {
+      if (a[1] in attrs) continue;
+      const v = a[2].trim();
+      if (v === "true") attrs[a[1]] = true;
+      else if (v === "false") attrs[a[1]] = false;
+      else if (v === "null") attrs[a[1]] = null;
+      else if (v !== "" && !isNaN(Number(v))) attrs[a[1]] = Number(v);
+      else attrs[a[1]] = v;
+    }
+
+    if (type === "resource" && label2) {
+      if (!result.resource) result.resource = {};
+      if (!result.resource[label1]) result.resource[label1] = {};
+      (result.resource[label1] as Record<string, HclAttrs[]>)[label2] = [attrs];
+    } else {
+      if (!result[type]) result[type] = {};
+      result[type][label1] = [attrs];
+    }
+  }
+
+  return [result];
+}
+
 type Props = {
   organizationName: string;
 };
@@ -175,8 +227,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       }
     }
 
-    const hcl = await import("hcl2-parser");
-    const hclResult = hcl.parseToObject(hclString);
+    const hclResult = parseHcl(hclString);
     if (hclResult) {
       setHclObject(hclResult[0]);
       if (hclResult[0]?.variable) {
