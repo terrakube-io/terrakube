@@ -391,6 +391,20 @@ function generateWorkspaceInformation() {
 	sed -i "s+DEVCONTAINER_WORKSPACE_CONSOLE_MINIO+$WORKSPACE_CONSOLE_MINIO+gi" DEVCONTAINER.md
 }
 
+function importCACertificateDevContainer() {
+	if [ "$CODESPACES" != "true" ] && [ "$USER" == "vscode" ]; then
+	  echo "Importing custom rootCA"
+  	openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
+
+  	if keytool -list -cacerts -storepass "changeit" | grep -q "custom-ca"; then
+  		echo "Alias $ALIAS exists. Deleting it first..."
+  		keytool -delete -alias "custom-ca" -cacerts -storepass "changeit" -noprompt
+  	fi
+
+  	keytool -import -alias custom-ca -cacerts -file /workspaces/terrakube/.devcontainer/rootCA.der -storepass "changeit" -noprompt
+  fi
+}
+
 #if [ "$USER" != "gitpod" ] && [ "$USER" == "vscode" ]; then
 #	openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
 #
@@ -430,6 +444,7 @@ generateRegistryVars
 generateExecutorVars
 generateUiVars
 generateDexConfiguration
+importCACertificateDevContainer
 
 USER=$(whoami)
 	if [ "$CODESPACES" = "true" ]; then
