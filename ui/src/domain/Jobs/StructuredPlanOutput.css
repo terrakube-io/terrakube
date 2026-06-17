@@ -47,6 +47,10 @@
   background: #cf3d38;
 }
 
+.structured-plan-summarySegment--import {
+  background: #6d28d9;
+}
+
 .structured-plan-summarySymbol {
   display: inline-flex;
   align-items: center;
@@ -298,6 +302,12 @@
   color: #64748b;
 }
 
+.structured-plan-actionIcon--import {
+  background: #f3eeff;
+  border-color: #d4b8ff;
+  color: #6d28d9;
+}
+
 .structured-plan-providerBadge {
   align-items: center;
   background: #f4f6f9;
@@ -419,6 +429,19 @@
   background: #f8fafc;
   border-color: #dce3eb;
   color: #64748b;
+}
+
+.structured-plan-actionPill--import {
+  background: #f3eeff;
+  border-color: #d4b8ff;
+  color: #6d28d9;
+}
+
+.structured-plan-metaPill--import {
+  background: #f3eeff;
+  border-color: #d4b8ff;
+  color: #6d28d9;
+  font-weight: 600;
 }
 
 .structured-plan-metaPill {
@@ -781,6 +804,12 @@
   color: var(--tk-text-tertiary);
 }
 
+[data-theme="dark"] .structured-plan-actionIcon--import {
+  background: rgba(163, 113, 247, 0.15);
+  border-color: rgba(163, 113, 247, 0.3);
+  color: #d2a8ff;
+}
+
 [data-theme="dark"] .structured-plan-providerBadge {
   background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
@@ -952,6 +981,18 @@
   background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
   color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-actionPill--import {
+  background: rgba(163, 113, 247, 0.15);
+  border-color: rgba(163, 113, 247, 0.3);
+  color: #d2a8ff;
+}
+
+[data-theme="dark"] .structured-plan-metaPill--import {
+  background: rgba(163, 113, 247, 0.15);
+  border-color: rgba(163, 113, 247, 0.3);
+  color: #d2a8ff;
 }
 
 [data-theme="dark"] .structured-plan-metaPill {

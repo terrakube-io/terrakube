@@ -11,6 +11,7 @@ export type PlanChange = {
   after?: unknown;
   afterSensitive?: unknown;
   afterUnknown?: unknown;
+  importing?: { id?: string };
 };
 
 export type StructuredPlanOutputByStep = Record<string, PlanChange[]>;
@@ -74,6 +75,10 @@ export const getPlanChangeActionLabel = (actions: string[] = [], fallback?: stri
     return "no-op";
   }
 
+  if (normalizedActions.includes("import")) {
+    return "import";
+  }
+
   const fallbackValue = toOptionalString(fallback);
   if (fallbackValue) {
     return fallbackValue;
@@ -112,6 +117,12 @@ const normalizePlanChange = (value: unknown): PlanChange | null => {
   const actions = toStringArray(value.actions);
   const action = getPlanChangeActionLabel(actions, toOptionalString(value.action));
 
+  const rawImporting = value.importing;
+  const importing =
+    isRecord(rawImporting)
+      ? { id: typeof rawImporting.id === "string" ? rawImporting.id : undefined }
+      : undefined;
+
   return {
     address: toOptionalString(value.address),
     resourceType: toOptionalString(value.resourceType),
@@ -125,6 +136,7 @@ const normalizePlanChange = (value: unknown): PlanChange | null => {
     after: value.after,
     afterSensitive: value.afterSensitive,
     afterUnknown: value.afterUnknown,
+    importing,
   };
 };
 

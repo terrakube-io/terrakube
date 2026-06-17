@@ -114,8 +114,13 @@ public class PlanStructuredOutputService {
 
             List<String> actions = (List<String>) changeBlock.getOrDefault("actions", List.of());
             String action = normalizeAction(actions);
-            if ("no-op".equals(action)) {
+            Object importingValue = changeBlock.get("importing");
+            boolean isImporting = importingValue != null;
+            if ("no-op".equals(action) && !isImporting) {
                 continue;
+            }
+            if ("no-op".equals(action) && isImporting) {
+                action = "import";
             }
 
             Map<String, Object> entry = new HashMap<>();
@@ -125,6 +130,9 @@ public class PlanStructuredOutputService {
             entry.put("resourceName", change.get("name"));
             entry.put("actions", actions);
             entry.put("action", action);
+            if (isImporting) {
+                entry.put("importing", importingValue);
+            }
             Object beforeValue = changeBlock.get("before");
             Object afterValue = changeBlock.get("after");
             Object beforeSensitive = changeBlock.get("before_sensitive");
