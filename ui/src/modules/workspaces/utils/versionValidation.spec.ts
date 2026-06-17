@@ -62,8 +62,10 @@ describe("validateTerraformVersion", () => {
     const check = (v: string) => validateTerraformVersion(versions)(null, v);
 
     it("accepts a version that exists in the list", () => expect(check("1.11.0")).resolves.toBeUndefined());
-    it("rejects a version that does not exist in the list", () => expect(check("1.99.99")).rejects.toThrow("not available"));
-    it("accepts a constraint string even if it is not in the list", () => expect(check("~>1.11.0")).resolves.toBeUndefined());
+    it("rejects a version that does not exist in the list", () =>
+      expect(check("1.99.99")).rejects.toThrow("not available"));
+    it("accepts a constraint string even if it is not in the list", () =>
+      expect(check("~>1.11.0")).resolves.toBeUndefined());
     it("skips the existence check when the list is empty", () =>
       expect(validateTerraformVersion([])(null, "1.99.99")).resolves.toBeUndefined());
   });
