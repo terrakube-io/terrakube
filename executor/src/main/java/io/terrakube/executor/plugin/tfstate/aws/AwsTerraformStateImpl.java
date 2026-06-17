@@ -32,6 +32,8 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Builder
@@ -68,10 +70,32 @@ public class AwsTerraformStateImpl implements TerraformState {
     @NonNull
     TerraformStatePathService terraformStatePathService;
 
+    // Matches X-Range wildcards: * or major.wildcard (e.g. 1.x, 1.*, 1.X).
+    // Bare x/X are intentionally excluded: TerraformDownloader rejects them as invalid.
+    // Major.minor.wildcard (1.6.x) is also excluded: the version regex extracts the concrete prefix correctly.
+    private static final Pattern X_RANGE_PATTERN = Pattern.compile("^\\*$|^\\d+\\.[*xX]$");
+
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
         log.info("Generating backend override file for terraform {}", terraformVersion);
-        ComparableVersion version = new ComparableVersion(terraformVersion);
+        ComparableVersion version;
+        if (X_RANGE_PATTERN.matcher(terraformVersion.trim()).matches()) {
+            // X-Range wildcards (*, x, 1.x, …) resolve to the latest terraform release,
+            // which is always >= 1.6.0, so use the new-style endpoints block.
+            log.info("X-Range wildcard detected for \"{}\", treating as latest version", terraformVersion);
+            version = new ComparableVersion("9999.9999.9999");
+        } else {
+            Matcher versionMatcher = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)*)").matcher(terraformVersion);
+            ComparableVersion maxVersion = null;
+            while (versionMatcher.find()) {
+                ComparableVersion found = new ComparableVersion(versionMatcher.group(1));
+                if (maxVersion == null || found.compareTo(maxVersion) > 0) {
+                    maxVersion = found;
+                }
+            }
+            version = maxVersion != null ? maxVersion : new ComparableVersion(terraformVersion);
+        }
+        log.info("Terraform version resolved to \"{}\" from constraint \"{}\"", version, terraformVersion);
 
         String awsBackend = BACKEND_FILE_NAME;
         try {
