@@ -9,6 +9,8 @@ import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Answers;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -78,6 +80,32 @@ class AwsTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFile_PessimisticConstraintWithEndpoint(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        String result = awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "~>1.13.0");
+
+        assertEquals("aws_backend_override.tf", result);
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("endpoints = {"), "Should use new-style endpoints block for ~>1.13.0");
+        assertTrue(content.contains("skip_requesting_account_id = true"), "Should include skip_requesting_account_id for ~>1.13.0");
+        assertFalse(content.contains("endpoint  ="), "Should not use deprecated endpoint parameter for ~>1.13.0");
+    }
+
+    @Test
+    void testGetBackendStateFile_IvyRangeWithEndpoint(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        String result = awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "[1.13.0,1.14.0]");
+
+        assertEquals("aws_backend_override.tf", result);
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("endpoints = {"), "Should use new-style endpoints block for [1.13.0,1.14.0]");
+        assertTrue(content.contains("skip_requesting_account_id = true"), "Should include skip_requesting_account_id for [1.13.0,1.14.0]");
+        assertFalse(content.contains("endpoint  ="), "Should not use deprecated endpoint parameter for [1.13.0,1.14.0]");
+    }
+
+    @Test
     void testGetBackendStateFile_NewVersionWithEndpoint(@TempDir Path tempDir) throws IOException {
         awsTerraformState.setEndpoint("http://localhost:4566");
         awsTerraformState.setIncludeBackendKeys(true);
@@ -97,6 +125,49 @@ class AwsTerraformStateImplTest {
         assertTrue(content.contains("s3 = \"http://localhost:4566\""));
         assertTrue(content.contains("access_key = \"access\""));
         assertTrue(content.contains("secret_key = \"secret\""));
+    }
+
+    @ParameterizedTest(name = "version constraint \"{0}\" uses new endpoints block")
+    @ValueSource(strings = {
+        "~1.13.0",           // npm tilde
+        "^1.13.0",           // npm caret
+        ">=1.7.0 <1.14.0",   // primitive range (lower >= 1.6.0)
+        ">=1.5.7 <1.9.0",    // primitive range straddling 1.6.0 boundary
+        "[1.7.0,)",           // ivy open upper (inclusive)
+        "]1.7.0,)",           // ivy open upper (exclusive)
+        "(,1.14.0]",          // ivy open lower
+        "1.13.0 - 1.14.0",   // npm hyphen
+        "*",                  // X-Range: any version
+        "1.x",                // X-Range: any 1.y version
+        "1.*",                // X-Range: any 1.y version (alternative)
+    })
+    void testGetBackendStateFile_NewStyleConstraintUsesEndpointsBlock(String version, @TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), version);
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("endpoints = {"), "Should use new-style endpoints for: " + version);
+        assertTrue(content.contains("skip_requesting_account_id = true"), "Should include skip_requesting_account_id for: " + version);
+        assertFalse(content.contains("endpoint  ="), "Should not use deprecated endpoint for: " + version);
+    }
+
+    @ParameterizedTest(name = "legacy version constraint \"{0}\" uses deprecated endpoint param")
+    @ValueSource(strings = {
+        "~>1.5.0",           // cocoapods pessimistic (< 1.6.0)
+        "[1.4.0,1.5.9]",     // ivy bounded (< 1.6.0)
+        "~1.5",              // npm tilde (< 1.6.0)
+        "^1.5.3",            // npm caret (< 1.6.0)
+        ">=1.4.0 <1.5.9",    // primitive range (< 1.6.0)
+    })
+    void testGetBackendStateFile_LegacyConstraintUsesOldEndpoint(String version, @TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), version);
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("endpoint  ="), "Should use deprecated endpoint for legacy: " + version);
+        assertFalse(content.contains("endpoints = {"), "Should not use new-style endpoints for legacy: " + version);
     }
 
     @Test

@@ -1,8 +1,16 @@
-import { Button, Divider, Form, Input, Select, Spin, Typography, message } from "antd";
+import { AutoComplete, Button, Divider, Form, Input, Select, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Agent, Template, TofuRelease, Workspace } from "../../types";
-import { atomicHeader, compareVersions, genericHeader, getIaCIconById, getIaCNameById, iacTypes } from "../Workspaces";
+import {
+  atomicHeader,
+  compareVersions,
+  genericHeader,
+  getIaCIconById,
+  getIaCNameById,
+  iacTypes,
+  validateTerraformVersion,
+} from "../Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
@@ -187,6 +195,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             description: workspaceData.attributes?.description,
             folder: workspaceData.attributes?.folder,
             executionMode: workspaceData.attributes?.executionMode,
+            terraformVersion: workspaceData.attributes?.terraformVersion,
             iacType: workspaceData.attributes?.iacType,
             branch: workspaceData.attributes?.branch,
             defaultTemplate: workspaceData.attributes?.defaultTemplate,
@@ -288,17 +297,19 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
           <Form.Item
             name="terraformVersion"
             label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"}
+            rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
             extra={
               "The version of " +
               getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-              " to use for this workspace. Upon creating this workspace, the latest version was selected and will be used until it is changed manually. It will not upgrade automatically."
+              " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
             }
           >
-            <Select defaultValue={workspaceData.attributes?.terraformVersion} disabled={!manageWorkspace}>
-              {terraformVersions.map(function (name) {
-                return <Option key={name}>{name}</Option>;
-              })}
-            </Select>
+            <AutoComplete
+              disabled={!manageWorkspace}
+              options={terraformVersions.map((v) => ({ value: v }))}
+              filterOption={(input, option) => (option?.value ?? "").includes(input)}
+              placeholder="e.g. 1.11.0 or ~>1.11.0"
+            />
           </Form.Item>
           <Form.Item
             name="folder"

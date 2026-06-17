@@ -1,5 +1,6 @@
 import { DownOutlined, GithubOutlined, GitlabOutlined } from "@ant-design/icons";
 import {
+  AutoComplete,
   Breadcrumb,
   Button,
   Card,
@@ -25,7 +26,7 @@ import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { ProjectModel, SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
-import { compareVersions } from "./Workspaces";
+import { compareVersions, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
 const { Content } = Layout;
@@ -722,16 +723,19 @@ export const CreateWorkspace = () => {
               <Form.Item
                 name="terraformVersion"
                 label={iacType?.name + " Version"}
-                rules={[{ required: true }]}
+                rules={[{ required: true }, { validator: validateTerraformVersion(terraformVersions) }]}
                 extra={
-                  "The version of " + iacType?.name + " to use for this workspace. It will not upgrade automatically."
+                  "The version of " +
+                  iacType?.name +
+                  " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
                 }
               >
-                <Select placeholder="select version" style={{ width: 250 }}>
-                  {terraformVersions.map(function (name) {
-                    return <Option key={name}>{name}</Option>;
-                  })}
-                </Select>
+                <AutoComplete
+                  placeholder="e.g. 1.11.0 or ~>1.11.0"
+                  options={terraformVersions.map((v) => ({ value: v }))}
+                  filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                  style={{ width: 250 }}
+                />
               </Form.Item>
               <Form.Item
                 hidden={!sshKeysVisible}

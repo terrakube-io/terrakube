@@ -25,7 +25,8 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "ignoreDeprecations": "6.0"
   },
 
 }

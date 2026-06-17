@@ -13,6 +13,8 @@ export const genericHeader = {
   },
 };
 
+export { validateTerraformVersion } from "@/modules/workspaces/utils/versionValidation";
+
 export function compareVersions(a: string, b: string) {
   if (a === b) {
     return 0;
