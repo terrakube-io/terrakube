@@ -223,6 +223,37 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void includesNoOpChangesWithImportingFieldAsImportAction() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [
+                    {
+                      "address": "aws_instance.example",
+                      "type": "aws_instance",
+                      "name": "example",
+                      "change": {
+                        "actions": ["no-op"],
+                        "before": {"id": "i-abc123", "ami": "ami-12345"},
+                        "after": {"id": "i-abc123", "ami": "ami-12345"},
+                        "after_unknown": {},
+                        "before_sensitive": {},
+                        "after_sensitive": {},
+                        "importing": {"id": "i-abc123"}
+                      }
+                    }
+                  ]
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertEquals(1, changes.size());
+        assertEquals("import", changes.get(0).get("action"));
+        assertEquals("aws_instance.example", changes.get(0).get("address"));
+        assertEquals(Map.of("id", "i-abc123"), changes.get(0).get("importing"));
+    }
+
+    @Test
     void mergesStructuredPlanDataWithoutDroppingExistingContext() {
         Map<String, Object> context = new HashMap<>();
         context.put("custom", "value");

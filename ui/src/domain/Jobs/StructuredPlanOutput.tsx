@@ -12,8 +12,8 @@ type Props = {
   outputLog?: string;
 };
 
-type ActionName = "create" | "update" | "replace" | "delete" | "read" | "unknown" | "no-op";
-type ActionFilter = "all" | "create" | "update" | "replace" | "delete" | "read";
+type ActionName = "create" | "update" | "replace" | "delete" | "read" | "import" | "unknown" | "no-op";
+type ActionFilter = "all" | "create" | "update" | "replace" | "delete" | "read" | "import";
 
 type DiffRow = {
   key: string;
@@ -52,6 +52,7 @@ type SummaryCounts = {
   update: number;
   delete: number;
   read: number;
+  import: number;
   unknown: number;
 };
 
@@ -70,7 +71,7 @@ type PreparedChangeRow = {
 };
 
 type SummarySegment = {
-  key: "create" | "update" | "delete";
+  key: "create" | "update" | "delete" | "import";
   label: string;
   count: number;
   symbol: string;
@@ -114,6 +115,12 @@ const actionMeta: Record<
     filterLabel: "Read",
     symbol: "?",
     className: "read",
+  },
+  import: {
+    displayLabel: "import",
+    filterLabel: "Import",
+    symbol: "i",
+    className: "import",
   },
   unknown: {
     displayLabel: "unknown",
@@ -715,6 +722,7 @@ const normalizeActionName = (value: string): ActionName => {
     value === "replace" ||
     value === "delete" ||
     value === "read" ||
+    value === "import" ||
     value === "unknown" ||
     value === "no-op"
   ) {
@@ -858,6 +866,11 @@ const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
         return summary;
       }
 
+      if (row.action === "import") {
+        summary.import += 1;
+        return summary;
+      }
+
       summary.unknown += 1;
       return summary;
     },
@@ -866,6 +879,7 @@ const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
       update: 0,
       delete: 0,
       read: 0,
+      import: 0,
       unknown: 0,
     }
   );
@@ -901,6 +915,15 @@ const buildSummarySegments = (summary: SummaryCounts): SummarySegment[] => {
     });
   }
 
+  if (summary.import > 0) {
+    segments.push({
+      key: "import",
+      label: `${summary.import} to import`,
+      count: summary.import,
+      symbol: "i",
+    });
+  }
+
   return segments;
 };
 
@@ -917,6 +940,10 @@ const formatResourceSummary = (summary: SummaryCounts) => {
 
   if (summary.delete > 0) {
     parts.push(`${summary.delete} to destroy`);
+  }
+
+  if (summary.import > 0) {
+    parts.push(`${summary.import} to import`);
   }
 
   if (parts.length === 0) {
@@ -1167,6 +1194,7 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
                 <option value="replace">{actionMeta.replace.filterLabel}</option>
                 <option value="delete">{actionMeta.delete.filterLabel}</option>
                 <option value="read">{actionMeta.read.filterLabel}</option>
+                <option value="import">{actionMeta.import.filterLabel}</option>
               </select>
               <DownOutlined className="structured-plan-selectChevron" />
             </label>
@@ -1266,6 +1294,11 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
                               <span className="structured-plan-metaPill">{row.change.moduleAddress}</span>
                             ) : null}
                             {row.isDataSource ? <span className="structured-plan-metaPill">data source</span> : null}
+                            {row.change.importing?.id ? (
+                              <span className="structured-plan-metaPill structured-plan-metaPill--import">
+                                imported: {row.change.importing.id}
+                              </span>
+                            ) : null}
                           </div>
 
                           <div className="structured-plan-rowCounts">
