@@ -87,6 +87,11 @@ public class ScheduleVcs implements org.quartz.Job {
                 tempVcs.setRefreshToken((String) newTokenInformation.get("refreshToken"));
                 tempVcs.setTokenExpiration((Date) newTokenInformation.get("tokenExpiration"));
                 vcsRepository.save(tempVcs);
+            } else {
+                Vcs tempVcs = vcsRepository.getReferenceById(vcs.getId());
+                tempVcs.setStatus(VcsStatus.ERROR);
+                vcsRepository.save(tempVcs);
+                log.warn("VCS connection {} marked ERROR after failed token refresh", vcs.getId());
             }
         }
     }
