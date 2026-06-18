@@ -16,6 +16,7 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -109,10 +110,10 @@ public class Job extends GenericAuditFields {
     private Workspace workspace;
 
     @UpdatePermission(expression = "user is a super service")
-    @OneToMany(mappedBy = "job")
+    @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Step> step;
 
-    @OneToMany(mappedBy = "job")
+    @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Address> address;
 
 }
