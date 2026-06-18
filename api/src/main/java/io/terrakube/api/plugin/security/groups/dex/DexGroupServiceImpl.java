@@ -21,6 +21,7 @@ import io.terrakube.api.rs.workspace.access.Access;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @AllArgsConstructor
 @Slf4j
@@ -43,7 +44,7 @@ public class DexGroupServiceImpl implements GroupService {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
         boolean isMember = false;
         for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
-            if (groupName.equals(group))
+            if (groupName.equalsIgnoreCase(group))
                 isMember = true;
         }
         log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
@@ -57,7 +58,7 @@ public class DexGroupServiceImpl implements GroupService {
         boolean isFederated = isFederatedAccount(user);
         if(!isMember) {
             for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
-                if (groupName.equals(group))
+                if (groupName.equalsIgnoreCase(group))
                     isMember = true;
                 if (isFederated && isFederatedMember(user, group))
                     isMember = true;
@@ -138,8 +139,9 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithLimitedAccessV2(User user, Organization organization){
-        List<String> groups = (List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups");
-        Optional<List<Access>> accessList = accessRepository.findAllByWorkspaceOrganizationIdAndNameIn(organization.getId(), groups);
+        List<String> groups = ((List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups"))
+                .stream().map(String::toLowerCase).collect(Collectors.toList());
+        Optional<List<Access>> accessList = accessRepository.findAllByWorkspaceOrganizationIdAndNameInIgnoreCase(organization.getId(), groups);
         log.debug("Groups Size: {}, IsPresent: {},  Group Access {}", groups.size(), accessList.isPresent(), accessList.get().isEmpty());
         return !accessList.get().isEmpty();
     }
@@ -147,8 +149,9 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithProjectAccess(User user, Organization organization){
-        List<String> groups = (List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups");
-        Optional<List<ProjectAccess>> accessList = projectAccessRepository.findAllByProjectOrganizationIdAndNameIn(organization.getId(), groups);
+        List<String> groups = ((List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups"))
+                .stream().map(String::toLowerCase).collect(Collectors.toList());
+        Optional<List<ProjectAccess>> accessList = projectAccessRepository.findAllByProjectOrganizationIdAndNameInIgnoreCase(organization.getId(), groups);
         log.debug("ProjectAccess check - Groups Size: {}, IsPresent: {}, HasAccess: {}", groups.size(), accessList.isPresent(), accessList.map(l -> !l.isEmpty()).orElse(false));
         return accessList.map(l -> !l.isEmpty()).orElse(false);
     }
