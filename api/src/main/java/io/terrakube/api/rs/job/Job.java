@@ -13,6 +13,7 @@ import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.annotation.Paginate;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
@@ -35,6 +36,7 @@ import lombok.Setter;
 @CreatePermission(expression = "team manage job OR team limited manage job OR team plan job OR team limited plan job OR team project limited plan job")
 @UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service")
 @Include(rootLevel = false)
+@Paginate(defaultPageSize = 100, maxPageSize = 1000)
 @Getter
 @Setter
 @Entity(name = "job")
