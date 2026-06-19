@@ -85,7 +85,7 @@ public class AwsTerraformStateImpl implements TerraformState {
             log.info("X-Range wildcard detected for \"{}\", treating as latest version", terraformVersion);
             version = new ComparableVersion("9999.9999.9999");
         } else {
-            Matcher versionMatcher = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)*)").matcher(terraformVersion);
+            Matcher versionMatcher = Pattern.compile("(\\d++\\.\\d++(?:\\.\\d++)*+)").matcher(terraformVersion);
             ComparableVersion maxVersion = null;
             while (versionMatcher.find()) {
                 ComparableVersion found = new ComparableVersion(versionMatcher.group(1));
