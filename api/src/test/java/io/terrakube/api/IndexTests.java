@@ -6,6 +6,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
 import static io.restassured.RestAssured.given;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 public class IndexTests extends ServerApplicationTests {
@@ -40,5 +41,20 @@ public class IndexTests extends ServerApplicationTests {
                 //.log() dont show terraform response it is a lot of data
                 //.all()
                 .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void tofuIndexReturnsServiceUnavailableWhenGithubApiFailsAndNoCacheExists() {
+        // Simulate: TTL-based cache key absent, stale key absent, GitHub API unreachable
+        when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
+        when(valueOperations.get(anyString())).thenReturn(null);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tofu/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
     }
 }
