@@ -6,6 +6,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
+import io.terrakube.api.plugin.json.DownloadReleasesService;
 import io.terrakube.api.plugin.scheduler.ScheduleJob;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
@@ -46,6 +47,9 @@ class ServerApplicationTests {
 
     @MockBean
     protected RedisTemplate<String, Object> redisTemplate;
+
+    @MockBean
+    protected DownloadReleasesService downloadReleasesService;
 
     @Mock
     protected ValueOperations<String, Object> valueOperations;
