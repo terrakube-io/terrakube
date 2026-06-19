@@ -72,7 +72,14 @@ import "./Workspaces.css";
 import LoadingFallback from "@/components/LoadingFallback";
 import RunList from "@/modules/workspaces/components/RunList";
 
-import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
+import {
+  setupWorkspaceIncludes,
+  loadWorkspaceJobs,
+  loadWorkspaceHistory,
+  isValidUrl,
+  fixSshURL,
+  StateOutputVariableWithName,
+} from "./workspaceDataUtils";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -365,7 +372,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   };
 
   const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    let url = `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,reference`;
+    let url = `organization/${organizationId}/workspace/${id}?include=variable,schedule,vcs,agent,organization,reference`;
     if (_loadWebhook) url += ",webhook";
     axiosInstance
       .get(`organization/${organizationId}/template`)
@@ -373,7 +380,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
         setTemplates(template.data.data);
         axiosInstance
           .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
+            `organization/${organizationId}/workspace/${id}?include=variable,schedule,vcs,agent,organization,webhook,reference,project`
           )
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();
@@ -405,6 +412,26 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                 setGlobalEnvVariables
               );
             }
+
+            // Jobs (runs) and history (states) are loaded as sorted, paginated
+            // sub-collections so the workspace screen does not pull the whole
+            // history at once and always shows the most recent items first.
+            const iacType = response.data.data.attributes?.iacType;
+            await Promise.all([
+              loadWorkspaceJobs(axiosInstance, organizationId, id!, iacType, setJobs, setLastRun),
+              loadWorkspaceHistory(
+                axiosInstance,
+                organizationId,
+                id!,
+                iacType,
+                setHistory,
+                setCurrentStateId,
+                currentStateId,
+                setResources,
+                setOutputs,
+                setContextState
+              ),
+            ]);
 
             const organization: Organization | undefined = response.data.included?.find(
               (item: IncludedItem<Organization>) => item.type === "organization"
