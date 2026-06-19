@@ -18,7 +18,8 @@ import java.util.Optional;
 
 /**
  * Elide lifecycle hook for the Provider entity.
- * On CREATE: schedules a ProviderRefreshJob to immediately fetch versions from the public registry.
+ * On CREATE: schedules a ProviderRefreshJob to immediately fetch versions from the configured
+ *            source (a Terraform registry or a repository release page).
  * On UPDATE: ensures a refresh job exists, creates one if missing.
  */
 @AllArgsConstructor
@@ -40,10 +41,10 @@ public class ProviderManageHook implements LifeCycleHook<Provider> {
         switch (operation) {
             case CREATE:
                 if (transactionPhase == LifeCycleHookBinding.TransactionPhase.POSTCOMMIT) {
-                    // Only schedule refresh for imported providers (from public registry)
-                    if (provider.isImported() && provider.getRegistryNamespace() != null) {
+                    // Schedule refresh for any imported provider (registry or repository source)
+                    if (provider.isImported()) {
                         try {
-                            log.info("Scheduling provider refresh for {}/{}", provider.getRegistryNamespace(), provider.getName());
+                            log.info("Scheduling provider refresh for {} (source {})", provider.getName(), provider.getSourceType());
                             providerRefreshService.createTask(300, provider.getId().toString(), true);
                         } catch (SchedulerException e) {
                             log.error("Failed to create provider refresh task for {}: {}",
@@ -64,7 +65,7 @@ public class ProviderManageHook implements LifeCycleHook<Provider> {
      * On update, check if a refresh trigger exists. If not, create one.
      */
     private void checkNextProviderRefresh(Provider provider) {
-        if (!provider.isImported() || provider.getRegistryNamespace() == null) return;
+        if (!provider.isImported()) return;
 
         try {
             String triggerKey = providerRefreshService.getJobPrefix() + provider.getId();
@@ -74,9 +75,9 @@ public class ProviderManageHook implements LifeCycleHook<Provider> {
 
             if (trigger != null) {
                 Date nextFireTime = trigger.getNextFireTime();
-                log.info("Next provider refresh for {}/{}: {}", provider.getRegistryNamespace(), provider.getName(), nextFireTime);
+                log.info("Next provider refresh for {}: {}", provider.getName(), nextFireTime);
             } else {
-                log.info("No refresh trigger found for {}/{}, creating one", provider.getRegistryNamespace(), provider.getName());
+                log.info("No refresh trigger found for {}, creating one", provider.getName());
                 providerRefreshService.createTask(300, provider.getId().toString(), true);
             }
         } catch (SchedulerException e) {

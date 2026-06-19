@@ -66,8 +66,8 @@ public class ProviderRefreshService extends ScheduleServiceBase {
                 continue;
             }
 
-            // Only refresh imported providers that have a registryNamespace
-            if (!provider.isImported() || provider.getRegistryNamespace() == null || provider.getRegistryNamespace().isEmpty()) {
+            // Only refresh imported providers (the job validates the per source type configuration)
+            if (!provider.isImported()) {
                 log.debug("Provider '{}' is not an imported provider, skipping refresh",
                         provider.getName());
                 continue;

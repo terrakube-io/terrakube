@@ -11,6 +11,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ModuleList } from "./ModuleList";
 import { ProviderList } from "../Providers/ProviderList";
+import ImportProviderModal from "../Providers/ImportProviderModal";
 import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { FlatModule, FlatProvider } from "../types";
@@ -89,6 +90,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const [providers, setProviders] = useState<FlatProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
+  const [importProviderOpen, setImportProviderOpen] = useState(false);
 
   // Track which data has been loaded to avoid re-fetching
   const modulesLoaded = useRef(false);
@@ -178,11 +180,24 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
     navigate(`/organizations/${orgid}/registry/search`);
   };
 
+  const reloadProviders = useCallback(() => {
+    if (!orgid) return;
+    fetchProviders(orgid).then((data) => {
+      setProviders(data);
+      providersLoaded.current = true;
+    });
+  }, [orgid]);
+
   const publishMenuItems: MenuProps["items"] = [
     {
       key: "module",
       label: "Publish module",
       onClick: () => navigate(`/organizations/${orgid}/registry/create`),
+    },
+    {
+      key: "import-provider",
+      label: "Import provider from private registry",
+      onClick: () => setImportProviderOpen(true),
     },
   ];
 
@@ -248,6 +263,17 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         />
         <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} size="large" />
       </div>
+      {orgid && (
+        <ImportProviderModal
+          orgId={orgid}
+          open={importProviderOpen}
+          onCancel={() => setImportProviderOpen(false)}
+          onImported={() => {
+            setSearchParams({ tab: "providers" });
+            reloadProviders();
+          }}
+        />
+      )}
     </PageWrapper>
   );
 };

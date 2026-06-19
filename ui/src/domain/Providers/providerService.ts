@@ -28,22 +28,37 @@ export const getProvider = async (
   return response.data;
 };
 
+export type CreateProviderOptions = {
+  imported?: boolean;
+  registryNamespace?: string;
+  sourceType?: "TERRAFORM_REGISTRY" | "REPOSITORY";
+  registryHost?: string;
+  repositoryUrl?: string;
+  repositoryVersions?: string;
+  gpgKeyId?: string;
+  gpgAsciiArmor?: string;
+  registryToken?: string;
+};
+
 export const createProvider = async (
   orgId: string,
   name: string,
   description: string,
-  options?: { imported?: boolean; registryNamespace?: string }
+  options?: CreateProviderOptions
 ): Promise<{ data: ProviderModel }> => {
   const attributes: Record<string, unknown> = {
     name,
     description,
   };
-  if (options?.imported !== undefined) {
-    attributes.imported = options.imported;
-  }
-  if (options?.registryNamespace) {
-    attributes.registryNamespace = options.registryNamespace;
-  }
+  if (options?.imported !== undefined) attributes.imported = options.imported;
+  if (options?.registryNamespace) attributes.registryNamespace = options.registryNamespace;
+  if (options?.sourceType) attributes.sourceType = options.sourceType;
+  if (options?.registryHost) attributes.registryHost = options.registryHost;
+  if (options?.repositoryUrl) attributes.repositoryUrl = options.repositoryUrl;
+  if (options?.repositoryVersions) attributes.repositoryVersions = options.repositoryVersions;
+  if (options?.gpgKeyId) attributes.gpgKeyId = options.gpgKeyId;
+  if (options?.gpgAsciiArmor) attributes.gpgAsciiArmor = options.gpgAsciiArmor;
+  if (options?.registryToken) attributes.registryToken = options.registryToken;
 
   const response = await axiosInstance.post(
     `organization/${orgId}/provider`,
@@ -204,6 +219,62 @@ export const getProviderDownload = async (
     `/registry/v1/providers/${namespace}/${name}/${version}/download/${os}/${arch}`
   );
   return response.data;
+};
+
+/**
+ * Import a provider from a private registry or repository release page.
+ *
+ * The backend ProviderRefreshJob does the heavy lifting: once an imported provider is created
+ * with the right source configuration it fetches versions/platforms/shasums asynchronously.
+ * The UI only needs to persist the provider with imported=true and the source settings.
+ */
+export const importProviderFromPrivateRegistry = async (
+  orgId: string,
+  params:
+    | {
+        sourceType: "TERRAFORM_REGISTRY";
+        name: string;
+        registryNamespace: string;
+        registryHost?: string;
+        registryToken?: string;
+        description?: string;
+      }
+    | {
+        sourceType: "REPOSITORY";
+        name: string;
+        repositoryUrl: string;
+        repositoryVersions: string;
+        gpgKeyId?: string;
+        gpgAsciiArmor?: string;
+        registryToken?: string;
+        description?: string;
+      }
+): Promise<{ data: ProviderModel }> => {
+  const description =
+    params.description?.substring(0, 256) ||
+    (params.sourceType === "TERRAFORM_REGISTRY"
+      ? `${params.registryHost || "registry.terraform.io"}/${params.registryNamespace}/${params.name}`
+      : params.repositoryUrl);
+
+  if (params.sourceType === "TERRAFORM_REGISTRY") {
+    return createProvider(orgId, params.name, description, {
+      imported: true,
+      sourceType: "TERRAFORM_REGISTRY",
+      registryNamespace: params.registryNamespace,
+      registryHost: params.registryHost,
+      registryToken: params.registryToken,
+    });
+  }
+
+  return createProvider(orgId, params.name, description, {
+    imported: true,
+    sourceType: "REPOSITORY",
+    repositoryUrl: params.repositoryUrl,
+    repositoryVersions: params.repositoryVersions,
+    gpgKeyId: params.gpgKeyId,
+    gpgAsciiArmor: params.gpgAsciiArmor,
+    registryToken: params.registryToken,
+  });
 };
 
 // Import provider from Terraform Registry to Terrakube

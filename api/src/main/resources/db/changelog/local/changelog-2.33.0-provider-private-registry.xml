@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="provider-private-registry-fields" author="jplorier">
+        <addColumn tableName="provider">
+            <!-- TERRAFORM_REGISTRY (default) or REPOSITORY -->
+            <column name="source_type" type="varchar(32)" defaultValue="TERRAFORM_REGISTRY">
+                <constraints nullable="true"/>
+            </column>
+            <!-- Host of a Terraform provider registry to import from (service discovery).
+                 Null/empty means the public registry.terraform.io -->
+            <column name="registry_host" type="varchar(256)">
+                <constraints nullable="true"/>
+            </column>
+            <!-- Base URL hosting goreleaser-style release assets (REPOSITORY source) -->
+            <column name="repository_url" type="varchar(1024)">
+                <constraints nullable="true"/>
+            </column>
+            <!-- Comma separated list of versions to import for a REPOSITORY source -->
+            <column name="repository_versions" type="varchar(1024)">
+                <constraints nullable="true"/>
+            </column>
+            <!-- GPG key information used to verify SHA256SUMS for a REPOSITORY source -->
+            <column name="gpg_key_id" type="varchar(64)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="gpg_ascii_armor" type="clob">
+                <constraints nullable="true"/>
+            </column>
+            <!-- Optional bearer token used to authenticate against a private registry/repository -->
+            <column name="registry_token" type="varchar(2048)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+    <changeSet id="provider-private-registry-fields-update-existing" author="jplorier">
+        <update tableName="provider">
+            <column name="source_type" value="TERRAFORM_REGISTRY"/>
+            <where>source_type IS NULL</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

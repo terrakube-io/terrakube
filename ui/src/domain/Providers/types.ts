@@ -6,12 +6,21 @@ export type ProviderModel = {
   attributes: ProviderAttributes;
 };
 
+export type ProviderSourceType = "TERRAFORM_REGISTRY" | "REPOSITORY";
+
 export type ProviderAttributes = {
   name: string;
   namespace: string;
   description: string;
   imported?: boolean;
   registryNamespace?: string;
+  sourceType?: ProviderSourceType;
+  registryHost?: string;
+  repositoryUrl?: string;
+  repositoryVersions?: string;
+  gpgKeyId?: string;
+  gpgAsciiArmor?: string;
+  registryToken?: string;
   latestVersion?: string;
 } & AuditFieldBase;
 

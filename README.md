@@ -46,6 +46,8 @@ The key features of Terrakube are:
 
 - **Remote Backend:** Terrakube supports both `remote backend` and `cloud` block so you can run your workflow directly from the Terraform / OpenTofu CLI.
 
+- **Import providers from private registries:** Mirror custom Terraform/OpenTofu providers into the Terrakube private registry from any Terraform provider registry (resolved through service discovery — works with GitLab, Artifactory/JFrog, TFE and self-hosted registries) or from a plain repository release page / web server that hosts goreleaser-style assets. Private sources can be authenticated with a bearer token, and versions are refreshed automatically in the background.
+
 ### Getting Started
 
 ### Installation
@@ -55,6 +57,41 @@ The key features of Terrakube are:
 - [Test Terrakube using minikube](https://docs.terrakube.io/getting-started/deployment/minikube-+-https)
 - [Test Terrakube using Gitpod](https://docs.terrakube.io/getting-started/getting-started)
 - [Develop Terrakube using VS Code Dev Containers](.devcontainer/README.md)
+
+### Importing providers from a private registry
+
+Terrakube can mirror a provider published outside the public Terraform Registry into your organization's private registry, so `terraform init` / `tofu init` can install it from Terrakube. Open **Registry → Publish → Import provider from private registry** in the UI (or POST a `provider` with `imported=true` via the API). Two source types are supported:
+
+**1. Terraform provider registry (`sourceType=TERRAFORM_REGISTRY`)**
+
+Any registry that implements the [Terraform provider registry protocol](https://developer.hashicorp.com/terraform/internals/provider-registry-protocol). The host is resolved through service discovery (`/.well-known/terraform.json`), so this works with GitLab, Artifactory/JFrog, Terraform Enterprise and self-hosted registries.
+
+| Field | Description |
+| --- | --- |
+| `name` | Provider type, e.g. `mycloud`. |
+| `registryHost` | Registry host, e.g. `gitlab.example.com`. Leave empty to use the public `registry.terraform.io`. |
+| `registryNamespace` | Namespace/organization of the provider in that registry. |
+| `registryToken` | Optional bearer token sent as `Authorization: Bearer …`. |
+
+**2. Repository / web page (`sourceType=REPOSITORY`)**
+
+A repository release page (GitHub/GitLab releases) or any web server hosting [goreleaser](https://goreleaser.com/)-style assets — the standard output of the [terraform-provider scaffolding](https://github.com/hashicorp/terraform-provider-scaffolding-framework):
+
+```
+terraform-provider-<name>_<version>_<os>_<arch>.zip
+terraform-provider-<name>_<version>_SHA256SUMS
+terraform-provider-<name>_<version>_SHA256SUMS.sig
+```
+
+| Field | Description |
+| --- | --- |
+| `name` | Provider type, must match the asset filenames. |
+| `repositoryUrl` | Base URL holding the assets. Use `{version}` where the version/tag appears in the path, e.g. `https://github.com/acme/terraform-provider-mycloud/releases/download/v{version}`. |
+| `repositoryVersions` | Comma-separated versions to import, e.g. `1.0.0,1.1.0`. |
+| `gpgKeyId` / `gpgAsciiArmor` | GPG key id and ASCII-armored public key used to sign `SHA256SUMS`. Required for Terraform to verify the provider on install. |
+| `registryToken` | Optional bearer token for private repositories. |
+
+Platforms and shasums are discovered from the `SHA256SUMS` file, so only the versions you list need to be specified. In both modes a background job (`ProviderRefreshJob`) imports new versions on creation and re-checks every 24 hours; existing public-registry imports are unaffected (`registryHost` empty + `sourceType=TERRAFORM_REGISTRY` keeps the previous behavior).
 
 ### Documentation
 To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/) 
