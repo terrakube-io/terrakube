@@ -19,6 +19,9 @@ public class IndexTests extends ServerApplicationTests {
 
     @Test
     void terraformIndexSearch() {
+        when(redisTemplate.hasKey("terraformReleasesResponse")).thenReturn(true);
+        when(valueOperations.get("terraformReleasesResponse")).thenReturn("{}");
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
@@ -32,6 +35,9 @@ public class IndexTests extends ServerApplicationTests {
 
     @Test
     void tofuIndexSearch() {
+        when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(true);
+        when(valueOperations.get("tofuReleasesResponse")).thenReturn("[]");
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
