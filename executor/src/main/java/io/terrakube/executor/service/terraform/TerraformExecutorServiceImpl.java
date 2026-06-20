@@ -524,24 +524,47 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Thread.sleep(2000);
     }
 
-    private TerraformProcessData getTerraformProcessData(TerraformJob terraformJob, File terraformWorkingDirectory, File executorTempDirectory) {
+    private TerraformProcessData getTerraformProcessData(
+            TerraformJob terraformJob,
+            File terraformWorkingDir,
+            File workspaceRootDirectory
+    ) {
 
-        terraformState.getBackendStateFile(terraformJob.getOrganizationId(),
-                terraformJob.getWorkspaceId(), terraformWorkingDirectory, terraformJob.getTerraformVersion());
+        terraformState.getBackendStateFile(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformWorkingDir,
+                terraformJob.getTerraformVersion()
+        );
 
         File sshKeyFile = null;
-        if (terraformJob.getVcsType().startsWith("SSH") && terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
-            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES AND NOT THE DEFAULT SSH KEY USED TO CLONE THE WORKSPACE
-            sshKeyFile = getFile(SSH_DIRECTORY_MODULE, terraformWorkingDirectory, sshKeyFile);
-            log.warn("1 - Using SSH key from: {}", sshKeyFile);
-        } else if (terraformJob.getVcsType().startsWith("SSH")) {
-            //USING THE SAME SSH KEY USED TO CLONE THE REPOSITORY
-            sshKeyFile = getFile(SSH_DIRECTORY, terraformWorkingDirectory, sshKeyFile);
-            log.warn("2 - Using SSH key from: {}", sshKeyFile);
-        } else if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
-            //USING MODULE SSH KEY TO DOWNLOAD THE MODULES IN ANOTHER CASE FOR EXAMPLE WHEN USING VCS WITH A MODULE SSH KEY
-            sshKeyFile = getFile(SSH_DIRECTORY, terraformWorkingDirectory, sshKeyFile);
-            log.warn("3 - Using SSH key from: {}", sshKeyFile);
+
+        if (terraformJob.getVcsType() != null
+                && terraformJob.getVcsType().startsWith("SSH")
+                && terraformJob.getModuleSshKey() != null
+                && !terraformJob.getModuleSshKey().isEmpty()) {
+
+            sshKeyFile = getFile(workspaceRootDirectory, sshKeyFile);
+
+            log.warn("1 - Using module SSH key from root workspace: {}",
+                    sshKeyFile != null ? sshKeyFile.getAbsolutePath() : null);
+
+        } else if (terraformJob.getVcsType() != null
+                && terraformJob.getVcsType().startsWith("SSH")) {
+
+            sshKeyFile = getSshFile(workspaceRootDirectory, terraformJob);
+
+            log.warn("2 - Using SSH key from: {}",
+                    sshKeyFile != null ? sshKeyFile.getAbsolutePath() : null);
+
+        } else if (terraformJob.getModuleSshKey() != null
+                && !terraformJob.getModuleSshKey().isEmpty()) {
+
+            sshKeyFile = getFile(workspaceRootDirectory, sshKeyFile);
+
+            log.warn("3 - Using module SSH key from root workspace: {}",
+                    sshKeyFile != null ? sshKeyFile.getAbsolutePath() : null);
+
         } else {
             log.warn("Not using any SSH key to download modules");
         }
@@ -549,8 +572,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
                 .terraformVariables(terraformJob.getVariables())
-                .terraformEnvironmentVariables(loadTempEnvironmentVariables(executorTempDirectory, terraformWorkingDirectory, terraformJob))
-                .workingDirectory(terraformWorkingDirectory)
+                .terraformEnvironmentVariables(loadTempEnvironmentVariables(
+                        terraformWorkingDir,
+                        workspaceRootDirectory,
+                        terraformJob
+                ))
+                .workingDirectory(terraformWorkingDir)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())
                 .tofu(terraformJob.isTofu())
@@ -558,15 +585,45 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .build();
     }
 
-    private File getFile(String sshDirectory, File workingDirectory, File sshKeyFile) {
-        File folder = new File(String.format(sshDirectory, workingDirectory));
+    private File getFile(File workspaceRootDirectory, File sshKeyFile) {
+
+        if (workspaceRootDirectory == null) {
+            log.error("Error SSH getFile - workspaceRootDirectory is null");
+            return sshKeyFile;
+        }
+
+        String folderPath = String.format(SSH_DIRECTORY_MODULE, workspaceRootDirectory);
+
+        File folder = new File(folderPath);
+
+        if (!folder.exists() || !folder.isDirectory()) {
+            log.error("Error SSH getFile - invalid SSH module folder='{}'", folder.getAbsolutePath());
+            return sshKeyFile;
+        }
+
         Collection<File> files = FileUtils.listFiles(folder, null, false);
+
         for (File file : files) {
+
             if (file.getName().startsWith("id_")) {
                 sshKeyFile = file;
             }
         }
+
         return sshKeyFile;
+    }
+
+    private File getSshFile(File workspaceRootDirectory, TerraformJob terraformJob) {
+
+        if (workspaceRootDirectory == null) {
+            log.error("Error SSH getSshFile - workspaceRootDirectory is null");
+            return null;
+        }
+
+        String sshFileName = terraformJob.getVcsType().split("~")[1];
+        File sshDirectory = new File(String.format(SSH_DIRECTORY, workspaceRootDirectory));
+
+        return new File(sshDirectory, sshFileName);
     }
 
     public HashMap<String, String> loadTempEnvironmentVariables(File executorTempDirectory, File workingDirectory, TerraformJob terraformJob) {
