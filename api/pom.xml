@@ -16,7 +16,7 @@
     <properties>
         <java.version>25</java.version>
         <elide.version>7.1.17</elide.version>
-        <handlebars.version>4.3.1</handlebars.version>
+        <handlebars.version>4.5.2</handlebars.version>
         <azure.version>6.4.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.25.0</msal4j.version>
