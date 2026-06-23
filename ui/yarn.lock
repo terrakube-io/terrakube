@@ -724,6 +724,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@eslint/js@npm:^10.0.1":
+  version: 10.0.1
+  resolution: "@eslint/js@npm:10.0.1"
+  peerDependencies:
+    eslint: ^10.0.0
+  peerDependenciesMeta:
+    eslint:
+      optional: true
+  checksum: 10c0/9f3fcaf71ba7fdf65d82e8faad6ecfe97e11801cc3c362b306a88ea1ed1344ae0d35330dddb0e8ad18f010f6687a70b75491b9e01c8af57acd7987cee6b3ec6c
+  languageName: node
+  linkType: hard
+
 "@eslint/object-schema@npm:^3.0.5":
   version: 3.0.5
   resolution: "@eslint/object-schema@npm:3.0.5"
@@ -3547,6 +3559,7 @@ __metadata:
   resolution: "azb-client@workspace:."
   dependencies:
     "@ant-design/icons": "npm:^6.2.5"
+    "@eslint/js": "npm:^10.0.1"
     "@monaco-editor/react": "npm:^4.7.0"
     "@testing-library/dom": "npm:^10.4.1"
     "@testing-library/jest-dom": "npm:^6.9.1"
