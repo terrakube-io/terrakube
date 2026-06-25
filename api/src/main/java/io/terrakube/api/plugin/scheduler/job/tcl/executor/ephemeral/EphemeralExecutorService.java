@@ -326,6 +326,12 @@ public class EphemeralExecutorService {
                     .endMetadata().endTemplate().endSpec();
         }
 
+        if (!labels.isEmpty()) {
+            jobBuilder.editSpec().editTemplate().editOrNewMetadata()
+                    .addToLabels(labels)
+                    .endMetadata().endTemplate().endSpec();
+        }
+
         io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = jobBuilder.build();
 
         try {
