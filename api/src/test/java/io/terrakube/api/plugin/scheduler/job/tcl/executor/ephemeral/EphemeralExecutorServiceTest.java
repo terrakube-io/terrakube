@@ -1,7 +1,7 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.Toleration;
 import io.fabric8.kubernetes.api.model.Volume;
@@ -188,11 +189,15 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
-    public void omitsPodTemplateMetadataWhenNoAnnotations() throws ExecutionException {
+    public void setsPodTemplateMetadataWithLabelsWhenNoAnnotations() throws ExecutionException {
         subject().send(job(), context());
 
         verify(namespaced, times(1)).resource(job.capture());
-        assertNull(job.getValue().getSpec().getTemplate().getMetadata());
+        ObjectMeta metadata = job.getValue().getSpec().getTemplate().getMetadata();
+        assertNotNull(metadata);
+        assertEquals("ze-org", metadata.getLabels().get("terrakube.io/organization"));
+        assertEquals("ze-workspace", metadata.getLabels().get("terrakube.io/workspace"));
+        assertTrue(metadata.getAnnotations() == null || metadata.getAnnotations().isEmpty());
     }
 
     @Test
@@ -203,6 +208,32 @@ public class EphemeralExecutorServiceTest {
         Map<String, String> labels = job.getValue().getMetadata().getLabels();
         assertEquals("ze-org", labels.get("terrakube.io/organization"));
         assertEquals("ze-workspace", labels.get("terrakube.io/workspace"));
+    }
+
+    @Test
+    public void setsLabelsOnPodTemplate() throws ExecutionException {
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Map<String, String> labels = job.getValue().getSpec().getTemplate().getMetadata().getLabels();
+        assertEquals("ze-org", labels.get("terrakube.io/organization"));
+        assertEquals("ze-workspace", labels.get("terrakube.io/workspace"));
+    }
+
+    @Test
+    public void propagatesCustomLabelsToPodTemplate() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_LABELS", "team=platform;env=prod");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Map<String, String> jobLabels = job.getValue().getMetadata().getLabels();
+        Map<String, String> podLabels = job.getValue().getSpec().getTemplate().getMetadata().getLabels();
+        assertEquals("platform", jobLabels.get("team"));
+        assertEquals("prod", jobLabels.get("env"));
+        assertEquals("platform", podLabels.get("team"));
+        assertEquals("prod", podLabels.get("env"));
     }
 
     @Test
