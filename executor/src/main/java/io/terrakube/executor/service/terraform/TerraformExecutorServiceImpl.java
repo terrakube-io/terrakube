@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.terraform;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.plugin.tfstate.StateUploadFailedException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
@@ -25,7 +26,11 @@ import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -122,20 +127,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TextStringBuilder jobOutput = new TextStringBuilder();
         TextStringBuilder jobErrorOutput = new TextStringBuilder();
+        Consumer<String> planOutput = LogsConsumer.builder()
+                .jobId(Integer.valueOf(terraformJob.getJobId()))
+                .terraformOutput(jobOutput)
+                .stepId(terraformJob.getStepId())
+                .processLogs(logsService)
+                .lineNumber(new AtomicInteger(0))
+                .build();
+        terraformState.startHeartbeat(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
             boolean executionPlan = false;
             boolean planCommandExecuted = false;
             int exitCode = 0;
             boolean scriptAfterSuccessPlan;
-
-            Consumer<String> planOutput = LogsConsumer.builder()
-                    .jobId(Integer.valueOf(terraformJob.getJobId()))
-                    .terraformOutput(jobOutput)
-                    .stepId(terraformJob.getStepId())
-                    .processLogs(logsService)
-                    .lineNumber(new AtomicInteger(0))
-                    .build();
 
             boolean initSuccessful = prepareTerraformOperation(terraformJob, executorTempDirectory, terraformWorkingDir, planOutput);
 
@@ -148,15 +153,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     planCommandExecuted = true;
                     if (isDestroy) {
                         log.warn("Executor running a plan to destroy resources...");
-                        exitCode = terraformClient.planDestroyDetailExitCode(
+                        exitCode = awaitWithHeartbeat(terraformClient.planDestroyDetailExitCode(
                                 getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
                                 planOutput,
-                                null).get();
+                                null));
                     } else {
-                        exitCode = terraformClient.planDetailExitCode(
+                        exitCode = awaitWithHeartbeat(terraformClient.planDetailExitCode(
                                 getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
                                 planOutput,
-                                null).get();
+                                null));
                     }
                 } else {
                     exitCode = 1;
@@ -180,17 +185,29 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             waitForStreamCompletion(terraformJob.getJobId(), 300);
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
-            result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
-                    terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
-                    : "");
+            try {
+                result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
+                        terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
+                        : "");
+            } catch (StateUploadFailedException uploadFailure) {
+                surfaceUploadFailure(uploadFailure, planOutput, jobErrorOutput, result);
+                result.setExitCode(1);
+                return result;
+            }
             if (executionPlan) {
                 planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir);
             }
             result.setPlan(true);
             result.setExitCode(exitCode);
+        } catch (StateUploadFailedException heartbeatFailure) {
+            result = generateJobResult(false, jobOutput.toString(), jobErrorOutput.toString());
+            surfaceUploadFailure(heartbeatFailure, planOutput, jobErrorOutput, result);
+            result.setExitCode(1);
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
             result.setExitCode(1);
+        } finally {
+            terraformState.stopHeartbeat();
         }
         return result;
     }
@@ -202,15 +219,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TextStringBuilder terraformOutput = new TextStringBuilder();
         TextStringBuilder terraformErrorOutput = new TextStringBuilder();
+        Consumer<String> applyOutput = LogsConsumer.builder()
+                .jobId(Integer.valueOf(terraformJob.getJobId()))
+                .lineNumber(new AtomicInteger(0))
+                .terraformOutput(terraformOutput)
+                .stepId(terraformJob.getStepId())
+                .processLogs(logsService)
+                .build();
+        terraformState.startHeartbeat(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
-            Consumer<String> applyOutput = LogsConsumer.builder()
-                    .jobId(Integer.valueOf(terraformJob.getJobId()))
-                    .lineNumber(new AtomicInteger(0))
-                    .terraformOutput(terraformOutput)
-                    .stepId(terraformJob.getStepId())
-                    .processLogs(logsService)
-                    .build();
 
             HashMap<String, String> terraformParameters = getWorkspaceParameters(terraformJob.getVariables());
 
@@ -228,12 +246,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
                             terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
                             terraformWorkingDir) ? new HashMap<>() : terraformParameters));
-                    execution = terraformClient.apply(
+                    execution = awaitWithHeartbeat(terraformClient.apply(
                             terraformProcessData,
                             applyOutput,
-                            null).get();
+                            null));
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    try {
+                        handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    } catch (StateUploadFailedException uploadFailure) {
+                        result = generateJobResult(false, terraformOutput.toString(), terraformErrorOutput.toString());
+                        surfaceUploadFailure(uploadFailure, applyOutput, terraformErrorOutput, result);
+                        return result;
+                    }
                 }
             }
 
@@ -246,8 +270,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
+        } catch (StateUploadFailedException heartbeatFailure) {
+            result = generateJobResult(false, terraformOutput.toString(), terraformErrorOutput.toString());
+            surfaceUploadFailure(heartbeatFailure, applyOutput, terraformErrorOutput, result);
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
+        } finally {
+            terraformState.stopHeartbeat();
         }
         return result;
     }
@@ -259,15 +288,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TextStringBuilder jobOutput = new TextStringBuilder();
         TextStringBuilder jobErrorOutput = new TextStringBuilder();
+        Consumer<String> outputDestroy = LogsConsumer.builder()
+                .jobId(Integer.valueOf(terraformJob.getJobId()))
+                .terraformOutput(jobOutput)
+                .stepId(terraformJob.getStepId())
+                .processLogs(logsService)
+                .lineNumber(new AtomicInteger(0))
+                .build();
+        terraformState.startHeartbeat(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
-            Consumer<String> outputDestroy = LogsConsumer.builder()
-                    .jobId(Integer.valueOf(terraformJob.getJobId()))
-                    .terraformOutput(jobOutput)
-                    .stepId(terraformJob.getStepId())
-                    .processLogs(logsService)
-                    .lineNumber(new AtomicInteger(0))
-                    .build();
 
             boolean execution = false;
             boolean scriptAfterSuccess;
@@ -279,12 +309,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 showTerraformMessage(terraformJob, "DESTROY", outputDestroy);
 
                 if (scriptBeforeSuccess) {
-                    execution = terraformClient.destroy(
+                    execution = awaitWithHeartbeat(terraformClient.destroy(
                             getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
                             outputDestroy,
-                            null).get();
+                            null));
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    try {
+                        handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    } catch (StateUploadFailedException uploadFailure) {
+                        result = generateJobResult(false, jobOutput.toString(), jobErrorOutput.toString());
+                        surfaceUploadFailure(uploadFailure, outputDestroy, jobErrorOutput, result);
+                        return result;
+                    }
                 }
             }
 
@@ -297,8 +333,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
+        } catch (StateUploadFailedException heartbeatFailure) {
+            result = generateJobResult(false, jobOutput.toString(), jobErrorOutput.toString());
+            surfaceUploadFailure(heartbeatFailure, outputDestroy, jobErrorOutput, result);
         } catch (IOException | ExecutionException | InterruptedException exception) {
             result = setError(exception);
+        } finally {
+            terraformState.stopHeartbeat();
         }
         return result;
     }
@@ -450,6 +491,59 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             Thread.currentThread().interrupt();
         }
         return error;
+    }
+
+    /**
+     * Surface a state/plan/output upload failure to the user. The exception
+     * already carries a user-facing message; we echo it to the step output
+     * stream (so it shows up in the live UI logs), append it to the job error
+     * log, and mark the result as failed.
+     */
+    private void surfaceUploadFailure(StateUploadFailedException uploadFailure,
+                                      Consumer<String> output,
+                                      TextStringBuilder errorBuffer,
+                                      ExecutorJobResult result) {
+        log.error("State upload failed: {}", uploadFailure.getMessage(), uploadFailure);
+        AnsiFormat color = enableColorOutput
+                ? new AnsiFormat(RED_TEXT(), BLACK_BACK(), BOLD())
+                : new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
+        String banner = colorize(STEP_SEPARATOR, color);
+        output.accept("");
+        output.accept(banner);
+        output.accept(colorize("ERROR: " + uploadFailure.getMessage(), color));
+        output.accept(banner);
+        errorBuffer.appendln("");
+        errorBuffer.appendln(uploadFailure.getMessage());
+        result.setSuccessfulExecution(false);
+        result.setOutputErrorLog(errorBuffer.toString());
+        result.setExitCode(1);
+    }
+
+    /**
+     * Block on a long-running terraform future while polling the configured
+     * {@link TerraformState#checkHeartbeatHealth()} every two seconds. If the
+     * heartbeat has been failing for longer than the abort threshold, the
+     * future is cancelled and {@link StateUploadFailedException} is thrown so
+     * the run terminates with a user-facing message instead of writing state
+     * the API will reject. For state backends that don't lock at the API
+     * layer the health check is a no-op, so this behaves like a plain
+     * {@code future.get()}.
+     */
+    private <T> T awaitWithHeartbeat(CompletableFuture<T> future) throws ExecutionException, InterruptedException {
+        while (true) {
+            try {
+                return future.get(2, TimeUnit.SECONDS);
+            } catch (TimeoutException keepWaiting) {
+                try {
+                    terraformState.checkHeartbeatHealth();
+                } catch (StateUploadFailedException heartbeatDead) {
+                    future.cancel(true);
+                    throw heartbeatDead;
+                }
+            } catch (CancellationException cancelled) {
+                throw new InterruptedException("terraform operation cancelled: " + cancelled.getMessage());
+            }
+        }
     }
 
     private boolean prepareTerraformOperation(TerraformJob terraformJob, File executorTempDirectory, File terraformWorkingDirectory, Consumer<String> output)
