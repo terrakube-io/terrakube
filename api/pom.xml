@@ -41,9 +41,9 @@
         <kubernetes-client.version>7.7.0</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.16</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:21.6.0</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.25.0</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.37</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:22.1.0</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.27.0</buildpack.telemetry>
     </properties>
     <build>
         <plugins>
