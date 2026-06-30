@@ -6,4 +6,6 @@ public interface WorkspaceSecurity {
     String generateAccessToken(String workspaceId);
 
     String generateAccessToken(int minutes);
+
+    String generateAccessToken(String workspaceId, int minutes);
 }
