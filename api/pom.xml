@@ -25,10 +25,10 @@
         <jgit.version>7.7.0.202606012155-r</jgit.version>
         <bouncy.castle>1.84</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.12</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.46.17</aws-sdk.version>
+        <aws-sdk.version>2.46.18</aws-sdk.version>
         <gcp-libraries-bom.version>26.84.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.5.2</jedis.version>
@@ -38,7 +38,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.16</maven-artifact.version>
         <commons-io.version>2.22.0</commons-io.version>
-        <kubernetes-client.version>7.7.0</kubernetes-client.version>
+        <kubernetes-client.version>7.8.0</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.37</buildpack.builder>
