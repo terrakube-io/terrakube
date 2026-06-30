@@ -211,15 +211,15 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         const importedIcons = resolveAntdIcons(requiredAntdIcons);
         const importedReactIcons = pickReactIcons(requiredReactIcons);
 
-        let transpiledCode = transform(componentString, {
+        // Bind the component before transpiling. Sucrase prepends helper
+        // functions when the action uses optional chaining or nullish
+        // coalescing, so the transpiled output is no longer a single
+        // expression and can't be wrapped in `return (...)` afterwards.
+        const componentExpression = componentString.trim().replace(/;+\s*$/, "");
+        const transpiledCode = transform(`const __ActionComponent = (${componentExpression}\n);`, {
           transforms: ["jsx"],
           production: true,
         }).code;
-
-        const lastSemicolonIndex = transpiledCode!.lastIndexOf(";");
-        if (lastSemicolonIndex !== -1) {
-          transpiledCode = transpiledCode!.slice(0, lastSemicolonIndex);
-        }
 
         const scopeContext: Record<string, any> = {
           React,
@@ -249,7 +249,7 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         const functionParams = Object.keys(scopeContext);
         const functionArgs = functionParams.map((key) => scopeContext[key]);
 
-        const createComponent = new Function(...functionParams, `return (${transpiledCode})`);
+        const createComponent = new Function(...functionParams, `${transpiledCode}\nreturn __ActionComponent;`);
         const component = createComponent(...functionArgs);
 
         compiledComponentCache.set(action, component);
