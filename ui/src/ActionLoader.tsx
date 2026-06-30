@@ -5,7 +5,6 @@ import {
   SiGooglecloud,
   SiGrafana,
   SiKubernetes,
-  SiOpenai,
   SiPrometheus,
   SiTerraform,
 } from "react-icons/si";
@@ -24,7 +23,6 @@ const exposedReactIcons = {
   SiGooglecloud,
   SiGrafana,
   SiKubernetes,
-  SiOpenai,
   SiPrometheus,
   SiTerraform,
   VscAzure,
