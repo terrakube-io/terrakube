@@ -24,6 +24,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -154,8 +155,9 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
     private void downloadWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
+        boolean shallowClone = terraformJob.getCommitId() == null || terraformJob.getCommitId().isBlank();
         if (terraformJob.getVcsType().startsWith("SSH")) {
-            Git.cloneRepository()
+            CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
                     .setDirectory(gitCloneFolder)
                     .setBranch(terraformJob.getBranch())
@@ -167,17 +169,27 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                             throw new RuntimeException(e);
                         }
                     })
-                    .setCloneSubmodules(true)
-                    .call();
+                    .setCloneSubmodules(true);
+
+            if (shallowClone) {
+                cloneCommand.setDepth(1);
+            }
+
+            cloneCommand.call();
         } else {
-            Git.cloneRepository()
+            CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
                     .setDirectory(gitCloneFolder)
                     .setCredentialsProvider(setupCredentials(terraformJob.getVcsType(),
                             terraformJob.getConnectionType(), terraformJob.getAccessToken()))
                     .setBranch(terraformJob.getBranch())
-                    .setCloneSubmodules(true)
-                    .call();
+                    .setCloneSubmodules(true);
+
+            if (shallowClone) {
+                cloneCommand.setDepth(1);
+            }
+
+            cloneCommand.call();
 
             if (terraformJob.getCommitId() != null && !terraformJob.getCommitId().isBlank()) {
                 log.info("Checkout commit id {}", terraformJob.getCommitId());

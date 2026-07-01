@@ -94,6 +94,15 @@ public class SetupWorkspaceTest {
     }
 
     @Test
+    public void performsShallowCloneWhenNoCommitIdRequested() throws Exception {
+        TerraformJob job = successfulGitJob();
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        File workspaceDir = setup.prepareWorkspace(job);
+        File shallowMarker = FileUtils.getFile(workspaceDir, ".git", "shallow");
+        Assert.assertTrue(shallowMarker.exists());
+    }
+
+    @Test
     public void injectsCommitHashInfo() throws Exception {
         TerraformJob job = successfulGitJob();
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
