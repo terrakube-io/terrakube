@@ -1,9 +1,12 @@
 package io.terrakube.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.token.dynamic.JwksController;
 import io.terrakube.api.plugin.token.dynamic.OpenIdConfigurationController;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.project.Project;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -141,6 +144,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
     private Job createMockJob() {
         var organization = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
         var workspace = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        workspace.setProject(null);
 
         Job job = new Job();
         job.setId(999);
@@ -148,6 +152,106 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         job.setWorkspace(workspace);
 
         return job;
+    }
+
+    private JsonNode decodeJwtClaims(String jwt) throws IOException {
+        String payload = jwt.split("\\.")[1];
+        byte[] decoded = Base64.getUrlDecoder().decode(payload);
+        return new ObjectMapper().readTree(decoded);
+    }
+
+    @Test
+    void testAwsTokenContainsSessionTags() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+
+        JsonNode claims = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+        JsonNode tags = claims.get("https://aws.amazon.com/tags");
+        assertNotNull(tags, "AWS token must carry the session-tags claim");
+
+        JsonNode principalTags = tags.get("principal_tags");
+        assertTrue(principalTags.has("terrakube:org"), "principal_tags must contain terrakube:org");
+        assertTrue(principalTags.has("terrakube:workspace"), "principal_tags must contain terrakube:workspace");
+
+        assertTrue(principalTags.get("terrakube:org").isArray());
+        assertEquals(1, principalTags.get("terrakube:org").size());
+        assertEquals(1, principalTags.get("terrakube:workspace").size());
+
+        JsonNode transitive = tags.get("transitive_tag_keys");
+        assertTrue(transitive.isArray());
+    }
+
+    @Test
+    void testAwsTokenOmitsProjectTagWhenNoProject() throws IOException {
+        Job job = createMockJob();
+        job.getWorkspace().setProject(null);
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+
+        JsonNode principalTags = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
+                .get("https://aws.amazon.com/tags").get("principal_tags");
+        assertFalse(principalTags.has("terrakube:project"),
+                "terrakube:project must be absent when the workspace has no project");
+    }
+
+    @Test
+    void testAwsTokenIncludesProjectTagWhenPresent() throws IOException {
+        Job job = createMockJob();
+        Project project = new Project();
+        project.setName("my-project");
+        job.getWorkspace().setProject(project);
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+
+        JsonNode principalTags = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
+                .get("https://aws.amazon.com/tags").get("principal_tags");
+        assertTrue(principalTags.has("terrakube:project"),
+                "terrakube:project must be present when the workspace has a project");
+        assertEquals("my-project", principalTags.get("terrakube:project").get(0).asText());
+    }
+
+    @Test
+    void testNonAwsTokensDoNotContainAwsTagsClaim() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> azureEnv = new HashMap<>();
+        azureEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
+        String azureToken = dynamicCredentialsService.generateDynamicCredentialsAzure(job, azureEnv).get("ARM_OIDC_TOKEN");
+        assertFalse(decodeJwtClaims(azureToken).has("https://aws.amazon.com/tags"),
+                "Azure token must not carry the AWS session-tags claim");
+
+        HashMap<String, String> gcpEnv = new HashMap<>();
+        gcpEnv.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/pool/provider");
+        gcpEnv.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "sa@project.iam.gserviceaccount.com");
+        String gcpFile = dynamicCredentialsService.generateDynamicCredentialsGcp(job, gcpEnv).get("TERRAKUBE_GCP_CREDENTIALS_FILE");
+        String gcpToken = new ObjectMapper().readTree(gcpFile).get("access_token").asText();
+        assertFalse(decodeJwtClaims(gcpToken).has("https://aws.amazon.com/tags"),
+                "GCP token must not carry the AWS session-tags claim");
+
+        String vaultToken = ReflectionTestUtils.invokeMethod(dynamicCredentialsService, "generateJwt",
+                job.getOrganization().getName(), job.getWorkspace().getName(), "vault.example.com",
+                job.getOrganization().getId().toString(), job.getWorkspace().getId().toString(), job.getId());
+        assertFalse(decodeJwtClaims(vaultToken).has("https://aws.amazon.com/tags"),
+                "Vault token must not carry the AWS session-tags claim");
+    }
+
+    @Test
+    void testSanitizeTagNeutralizesForbiddenCharacters() {
+        String sanitized = ReflectionTestUtils.invokeMethod(dynamicCredentialsService, "sanitizeTag", "my*org#name");
+        assertEquals("my_org_name", sanitized);
     }
 
     @Test
