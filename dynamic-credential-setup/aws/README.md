@@ -47,12 +47,68 @@ provider "aws" {
 
 }
 
-resource "aws_s3_bucket" "example" {
-  bucket = "my-tf-superbucket-awerqerq"
+# The role created by this setup is scoped by the terrakube:workspace session tag,
+# so it can only access the prefix that matches the workspace name.
+# The bucket "my-terrakube-bucket" is expected to already exist.
+resource "aws_s3_object" "example" {
+  bucket  = "my-terrakube-bucket"
+  key     = "dynamic-workspace-aws/example.txt"
+  content = "hello from terrakube dynamic credentials"
+}
+```
 
-  tags = {
-    Name        = "My bucket"
-    Environment = "Dev"
+## Session tags (ABAC)
+
+The AWS web identity token issued by Terrakube also carries AWS session tags. This lets you scope IAM roles with `aws:PrincipalTag` (attribute-based access control) instead of creating one role per workspace.
+
+The following tags are sent as transitive principal tags:
+
+- `terrakube:org` - organization name
+- `terrakube:workspace` - workspace name
+- `terrakube:project` - project name (only when the workspace belongs to a project)
+
+Two things are required in the role trust policy:
+
+- The `sts:TagSession` action must be allowed, otherwise the assume call fails.
+- A `ForAllValues:StringEquals` condition on `aws:TagKeys` restricts which tag keys are accepted. This prevents Terrakube from setting any tag key other than the ones listed. The `main.tf` in this folder already applies this guardrail:
+
+The `main.tf` in this folder uses a wildcard `sub` so a single role serves every workspace of the organization, and relies on the session tag to scope access per workspace:
+
+```json
+"Action": [
+  "sts:AssumeRoleWithWebIdentity",
+  "sts:TagSession"
+],
+"Condition": {
+  "StringEquals": {
+    "terrakube-api.mydomain.com:aud": "aws.workload.identity"
+  },
+  "StringLike": {
+    "terrakube-api.mydomain.com:sub": "organization:my-org:workspace:*"
+  },
+  "ForAllValues:StringEquals": {
+    "aws:TagKeys": [
+      "terrakube:org",
+      "terrakube:workspace",
+      "terrakube:project"
+    ]
   }
 }
 ```
+
+Once the tags are set, you can reference them in permission policies. For example, this policy (used in `main.tf`) allows access only to the S3 prefix that matches the caller workspace:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "arn:aws:s3:::my-terrakube-bucket/${aws:PrincipalTag/terrakube:workspace}/*"
+    }
+  ]
+}
+```
+
+You can also restrict the accepted tag values (not only the keys) with `aws:RequestTag/<key>` in the trust policy if you want to pin a role to a specific organization or workspace.

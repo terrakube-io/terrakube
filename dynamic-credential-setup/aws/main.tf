@@ -24,11 +24,23 @@ resource "aws_iam_role" "terrakube_role" {
      "Principal": {
        "Federated": "${aws_iam_openid_connect_provider.terrakube_provider.arn}"
      },
-     "Action": "sts:AssumeRoleWithWebIdentity",
+     "Action": [
+       "sts:AssumeRoleWithWebIdentity",
+       "sts:TagSession"
+     ],
      "Condition": {
         "StringEquals": {
-        "${var.terrakube_api_hostname}:aud": "${var.terrakube_federated_credentials_audience}",
-        "${var.terrakube_api_hostname}:sub": "organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}"
+        "${var.terrakube_api_hostname}:aud": "${var.terrakube_federated_credentials_audience}"
+        },
+        "StringLike": {
+        "${var.terrakube_api_hostname}:sub": "organization:${var.terrakube_organization_name}:workspace:*"
+        },
+        "ForAllValues:StringEquals": {
+        "aws:TagKeys": [
+          "terrakube:org",
+          "terrakube:workspace",
+          "terrakube:project"
+        ]
         }
      }
    }
@@ -47,10 +59,18 @@ resource "aws_iam_policy" "terrakube_policy" {
  "Statement": [
    {
      "Effect": "Allow",
-     "Action": [
-       "s3:*"
-     ],
-     "Resource": "*"
+     "Action": "s3:ListBucket",
+     "Resource": "arn:aws:s3:::my-terrakube-bucket",
+     "Condition": {
+       "StringLike": {
+         "s3:prefix": "$${aws:PrincipalTag/terrakube:workspace}/*"
+       }
+     }
+   },
+   {
+     "Effect": "Allow",
+     "Action": "s3:*",
+     "Resource": "arn:aws:s3:::my-terrakube-bucket/$${aws:PrincipalTag/terrakube:workspace}/*"
    }
  ]
 }
