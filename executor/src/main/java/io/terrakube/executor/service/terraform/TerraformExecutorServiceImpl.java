@@ -478,11 +478,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         if (terraformJob.isShowHeader()) {
             initSuccessful = Boolean.TRUE.equals(terraformClient.init(terraformProcessData, output, errorOutput).get());
         } else {
-            initSuccessful = Boolean.TRUE.equals(terraformClient.init(terraformProcessData, s -> {
+            // Remote operations (CLI-driven runs) keep init quiet on success, but the
+            // stream must still reach the step output when init fails; otherwise the
+            // error is only visible in the executor log and the client sees an empty
+            // step. Buffer the lines (stderr is merged into stdout via
+            // setRedirectErrorStream) and flush them on failure.
+            TextStringBuilder initOutput = new TextStringBuilder();
+            Consumer<String> quietOutput = s -> {
                 log.info(s);
-            }, s -> {
-                log.info(s);
-            }).get());
+                initOutput.appendln(s);
+            };
+            initSuccessful = Boolean.TRUE.equals(terraformClient.init(terraformProcessData, quietOutput, quietOutput).get());
+            if (!initSuccessful) {
+                output.accept(initOutput.toString());
+            }
         }
 
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
