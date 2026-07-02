@@ -10,8 +10,12 @@ export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
   const analyze = process.env.ANALYZE === "1" || process.env.ANALYZE === "true";
   return {
-    // Use relative asset URLs so the same build can be hosted at / or a subpath such as /ui/.
-    base: "./",
+    // Absolute base so asset and env-config.js URLs resolve from the site root on
+    // any route. A relative base ("./") breaks deep-link hard reloads: the browser
+    // resolves assets against the current path (e.g. /organizations/.../workspaces/)
+    // and the server returns index.html instead, failing the page load. To host
+    // under a subpath, set VITE_BASE to an absolute prefix such as "/ui/".
+    base: process.env.VITE_BASE ?? "/",
     server: {
       host: true,
       allowedHosts: true,
