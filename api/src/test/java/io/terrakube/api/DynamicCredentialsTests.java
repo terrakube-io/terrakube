@@ -167,6 +167,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+        envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
         HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
 
@@ -187,6 +188,20 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
     }
 
     @Test
+    void testAwsTokenHasNoSessionTagsWhenFlagDisabled() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+
+        assertFalse(decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE")).has("https://aws.amazon.com/tags"),
+                "AWS token must not carry the session-tags claim when ENABLE_AWS_SESSION_TAGS is not set");
+    }
+
+    @Test
     void testAwsTokenOmitsProjectTagWhenNoProject() throws IOException {
         Job job = createMockJob();
         job.getWorkspace().setProject(null);
@@ -194,6 +209,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+        envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
         HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
 
@@ -213,6 +229,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
+        envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
         HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
 

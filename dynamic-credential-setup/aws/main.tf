@@ -139,3 +139,14 @@ resource "terrakube_workspace_variable" "env4" {
   sensitive       = false
   hcl             = false
 }
+
+resource "terrakube_workspace_variable" "env5" {
+  organization_id = data.terrakube_organization.org.id
+  workspace_id    = terrakube_workspace_cli.dynamic_credentials_workspace.id
+  key             = "ENABLE_AWS_SESSION_TAGS"
+  value           = "true"
+  description     = "ENABLE_AWS_SESSION_TAGS"
+  category        = "ENV"
+  sensitive       = false
+  hcl             = false
+}
