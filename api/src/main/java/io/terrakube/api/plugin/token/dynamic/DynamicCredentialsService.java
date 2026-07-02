@@ -158,6 +158,11 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables) {
+        Map<String, Object> extraClaims = null;
+        if (Boolean.parseBoolean(workspaceEnvVariables.get("ENABLE_AWS_SESSION_TAGS"))) {
+            extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
+        }
+
         String awsWebIdentityToken = generateJwt(
                 job.getOrganization().getName(),
                 job.getWorkspace().getName(),
@@ -165,7 +170,7 @@ public class DynamicCredentialsService {
                 job.getOrganization().getId().toString(),
                 job.getWorkspace().getId().toString(),
                 job.getId(),
-                Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job))
+                extraClaims
         );
 
         log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);

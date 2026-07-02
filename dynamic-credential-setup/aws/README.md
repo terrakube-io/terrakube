@@ -59,7 +59,9 @@ resource "aws_s3_object" "example" {
 
 ## Session tags (ABAC)
 
-The AWS web identity token issued by Terrakube also carries AWS session tags. This lets you scope IAM roles with `aws:PrincipalTag` (attribute-based access control) instead of creating one role per workspace.
+The AWS web identity token issued by Terrakube can also carry AWS session tags. This lets you scope IAM roles with `aws:PrincipalTag` (attribute-based access control) instead of creating one role per workspace.
+
+Session tags are opt-in. They are only added when the workspace sets the `ENABLE_AWS_SESSION_TAGS` environment variable to `true`. This is required because emitting session tags needs `sts:TagSession` in the role trust policy; without it `AssumeRoleWithWebIdentity` fails. Leaving the variable unset keeps the token unchanged, so existing workspaces are not affected.
 
 The following tags are sent as transitive principal tags:
 
