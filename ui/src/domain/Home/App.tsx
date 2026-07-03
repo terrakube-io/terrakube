@@ -189,7 +189,7 @@ const AppLayout = () => {
     <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
       <Layout className="layout mh-100">
         <Header>
-          <a>
+          <a onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
             <img className="logo" src={logo} alt="Logo"></img>
           </a>
           <OrganizationSelector
