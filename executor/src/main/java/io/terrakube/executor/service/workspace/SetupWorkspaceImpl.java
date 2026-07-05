@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.azure.core.credential.AccessToken;
 import com.azure.core.credential.TokenRequestContext;
@@ -25,10 +26,15 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.jgit.api.CloneCommand;
+import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.SshTransport;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.transport.sshd.JGitKeyCache;
@@ -53,6 +59,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     public static final String SSH_DIRECTORY_FILE_MODULE = "%s/.sshModule/%s";
     public static final String SSH_DIRECTORY = "%s/.ssh";
     public static final String SSH_DIRECTORY_MODULE = "%s/.sshModule";
+    private static final Pattern COMMIT_ID_PATTERN = Pattern.compile("^[a-fA-F0-9]{40}$");
 
     WorkspaceSecurity workspaceSecurity;
     boolean enableRegistrySecurity;
@@ -155,7 +162,6 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
     private void downloadWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
-        boolean shallowClone = terraformJob.getCommitId() == null || terraformJob.getCommitId().isBlank();
         if (terraformJob.getVcsType().startsWith("SSH")) {
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
@@ -171,10 +177,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     })
                     .setCloneSubmodules(true);
 
-            if (shallowClone) {
-                cloneCommand.setDepth(1);
-            }
-
+            cloneCommand.setDepth(1);
             cloneCommand.call();
         } else {
             CloneCommand cloneCommand = Git.cloneRepository()
@@ -185,23 +188,93 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setBranch(terraformJob.getBranch())
                     .setCloneSubmodules(true);
 
-            if (shallowClone) {
-                cloneCommand.setDepth(1);
-            }
-
+            cloneCommand.setDepth(1);
             cloneCommand.call();
+        }
 
-            if (terraformJob.getCommitId() != null && !terraformJob.getCommitId().isBlank()) {
-                log.info("Checkout commit id {}", terraformJob.getCommitId());
-                Git.open(gitCloneFolder).checkout().setName(terraformJob.getCommitId()).call();
-                getCommitId(gitCloneFolder, terraformJob.getCommitId());
-            } else {
-                getCommitId(gitCloneFolder, null);
-            }
+        if (terraformJob.getCommitId() != null && !terraformJob.getCommitId().isBlank()) {
+            checkoutCommitId(gitCloneFolder, terraformJob);
+            getCommitId(gitCloneFolder, terraformJob.getCommitId());
+        } else {
+            getCommitId(gitCloneFolder, null);
         }
 
         log.info("Git clone: {} Branch: {} Folder {}", terraformJob.getSource(), terraformJob.getBranch(),
                 gitCloneFolder.getPath());
+    }
+
+    private void checkoutCommitId(File gitCloneFolder, TerraformJob terraformJob) throws GitAPIException, IOException {
+        String commitId = terraformJob.getCommitId();
+        try (Git git = Git.open(gitCloneFolder)) {
+            if (COMMIT_ID_PATTERN.matcher(commitId).matches() && !commitExists(git, commitId)) {
+                fetchMissingCommit(git, gitCloneFolder, terraformJob, commitId);
+            }
+            log.info("Checkout commit id {}", commitId);
+            git.checkout().setName(commitId).call();
+        }
+    }
+
+    private boolean commitExists(Git git, String commitId) throws IOException {
+        ObjectId objectId = git.getRepository().resolve(commitId);
+        if (objectId == null) {
+            return false;
+        }
+
+        try (RevWalk revWalk = new RevWalk(git.getRepository())) {
+            revWalk.parseCommit(objectId);
+            return true;
+        } catch (MissingObjectException e) {
+            return false;
+        }
+    }
+
+    private void fetchMissingCommit(Git git, File gitCloneFolder, TerraformJob terraformJob, String commitId)
+            throws GitAPIException, IOException {
+        try {
+            fetchCommitById(git, gitCloneFolder, terraformJob, commitId);
+        } catch (GitAPIException e) {
+            log.warn("Unable to fetch commit id {} directly. Unshallowing branch {}: {}", commitId,
+                    terraformJob.getBranch(), e.getMessage());
+            unshallowRepository(git, gitCloneFolder, terraformJob);
+        }
+    }
+
+    void fetchCommitById(Git git, File gitCloneFolder, TerraformJob terraformJob, String commitId)
+            throws GitAPIException, IOException {
+        log.info("Fetching missing commit id {} with depth 1", commitId);
+        configureFetchCommand(git.fetch(), gitCloneFolder, terraformJob)
+                .setRefSpecs(new RefSpec(commitId))
+                .setDepth(1)
+                .call();
+    }
+
+    void unshallowRepository(Git git, File gitCloneFolder, TerraformJob terraformJob)
+            throws GitAPIException, IOException {
+        configureFetchCommand(git.fetch(), gitCloneFolder, terraformJob)
+                .setUnshallow(true)
+                .call();
+    }
+
+    private FetchCommand configureFetchCommand(FetchCommand fetchCommand, File gitCloneFolder,
+            TerraformJob terraformJob) throws IOException {
+        fetchCommand.setRemote("origin");
+        if (terraformJob.getVcsType().startsWith("SSH")) {
+            fetchCommand.setTransportConfigCallback(transport -> {
+                try {
+                    ((SshTransport) transport).setSshSessionFactory(
+                            getSshdSessionFactory(gitCloneFolder, terraformJob.getAccessToken()));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        } else {
+            CredentialsProvider credentialsProvider = setupCredentials(terraformJob.getVcsType(),
+                    terraformJob.getConnectionType(), terraformJob.getAccessToken());
+            if (credentialsProvider != null) {
+                fetchCommand.setCredentialsProvider(credentialsProvider);
+            }
+        }
+        return fetchCommand;
     }
 
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
