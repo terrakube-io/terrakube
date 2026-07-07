@@ -127,7 +127,8 @@ public class DynamicCredentialsService {
                 Instant now = Instant.now();
                 jwtToken = Jwts.builder()
                         .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
-                        .audience().add(tokenAudience).and()
+                        //.audience().add(tokenAudience).and()
+                        .setAudience(tokenAudience)
                         .id(UUID.randomUUID().toString())
                         .header().add("kid", kid).and()
                         .claim("terrakube_workspace_id", workspaceId)
