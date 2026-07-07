@@ -18,7 +18,7 @@
 		<azure.version>6.4.0</azure.version>
 		<msal4j.version>1.25.0</msal4j.version>
 		<commons-text.version>1.15.0</commons-text.version>
-		<terraform-spring-boot-starter.version>1.4.0</terraform-spring-boot-starter.version>
+		<terraform-spring-boot-starter.version>1.4.1</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.6.0</terrakube-client-starter.version>
 		<commons-io.version>2.22.0</commons-io.version>
 		<commons-codec>1.22.0</commons-codec>
@@ -26,15 +26,15 @@
 		<jgit.version>7.7.0.202606012155-r</jgit.version>
 		<bouncy.castle>1.84</bouncy.castle>
 		<lombok.version>1.18.46</lombok.version>
-		<groovy.version>5.0.6</groovy.version>
+		<groovy.version>5.0.7</groovy.version>
 		<ivy.version>2.5.3</ivy.version>
 		<jcolor.version>6.0.1</jcolor.version>
-		<aws-sdk.version>2.46.18</aws-sdk.version>
+		<aws-sdk.version>2.47.0</aws-sdk.version>
 		<google-storage.version>1.17.0</google-storage.version>
 		<slf4j.version>2.0.18</slf4j.version>
 		<gcp-libraries-bom.version>26.84.0</gcp-libraries-bom.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
-		<jedis.version>7.5.2</jedis.version>
+		<jedis.version>7.5.3</jedis.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
 		</sonar.coverage.jacoco.xmlReportPaths>
 		<!--BUILDPACK DATA-->
