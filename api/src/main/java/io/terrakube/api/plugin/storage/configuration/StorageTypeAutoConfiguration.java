@@ -76,7 +76,7 @@ public class StorageTypeAutoConfiguration {
                             .build();
 
                     s3client = S3Client.builder()
-                            .region(Region.of("auto"))
+                            .region(awsStorageTypeProperties.getRegion())
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageTypeProperties)))
                             .endpointOverride(URI.create(awsStorageTypeProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
