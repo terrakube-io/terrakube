@@ -191,6 +191,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 return result;
             }
 
+            // Check if this is a discussion resolution event (no actual comment content)
+            // Discussion resolutions don't have actionable content and should be ignored
+            String discussionResolutionAction = rootNode.path("object_attributes").path("discussion_resolved").asText();
+            if (!discussionResolutionAction.isEmpty()) {
+                log.info("Ignoring GitLab note event: discussion resolution has no code changes");
+                result.setValid(false);
+                return result;
+            }
+
             String commentBody = noteNode.path("note").asText().trim();
             String command = parseTerrakubeCommand(commentBody);
             if (command == null) {
