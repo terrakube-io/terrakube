@@ -7,14 +7,20 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import io.terrakube.api.plugin.vcs.GitLabRepoWebhookService;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
+import io.terrakube.api.repository.RepoWebhookRepository;
+import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -29,6 +35,12 @@ public class WebHookController {
 
     @Autowired
     RepoWebhookService repoWebhookService;
+
+    @Autowired
+    GitLabRepoWebhookService gitLabRepoWebhookService;
+
+    @Autowired
+    RepoWebhookRepository repoWebhookRepository;
 
     @Autowired
     ObjectMapper objectMapper;
@@ -55,7 +67,13 @@ public class WebHookController {
         log.info("Processing v2 webhook");
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            repoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
+            Optional<RepoWebhook> repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId));
+            if (repoWebhook.isPresent() && repoWebhook.get().getVcs() != null
+                    && repoWebhook.get().getVcs().getVcsType() == VcsType.GITLAB) {
+                gitLabRepoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
+            } else {
+                repoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
+            }
         } catch (IllegalArgumentException | SecurityException e) {
             log.warn("V2 webhook request rejected");
             return ResponseEntity.status(401).build();
