@@ -142,17 +142,16 @@ public class GitLabWebhookService extends WebhookServiceBase {
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
         try {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
+			JsonNode rootNode = objectMapper.readTree(jsonPayload);
 
             String action = mrModel.getObjectAttributes().getAction();
 
-            // Check if this is a discussion resolution event (no actual code changes)
-            // When discussions are resolved, blocking_discussions_resolved is set to true
-            // but no commits are added, so we should ignore this update
-            if ("update".equals(action) && rootNode.path("blocking_discussions_resolved").asBoolean()) {
-                log.info("Ignoring GitLab MR update event: blocking discussions were resolved, no code changes");
-                result.setValid(false);
-                return result;
-            }
+			// Ignore update events triggered by resolving blocking discussions
+			if ("update".equals(action) && rootNode.has("blocking_discussions_resolved")) {
+				log.info("Ignoring GitLab MR update event: blocking discussions resolved");
+				result.setValid(false);
+				return result;
+			}
 
             switch (action) {
                 case "open":
@@ -196,15 +195,6 @@ public class GitLabWebhookService extends WebhookServiceBase {
             String noteableType = noteNode.path("noteable_type").asText();
 
             if (!"MergeRequest".equals(noteableType)) {
-                result.setValid(false);
-                return result;
-            }
-
-            // Check if this is a discussion resolution event (no actual comment content)
-            // Discussion resolutions don't have actionable content and should be ignored
-            boolean isDiscussionResolved = rootNode.path("object_attributes").path("discussion_resolved").asBoolean();
-            if (isDiscussionResolved) {
-                log.info("Ignoring GitLab note event: discussion resolution has no code changes");
                 result.setValid(false);
                 return result;
             }
