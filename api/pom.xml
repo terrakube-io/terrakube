@@ -21,15 +21,15 @@
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.25.0</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
-        <wiremock.version>4.2.1</wiremock.version>
+        <wiremock.version>4.2.2</wiremock.version>
         <jgit.version>7.7.0.202606012155-r</jgit.version>
-        <bouncy.castle>1.84</bouncy.castle>
+        <bouncy.castle>1.85</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
         <postgresql.version>42.7.13</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.47.0</aws-sdk.version>
-        <gcp-libraries-bom.version>26.84.0</gcp-libraries-bom.version>
+        <aws-sdk.version>2.47.6</aws-sdk.version>
+        <gcp-libraries-bom.version>26.85.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.5.3</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
