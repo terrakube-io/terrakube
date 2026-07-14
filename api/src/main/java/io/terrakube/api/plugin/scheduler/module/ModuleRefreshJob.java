@@ -37,6 +37,8 @@ import java.util.*;
 @Slf4j
 @Component
 public class ModuleRefreshJob implements Job {
+
+    private static final int GIT_TIMEOUT_SECONDS = 30;
     @Autowired
     private ModuleRefreshService moduleRefreshService;
     @Autowired
@@ -195,6 +197,7 @@ public class ModuleRefreshJob implements Job {
                     .setTags(true)
                     .setRemote(source)
                     .setCredentialsProvider(credentialsProvider)
+                    .setTimeout(GIT_TIMEOUT_SECONDS)
                     .callAsMap();
         }
 
@@ -212,6 +215,7 @@ public class ModuleRefreshJob implements Job {
                                 .build();
                         ((SshTransport) transport)
                                 .setSshSessionFactory(terrakubeSshdSessionFactory.getSshdSessionFactory());
+                        ((SshTransport) transport).setTimeout(GIT_TIMEOUT_SECONDS);
                     }
                 }
             };
@@ -220,6 +224,7 @@ public class ModuleRefreshJob implements Job {
                     .setTags(true)
                     .setRemote(source)
                     .setTransportConfigCallback(transportConfigCallback)
+                    .setTimeout(GIT_TIMEOUT_SECONDS)
                     .callAsMap();
         }
 
@@ -227,6 +232,7 @@ public class ModuleRefreshJob implements Job {
             originalTags = Git.lsRemoteRepository()
                     .setTags(true)
                     .setRemote(source)
+                    .setTimeout(GIT_TIMEOUT_SECONDS)
                     .callAsMap();
         }
 

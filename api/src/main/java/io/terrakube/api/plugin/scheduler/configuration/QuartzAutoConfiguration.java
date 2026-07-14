@@ -47,6 +47,7 @@ public class QuartzAutoConfiguration {
         properties.put("org.quartz.jobStore.class","org.springframework.scheduling.quartz.LocalDataSourceJobStore");
         properties.put("org.quartz.jobStore.isClustered","true");
         properties.put("org.quartz.scheduler.instanceId","AUTO");
+        properties.put("org.quartz.threadPool.threadCount","20");
         switch(dataSourceConfigurationProperties.getType()){
             case SQL_AZURE:
                 properties.put("org.quartz.jobStore.driverDelegateClass","org.quartz.impl.jdbcjobstore.MSSQLDelegate");
