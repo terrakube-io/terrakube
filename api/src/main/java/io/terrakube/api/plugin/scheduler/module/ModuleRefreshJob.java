@@ -215,6 +215,7 @@ public class ModuleRefreshJob implements Job {
                                 .build();
                         ((SshTransport) transport)
                                 .setSshSessionFactory(terrakubeSshdSessionFactory.getSshdSessionFactory());
+                        ((SshTransport) transport).setTimeout(GIT_TIMEOUT_SECONDS);
                     }
                 }
             };
