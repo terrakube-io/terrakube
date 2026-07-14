@@ -4,7 +4,6 @@ import java.util.Optional;
 
 import org.apache.hc.core5.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
-import io.terrakube.api.plugin.vcs.GitLabRepoWebhookService;
 import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
@@ -33,9 +32,6 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
 
     @Autowired
     GitHubWebhookService gitHubWebhookService;
-
-    @Autowired
-    GitLabRepoWebhookService gitLabRepoWebhookService;
 
     @Autowired
     GitLabWebhookService gitLabWebhookService;
@@ -67,8 +63,8 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                                     && elideEntity.getWorkspace().getVcs() != null
                                     && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITLAB) {
                                 // V2 shared webhook path (GitLab)
-                                RepoWebhook repoWebhook = gitLabRepoWebhookService.getOrCreateRepoWebhook(elideEntity.getWorkspace());
-                                gitLabRepoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
+                                RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(elideEntity.getWorkspace());
+                                repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
                                 // Delete old per-workspace hook if it exists
                                 if (elideEntity.getRemoteHookId() != null && !elideEntity.getRemoteHookId().isEmpty()) {
                                     gitLabWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
@@ -102,7 +98,7 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                                     && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITLAB) {
                                 String normalizedUrl = RepoUrlNormalizer.normalize(elideEntity.getWorkspace().getSource());
                                 repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
-                                        .ifPresent(gitLabRepoWebhookService::cleanupIfOrphan);
+                                        .ifPresent(repoWebhookService::cleanupIfOrphan);
                             } else {
                                 webhookService.deleteWorkspaceWebhook(elideEntity);
                             }
