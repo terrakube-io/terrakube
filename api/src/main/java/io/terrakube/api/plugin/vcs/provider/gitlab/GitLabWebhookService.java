@@ -49,7 +49,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
     private int pagesize = 25;
     private int timeout = 30;
 
-    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.pagesize:25}") int pageSize, @Value("${io.terrakube.timeout:30}") int timeout) {
+    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
         this.objectMapper = objectMapper;
         this.hostname = hostname;
         this.webClientBuilder = webClientBuilder;
