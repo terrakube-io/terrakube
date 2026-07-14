@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.job.step.Step;
 import io.terrakube.client.model.organization.job.step.StepAttributes;
 import io.terrakube.client.model.organization.job.step.StepRequest;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.plugin.tfstate.StateUploadFailedException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -122,7 +123,18 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
 
     private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput) {
         StepAttributes stepAttributes = new StepAttributes();
-        stepAttributes.setOutput(this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput));
+        String outputUrl;
+        try {
+            outputUrl = this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
+        } catch (StateUploadFailedException uploadFailure) {
+            // Step output is diagnostic — losing it doesn't change infrastructure state.
+            // Log loudly but don't crash the step update so the job's overall status still
+            // reports correctly. The state/plan upload paths *do* fail the job on this.
+            log.error("Step output upload failed for job {} step {}: {}", jobId, stepId, uploadFailure.getMessage());
+            outputUrl = "";
+            status = false;
+        }
+        stepAttributes.setOutput(outputUrl);
         stepAttributes.setStatus(status ? "completed": "failed");
 
         Step step = new Step();
