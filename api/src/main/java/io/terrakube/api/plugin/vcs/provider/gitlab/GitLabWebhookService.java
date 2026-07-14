@@ -142,8 +142,16 @@ public class GitLabWebhookService extends WebhookServiceBase {
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
         try {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
+			JsonNode rootNode = objectMapper.readTree(jsonPayload);
 
             String action = mrModel.getObjectAttributes().getAction();
+
+			// Ignore update events triggered by resolving blocking discussions
+			if ("update".equals(action) && rootNode.has("blocking_discussions_resolved")) {
+				log.info("Ignoring GitLab MR update event: blocking discussions resolved");
+				result.setValid(false);
+				return result;
+			}
 
             switch (action) {
                 case "open":
