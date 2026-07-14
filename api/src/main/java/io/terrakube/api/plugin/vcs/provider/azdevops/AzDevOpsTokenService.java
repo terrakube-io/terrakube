@@ -22,6 +22,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.Collections;
 
 @Service
@@ -112,7 +113,7 @@ public class AzDevOpsTokenService {
             DefaultAzureCredential credential = credBuilder.build();
             TokenRequestContext context = new TokenRequestContext()
                     .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
-            AccessToken accessToken = credential.getToken(context).block();
+            AccessToken accessToken = credential.getToken(context).block(Duration.ofSeconds(30));
             if (accessToken == null || accessToken.getToken() == null) {
                 throw new Exception("Failed to acquire Managed Identity token. Check your environment configuration in Azure.");
             }
