@@ -49,7 +49,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
     private int pagesize = 25;
     private int timeout = 30;
 
-    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
+    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.pagesize:25}") int pageSize, @Value("${io.terrakube.timeout:30}") int timeout) {
         this.objectMapper = objectMapper;
         this.hostname = hostname;
         this.webClientBuilder = webClientBuilder;
@@ -145,6 +145,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             String action = mrModel.getObjectAttributes().getAction();
 
+            // Check if this is a discussion resolution event (no actual code changes)
+            // When discussions are resolved, blocking_discussions_resolved is set to true
+            // but no commits are added, so we should ignore this update
+            if ("update".equals(action) && rootNode.path("blocking_discussions_resolved").asBoolean()) {
+                log.info("Ignoring GitLab MR update event: blocking discussions were resolved, no code changes");
+                result.setValid(false);
+                return result;
+            }
+
             switch (action) {
                 case "open":
                 case "update":
@@ -193,8 +202,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             // Check if this is a discussion resolution event (no actual comment content)
             // Discussion resolutions don't have actionable content and should be ignored
-            String discussionResolutionAction = rootNode.path("object_attributes").path("discussion_resolved").asText();
-            if (!discussionResolutionAction.isEmpty()) {
+            boolean isDiscussionResolved = rootNode.path("object_attributes").path("discussion_resolved").asBoolean();
+            if (isDiscussionResolved) {
                 log.info("Ignoring GitLab note event: discussion resolution has no code changes");
                 result.setValid(false);
                 return result;
