@@ -522,6 +522,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         Map<String, Object> consumerInputs = new LinkedHashMap<>();
         consumerInputs.put("url", webhookUrl);
+        consumerInputs.put("resourceDetailsToSend", "all");
+        consumerInputs.put("detailedMessagesToSend", "all");
+        consumerInputs.put("messagesToSend", "all");
         // Accept self-signed / internal certificates so deliveries are not dropped on TLS
         // validation (otherwise Azure puts the subscription on probation and loses events).
         consumerInputs.put("acceptUntrustedCerts", "true");
