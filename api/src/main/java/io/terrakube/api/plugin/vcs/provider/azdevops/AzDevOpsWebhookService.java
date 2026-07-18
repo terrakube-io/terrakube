@@ -54,8 +54,15 @@ import lombok.extern.slf4j.Slf4j;
 public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private static final String API_VERSION = "7.0";
-    private static final String HOOKS_API_VERSION = "7.0-preview.1";
+    private static final String HOOKS_API_VERSION = "7.1";
     private static final String TOKEN_HEADER = "x-terrakube-token";
+    /**
+     * Azure DevOps webHooks consumer uses an empty string for "All" (see consumers API
+     * {@code resourceDetailsToSend} / {@code messagesToSend} possibleValues). The literal
+     * {@code "all"} is not a valid enum value when {@code isLimitedToPossibleValues} is true,
+     * and can leave deliveries with {@code resource: null}.
+     */
+    private static final String SEND_ALL = "";
 
     // Azure DevOps service hook event types
     private static final String EVENT_PUSH = "git.push";
@@ -106,6 +113,17 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         JsonNode rootNode = objectMapper.readTree(jsonPayload);
         String eventType = rootNode.path("eventType").asText();
         log.info("Azure DevOps event type: {}", eventType);
+
+        JsonNode resource = rootNode.get("resource");
+        if (resource == null || resource.isNull()) {
+            // Typical when the Azure subscription was created with an invalid
+            // resourceDetailsToSend value or an unsupported resourceVersion.
+            log.error(
+                    "Azure DevOps webhook for event {} has resource=null (resourceVersion={}); recreate the service hook subscription",
+                    eventType, rootNode.path("resourceVersion").asText(null));
+            result.setValid(false);
+            return result;
+        }
 
         switch (eventType) {
             case EVENT_PUSH:
@@ -522,17 +540,19 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         Map<String, Object> consumerInputs = new LinkedHashMap<>();
         consumerInputs.put("url", webhookUrl);
-        consumerInputs.put("resourceDetailsToSend", "all");
-        consumerInputs.put("detailedMessagesToSend", "all");
-        consumerInputs.put("messagesToSend", "all");
+        // Empty string = "All" per Azure DevOps webHooks consumer inputDescriptors.
+        consumerInputs.put("resourceDetailsToSend", SEND_ALL);
+        consumerInputs.put("detailedMessagesToSend", SEND_ALL);
+        consumerInputs.put("messagesToSend", SEND_ALL);
         // Accept self-signed / internal certificates so deliveries are not dropped on TLS
         // validation (otherwise Azure puts the subscription on probation and loses events).
         consumerInputs.put("acceptUntrustedCerts", "true");
         consumerInputs.put("httpHeaders", "X-Terrakube-Token:" + secret);
 
-        // Current Azure DevOps resource version is 2.0 for git.push and the pull request events;
-        // the pull request comment event uses 1.0.
-        String resourceVersion = EVENT_PR_COMMENT.equals(azureEventType) ? "1.0" : "2.0";
+        // Use 1.0 for every event type. Microsoft recommends 1.0 as the safest resource version;
+        // requesting 2.0 for git.push / PR events has been observed to yield deliveries with
+        // resource=null and resourceVersion=null while messages still arrive.
+        String resourceVersion = "1.0";
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("publisherId", "tfs");
@@ -552,7 +572,17 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             if (response != null && response.getStatusCode().is2xxSuccessful()) {
                 JsonNode rootNode = objectMapper.readTree(response.getBody());
                 String id = rootNode.path("id").asText();
-                log.info("Created Azure DevOps subscription {} for event {}", id, azureEventType);
+                String storedVersion = rootNode.path("resourceVersion").asText(null);
+                String storedResourceDetails = rootNode.path("consumerInputs").path("resourceDetailsToSend")
+                        .asText(null);
+                log.info(
+                        "Created Azure DevOps subscription {} for event {} (resourceVersion={}, resourceDetailsToSend={})",
+                        id, azureEventType, storedVersion, storedResourceDetails);
+                if (storedVersion == null || storedVersion.isEmpty()) {
+                    log.warn(
+                            "Azure DevOps subscription {} was created without a resourceVersion; webhook payloads may omit resource",
+                            id);
+                }
                 return id;
             }
             log.error("Failed to create Azure DevOps subscription for event {}, message {}", azureEventType,
