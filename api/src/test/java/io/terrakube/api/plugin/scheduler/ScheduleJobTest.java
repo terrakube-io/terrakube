@@ -117,6 +117,7 @@ public class ScheduleJobTest {
                 scheduleJobService,
                 null,
                 gitHubWebhookService,
+                null,
                 prCommentService,
                 globalVarRepository,
                 variableRepository,
