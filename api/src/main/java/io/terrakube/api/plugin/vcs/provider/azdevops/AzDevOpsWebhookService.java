@@ -57,12 +57,12 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     private static final String HOOKS_API_VERSION = "7.1";
     private static final String TOKEN_HEADER = "x-terrakube-token";
     /**
-     * Azure DevOps webHooks consumer uses an empty string for "All" (see consumers API
-     * {@code resourceDetailsToSend} / {@code messagesToSend} possibleValues). The literal
-     * {@code "all"} is not a valid enum value when {@code isLimitedToPossibleValues} is true,
-     * and can leave deliveries with {@code resource: null}.
+     * Value for webHooks {@code resourceDetailsToSend} / {@code messagesToSend} /
+     * {@code detailedMessagesToSend}. Azure's consumers metadata lists {@code ""} as "All",
+     * but posting an empty string is rejected as a missing ConsumerInput.Value; the API
+     * accepts {@code "all"} (same as the Terraform Azure DevOps provider).
      */
-    private static final String SEND_ALL = "";
+    private static final String SEND_ALL = "all";
 
     // Azure DevOps service hook event types
     private static final String EVENT_PUSH = "git.push";
@@ -540,7 +540,6 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         Map<String, Object> consumerInputs = new LinkedHashMap<>();
         consumerInputs.put("url", webhookUrl);
-        // Empty string = "All" per Azure DevOps webHooks consumer inputDescriptors.
         consumerInputs.put("resourceDetailsToSend", SEND_ALL);
         consumerInputs.put("detailedMessagesToSend", SEND_ALL);
         consumerInputs.put("messagesToSend", SEND_ALL);
