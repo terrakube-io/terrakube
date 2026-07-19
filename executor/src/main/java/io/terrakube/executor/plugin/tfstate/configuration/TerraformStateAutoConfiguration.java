@@ -91,7 +91,7 @@ public class TerraformStateAutoConfiguration {
 
                         s3client = S3Client.builder()
                                 .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .region(Region.of("auto"))
+                                .region(Region.of(awsTerraformStateProperties.getRegion()))
                                 .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
                                 .serviceConfiguration(serviceConfiguration)
                                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
