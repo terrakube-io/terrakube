@@ -106,4 +106,5 @@
     <include file="/db/changelog/local/changelog-2.32.0-job-step-cascade.xml"/>
     <include file="/db/changelog/local/changelog-2.32.0-performance-fk-indexes.xml" />
     <include file="/db/changelog/local/changelog-2.33.0-vcs-token-size.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-github-app-token-size.xml"/>
 </databaseChangeLog>
