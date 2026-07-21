@@ -1,0 +1,387 @@
+package io.terrakube.api.plugin.storage.controller;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.io.Encoders;
+import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.plugin.storage.StorageTypeService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Date;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class TerraformHttpBackendControllerTest {
+
+    private static final String ORG = "org-1";
+    private static final String WORKSPACE = "11111111-1111-1111-1111-111111111111";
+
+    private StorageTypeService storage;
+    private WorkspaceLockService lockService;
+    private TerraformHttpBackendController controller;
+    private String secretBase64Url;
+    private SecretKey key;
+
+    @BeforeEach
+    void setUp() {
+        storage = mock(StorageTypeService.class);
+        lockService = mock(WorkspaceLockService.class);
+        // HS256 matches NimbusJwtDecoder.withSecretKey(...).macAlgorithm(HS256)
+        // — the same wiring DexAuthenticationManagerResolver uses for internal tokens.
+        key = Jwts.SIG.HS256.key().build();
+        secretBase64Url = Encoders.BASE64URL.encode(key.getEncoded());
+        controller = new TerraformHttpBackendController(storage, lockService, secretBase64Url);
+
+        // Tests interact with the controller's calls into the service, but the
+        // controller also asks the service to parse the lock id out of the body
+        // it received. Stub that with a tiny grep so the assertion focus stays
+        // on controller behaviour rather than JSON plumbing.
+        when(lockService.readLockId(anyString()))
+                .thenAnswer(inv -> {
+                    String body = inv.getArgument(0);
+                    if (body == null || body.isBlank()) return null;
+                    int idx = body.indexOf("\"ID\":\"");
+                    if (idx < 0) return null;
+                    int start = idx + "\"ID\":\"".length();
+                    int end = body.indexOf("\"", start);
+                    return end < 0 ? null : body.substring(start, end);
+                });
+    }
+
+    private String validToken() {
+        return tokenFor("TerrakubeInternal", "TerrakubeInternal", WORKSPACE);
+    }
+
+    /** Mint an internal-style token with explicit issuer/audience/workspaceId so the
+     *  scope checks in isAuthorized can be exercised positively and negatively. */
+    private String tokenFor(String issuer, String audience, String workspaceId) {
+        SecretKey signingKey = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(secretBase64Url));
+        var builder = Jwts.builder()
+                .subject("executor")
+                .issuer(issuer)
+                .audience().add(audience).and()
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 60_000));
+        if (workspaceId != null) {
+            builder.claim("workspaceId", workspaceId);
+        }
+        return builder.signWith(signingKey).compact();
+    }
+
+    private MockHttpServletRequest withBasic(String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        String credentials = "executor:" + token;
+        request.addHeader("Authorization", "Basic " +
+                Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
+        return request;
+    }
+
+    private MockHttpServletRequest withBearer(String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer " + token);
+        return request;
+    }
+
+    @Test
+    void getStateReturns401WhenNoAuthHeader() {
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, new MockHttpServletRequest());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenTokenIsInvalid() {
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer("not-a-real-jwt"));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenTokenScopedToDifferentWorkspace() {
+        String otherWorkspaceToken = tokenFor("TerrakubeInternal", "TerrakubeInternal",
+                "22222222-2222-2222-2222-222222222222");
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(otherWorkspaceToken));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenWorkspaceClaimMissing() {
+        String unscopedToken = tokenFor("TerrakubeInternal", "TerrakubeInternal", null);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(unscopedToken));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenIssuerNotInternal() {
+        String wrongIssuer = tokenFor("SomeoneElse", "TerrakubeInternal", WORKSPACE);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(wrongIssuer));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenAudienceNotInternal() {
+        String wrongAudience = tokenFor("TerrakubeInternal", "SomeoneElse", WORKSPACE);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(wrongAudience));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns401WhenAuthSchemeUnknown() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Digest username=foo");
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, request);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturns404WhenStateMissing() {
+        when(storage.getCurrentTerraformState(ORG, WORKSPACE)).thenReturn(new byte[0]);
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBasic(validToken()));
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void getStateReturnsBytesWhenPresent() {
+        byte[] payload = "{\"version\":4}".getBytes(StandardCharsets.UTF_8);
+        when(storage.getCurrentTerraformState(ORG, WORKSPACE)).thenReturn(payload);
+
+        ResponseEntity<byte[]> response = controller.getState(ORG, WORKSPACE, withBearer(validToken()));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(MediaType.APPLICATION_OCTET_STREAM, response.getHeaders().getContentType());
+        assertEquals(payload.length, response.getBody().length);
+    }
+
+    @Test
+    void postStateRejectsWithLockMismatch() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.postState(ORG, WORKSPACE, "different-lock", request);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
+        verify(storage, never()).uploadState(any(), any(), any(), any());
+        verify(lockService, never()).refresh(WORKSPACE);
+    }
+
+    @Test
+    void postStateSucceedsWhenNoLockExists() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"version\":4}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.postState(ORG, WORKSPACE, null, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(storage).uploadState(eq(ORG), eq(WORKSPACE), eq("{\"version\":4}"), eq("live"));
+        verify(lockService, never()).refresh(WORKSPACE);
+    }
+
+    @Test
+    void postStateSucceedsAndRefreshesLockWhenLockMatches() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"matching-lock\"}"));
+        when(lockService.refresh(WORKSPACE)).thenReturn(true);
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"version\":4}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.postState(ORG, WORKSPACE, "matching-lock", request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(storage).uploadState(eq(ORG), eq(WORKSPACE), eq("{\"version\":4}"), eq("live"));
+        // The executor's heartbeat is the primary TTL-keeper, but the state POST
+        // also opportunistically refreshes so a single-step run that happens to
+        // skip a heartbeat tick still completes cleanly.
+        verify(lockService).refresh(WORKSPACE);
+    }
+
+    @Test
+    void deleteStateInvokesStorage() {
+        ResponseEntity<String> response = controller.deleteState(ORG, WORKSPACE, withBearer(validToken()));
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(storage).deleteCurrentTerraformState(ORG, WORKSPACE);
+    }
+
+    @Test
+    void lockReturnsOkWhenAcquireSucceeds() throws Exception {
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(true);
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).tryAcquire(WORKSPACE, "{\"ID\":\"client-lock\"}");
+    }
+
+    @Test
+    void lockIsIdempotentForSameHolder() throws Exception {
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"client-lock\"}"));
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+
+    @Test
+    void lockReturns409WhenHeldByDifferentClient() throws Exception {
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
+    }
+
+    @Test
+    void lockReturns409WithFallbackBodyWhenKeyExpiredBetweenSetAndReadBack() throws Exception {
+        // tryAcquire returned false (someone won the race) but the winning entry
+        // expired before we could read it back. The controller still has to say 409
+        // and supply *some* JSON body — default to {}.
+        when(lockService.tryAcquire(eq(WORKSPACE), anyString())).thenReturn(false);
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"client-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.lock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("{}", response.getBody());
+    }
+
+    @Test
+    void unlockReturnsOkWhenNothingHeld() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.empty());
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"any\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService, never()).release(WORKSPACE);
+        verify(lockService, never()).releaseIfMatches(anyString(), anyString());
+    }
+
+    @Test
+    void unlockReturns409OnIdMismatch() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"other-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("{\"ID\":\"holder-lock\"}", response.getBody());
+        verify(lockService, never()).release(WORKSPACE);
+    }
+
+    @Test
+    void unlockCompareAndDeletesWhenIdMatches() throws Exception {
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+        when(lockService.releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}")).thenReturn(true);
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"holder-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        // Atomic compare-and-delete against the exact held value, not a blind delete.
+        verify(lockService).releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}");
+        verify(lockService, never()).release(WORKSPACE);
+    }
+
+    @Test
+    void unlockStillReturnsOkWhenLockChangedBeforeCompareAndDelete() throws Exception {
+        // Another executor re-acquired between our read and delete: releaseIfMatches
+        // removes nothing, but the unlock is still reported OK (our lock is already gone).
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+        when(lockService.releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}")).thenReturn(false);
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent("{\"ID\":\"holder-lock\"}".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).releaseIfMatches(WORKSPACE, "{\"ID\":\"holder-lock\"}");
+    }
+
+    @Test
+    void unlockWithoutIdInBodyForceReleasesHeldLock() throws Exception {
+        // terraform force-unlock can send an empty body. With no ID to match against,
+        // the controller honors an unconditional release — operator override path.
+        when(lockService.getLockInfo(WORKSPACE)).thenReturn(Optional.of("{\"ID\":\"holder-lock\"}"));
+
+        MockHttpServletRequest request = withBasic(validToken());
+        request.setContent(new byte[0]);
+
+        ResponseEntity<String> response = controller.unlock(ORG, WORKSPACE, request);
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).release(WORKSPACE);
+        verify(lockService, never()).releaseIfMatches(anyString(), anyString());
+    }
+
+    @Test
+    void heartbeatReturns401WhenUnauthorized() {
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, new MockHttpServletRequest());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(lockService, never()).refresh(WORKSPACE);
+    }
+
+    @Test
+    void heartbeatReturnsOkWhenLockRefreshed() {
+        when(lockService.refresh(WORKSPACE)).thenReturn(true);
+
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, withBasic(validToken()));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(lockService).refresh(WORKSPACE);
+    }
+
+    @Test
+    void heartbeatReturns410WhenLockHasExpired() {
+        // TTL elapsed during a network partition — the executor needs a strong
+        // signal to abort the in-flight terraform op rather than continue and
+        // overlap with whoever acquires next.
+        when(lockService.refresh(WORKSPACE)).thenReturn(false);
+
+        ResponseEntity<String> response = controller.heartbeat(ORG, WORKSPACE, withBearer(validToken()));
+
+        assertEquals(HttpStatus.GONE, response.getStatusCode());
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        assertEquals("{\"error\":\"lock-lost\"}", response.getBody());
+    }
+}

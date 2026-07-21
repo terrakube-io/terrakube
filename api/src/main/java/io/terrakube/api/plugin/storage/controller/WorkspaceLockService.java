@@ -1,0 +1,111 @@
+package io.terrakube.api.plugin.storage.controller;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Redis-backed storage for the per-workspace terraform state lock. Stores the
+ * raw lock JSON body terraform sends, keyed by workspace id, with a short TTL.
+ * The executor running the operation drives a heartbeat that calls
+ * {@link #refresh(String)} every minute so a healthy run holds the lock for
+ * the duration of even very long applies, while a crashed or partitioned
+ * executor lets the lock expire and frees the workspace for the next run.
+ */
+@Service
+@Slf4j
+public class WorkspaceLockService {
+
+    private static final String KEY_PREFIX = "tflock:";
+
+    // Atomic compare-and-delete: only remove the lock if it still holds the exact
+    // value the caller observed. Closes the TOCTOU between getLockInfo and release.
+    private static final RedisScript<Long> RELEASE_IF_MATCHES = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class);
+
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final long lockTtlSeconds;
+
+    public WorkspaceLockService(RedisTemplate<String, Object> redisTemplate,
+                                @Value("${io.terrakube.api.http-backend.lock-ttl-seconds:300}") long lockTtlSeconds) {
+        this.redisTemplate = redisTemplate;
+        this.lockTtlSeconds = lockTtlSeconds;
+    }
+
+    public Optional<String> getLockInfo(String workspaceId) {
+        Object value = redisTemplate.opsForValue().get(key(workspaceId));
+        return value == null ? Optional.empty() : Optional.of(value.toString());
+    }
+
+    public Optional<String> getLockId(String workspaceId) {
+        return getLockInfo(workspaceId).map(this::readLockId);
+    }
+
+    /**
+     * Atomic SET ... NX EX. Returns true when this caller won the race, false
+     * when another holder already owns the lock.
+     */
+    public boolean tryAcquire(String workspaceId, String lockInfoJson) {
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(key(workspaceId), lockInfoJson, lockTtlSeconds, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(acquired);
+    }
+
+    /**
+     * Extend the TTL on an existing lock. Driven by the executor's heartbeat
+     * thread once a minute; long applies stay locked as long as the executor
+     * keeps the heartbeat alive. Returns {@code true} only when the key
+     * existed and the TTL was extended — a {@code false} return tells the
+     * caller (and the executor's heartbeat loop) that the lock has been lost.
+     */
+    public boolean refresh(String workspaceId) {
+        Boolean refreshed = redisTemplate.expire(key(workspaceId), lockTtlSeconds, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(refreshed);
+    }
+
+    public void release(String workspaceId) {
+        redisTemplate.delete(key(workspaceId));
+    }
+
+    /**
+     * Compare-and-delete: removes the lock only when its current value is exactly
+     * {@code expectedLockInfo} (the value the caller read a moment earlier). If
+     * another executor has since acquired the workspace, the stored value differs
+     * and nothing is deleted. Returns {@code true} when this caller's lock was the
+     * one removed. The lock value is set once on acquire and only TTL-refreshed
+     * afterward, so an exact-value match unambiguously identifies the same holder.
+     */
+    public boolean releaseIfMatches(String workspaceId, String expectedLockInfo) {
+        Long removed = redisTemplate.execute(RELEASE_IF_MATCHES,
+                Collections.singletonList(key(workspaceId)), expectedLockInfo);
+        return removed != null && removed > 0;
+    }
+
+    public String readLockId(String body) {
+        if (body == null || body.isBlank()) return null;
+        try {
+            JsonNode parsed = objectMapper.readTree(body);
+            JsonNode id = parsed.path("ID");
+            return id.isMissingNode() || id.isNull() ? null : id.asText(null);
+        } catch (IOException e) {
+            log.warn("Could not parse lock body as JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String key(String workspaceId) {
+        return KEY_PREFIX + workspaceId;
+    }
+}
