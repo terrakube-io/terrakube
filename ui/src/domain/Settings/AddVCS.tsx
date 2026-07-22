@@ -603,7 +603,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                     <br />
                     Metadata: Read-only
                     <br />
-                    Pull requests: Read-only (Only if webhook to be used on VCS workflow workspaces)
+                    Pull requests: Read and write (Only if webhook to be used on VCS workflow workspaces; write is
+                    required to post plan/apply comments back on pull requests when PR Workflow is enabled)
                     <br />
                     Webhooks: Read and write (Only if webhook to be used on VCS workflow workspaces)
                   </li>
