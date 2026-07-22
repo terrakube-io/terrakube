@@ -65,13 +65,20 @@ export default function OrganizationsPickerPage() {
   }, [location.pathname]);
 
   useEffect(() => {
+    // Don't auto-redirect when the user explicitly navigated to /organizations
+    // (e.g. via "Manage Organizations"), otherwise they can never reach the
+    // picker/create page when they only have a single organization.
+    if (location.pathname === "/organizations") {
+      return;
+    }
+
     if (organizations.length === 1) {
       const organization = organizations[0];
       sessionStorage.setItem(ORGANIZATION_ARCHIVE, organization.id);
       sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
       navigate(`/organizations/${organization.id}/workspaces`, { replace: true });
     }
-  }, [navigate, organizations]);
+  }, [navigate, organizations, location.pathname]);
 
   return (
     <PageWrapper
