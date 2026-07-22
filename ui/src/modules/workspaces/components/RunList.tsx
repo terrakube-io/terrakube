@@ -195,6 +195,11 @@ export default function RunList({ jobs, onRunClick }: Props) {
             actions={[
               <div key="status" style={{ textAlign: "right" }}>
                 {renderStatusTag(item.status)}
+                {item.prCommentError && (
+                  <Tooltip title={item.prCommentError}>
+                    <WarningOutlined style={{ color: "#fa8f37", marginLeft: 6 }} />
+                  </Tooltip>
+                )}
                 <div>
                   <Tooltip title={formatDate((item as any).createdDate)}>
                     <span className="metadata">{item.latestChange}</span>
