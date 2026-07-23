@@ -95,13 +95,19 @@ public class Job extends GenericAuditFields {
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 
-    @Exclude
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
     @Column(name = "pr_number")
     private Integer prNumber;
 
     @Exclude
     @Column(name = "pr_comment_id")
     private String prCommentId;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "pr_comment_error")
+    private String prCommentError;
 
     @ManyToOne
     private Organization organization;

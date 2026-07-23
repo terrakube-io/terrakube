@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import org.apache.hc.core5.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.client.HttpClientErrorException;
 import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
@@ -12,6 +13,7 @@ import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
+import io.terrakube.api.rs.webhook.WebhookEvent;
 
 import com.yahoo.elide.annotation.LifeCycleHookBinding.Operation;
 import com.yahoo.elide.annotation.LifeCycleHookBinding.TransactionPhase;
@@ -58,6 +60,9 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                             } else {
                                 webhookService.createOrUpdateWorkspaceWebhook(elideEntity);
                             }
+                        } catch (HttpClientErrorException e) {
+                            throw new WebhookManagementException(HttpStatus.SC_FAILED_DEPENDENCY,
+                                    buildPermissionErrorMessage(elideEntity, e));
                         } catch (Exception e) {
                             throw new WebhookManagementException(HttpStatus.SC_FAILED_DEPENDENCY,
                                     "Failed to create/update webhook: " + e.getMessage());
@@ -94,6 +99,20 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
             default:
                 break;
         }
+    }
+
+    private String buildPermissionErrorMessage(Webhook webhook, HttpClientErrorException e) {
+        int statusCode = e.getStatusCode().value();
+        if (statusCode == HttpStatus.SC_FORBIDDEN || statusCode == HttpStatus.SC_UNAUTHORIZED) {
+            boolean hasPrWorkflow = webhook.getEvents() != null && webhook.getEvents().stream()
+                    .anyMatch(WebhookEvent::isPrWorkflowEnabled);
+            String required = hasPrWorkflow
+                    ? "'Webhooks: write' permission, and 'Pull requests: write' permission because PR Workflow is enabled on this webhook"
+                    : "'Webhooks: write' permission";
+            return "The VCS connection does not have sufficient permissions to create/update this webhook on the linked repository. Please ensure the VCS connection has "
+                    + required + ".";
+        }
+        return "Failed to create/update webhook: " + e.getMessage();
     }
 
 }

@@ -91,6 +91,8 @@ export type JobAttributes = {
   output: string;
   approvalTeam: string;
   commitId: string;
+  prNumber?: number;
+  prCommentError?: string;
 } & AuditFieldBase;
 
 export type JobStep = {
@@ -110,6 +112,8 @@ export type FlatJob = {
   commitId?: string;
   createdBy: string;
   via?: JobVia;
+  prNumber?: number;
+  prCommentError?: string;
 };
 // VCS
 
