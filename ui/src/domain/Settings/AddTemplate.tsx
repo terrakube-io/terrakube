@@ -134,6 +134,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       })
       .then((response) => {
         if (response.status == 201) {
+          message.success("Template created successfully");
           loadTemplates();
           setMode("list");
         }

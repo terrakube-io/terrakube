@@ -141,6 +141,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
     axiosInstance
       .delete(`organization/${orgid}/globalvar/${id}`)
       .then((response) => {
+        message.success("Global variable deleted successfully");
         loadGlobalVariables();
       })
       .catch((err) => {
@@ -170,6 +171,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then((response) => {
+        message.success("Global variable created successfully");
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
@@ -201,6 +203,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then((response) => {
+        message.success("Global variable updated successfully");
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
