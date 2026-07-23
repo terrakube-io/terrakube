@@ -755,6 +755,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                 response.data.data.attributes.endpoint
               )
             );
+          } else {
+            message.success("VCS provider created successfully");
           }
           loadVCS();
           setMode("list");

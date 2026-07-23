@@ -115,6 +115,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
           axiosInstance
             .delete(`organization/${orgid}/vcs/${id}`)
             .then(() => {
+              message.success("VCS provider deleted successfully");
               loadVCS();
             })
             .catch((err) => {

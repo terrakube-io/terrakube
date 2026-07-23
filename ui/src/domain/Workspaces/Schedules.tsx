@@ -1,11 +1,11 @@
 import { ClockCircleOutlined, DeleteOutlined, EditOutlined, InfoCircleOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, Form, Input, message, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
 import cronstrue from "cronstrue";
 import { useEffect, useMemo, useState } from "react";
 import { Cron } from "react-js-cron";
 import "react-js-cron/dist/styles.css";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import * as C2Q from "cron-to-quartz";
 import { FlatSchedule, Template } from "../types";
 
@@ -23,9 +23,10 @@ const validateMessages = {
 type Props = {
   schedules: FlatSchedule[];
   manageWorkspace: boolean;
+  reload: () => void;
 };
 
-export const Schedules = ({ schedules, manageWorkspace }: Props) => {
+export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [form] = Form.useForm();
@@ -86,7 +87,7 @@ export const Schedules = ({ schedules, manageWorkspace }: Props) => {
               </Button>
               <Popconfirm
                 onConfirm={() => {
-                  deleteSchedule(record.id, organizationId!, workspaceId!);
+                  onDelete(record.id);
                 }}
                 title={
                   <p>
@@ -115,16 +116,22 @@ export const Schedules = ({ schedules, manageWorkspace }: Props) => {
   }, [organizationId]);
 
   const loadTemplates = () => {
-    axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
-      const templatesList = response.data.data.filter(function (obj: Template) {
-        //exclude CLI based templates
-        return (
-          obj.attributes.name !== "Terraform-Plan/Apply-Cli" && obj.attributes.name !== "Terraform-Plan/Destroy-Cli"
-        );
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((response) => {
+        const templatesList = response.data.data.filter(function (obj: Template) {
+          //exclude CLI based templates
+          return (
+            obj.attributes.name !== "Terraform-Plan/Apply-Cli" && obj.attributes.name !== "Terraform-Plan/Destroy-Cli"
+          );
+        });
+        setTemplates(templatesList);
+        setLoading(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setLoading(false);
       });
-      setTemplates(templatesList);
-      setLoading(false);
-    });
   };
 
   const onCancel = () => {
@@ -157,9 +164,14 @@ export const Schedules = ({ schedules, manageWorkspace }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Schedule created successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -181,9 +193,30 @@ export const Schedules = ({ schedules, manageWorkspace }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Schedule updated successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
+  };
+
+  const onDelete = (deleteId: string) => {
+    axiosInstance
+      .delete(`organization/${organizationId}/workspace/${workspaceId}/schedule/${deleteId}`, {
+        headers: {
+          "Content-Type": "application/vnd.api+json",
+        },
+      })
+      .then(() => {
+        message.success("Schedule deleted successfully");
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -263,16 +296,4 @@ export const Schedules = ({ schedules, manageWorkspace }: Props) => {
       </Modal>
     </div>
   );
-};
-
-const deleteSchedule = (scheduleId: string, organizationId: string, workspaceId: string) => {
-  axiosInstance
-    .delete(`organization/${organizationId}/workspace/${workspaceId}/schedule/${scheduleId}`, {
-      headers: {
-        "Content-Type": "application/vnd.api+json",
-      },
-    })
-    .then((response) => {
-      console.log(response);
-    });
 };
