@@ -8,6 +8,7 @@ import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
@@ -33,6 +34,9 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
     GitHubWebhookService gitHubWebhookService;
 
     @Autowired
+    GitLabWebhookService gitLabWebhookService;
+
+    @Autowired
     RepoWebhookRepository repoWebhookRepository;
 
     @Override
@@ -47,12 +51,23 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                             if (elideEntity.isMigratedV2()
                                     && elideEntity.getWorkspace().getVcs() != null
                                     && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITHUB) {
-                                // V2 shared webhook path
+                                // V2 shared webhook path (GitHub)
                                 RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(elideEntity.getWorkspace());
                                 repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
                                 // Delete old per-workspace hook if it exists
                                 if (elideEntity.getRemoteHookId() != null && !elideEntity.getRemoteHookId().isEmpty()) {
                                     gitHubWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
+                                    elideEntity.setRemoteHookId(null);
+                                }
+                            } else if (elideEntity.isMigratedV2()
+                                    && elideEntity.getWorkspace().getVcs() != null
+                                    && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITLAB) {
+                                // V2 shared webhook path (GitLab)
+                                RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(elideEntity.getWorkspace());
+                                repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
+                                // Delete old per-workspace hook if it exists
+                                if (elideEntity.getRemoteHookId() != null && !elideEntity.getRemoteHookId().isEmpty()) {
+                                    gitLabWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
                                     elideEntity.setRemoteHookId(null);
                                 }
                             } else {
@@ -75,6 +90,12 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                             if (elideEntity.isMigratedV2()
                                     && elideEntity.getWorkspace().getVcs() != null
                                     && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITHUB) {
+                                String normalizedUrl = RepoUrlNormalizer.normalize(elideEntity.getWorkspace().getSource());
+                                repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
+                                        .ifPresent(repoWebhookService::cleanupIfOrphan);
+                            } else if (elideEntity.isMigratedV2()
+                                    && elideEntity.getWorkspace().getVcs() != null
+                                    && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITLAB) {
                                 String normalizedUrl = RepoUrlNormalizer.normalize(elideEntity.getWorkspace().getSource());
                                 repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
                                         .ifPresent(repoWebhookService::cleanupIfOrphan);

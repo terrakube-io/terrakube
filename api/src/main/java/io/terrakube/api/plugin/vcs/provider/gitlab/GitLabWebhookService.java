@@ -14,7 +14,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -120,9 +123,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 }
 
             } else if (event.equals("merge_request")) {
-                return handleMergeRequestEvent(result, jsonPayload, workspace);
+                return handleMergeRequestEvent(result, jsonPayload, workspace.getVcs(), workspace.getSource());
             } else if (event.equals("note")) {
-                return handleNoteEvent(result, jsonPayload, workspace);
+                return handleNoteEvent(result, jsonPayload, workspace.getVcs(), workspace.getSource());
             } else if (event.equals("release")) {
                 return handleReleaseEvent(result, jsonPayload);
             }
@@ -138,8 +141,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    private WebhookResult handleMergeRequestEvent(WebhookResult result, String jsonPayload, Workspace workspace) throws IOException, InterruptedException {
-        String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+    private WebhookResult handleMergeRequestEvent(WebhookResult result, String jsonPayload, Vcs vcs, String source) throws IOException, InterruptedException {
+        String ownerAndRepo = extractOwnerAndRepoGitlab(source);
         try {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
 			JsonNode rootNode = objectMapper.readTree(jsonPayload);
@@ -167,9 +170,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     result.setFileChanges(
                             getFileChanges(
                                 mrModel.getObjectAttributes().getIid().toString(),
-                                getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl()),
-                                workspace.getVcs().getAccessToken(),
-                                workspace.getVcs().getApiUrl()
+                                getGitlabProjectId(ownerAndRepo, vcs.getAccessToken(), vcs.getApiUrl()),
+                                vcs.getAccessToken(),
+                                vcs.getApiUrl()
                             ));
 
                     log.info("Processing merge request event: {} - {} ({})",
@@ -188,7 +191,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
+    private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Vcs vcs, String source) {
         try {
             JsonNode rootNode = objectMapper.readTree(jsonPayload);
             JsonNode noteNode = rootNode.path("object_attributes");
@@ -220,13 +223,13 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 result.setCommit(mrNode.path("last_commit").path("id").asText());
             }
 
-            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
-            String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
+            String ownerAndRepo = extractOwnerAndRepoGitlab(source);
+            String projectId = getGitlabProjectId(ownerAndRepo, vcs.getAccessToken(), vcs.getApiUrl());
             result.setFileChanges(getFileChanges(
                     String.valueOf(mrNode.path("iid").asInt()),
                     projectId,
-                    workspace.getVcs().getAccessToken(),
-                    workspace.getVcs().getApiUrl()
+                    vcs.getAccessToken(),
+                    vcs.getApiUrl()
             ));
 
         } catch (Exception e) {
@@ -602,6 +605,160 @@ public class GitLabWebhookService extends WebhookServiceBase {
             log.error("Failed to delete webhook IOException with remote hook id {} on repository {}: {}", webhookRemoteId, workspace.getSource(), e.getMessage());
         } catch (InterruptedException ex) {
             log.error("Failed to delete webhook InterruptedException with remote hook id {} on repository {}: {}", webhookRemoteId, workspace.getSource(), ex.getMessage());
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Verifies the GitLab webhook token (sent in the x-gitlab-token header) against
+     * the shared secret stored on the {@link RepoWebhook}. GitLab does not use HMAC
+     * signatures, it sends the configured token back verbatim.
+     */
+    public boolean verifyGitlabToken(Map<String, String> headers, String secret) {
+        String tokenHeader = headers.get("x-gitlab-token");
+        if (tokenHeader == null || !tokenHeader.equals(secret)) {
+            log.error("X-Gitlab-Token header is missing or doesn't match!");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Parses a GitLab webhook payload for the shared (v2) webhook flow. Unlike the
+     * per-workspace flow, this method does not require a {@link Workspace}: file
+     * changes are fetched using the {@link Vcs} and repository URL stored on the
+     * {@link RepoWebhook}.
+     */
+    public WebhookResult parseGitlabPayload(String jsonPayload, Map<String, String> headers, Vcs vcs, String repositoryUrl) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia("GitLab");
+        result.setValid(true);
+        try {
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            String event = rootNode.path("object_kind").asText();
+            result.setEvent(event);
+
+            if (event.equals("push")) {
+                String[] ref = rootNode.path("ref").asText().split("/");
+                String[] extractedBranch = Arrays.copyOfRange(ref, 2, ref.length);
+                result.setBranch(String.join("/", extractedBranch));
+
+                result.setCreatedBy(rootNode.path("user_username").asText());
+
+                result.setFileChanges(new ArrayList<>());
+                GitlabWebhookModel gitlabWebhookModel = objectMapper.readValue(jsonPayload, GitlabWebhookModel.class);
+                result.setCommit(gitlabWebhookModel.getCheckoutSha());
+                WebhookResult finalResult = result;
+                gitlabWebhookModel.getCommits().forEach(commitData -> {
+                    finalResult.getFileChanges().addAll(commitData.getModified());
+                    finalResult.getFileChanges().addAll(commitData.getRemoved());
+                    finalResult.getFileChanges().addAll(commitData.getAdded());
+                });
+                return finalResult;
+            } else if (event.equals("merge_request")) {
+                return handleMergeRequestEvent(result, jsonPayload, vcs, repositoryUrl);
+            } else if (event.equals("note")) {
+                return handleNoteEvent(result, jsonPayload, vcs, repositoryUrl);
+            } else if (event.equals("release")) {
+                return handleReleaseEvent(result, jsonPayload);
+            } else {
+                result.setValid(false);
+                log.error("No valid gitlab event {}", event);
+            }
+        } catch (JsonProcessingException e) {
+            log.error("Error parsing JSON payload", e);
+            result.setValid(false);
+        } catch (IOException e) {
+            log.error("Error parsing", e);
+            result.setValid(false);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            result.setValid(false);
+        }
+        return result;
+    }
+
+    /**
+     * Creates or updates a shared (repository level) webhook on GitLab. The webhook
+     * points to the v2 endpoint and enables the events aggregated across all
+     * workspaces sharing the repository.
+     */
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+        String remoteHookId = repoWebhook.getRemoteHookId();
+        Vcs vcs = repoWebhook.getVcs();
+        String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
+        String token = vcs.getAccessToken();
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId());
+
+        boolean pushEvents = eventTypes.contains(WebhookEventType.PUSH);
+        boolean mergeRequestEvents = eventTypes.contains(WebhookEventType.PULL_REQUEST);
+        boolean releaseEvents = eventTypes.contains(WebhookEventType.RELEASE);
+        boolean noteEvents = eventTypes.contains(WebhookEventType.PR_COMMENT);
+
+        String body = "{\"url\":\"" + webhookUrl
+                + "\",\"push_events\":" + pushEvents
+                + ", \"merge_requests_events\":" + mergeRequestEvents
+                + ", \"releases_events\":" + releaseEvents
+                + ", \"note_events\":" + noteEvents
+                + ", \"enable_ssl_verification\":\"false\",\"token\":\"" + repoWebhook.getWebhookSecret() + "\"}";
+
+        String projectId = "";
+        try {
+            projectId = getGitlabProjectId(ownerAndRepo, token, vcs.getApiUrl());
+        } catch (InterruptedException | IOException e) {
+            log.error(e.getMessage());
+            Thread.currentThread().interrupt();
+        }
+
+        ResponseEntity<String> response;
+        if (remoteHookId == null || remoteHookId.isEmpty()) {
+            String apiUrl = vcs.getApiUrl() + "/projects/" + projectId + "/hooks";
+            response = callGitlabApi(token, body, apiUrl, HttpMethod.POST);
+            if (response != null && response.getStatusCode().value() == 201) {
+                try {
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    remoteHookId = rootNode.path("id").asText();
+                } catch (Exception e) {
+                    log.error("Error parsing JSON response", e);
+                }
+                log.info("GitLab repo webhook created successfully with id {}", remoteHookId);
+            }
+        } else {
+            String apiUrl = vcs.getApiUrl() + "/projects/" + projectId + "/hooks/" + remoteHookId;
+            response = callGitlabApi(token, body, apiUrl, HttpMethod.PUT);
+            log.info("GitLab repo webhook updating status {} with id {}",
+                    response != null ? response.getStatusCode() : "no response", remoteHookId);
+        }
+
+        return remoteHookId;
+    }
+
+    /**
+     * Deletes a shared (repository level) webhook from GitLab.
+     */
+    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+        if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
+            log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
+            return;
+        }
+        Vcs vcs = repoWebhook.getVcs();
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
+            String projectId = getGitlabProjectId(ownerAndRepo, vcs.getAccessToken(), vcs.getApiUrl());
+            String apiUrl = vcs.getApiUrl() + "/projects/" + projectId + "/hooks/" + repoWebhook.getRemoteHookId();
+
+            ResponseEntity<String> response = callGitlabApi(vcs.getAccessToken(), "", apiUrl, HttpMethod.DELETE);
+            if (response != null && response.getStatusCode().value() == 204) {
+                log.info("Repo webhook with remote hook id {} deleted successfully", repoWebhook.getRemoteHookId());
+            } else {
+                log.warn("Failed to delete repo webhook with remote hook id {}, message {}",
+                        repoWebhook.getRemoteHookId(), response != null ? response.getBody() : "no response");
+            }
+        } catch (IOException e) {
+            log.error("Failed to delete repo webhook IOException with remote hook id {}: {}", repoWebhook.getRemoteHookId(), e.getMessage());
+        } catch (InterruptedException ex) {
+            log.error("Failed to delete repo webhook InterruptedException with remote hook id {}: {}", repoWebhook.getRemoteHookId(), ex.getMessage());
             Thread.currentThread().interrupt();
         }
     }
