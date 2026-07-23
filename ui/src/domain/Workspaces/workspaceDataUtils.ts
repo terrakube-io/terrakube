@@ -1,6 +1,6 @@
 import { AxiosInstance } from "axios";
 import { DateTime } from "luxon";
-import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
+import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import { FlatJob, FlatJobHistory, FlatVariable, Schedule, Template, VcsType, StateOutputValue } from "../types";
 import { getIaCNameById } from "./Workspaces";
 
@@ -42,10 +42,8 @@ export async function setupWorkspaceIncludes(
   setGlobalEnvVariables: (val: FlatVariable[]) => void
 ): Promise<void> {
   const variables: FlatVariable[] = [];
-  const jobs: FlatJob[] = [];
   const webhooks: any = {};
   const envVariables: FlatVariable[] = [];
-  const history: FlatJobHistory[] = [];
   const schedule: Schedule[] = [];
   const collectionVariables: any[] = [];
   const collectionEnvVariables: any[] = [];
@@ -80,53 +78,10 @@ export async function setupWorkspaceIncludes(
           })
         );
         break;
-      case include.JOB:
-        let finalColor = "";
-        switch (element.attributes.status) {
-          case "completed":
-            finalColor = "#2eb039";
-            break;
-          case "noChanges":
-            finalColor = "#9f37fa";
-            break;
-          case "rejected":
-            finalColor = "#FB0136";
-            break;
-          case "failed":
-            finalColor = "#FB0136";
-            break;
-          case "running":
-            finalColor = "#108ee9";
-            break;
-          case "waitingApproval":
-            finalColor = "#fa8f37";
-            break;
-          default:
-            finalColor = "";
-            break;
-        }
-        jobs.push({
-          id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          statusColor: finalColor,
-          commitId: element.attributes.commitId,
-          stepNumber: element.attributes.stepNumber,
-          latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-          ...element.attributes,
-        });
-        setLastRun(element.attributes.updatedDate);
-        break;
-      case include.HISTORY:
-        console.log(element);
-        history.push({
-          id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-          createdDate: element.attributes.createdDate,
-          ...element.attributes,
-        });
-        break;
-
+      // job and history are no longer loaded via the workspace include.
+      // They are fetched as paginated, sorted sub-collections (see
+      // loadWorkspaceJobs / loadWorkspaceHistory) so the workspace screen does
+      // not pull the entire run/state history at once.
       case include.SCHEDULE:
         schedule.push({
           id: element.id,
@@ -202,44 +157,124 @@ export async function setupWorkspaceIncludes(
 
   setVariables([...variables].sort(byKey));
   setEnvVariables([...envVariables].sort(byKey));
-  setJobs(jobs);
-  setHistory(history);
   setSchedule(schedule);
   setCollectionVariables([...collectionVariables].sort(byKey));
   setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
   setGlobalVariables([...globalVariables].sort(byKey));
   setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
+}
 
-  // set state data
-  const lastState = history
-    .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
-    .reverse()[0];
-  // reload state only if there is a new version
+const JOB_STATUS_COLOR: Record<string, string> = {
+  completed: "#2eb039",
+  noChanges: "#9f37fa",
+  rejected: "#FB0136",
+  failed: "#FB0136",
+  running: "#108ee9",
+  waitingApproval: "#fa8f37",
+};
 
-  if (currentStateId !== lastState?.id) {
-    const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
-    const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
-    axiosInstance
-      .get(url)
-      .then((response: any) => {
+// Default page size used when loading the run/state lists for a workspace.
+export const WORKSPACE_LIST_PAGE_SIZE = 100;
+
+/**
+ * Loads the most recent jobs (runs) of a workspace as a sorted, paginated
+ * sub-collection instead of pulling the entire history through the workspace
+ * include. The list is sorted by id descending so jobs[0] is the latest run.
+ */
+export async function loadWorkspaceJobs(
+  axiosInstance: AxiosInstance,
+  organizationId: string,
+  workspaceId: string,
+  iacType: string,
+  setJobs: (val: FlatJob[]) => void,
+  setLastRun: (val: string) => void,
+  pageSize: number = WORKSPACE_LIST_PAGE_SIZE,
+  pageNumber: number = 1
+): Promise<void> {
+  try {
+    const response = await axiosInstance.get(
+      `organization/${organizationId}/workspace/${workspaceId}/job?page[number]=${pageNumber}&page[size]=${pageSize}&sort=-id`
+    );
+    const data = response.data.data ?? [];
+    const jobs: FlatJob[] = data.map((element: any) => ({
+      id: element.id,
+      title: "Queue manually using " + getIaCNameById(iacType),
+      statusColor: JOB_STATUS_COLOR[element.attributes.status] ?? "",
+      commitId: element.attributes.commitId,
+      stepNumber: element.attributes.stepNumber,
+      latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+      ...element.attributes,
+    }));
+    setJobs(jobs);
+    if (data.length > 0) {
+      setLastRun(data[0].attributes.updatedDate);
+    }
+  } catch (err) {
+    console.error("Failed to load workspace jobs:", err);
+  }
+}
+
+/**
+ * Loads the most recent state versions (history) of a workspace as a sorted,
+ * paginated sub-collection. The current state is derived from the latest entry
+ * (highest jobReference) of the returned page and its resources/outputs are
+ * loaded when it changed.
+ */
+export async function loadWorkspaceHistory(
+  axiosInstance: AxiosInstance,
+  organizationId: string,
+  workspaceId: string,
+  iacType: string,
+  setHistory: (val: FlatJobHistory[]) => void,
+  setCurrentStateId: (val: string) => void,
+  currentStateId: string,
+  setResources: (val: any[]) => void,
+  setOutputs: (val: any[]) => void,
+  setContextState: (val: any) => void,
+  pageSize: number = WORKSPACE_LIST_PAGE_SIZE,
+  pageNumber: number = 1
+): Promise<void> {
+  try {
+    const response = await axiosInstance.get(
+      `organization/${organizationId}/workspace/${workspaceId}/history?page[number]=${pageNumber}&page[size]=${pageSize}&sort=-id`
+    );
+    const history: FlatJobHistory[] = (response.data.data ?? []).map((element: any) => ({
+      id: element.id,
+      title: "Queue manually using " + getIaCNameById(iacType),
+      relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+      createdDate: element.attributes.createdDate,
+      ...element.attributes,
+    }));
+    setHistory(history);
+
+    const lastState = [...history]
+      .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
+      .reverse()[0];
+
+    // reload state only if there is a new version
+    if (currentStateId !== lastState?.id) {
+      const url = `${
+        new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
+      }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
+      try {
+        const permissions = await axiosInstance.get(url);
         loadState(
           lastState,
           axiosInstance,
           setOutputs,
           setResources,
-          sessionStorage.getItem(WORKSPACE_ARCHIVE)!,
+          workspaceId,
           setContextState,
-          response.data.manageState
+          permissions.data.manageState
         );
-      })
-      .catch((err: any) => {
+      } catch (err) {
         console.error("Failed to load workspace permissions for state:", err);
-      });
+      }
+    }
+    setCurrentStateId(lastState?.id);
+  } catch (err) {
+    console.error("Failed to load workspace history:", err);
   }
-  setCurrentStateId(lastState?.id);
 }
 
 export function loadState(
