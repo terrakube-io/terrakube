@@ -1,22 +1,26 @@
-import { DownOutlined, GithubOutlined, GitlabOutlined } from "@ant-design/icons";
+import { DownOutlined, GithubOutlined, GitlabOutlined, LockOutlined } from "@ant-design/icons";
 import {
+  Alert,
   AutoComplete,
   Breadcrumb,
   Button,
   Card,
   Dropdown,
+  Flex,
   Form,
   Input,
   Layout,
   List,
+  Segmented,
   Select,
   Space,
   Steps,
+  Tag,
   message,
   theme,
   Typography,
 } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconContext } from "react-icons";
 import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket, SiGit } from "react-icons/si";
@@ -25,12 +29,23 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
-import { ProjectModel, SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
+import {
+  ProjectModel,
+  SshKey,
+  Template,
+  TofuRelease,
+  VcsConnectionType,
+  VcsModel,
+  VcsRepositoryGroup,
+  VcsRepositoryPage,
+  VcsRepositorySummary,
+  VcsType,
+  VcsTypeExtended,
+} from "../types";
 import { compareVersions, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
 const { Content } = Layout;
-const { Step } = Steps;
 
 const validateMessages = {
   required: "${label} is required!",
@@ -61,9 +76,8 @@ type CreateWorkspaceForm = {
 };
 
 export const CreateWorkspace = () => {
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
+  const { token } = theme.useToken();
+  const { colorBgContainer } = token;
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
@@ -80,6 +94,19 @@ export const CreateWorkspace = () => {
   const [versionControlFlow, setVersionControlFlow] = useState(true);
   const [requiredVcsPush, setRequiredVcsPush] = useState(true);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const [repoPickerMode, setRepoPickerMode] = useState<"list" | "manual">("list");
+  const [discoveryUnsupported, setDiscoveryUnsupported] = useState(false);
+  const [vcsGroups, setVcsGroups] = useState<VcsRepositoryGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [repoResults, setRepoResults] = useState<VcsRepositorySummary[]>([]);
+  const [repoSearch, setRepoSearch] = useState("");
+  const [repoPage, setRepoPage] = useState(1);
+  const [repoHasMore, setRepoHasMore] = useState(false);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState("");
+  const [repoError, setRepoError] = useState<string | null>(null);
+  const repoSearchDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [iacTypes, setIacTypes] = useState<IacType[]>([]);
   const [iacType, setIacType] = useState<IacType>({
     id: "terraform",
@@ -112,15 +139,29 @@ export const CreateWorkspace = () => {
 
   const githubItems = [
     {
-      label: "GitHub.com",
+      label: "GitHub.com (GitHub App)",
       key: "1",
+      onClick: () => {
+        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
+      },
+    },
+    {
+      label: "GitHub.com (oAuth App)",
+      key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB);
       },
     },
     {
-      label: "GitHub Enterprise",
-      key: "2",
+      label: "GitHub Enterprise (GitHub App)",
+      key: "3",
+      onClick: () => {
+        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE, VcsConnectionType.STANDALONE);
+      },
+    },
+    {
+      label: "GitHub Enterprise (oAuth App)",
+      key: "4",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
       },
@@ -220,17 +261,102 @@ export const CreateWorkspace = () => {
   const handleGitClick = (id: string) => {
     if (id === "git") {
       setSSHKeysVisible(true);
+      setRepoPickerMode("manual");
     } else {
       setSSHKeysVisible(false);
       setVcsId(id);
+      setRepoPickerMode("list");
+      setDiscoveryUnsupported(false);
+      setVcsGroups([]);
+      setRepoResults([]);
+      setRepoSearch("");
+      setSelectedRepoUrl("");
+      fetchVcsGroups(id);
     }
     setCurrent(3);
     setRequiredVcsPush(true);
     setStep3Hidden(false);
   };
 
-  const handleVCSClick = (vcsType: VcsTypeExtended) => {
-    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}`);
+  const vcsApiUrl = (path: string) => `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}${path}`;
+
+  const fetchVcsGroups = (id: string) => {
+    setGroupsLoading(true);
+    setRepoError(null);
+    axiosInstance
+      .get(vcsApiUrl(`/vcs/v1/${id}/groups`))
+      .then((response) => {
+        const groups: VcsRepositoryGroup[] = response.data || [];
+        setVcsGroups(groups);
+        setGroupsLoading(false);
+        if (groups.length > 0) {
+          setSelectedGroup(groups[0].id);
+          fetchRepositories(id, groups[0].id, "", 1, false);
+        } else {
+          message.warning(
+            "No organizations were found for this VCS connection. Enter the repository URL manually instead."
+          );
+          setRepoPickerMode("manual");
+        }
+      })
+      .catch(() => {
+        setGroupsLoading(false);
+        setDiscoveryUnsupported(true);
+        setRepoPickerMode("manual");
+        message.warning(
+          "We couldn't automatically list repositories for this connection. Enter the repository URL manually instead."
+        );
+      });
+  };
+
+  const fetchRepositories = (id: string, group: string, search: string, page: number, append: boolean) => {
+    setRepoLoading(true);
+    if (!append) {
+      setRepoError(null);
+    }
+    axiosInstance
+      .get(vcsApiUrl(`/vcs/v1/${id}/repositories`), { params: { group, search, page } })
+      .then((response) => {
+        const data: VcsRepositoryPage = response.data;
+        setRepoResults((prev) => (append ? [...prev, ...data.items] : data.items));
+        setRepoHasMore(data.hasMore);
+        setRepoPage(data.page);
+        setRepoLoading(false);
+        setRepoError(null);
+      })
+      .catch(() => {
+        setRepoLoading(false);
+        setRepoError("Something went wrong while loading repositories from the VCS provider.");
+      });
+  };
+
+  const handleGroupChange = (group: string) => {
+    setSelectedGroup(group);
+    fetchRepositories(vcsId, group, repoSearch, 1, false);
+  };
+
+  const handleRepoSearchChange = (value: string) => {
+    setRepoSearch(value);
+    if (repoSearchDebounce.current) {
+      clearTimeout(repoSearchDebounce.current);
+    }
+    repoSearchDebounce.current = setTimeout(() => {
+      fetchRepositories(vcsId, selectedGroup, value, 1, false);
+    }, 400);
+  };
+
+  const handleLoadMoreRepos = () => {
+    fetchRepositories(vcsId, selectedGroup, repoSearch, repoPage + 1, true);
+  };
+
+  const handleRepoSelect = (repo: VcsRepositorySummary) => {
+    setSelectedRepoUrl(repo.url);
+    form.setFieldsValue({ source: repo.url });
+  };
+
+  const handleVCSClick = (vcsType: VcsTypeExtended, connectionType?: VcsConnectionType) => {
+    const query = connectionType ? `?connectionType=${connectionType}` : "";
+    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}${query}`);
   };
 
   const handleConnectDifferent = () => {
@@ -273,7 +399,7 @@ export const CreateWorkspace = () => {
 
   const [form] = Form.useForm();
   const handleGitContinueClick = () => {
-    setCurrent(3);
+    setCurrent(4);
     setStep4Hidden(false);
     setStep3Hidden(true);
     const source = form.getFieldValue("source");
@@ -413,6 +539,12 @@ export const CreateWorkspace = () => {
   };
 
   const handleChange = (currentVal: number) => {
+    // The breadcrumb can only step backward. Going forward again always requires redoing the
+    // actual step action (a card click / Continue button), never a direct jump, so stale
+    // choices from a step you've backed out of can't be skipped past silently.
+    if (currentVal >= current) {
+      return;
+    }
     setCurrent(currentVal);
     if (currentVal === 3) {
       setStep3Hidden(false);
@@ -471,43 +603,69 @@ export const CreateWorkspace = () => {
               (infrastructure as code), shared variable values, your current and historical state, and run logs.
             </Typography.Text>
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-            <Step title="Choose IaC Type" />
-            <Step title="Choose Type" />
-            {versionControlFlow ? (
-              <>
-                <Step title="Connect to VCS" />
-                <Step title="Choose a repository" />
-              </>
-            ) : (
-              ""
-            )}
-            <Step title="Configure Settings" />
-          </Steps>
+          <div
+            style={{
+              background: token.colorFillAlter,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadiusLG,
+              padding: "20px 24px",
+              margin: "16px 0 24px 0",
+            }}
+          >
+            <Steps
+              current={current}
+              onChange={handleChange}
+              responsive
+              items={(versionControlFlow
+                ? [
+                    { title: "Choose IaC type", description: "Terraform or OpenTofu" },
+                    { title: "Choose type", description: "How runs are triggered" },
+                    { title: "Connect to VCS", description: "Pick a git provider" },
+                    { title: "Choose a repository", description: "Select your source code" },
+                    { title: "Configure settings", description: "Name, branch & defaults" },
+                  ]
+                : [
+                    { title: "Choose IaC type", description: "Terraform or OpenTofu" },
+                    { title: "Choose type", description: "How runs are triggered" },
+                    { title: "Configure settings", description: "Name & defaults" },
+                  ]
+              ).map((step, index) => ({ ...step, disabled: index >= current }))}
+            />
+          </div>
           {current == 0 && (
             <Space className="chooseType" direction="vertical">
               <h3>Choose your IaC type </h3>
               <List
-                grid={{ gutter: 16, column: 4 }}
+                grid={{
+                  gutter: 24,
+                  xs: 1,
+                  sm: Math.min(iacTypes.length || 1, 2),
+                  md: Math.min(iacTypes.length || 1, 3),
+                  lg: Math.min(iacTypes.length || 1, 3),
+                  xl: Math.min(iacTypes.length || 1, 3),
+                }}
                 dataSource={iacTypes}
                 renderItem={(item) => (
                   <List.Item>
                     <Card
-                      style={{ textAlign: "center" }}
+                      style={{ textAlign: "center", minHeight: 220 }}
+                      styles={{ body: { padding: 32 } }}
                       hoverable
                       onClick={() => handleIacTypeClick(item)}
                     >
-                      <Space direction="vertical">
+                      <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
                         <img
                           style={{
-                            padding: "10px",
+                            padding: "14px",
                             backgroundColor: item.color,
-                            width: "60px",
+                            width: "96px",
+                            maxWidth: "100%",
+                            height: "auto",
                           }}
                           alt="example"
                           src={item.icon}
                         />
-                        <span style={{ fontWeight: "bold" }}>{item.name}</span>
+                        <span style={{ fontWeight: "bold", fontSize: 18, whiteSpace: "nowrap" }}>{item.name}</span>
                       </Space>
                     </Card>
                   </List.Item>
@@ -644,16 +802,124 @@ export const CreateWorkspace = () => {
             validateMessages={validateMessages}
             initialValues={{ folder: "/" }}
           >
-            <Space hidden={step2Hidden} className="chooseType" direction="vertical">
+            <Space hidden={step2Hidden} className="chooseType" direction="vertical" style={{ width: "100%" }}>
               <h3>Choose a repository</h3>
               <div className="workflowDescription2 App-text">
                 Choose the repository that hosts your {iacType?.name} source code.
               </div>
+
+              {!discoveryUnsupported && vcsId !== "" && (
+                <Segmented
+                  value={repoPickerMode}
+                  onChange={(value) => setRepoPickerMode(value as "list" | "manual")}
+                  options={[
+                    { label: "Browse repositories", value: "list" },
+                    { label: "Enter URL manually", value: "manual" },
+                  ]}
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+
+              {repoPickerMode === "list" && (
+                <div style={{ width: "100%", maxWidth: 640 }}>
+                  <Card
+                    size="small"
+                    styles={{ body: { padding: 0 } }}
+                    style={{ borderRadius: token.borderRadiusLG, overflow: "hidden" }}
+                  >
+                    <Flex
+                      wrap="wrap"
+                      gap="small"
+                      justify="space-between"
+                      align="center"
+                      style={{
+                        padding: "12px",
+                        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                        backgroundColor: token.colorFillAlter,
+                      }}
+                    >
+                      <Select
+                        style={{ flex: "1 1 200px", minWidth: 180 }}
+                        loading={groupsLoading}
+                        value={selectedGroup || undefined}
+                        placeholder="Select organization"
+                        onChange={handleGroupChange}
+                        options={vcsGroups.map((group) => ({ label: group.name, value: group.id }))}
+                      />
+                      <Input.Search
+                        placeholder="Filter repositories by name"
+                        allowClear
+                        style={{ flex: "1 1 220px", minWidth: 180 }}
+                        value={repoSearch}
+                        onChange={(e) => handleRepoSearchChange(e.target.value)}
+                      />
+                    </Flex>
+
+                    {repoError && (
+                      <Alert type="error" showIcon banner message={repoError} style={{ borderRadius: 0 }} />
+                    )}
+
+                    <List
+                      loading={repoLoading && repoResults.length === 0}
+                      style={{ maxHeight: 420, overflowY: "auto" }}
+                      dataSource={repoResults}
+                      locale={{
+                        emptyText: repoSearch ? `No repositories match "${repoSearch}"` : "No repositories found",
+                      }}
+                      renderItem={(repo: VcsRepositorySummary) => (
+                        <List.Item
+                          onClick={() => handleRepoSelect(repo)}
+                          style={{
+                            cursor: "pointer",
+                            padding: "10px 12px",
+                            backgroundColor:
+                              selectedRepoUrl === repo.url ? token.controlItemBgActive : "transparent",
+                            borderLeft:
+                              selectedRepoUrl === repo.url
+                                ? `3px solid ${token.colorPrimary}`
+                                : "3px solid transparent",
+                          }}
+                        >
+                          <Flex justify="space-between" align="center" style={{ width: "100%" }}>
+                            <Space direction="vertical" size={0}>
+                              <span style={{ fontWeight: 500 }}>{repo.name}</span>
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                {repo.fullName}
+                              </Typography.Text>
+                            </Space>
+                            {repo.privateRepo && (
+                              <Tag icon={<LockOutlined />} style={{ marginRight: 0 }}>
+                                Private
+                              </Tag>
+                            )}
+                          </Flex>
+                        </List.Item>
+                      )}
+                    />
+
+                    {repoHasMore && (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: 8,
+                          borderTop: `1px solid ${token.colorBorderSecondary}`,
+                        }}
+                      >
+                        <Button onClick={handleLoadMoreRepos} loading={repoLoading} type="link" size="small">
+                          Load more repositories
+                        </Button>
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              )}
+
               <Form.Item
                 name="source"
                 label="Git repo"
                 tooltip="e.g. https://github.com/Terrakube/terraform-sample-repository.git or git@github.com:AzBuilder/terraform-azurerm-webapp-sample.git"
                 extra=" Git repo must be a valid git url using either https or ssh protocol."
+                hidden={repoPickerMode === "list"}
                 rules={[
                   {
                     required: true,
@@ -665,6 +931,7 @@ export const CreateWorkspace = () => {
               >
                 <Input />
               </Form.Item>
+
               <Form.Item>
                 <Button onClick={handleGitContinueClick} type="primary">
                   Continue

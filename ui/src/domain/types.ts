@@ -157,6 +157,26 @@ export enum VcsConnectionType {
   OAUTH = "OAUTH",
   STANDALONE = "STANDALONE",
 }
+
+export type VcsRepositoryGroup = {
+  id: string;
+  name: string;
+};
+
+export type VcsRepositorySummary = {
+  name: string;
+  fullName: string;
+  group: string;
+  url: string;
+  privateRepo: boolean;
+  defaultBranch?: string;
+};
+
+export type VcsRepositoryPage = {
+  items: VcsRepositorySummary[];
+  hasMore: boolean;
+  page: number;
+};
 export enum VcsStatus {
   PENDING = "PENDING",
   COMPLETED = "COMPLETED",

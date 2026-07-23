@@ -217,6 +217,23 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         return restTemplate.exchange(apiUrl, method, entity, String.class);
     }
 
+    // Generates the app-level JWT used to call GitHub App management endpoints (e.g. listing installations)
+    public String generateAppJwt(Vcs vcs) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        return generateJWT(vcs.getClientId(), vcs.getPrivateKey());
+    }
+
+    // Exposes the installation access token fetch for callers that already know the installation id
+    // (e.g. repository discovery, where the installation is picked from /app/installations)
+    public String getInstallationToken(String installationId, String apiUrl, String jws, String owner)
+            throws JsonMappingException, JsonProcessingException {
+        return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner);
+    }
+
+    // Calls a GitHub API endpoint authenticated with the app JWT (used for /app/installations)
+    public ResponseEntity<String> callGithubAppApi(String apiUrl, HttpMethod method, String jws) {
+        return callGithubAPI("", apiUrl, method, jws);
+    }
+
     public RestTemplate getRestTemplateWithProxy() {
         if (System.getProperty("http.proxyHost") != null) {
             log.info("RestTemplate proxy host: {} port: {}", System.getProperty("http.proxyHost"), System.getProperty("http.proxyPort"));
