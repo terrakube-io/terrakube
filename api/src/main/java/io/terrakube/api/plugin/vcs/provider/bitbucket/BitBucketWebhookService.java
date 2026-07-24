@@ -128,6 +128,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             JsonNode rootNode = objectMapper.readTree(jsonPayload);
             JsonNode pullRequestNode = rootNode.path("pullrequest");
 
+            result.setPrNumber(pullRequestNode.path("id").asInt());
+
             String sourceBranch = pullRequestNode.path("source").path("branch").path("name").asText();
             result.setBranch(sourceBranch);
 

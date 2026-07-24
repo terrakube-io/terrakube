@@ -37,6 +37,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
+import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -825,5 +826,80 @@ public class ScheduleJobTest {
         Assert.assertFalse(subject().runExecution(job));
 
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void lockedWorkspaceBlocksUnrelatedJob() {
+        Job job = job(JobStatus.pending);
+        job.getWorkspace().setLocked(true);
+        job.getWorkspace().setLockDescription("Locked by PR #99 apply");
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void lockedWorkspaceAllowsItsOwnPrApplyJobToProceed() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPrNumber(4);
+        job.setAutoApply(true);
+        job.getWorkspace().setLocked(true);
+        job.getWorkspace().setLockDescription(WebhookService.buildPrApplyLockDescription(4));
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformApply.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
+    }
+
+    @Test
+    public void completedPrApplyJobUnlocksItsOwnWorkspaceLock() {
+        Job job = job(JobStatus.completed);
+        job.setPrNumber(4);
+        job.setAutoApply(true);
+        job.getWorkspace().setLocked(true);
+        job.getWorkspace().setLockDescription(WebhookService.buildPrApplyLockDescription(4));
+
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(prCommentService).postApplyResult(any());
+        doNothing().when(prCommentService).acknowledgeCompletion(any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(prCommentService, times(1)).postApplyResult(job);
+        verify(prCommentService, times(1)).acknowledgeCompletion(job);
+        Assertions.assertFalse(job.getWorkspace().isLocked());
+        Assertions.assertNull(job.getWorkspace().getLockDescription());
     }
 }

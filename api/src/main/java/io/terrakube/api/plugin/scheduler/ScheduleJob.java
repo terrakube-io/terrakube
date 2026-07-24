@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
+import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -115,7 +116,11 @@ public class ScheduleJob implements org.quartz.Job {
             return true;
         }
 
-        if (job.getWorkspace().isLocked()) {
+        // The apply job created for a "terrakube apply" PR comment locks the workspace itself
+        // (see WebhookService.handlePrCommentCommand) to keep other jobs out while it runs. Without
+        // isOwnPrApplyLock() exempting that same job, this guard would block it from ever progressing,
+        // so the workspace would stay locked forever since only postPrCommentIfNeeded() unlocks it.
+        if (job.getWorkspace().isLocked() && !isOwnPrApplyLock(job)) {
             log.warn("Job {}, Workspace is locked. It must be unlocked before Terrakube can execute it.", jobId);
             return false;
         }
@@ -450,10 +455,21 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
+    /**
+     * True when the workspace's current lock is the one this exact job's PR-apply-comment flow
+     * created for itself (see WebhookService.handlePrCommentCommand), rather than an unrelated
+     * manual or concurrent lock that should still block the job.
+     */
+    private boolean isOwnPrApplyLock(Job job) {
+        return job.isAutoApply() && job.getPrNumber() != null
+                && WebhookService.buildPrApplyLockDescription(job.getPrNumber()).equals(job.getWorkspace().getLockDescription());
+    }
+
     private void postPrCommentIfNeeded(Job job) {
         if (job.getPrNumber() == null || job.getPrNumber() == 0) return;
 
         try {
+            prCommentService.acknowledgeCompletion(job);
             if (tclService.isTemplatePlanOnly(job.getTemplateReference())) {
                 prCommentService.postPlanResult(job);
             } else {

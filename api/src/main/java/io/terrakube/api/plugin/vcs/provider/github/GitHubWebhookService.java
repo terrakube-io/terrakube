@@ -458,15 +458,15 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return false;
     }
 
-    public void addCommentReaction(Workspace workspace, String commentId) {
+    public void addCommentReaction(Workspace workspace, String commentId, String reactionContent) {
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
                 + "/issues/comments/" + commentId + "/reactions";
 
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, "{\"content\":\"eyes\"}", apiUrl,
-                HttpMethod.POST);
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo,
+                "{\"content\":\"" + reactionContent + "\"}", apiUrl, HttpMethod.POST);
         if (response != null && response.getStatusCode().is2xxSuccessful()) {
-            log.info("Added eyes reaction to PR comment {} in workspace {}", commentId, workspace.getName());
+            log.info("Added {} reaction to PR comment {} in workspace {}", reactionContent, commentId, workspace.getName());
         } else {
             log.error("Failed to add reaction to PR comment {} in workspace {}", commentId, workspace.getName());
         }

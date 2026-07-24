@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.vcs;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
@@ -128,7 +129,7 @@ public class WebhookServiceTest {
 
         subject.handlePrCommentCommand(result, webhook, workspace);
 
-        verify(gitHubWebhookService, times(1)).addCommentReaction(workspace, "998877");
+        verify(gitHubWebhookService, times(1)).addCommentReaction(workspace, "998877", "eyes");
     }
 
     @Test
@@ -142,7 +143,7 @@ public class WebhookServiceTest {
 
         subject.handlePrCommentCommand(result, webhook, workspace);
 
-        verify(gitHubWebhookService, never()).addCommentReaction(any(), any());
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
     }
 
     @Test
@@ -228,5 +229,36 @@ public class WebhookServiceTest {
         verify(workspaceRepository, times(1)).save(workspace);
         verify(scheduleJobService, times(1)).createJobContext(any());
         verify(prCommentService, never()).postApplyDisabledNotice(any(), any());
+    }
+
+    @Test
+    public void planCommentThreadsCommandCommentIdOntoJob() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        WebhookResult result = createCommentResult("plan", 5);
+        result.setCommentId("998877");
+
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(any());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertEquals("998877", savedJob.getCommandCommentId());
+    }
+
+    @Test
+    public void applyCommentThreadsCommandCommentIdOntoJob() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        pullRequestEvent.setPrApplyEnabled(true);
+        WebhookResult result = createCommentResult("apply", 7);
+        result.setCommentId("112233");
+
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(any());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertEquals("112233", savedJob.getCommandCommentId());
     }
 }

@@ -159,6 +159,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     log.info("New merge request {}: {}", action, mrModel.getObjectAttributes().getTitle());
                     result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
                     result.setCreatedBy("system");
+                    result.setPrNumber(mrModel.getObjectAttributes().getIid());
 
                     if (mrModel.getObjectAttributes().getLastCommit() != null) {
                         result.setCommit(mrModel.getObjectAttributes().getLastCommit().getId());
@@ -691,7 +692,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         }
     }
 
-    public void addNoteReaction(Workspace workspace, Number prNumber, String noteId) {
+    public void addNoteReaction(Workspace workspace, Number prNumber, String noteId, String emojiName) {
         try {
             String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
             String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
@@ -704,7 +705,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .build();
 
             Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("name", "eyes");
+            requestBody.put("name", emojiName);
 
             webClient.post()
                     .uri("/projects/{id}/merge_requests/{iid}/notes/{noteId}/award_emoji", projectId, prNumber, noteId)
@@ -713,7 +714,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     .bodyToMono(String.class)
                     .block();
 
-            log.info("Added eyes award emoji to MR note {} in workspace {}", noteId, workspace.getName());
+            log.info("Added {} award emoji to MR note {} in workspace {}", emojiName, noteId, workspace.getName());
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();

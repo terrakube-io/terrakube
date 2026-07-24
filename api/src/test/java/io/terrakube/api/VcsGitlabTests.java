@@ -356,6 +356,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
         Assert.isTrue(webhookResult.getFileChanges().size()==1,"File changes is not 1");
         Assert.isTrue(webhookResult.getFileChanges().get(0).equals("main.tf"),"File changes is not main.tf");
+        Assert.isTrue(webhookResult.getPrNumber() != null && webhookResult.getPrNumber().intValue() == 2, "PR number was not set from merge request event");
 
         workspace.setDeleted(true);
         workspace.setVcs(null);

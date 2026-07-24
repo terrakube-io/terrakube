@@ -643,4 +643,74 @@ public class PrCommentServiceTest {
 
         assertTrue(markdownCaptor.getValue().contains("**Job:** #42"));
     }
+
+    @Test
+    public void acknowledgeCompletionSkipsWhenCommandCommentIdMissing() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeCompletionSkipsWhenPrNumberMissing() {
+        Job job = createJob(VcsType.GITHUB, null, JobStatus.completed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsThumbsUpOnGitHubSuccess() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(job.getWorkspace(), "998877", "+1");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsThumbsDownOnGitHubFailure() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.failed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(job.getWorkspace(), "998877", "-1");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsCheckmarkOnGitLabSuccess() {
+        Job job = createJob(VcsType.GITLAB, 5, JobStatus.completed);
+        job.setCommandCommentId("note-1");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(job.getWorkspace(), 5, "note-1", "white_check_mark");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsCrossOnGitLabFailure() {
+        Job job = createJob(VcsType.GITLAB, 5, JobStatus.failed);
+        job.setCommandCommentId("note-1");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(job.getWorkspace(), 5, "note-1", "x");
+    }
+
+    @Test
+    public void acknowledgeCompletionIsNoOpForBitbucket() {
+        Job job = createJob(VcsType.BITBUCKET, 5, JobStatus.completed);
+        job.setCommandCommentId("55");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(bitBucketWebhookService, never()).postPrComment(any(), any());
+        verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
+    }
 }

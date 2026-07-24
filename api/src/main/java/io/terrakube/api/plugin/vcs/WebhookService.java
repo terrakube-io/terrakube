@@ -138,6 +138,7 @@ public class WebhookService {
             Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
             savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
             savedJob.setPrApplyEnabled(matchedEvent.isPrApplyEnabled());
+            savedJob.setCommandCommentId(webhookResult.getCommentId());
             jobRepository.save(savedJob);
             sendCommitStatus(savedJob);
         } else if ("apply".equals(command)) {
@@ -154,14 +155,24 @@ public class WebhookService {
             }
             log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
             workspace.setLocked(true);
-            workspace.setLockDescription("Locked by PR #" + webhookResult.getPrNumber() + " apply");
+            workspace.setLockDescription(buildPrApplyLockDescription(prNumber));
             workspaceRepository.save(workspace);
             Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
             savedJob.setPrNumber(prNumber);
             savedJob.setAutoApply(true);
+            savedJob.setCommandCommentId(webhookResult.getCommentId());
             jobRepository.save(savedJob);
             sendCommitStatus(savedJob);
         }
+    }
+
+    /**
+     * Shared with ScheduleJob's workspace-lock guard, which must recognize this exact lock as
+     * belonging to the auto-apply job it created, so that job (and only that job) can proceed
+     * and eventually release the lock once it finishes.
+     */
+    public static String buildPrApplyLockDescription(Integer prNumber) {
+        return "Locked by PR #" + prNumber + " apply";
     }
 
     /**
@@ -177,10 +188,10 @@ public class WebhookService {
         try {
             switch (workspace.getVcs().getVcsType()) {
                 case GITHUB:
-                    gitHubWebhookService.addCommentReaction(workspace, commentId);
+                    gitHubWebhookService.addCommentReaction(workspace, commentId, "eyes");
                     break;
                 case GITLAB:
-                    gitLabWebhookService.addNoteReaction(workspace, webhookResult.getPrNumber(), commentId);
+                    gitLabWebhookService.addNoteReaction(workspace, webhookResult.getPrNumber(), commentId, "eyes");
                     break;
                 default:
                     break;

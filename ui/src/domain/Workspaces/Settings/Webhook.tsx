@@ -105,7 +105,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
               key: i++,
               id: event.id,
               priority: event.attributes.priority,
-              event: event.attributes.event,
+              event: (event.attributes.event || "").toString().toLowerCase(),
               branch: event.attributes.branch,
               file: event.attributes.path,
               pathType: event.attributes.pathType || WebhookEventPathType.REGEX,

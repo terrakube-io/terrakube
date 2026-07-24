@@ -105,6 +105,10 @@ public class Job extends GenericAuditFields {
     private String prCommentId;
 
     @Exclude
+    @Column(name = "command_comment_id")
+    private String commandCommentId;
+
+    @Exclude
     @Column(name = "pr_apply_enabled")
     private boolean prApplyEnabled = false;
 

@@ -198,6 +198,34 @@ public class PrCommentService {
         postComment(transientJob, markdown);
     }
 
+    /**
+     * Reacts to the original "terrakube plan"/"terrakube apply" comment with a checkmark or cross
+     * once that job finishes, so a user watching the PR can see the command was actioned without
+     * opening the (possibly long) result comment. Bitbucket Cloud has no comment-reaction API, so
+     * it's a no-op there. Failures here must never affect the plan/apply result itself.
+     */
+    public void acknowledgeCompletion(Job job) {
+        String commentId = job.getCommandCommentId();
+        if (commentId == null || commentId.isEmpty() || job.getPrNumber() == null || job.getPrNumber() == 0) return;
+
+        boolean success = job.getStatus() == JobStatus.completed;
+        try {
+            switch (job.getWorkspace().getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.addCommentReaction(job.getWorkspace(), commentId, success ? "+1" : "-1");
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.addNoteReaction(job.getWorkspace(), job.getPrNumber(), commentId,
+                            success ? "white_check_mark" : "x");
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to acknowledge completion for job {}: {}", job.getId(), e.getMessage());
+        }
+    }
+
     private String postComment(Job job, String markdownComment) {
         String commentId = null;
         switch (job.getWorkspace().getVcs().getVcsType()) {
