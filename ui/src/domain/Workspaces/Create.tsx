@@ -709,8 +709,8 @@ export const CreateWorkspace = () => {
               </Form.Item>
               <Form.Item
                 name="defaultTemplate"
-                label="Default template (VCS Push)"
-                tooltip="Template that will be executed by default when doing a git push to the repository."
+                label="Default Template"
+                tooltip="Template used for the terrakube apply PR comment command, and to pre-fill the template when manually creating a run."
                 rules={[{ required: requiredVcsPush }]}
                 hidden={!versionControlFlow}
               >

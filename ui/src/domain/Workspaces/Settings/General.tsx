@@ -335,12 +335,15 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
 
           {/* Section 4: Default Template */}
           <h2>Default Template</h2>
-          <Text type="secondary">Configure the default template used when a git push event triggers a run.</Text>
+          <Text type="secondary">
+            Template used for the <code>terrakube apply</code> PR comment command, and to pre-fill the template when
+            manually creating a run.
+          </Text>
 
           <Form.Item
             name="defaultTemplate"
-            label="Default template when doing a git push to the repository"
-            extra="Default template when doing a git push to the repository"
+            label="Default template for terrakube apply comments and manual runs"
+            extra="Default template for terrakube apply comments and manual runs"
             style={{ marginTop: 16 }}
           >
             <Select
