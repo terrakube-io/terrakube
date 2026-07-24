@@ -108,4 +108,5 @@
     <include file="/db/changelog/local/changelog-2.33.0-vcs-token-size.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-github-app-token-size.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-pr-comment-error.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-github-app-token-expiry.xml"/>
 </databaseChangeLog>
