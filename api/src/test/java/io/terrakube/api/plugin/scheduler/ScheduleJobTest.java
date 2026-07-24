@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -881,10 +882,15 @@ public class ScheduleJobTest {
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
         doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
 
-        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        // Deliberately stubbed true: postPrCommentIfNeeded must route on job.isAutoApply(), not on
+        // whether the workspace's default template happens to look plan-only to tclService, or an
+        // apply-via-PR-comment job silently reuses/updates the existing plan comment instead of
+        // posting its own apply result (the bug this test guards against).
+        doReturn(true).when(tclService).isTemplatePlanOnly(any());
+        doReturn(false).when(tclService).isCliTemplate(any());
         doReturn(Optional.of(Collections.emptyList()))
                 .when(jobRepository)
-                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                .findByWorkspaceAndStatusInAndIdLessThan(
                         any(Workspace.class),
                         anyList(),
                         anyInt());
@@ -898,8 +904,40 @@ public class ScheduleJobTest {
         Assert.assertTrue(subject().runExecution(job));
 
         verify(prCommentService, times(1)).postApplyResult(job);
+        verify(prCommentService, never()).postPlanResult(any());
         verify(prCommentService, times(1)).acknowledgeCompletion(job);
         Assertions.assertFalse(job.getWorkspace().isLocked());
         Assertions.assertNull(job.getWorkspace().getLockDescription());
+    }
+
+    @Test
+    public void completedNonAutoApplyPrJobPostsPlanResult() {
+        Job job = job(JobStatus.completed);
+        job.setPrNumber(4);
+        job.setAutoApply(false);
+
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
+        // Deliberately stubbed false: a plan-triggered PR job must still post a plan result even if
+        // tclService considers the template not plan-only, since the routing no longer consults it.
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(prCommentService).postPlanResult(any());
+        doNothing().when(prCommentService).acknowledgeCompletion(any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(prCommentService, times(1)).postPlanResult(job);
+        verify(prCommentService, never()).postApplyResult(any());
     }
 }

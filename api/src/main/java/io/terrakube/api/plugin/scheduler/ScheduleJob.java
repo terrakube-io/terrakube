@@ -470,15 +470,19 @@ public class ScheduleJob implements org.quartz.Job {
 
         try {
             prCommentService.acknowledgeCompletion(job);
-            if (tclService.isTemplatePlanOnly(job.getTemplateReference())) {
-                prCommentService.postPlanResult(job);
-            } else {
+            // job.isAutoApply() marks the job created by the "terrakube apply" PR comment
+            // specifically (see WebhookService.handlePrCommentCommand); tclService.isTemplatePlanOnly()
+            // reflects the *template's* nature and can misclassify this job if the workspace's
+            // default template isn't recognized as a full apply template.
+            if (job.isAutoApply()) {
                 prCommentService.postApplyResult(job);
                 Workspace workspace = job.getWorkspace();
                 workspace.setLocked(false);
                 workspace.setLockDescription(null);
                 workspaceRepository.save(workspace);
                 log.info("Unlocked workspace {} after PR #{} apply completed", workspace.getName(), job.getPrNumber());
+            } else {
+                prCommentService.postPlanResult(job);
             }
         } catch (Exception e) {
             log.error("Error posting PR comment for job {}: {}", job.getId(), e.getMessage());
