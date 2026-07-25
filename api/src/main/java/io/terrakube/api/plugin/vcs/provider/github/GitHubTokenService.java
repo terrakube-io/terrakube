@@ -209,7 +209,8 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         if (tokenResponse.getStatusCode().value() == 201) {
             JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
             token = rootNode.path("token").asText();
-            expiresAt = Instant.parse(rootNode.path("expires_at").asText());
+            String expiresAtText = rootNode.path("expires_at").asText();
+            expiresAt = expiresAtText.isEmpty() ? null : Instant.parse(expiresAtText);
         }
         return new GitHubAppInstallationToken(token, expiresAt);
     }
@@ -264,7 +265,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // (e.g. repository discovery, where the installation is picked from /app/installations)
     public String getInstallationToken(String installationId, String apiUrl, String jws, String owner)
             throws JsonMappingException, JsonProcessingException {
-        return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner);
+        return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner).token();
     }
 
     // Calls a GitHub API endpoint authenticated with the app JWT (used for /app/installations)
