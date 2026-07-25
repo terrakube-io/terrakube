@@ -149,6 +149,6 @@ public class Workspace extends GenericAuditFields {
     private List<Reference> reference;
 
     @OneToMany(mappedBy = "workspace")
-    @UpdatePermission(expression = "user is a superuser")
+    @UpdatePermission(expression = "user is a superuser OR team manage workspace OR team workspace admin manages access field")
     private List<Access> access;
 }

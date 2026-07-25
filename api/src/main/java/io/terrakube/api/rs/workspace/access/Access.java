@@ -3,6 +3,7 @@ package io.terrakube.api.rs.workspace.access;
 import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -14,9 +15,10 @@ import io.terrakube.api.rs.workspace.Workspace;
 import java.sql.Types;
 import java.util.UUID;
 
-@CreatePermission(expression = "user is a superuser")
-@UpdatePermission(expression = "user is a superuser")
-@DeletePermission(expression = "user is a superuser")
+@ReadPermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
+@CreatePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
+@UpdatePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
+@DeletePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
 @Include(rootLevel = false)
 @Getter
 @Setter
