@@ -12,6 +12,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.token.pat.PatService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
@@ -61,6 +62,9 @@ class ServerApplicationTests {
 
     @Autowired
     BitBucketWebhookService bitBucketWebhookService;
+
+    @Autowired
+    AzDevOpsWebhookService azDevOpsWebhookService;
 
     @Autowired
     EncryptionService encryptionService;

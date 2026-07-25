@@ -49,6 +49,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
     axiosInstance
       .delete(`organization/${orgid}/agent/${id}`)
       .then(() => {
+        message.success("Agent pool deleted successfully");
         loadAgents();
       })
       .catch((err) => {
@@ -75,6 +76,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then((response) => {
+        message.success("Agent pool created successfully");
         loadAgents();
         setVisible(false);
         form.resetFields();
@@ -103,6 +105,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then(() => {
+        message.success("Agent pool updated successfully");
         loadAgents();
         setVisible(false);
         form.resetFields();

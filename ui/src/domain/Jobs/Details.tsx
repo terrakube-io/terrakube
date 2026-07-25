@@ -154,6 +154,17 @@ export const DetailsJob = ({ jobId }: Props) => {
     );
   };
 
+  const renderPrCommentErrorAlert = (prCommentError: string, prNumber?: number) => {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
+        description={prCommentError}
+      />
+    );
+  };
+
   const handleComingSoon = () => {
     message.info("Coming Soon!");
   };
@@ -489,6 +500,9 @@ export const DetailsJob = ({ jobId }: Props) => {
 
             return renderIncompleteVariableAlert(guard);
           })()}
+          {job.data.attributes.prCommentError
+            ? renderPrCommentErrorAlert(job.data.attributes.prCommentError, job.data.attributes.prNumber)
+            : null}
           <div>
             <Tag
               icon={

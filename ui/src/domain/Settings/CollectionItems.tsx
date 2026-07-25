@@ -1,8 +1,22 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Radio, Space, Spin, Table, Tag, Typography, Checkbox } from "antd";
+import {
+  Button,
+  Form,
+  Input,
+  message,
+  Modal,
+  Popconfirm,
+  Radio,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  Checkbox,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import "./Settings.css";
 
 // Type definitions for Collection Items
@@ -122,17 +136,22 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
     setMode("edit");
     setItemId(id);
     setVisible(true);
-    axiosInstance.get(`organization/${orgid}/collection/${collectionId}/item/${id}`).then((response) => {
-      setItemKey(response.data.data.attributes.key);
-      form.setFieldsValue({
-        key: response.data.data.attributes.key,
-        value: response.data.data.attributes.value,
-        hcl: response.data.data.attributes.hcl,
-        sensitive: response.data.data.attributes.sensitive,
-        category: response.data.data.attributes.category,
-        description: response.data.data.attributes.description,
+    axiosInstance
+      .get(`organization/${orgid}/collection/${collectionId}/item/${id}`)
+      .then((response) => {
+        setItemKey(response.data.data.attributes.key);
+        form.setFieldsValue({
+          key: response.data.data.attributes.key,
+          value: response.data.data.attributes.value,
+          hcl: response.data.data.attributes.hcl,
+          sensitive: response.data.data.attributes.sensitive,
+          category: response.data.data.attributes.category,
+          description: response.data.data.attributes.description,
+        });
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
-    });
   };
 
   const onNew = () => {
@@ -143,9 +162,15 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/collection/${collectionId}/item/${id}`).then(() => {
-      loadItems();
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/collection/${collectionId}/item/${id}`)
+      .then(() => {
+        message.success("Variable deleted successfully");
+        loadItems();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: CollectionItemFormValues) => {
@@ -170,9 +195,13 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         },
       })
       .then(() => {
+        message.success("Variable added successfully");
         loadItems();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -198,17 +227,27 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         },
       })
       .then(() => {
+        message.success("Variable updated successfully");
         loadItems();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadItems = () => {
-    axiosInstance.get(`organization/${orgid}/collection/${collectionId}/item`).then((response) => {
-      setItems(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/collection/${collectionId}/item`)
+      .then((response) => {
+        setItems(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setLoading(false);
+      });
   };
 
   useEffect(() => {

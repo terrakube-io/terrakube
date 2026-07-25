@@ -270,27 +270,39 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
       ],
     };
 
-    axiosInstance.post("/operations", body, atomicHeader).then((response) => {
-      if (response.status != 200) {
-        message.error("Failed to save webhook");
+    axiosInstance
+      .post("/operations", body, atomicHeader)
+      .then((response) => {
+        if (response.status != 200) {
+          message.error("Failed to save webhook");
+          setWaiting(false);
+          return;
+        }
+        // Mark all events as created
+        webhookEvents
+          .filter((_, index) => index < recordIndex - 1)
+          .forEach((event) => {
+            event.created = true;
+            event.eventStatus = "success";
+            event.branchStatus = "success";
+            event.fileStatus = "success";
+            event.templateStatus = "success";
+          });
+        setWebhookEvents([...webhookEvents]);
         setWaiting(false);
-        return;
-      }
-      // Mark all events as created
-      webhookEvents
-        .filter((_, index) => index < recordIndex - 1)
-        .forEach((event) => {
-          event.created = true;
-          event.eventStatus = "success";
-          event.branchStatus = "success";
-          event.fileStatus = "success";
-          event.templateStatus = "success";
-        });
-      setWebhookEvents([...webhookEvents]);
-      setWaiting(false);
-      message.success("Webhook saved successfully");
-      onWorkspaceUpdate?.();
-    });
+        message.success("Webhook saved successfully");
+        onWorkspaceUpdate?.();
+      })
+      .catch((error: any) => {
+        setWaiting(false);
+        if (error?.response?.status === 424) {
+          message.error(
+            "Failed to save webhook. Please check that the VCS connection has the required permissions (Webhooks: write, and Pull requests: write if PR Workflow is enabled) on the linked repository."
+          );
+        } else {
+          message.error("Failed to save webhook");
+        }
+      });
   };
   const handleMigrateV2 = () => {
     if (!webhookId) return;

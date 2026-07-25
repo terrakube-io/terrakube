@@ -91,6 +91,8 @@ export type JobAttributes = {
   output: string;
   approvalTeam: string;
   commitId: string;
+  prNumber?: number;
+  prCommentError?: string;
 } & AuditFieldBase;
 
 export type JobStep = {
@@ -110,6 +112,8 @@ export type FlatJob = {
   commitId?: string;
   createdBy: string;
   via?: JobVia;
+  prNumber?: number;
+  prCommentError?: string;
 };
 // VCS
 
@@ -157,6 +161,26 @@ export enum VcsConnectionType {
   OAUTH = "OAUTH",
   STANDALONE = "STANDALONE",
 }
+
+export type VcsRepositoryGroup = {
+  id: string;
+  name: string;
+};
+
+export type VcsRepositorySummary = {
+  name: string;
+  fullName: string;
+  group: string;
+  url: string;
+  privateRepo: boolean;
+  defaultBranch?: string;
+};
+
+export type VcsRepositoryPage = {
+  items: VcsRepositorySummary[];
+  hasMore: boolean;
+  page: number;
+};
 export enum VcsStatus {
   PENDING = "PENDING",
   COMPLETED = "COMPLETED",

@@ -6,10 +6,14 @@ import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.vcs.VcsType;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.util.EnumSet;
+import java.util.Set;
 
 @AllArgsConstructor
 @Slf4j
@@ -17,6 +21,7 @@ import org.springframework.stereotype.Service;
 public class PrCommentService {
 
     private static final int MAX_COMMENT_LENGTH = 60000;
+    private static final Set<VcsType> PR_COMMENT_SUPPORTED_VCS = EnumSet.of(VcsType.GITHUB, VcsType.GITLAB, VcsType.BITBUCKET);
 
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
@@ -29,11 +34,11 @@ public class PrCommentService {
         String planOutput = job.getTerraformPlan();
         String markdownComment = formatPlanComment(job, planOutput);
 
-        String commentId = postComment(job, markdownComment);
+        String commentId = attemptPostComment(job, markdownComment);
         if (commentId != null) {
             job.setPrCommentId(commentId);
-            jobRepository.save(job);
         }
+        jobRepository.save(job);
     }
 
     public void postApplyResult(Job job) {
@@ -41,7 +46,32 @@ public class PrCommentService {
 
         String output = job.getOutput();
         String markdownComment = formatApplyComment(job, output);
-        postComment(job, markdownComment);
+        attemptPostComment(job, markdownComment);
+        jobRepository.save(job);
+    }
+
+    private String attemptPostComment(Job job, String markdownComment) {
+        VcsType vcsType = job.getWorkspace().getVcs().getVcsType();
+        try {
+            String commentId = postComment(job, markdownComment);
+            if (commentId != null) {
+                job.setPrCommentError(null);
+            } else if (PR_COMMENT_SUPPORTED_VCS.contains(vcsType)) {
+                job.setPrCommentError(buildFailureMessage(job));
+            }
+            return commentId;
+        } catch (Exception e) {
+            log.error("Error posting PR comment for job {}: {}", job.getId(), e.getMessage());
+            if (PR_COMMENT_SUPPORTED_VCS.contains(vcsType)) {
+                job.setPrCommentError(buildFailureMessage(job));
+            }
+            return null;
+        }
+    }
+
+    private String buildFailureMessage(Job job) {
+        return "Failed to post comment on pull request #" + job.getPrNumber()
+                + ". Verify the VCS connection has write access to pull requests.";
     }
 
     private String postComment(Job job, String markdownComment) {

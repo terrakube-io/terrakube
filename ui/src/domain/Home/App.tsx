@@ -7,6 +7,7 @@ import {
   useParams,
   useNavigate,
   useOutletContext,
+  useLocation,
 } from "react-router-dom";
 import { useAuth } from "../../config/authConfig";
 import { getBasePath } from "../../config/basePath";
@@ -124,6 +125,7 @@ const ModuleDetailsRoute = () => {
 
 const AppLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [organizationName, setOrganizationName] = useState<string>("");
   const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
   const { colorScheme, themeMode } = useTheme();
@@ -165,6 +167,8 @@ const AppLayout = () => {
   }, []);
 
   useEffect(() => {
+    // Re-fetch on every navigation so newly created/deleted organizations
+    // show up in the header dropdown without a full page reload.
     organizationService
       .listOrganizationsGraphQL()
       .then((organizations) => {
@@ -173,7 +177,7 @@ const AppLayout = () => {
       .catch((error) => {
         console.error("Failed to load organizations:", error);
       });
-  }, []);
+  }, [location.pathname]);
 
   const handleOrgChange = (orgId: string) => {
     const org = orgs.find((o) => o.id === orgId);

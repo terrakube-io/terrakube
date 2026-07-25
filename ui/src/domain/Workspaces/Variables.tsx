@@ -4,6 +4,7 @@ import {
   Button,
   Form,
   Input,
+  message,
   Modal,
   Popconfirm,
   Radio,
@@ -17,13 +18,12 @@ import {
 } from "antd";
 import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable } from "../types";
 
 const VARIABLES_COLUMS = (
-  organizationId: string,
-  workspaceId: string,
   onEdit: (variable: FlatVariable) => void,
+  onDelete: (variableId: string) => void,
   manageWorkspace: boolean
 ) => [
   {
@@ -97,7 +97,7 @@ const VARIABLES_COLUMS = (
           </Button>
           <Popconfirm
             onConfirm={() => {
-              deleteVariable(record.id, organizationId, workspaceId);
+              onDelete(record.id);
             }}
             title={
               <p>
@@ -250,6 +250,7 @@ type Props = {
   collectionEnvVars: any[];
   globalVariables: FlatVariable[];
   globalEnvVariables: FlatVariable[];
+  reload: () => void;
 };
 
 export const Variables = ({
@@ -260,6 +261,7 @@ export const Variables = ({
   collectionEnvVars,
   globalVariables,
   globalEnvVariables,
+  reload,
 }: Props) => {
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
@@ -309,9 +311,14 @@ export const Variables = ({
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Variable created successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -337,9 +344,30 @@ export const Variables = ({
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Variable updated successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
+  };
+
+  const onDelete = (deleteId: string) => {
+    axiosInstance
+      .delete(`organization/${organizationId}/workspace/${workspaceId}/variable/${deleteId}`, {
+        headers: {
+          "Content-Type": "application/vnd.api+json",
+        },
+      })
+      .then(() => {
+        message.success("Variable deleted successfully");
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -389,7 +417,7 @@ export const Variables = ({
 
       <Table
         dataSource={workspaceVariables}
-        columns={VARIABLES_COLUMS(organizationId!, workspaceId!, onEdit, manageWorkspace)}
+        columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
         rowKey="key"
       />
       <Button
@@ -527,16 +555,4 @@ export const Variables = ({
       </Modal>
     </div>
   );
-};
-
-const deleteVariable = (variableId: string, organizationId: string, workspaceId: string) => {
-  axiosInstance
-    .delete(`organization/${organizationId}/workspace/${workspaceId}/variable/${variableId}`, {
-      headers: {
-        "Content-Type": "application/vnd.api+json",
-      },
-    })
-    .then((response) => {
-      console.log(response);
-    });
 };

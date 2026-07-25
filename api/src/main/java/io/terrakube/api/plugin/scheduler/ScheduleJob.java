@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.*;
@@ -69,6 +70,7 @@ public class ScheduleJob implements org.quartz.Job {
     RedisTemplate<String, Object> redisTemplate;
 
     GitHubWebhookService gitHubWebhookService;
+    AzDevOpsWebhookService azDevOpsWebhookService;
     PrCommentService prCommentService;
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
@@ -478,6 +480,10 @@ public class ScheduleJob implements org.quartz.Job {
                 break;
             case GITLAB:
                 gitLabWebhookService.sendCommitStatus(job, jobStatus);
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
                 break;
             default:
                 break;

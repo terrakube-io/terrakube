@@ -227,15 +227,76 @@ public class PrCommentServiceTest {
     }
 
     @Test
-    public void postPlanResultDoesNotSaveWhenCommentIdIsNull() {
+    public void postPlanResultRecordsErrorWhenCommentIdIsNull() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.setTerraformPlan("Some plan");
 
         doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
-        verify(jobRepository, never()).save(any());
+        verify(jobRepository, times(1)).save(job);
         assertNull(job.getPrCommentId());
+        assertNotNull(job.getPrCommentError());
+        assertTrue(job.getPrCommentError().contains("#5"));
+    }
+
+    @Test
+    public void postPlanResultRecordsErrorWhenGitHubServiceThrows() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+
+        org.mockito.Mockito.doThrow(new RuntimeException("403 Forbidden"))
+                .when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        verify(jobRepository, times(1)).save(job);
+        assertNull(job.getPrCommentId());
+        assertNotNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postPlanResultClearsPreviousErrorOnSuccess() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+        job.setPrCommentError("Failed to post comment on pull request #5. Verify permissions.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        assertEquals("12345", job.getPrCommentId());
+        assertNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postApplyResultRecordsErrorWhenCommentIdIsNull() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setOutput("Apply complete!");
+
+        doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postApplyResult(job);
+
+        verify(jobRepository, times(1)).save(job);
+        assertNotNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postPlanResultDoesNotRecordErrorForUnsupportedVcs() {
+        Job job = createJob(VcsType.AZURE_DEVOPS, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        assertNull(job.getPrCommentError());
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
     }
 }

@@ -782,9 +782,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                         <Divider />
                         <h4>Project</h4>
                         {projectName && projectId ? (
-                          <Link to={`/organizations/${organizationId}/projects/${projectId}`}>
-                            {projectName}
-                          </Link>
+                          <Link to={`/organizations/${organizationId}/projects/${projectId}`}>{projectName}</Link>
                         ) : (
                           <Typography.Text type="secondary">No project</Typography.Text>
                         )}
@@ -826,10 +824,19 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                     collectionEnvVars={collectionEnvVariables}
                     globalVariables={globalVariables}
                     globalEnvVariables={globalEnvVariables}
+                    reload={() => loadWorkspace(false)}
                   />
                 </TabPane>
                 <TabPane tab="Schedules" key="5">
-                  {templates ? <Schedules schedules={schedule} manageWorkspace={manageWorkspace} /> : <p>Loading...</p>}
+                  {templates ? (
+                    <Schedules
+                      schedules={schedule}
+                      manageWorkspace={manageWorkspace}
+                      reload={() => loadWorkspace(false)}
+                    />
+                  ) : (
+                    <p>Loading...</p>
+                  )}
                 </TabPane>
                 <TabPane tab="Settings" key="6">
                   <Suspense fallback={<LoadingFallback />}>
