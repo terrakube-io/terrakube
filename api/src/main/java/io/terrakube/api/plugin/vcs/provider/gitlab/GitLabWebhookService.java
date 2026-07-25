@@ -159,6 +159,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     log.info("New merge request {}: {}", action, mrModel.getObjectAttributes().getTitle());
                     result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
                     result.setCreatedBy("system");
+                    result.setPrNumber(mrModel.getObjectAttributes().getIid());
 
                     if (mrModel.getObjectAttributes().getLastCommit() != null) {
                         result.setCommit(mrModel.getObjectAttributes().getLastCommit().getId());
@@ -209,6 +210,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             result.setPrComment(true);
             result.setCommentBody(commentBody);
             result.setCommentCommand(command);
+            result.setCommentId(noteNode.path("id").asText());
             result.setEvent("note");
             result.setCreatedBy(rootNode.path("user").path("username").asText());
 
@@ -654,6 +656,71 @@ public class GitLabWebhookService extends WebhookServiceBase {
             log.error("Error posting MR note on MR !{} in workspace {}", job.getPrNumber(), workspace.getName(), e);
         }
         return null;
+    }
+
+    public boolean updateMergeRequestNote(Job job, String noteId, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
+
+            WebClient webClient = webClientBuilder
+                    .baseUrl(workspace.getVcs().getApiUrl())
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
+                    .build();
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("body", markdownBody);
+
+            webClient.put()
+                    .uri("/projects/{id}/merge_requests/{iid}/notes/{noteId}", projectId, job.getPrNumber(), noteId)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            log.info("MR note {} updated successfully on MR !{} in workspace {}", noteId, job.getPrNumber(), workspace.getName());
+            return true;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Error updating MR note {} on MR !{} in workspace {}", noteId, job.getPrNumber(), workspace.getName(), e);
+            return false;
+        }
+    }
+
+    public void addNoteReaction(Workspace workspace, Number prNumber, String noteId, String emojiName) {
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
+
+            WebClient webClient = webClientBuilder
+                    .baseUrl(workspace.getVcs().getApiUrl())
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create().proxyWithSystemProperties()))
+                    .build();
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("name", emojiName);
+
+            webClient.post()
+                    .uri("/projects/{id}/merge_requests/{iid}/notes/{noteId}/award_emoji", projectId, prNumber, noteId)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            log.info("Added {} award emoji to MR note {} in workspace {}", emojiName, noteId, workspace.getName());
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Error adding award emoji to MR note {} in workspace {}", noteId, workspace.getName(), e);
+        }
     }
 
     public void sendCommitStatus(Job job, JobStatus jobStatus) {

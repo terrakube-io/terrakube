@@ -102,14 +102,53 @@ public class AccessTests extends ServerApplicationTests {
     }
 
     @Test
-    void createWorkspaceAccessAsNonAdmin() {
-        given()
+    void createWorkspaceAccessAsOrgManageWorkspaceTeam() {
+        // TERRAKUBE_DEVELOPERS is an org-level team with manage-workspace rights; it should
+        // be able to manage workspace access the same way an org admin can, without needing
+        // a superuser PAT (mirrors ProjectAccess behavior for project-level teams).
+        String accessId = given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body("{\n" +
                         "  \"data\": {\n" +
                         "    \"type\": \"access\",\n" +
                         "    \"attributes\": {\n" +
-                        "      \"name\": \"NEW_TEAM_WORKSPACE_ACCESS_ONLY\",\n" +
+                        "      \"name\": \"NEW_TEAM_WORKSPACE_ACCESS_BY_ORG_TEAM\",\n" +
+                        "      \"manageWorkspace\": true,\n" +
+                        "      \"manageJob\": true,\n" +
+                        "      \"manageState\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/access")
+                .then()
+                .log()
+                .all()
+                .body("data.attributes.name", IsEqual.equalTo("NEW_TEAM_WORKSPACE_ACCESS_BY_ORG_TEAM"))
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/access/" + accessId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void createWorkspaceAccessAsUnrelatedTeam() {
+        // PROJECT_TEAM_MEMBER has no org-level manage-workspace rights and no existing
+        // access grant on this workspace, so it must not be able to create workspace access.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_TEAM_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SHOULD_NOT_BE_CREATED\",\n" +
                         "      \"manageWorkspace\": true,\n" +
                         "      \"manageJob\": true,\n" +
                         "      \"manageState\": true\n" +
@@ -122,6 +161,122 @@ public class AccessTests extends ServerApplicationTests {
                 .log()
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void manageWorkspaceAccessWithWorkspaceAdminRole() {
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"manageWorkspaceAccessWithWorkspaceAdminRole\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace")
+                .then()
+                .assertThat()
+                .body("data.attributes.name", IsEqual.equalTo("manageWorkspaceAccessWithWorkspaceAdminRole"))
+                .log()
+                .all()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        // WORKSPACE_ACCESS_ADMIN_MEMBER cannot manage workspace access before being granted admin role
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("WORKSPACE_ACCESS_ADMIN_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SOME_TEAM\",\n" +
+                        "      \"role\": \"read\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Org admin grants WORKSPACE_ACCESS_ADMIN_MEMBER an admin role on the workspace
+        String adminAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"WORKSPACE_ACCESS_ADMIN_MEMBER\",\n" +
+                        "      \"role\": \"admin\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
+                .then()
+                .log()
+                .all()
+                .body("data.attributes.name", IsEqual.equalTo("WORKSPACE_ACCESS_ADMIN_MEMBER"))
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        // WORKSPACE_ACCESS_ADMIN_MEMBER can now create a new access entry
+        String newAccessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("WORKSPACE_ACCESS_ADMIN_MEMBER"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SOME_TEAM\",\n" +
+                        "      \"role\": \"read\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
+                .then()
+                .log()
+                .all()
+                .body("data.attributes.name", IsEqual.equalTo("SOME_TEAM"))
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        // WORKSPACE_ACCESS_ADMIN_MEMBER can delete the access entry it just created
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("WORKSPACE_ACCESS_ADMIN_MEMBER"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access/" + newAccessId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Cleanup
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access/" + adminAccessId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
     }
 
     @Test

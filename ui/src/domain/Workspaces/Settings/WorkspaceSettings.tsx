@@ -6,6 +6,7 @@ import { WorkspaceSSHKey } from "./SSHKey";
 import { WorkspaceWebhook } from "./Webhook";
 import { WorkspaceAdvanced } from "./Advanced";
 import { WorkspaceStateShared } from "./StateShared";
+import { WorkspaceTeamAccess } from "./TeamAccess";
 import { Workspace, Template, VcsType } from "../../types";
 import type { MenuProps } from "antd";
 
@@ -70,6 +71,8 @@ export const WorkspaceSettings = ({
         return <WorkspaceAdvanced workspace={workspace} manageWorkspace={manageWorkspace} />;
       case "state-shared":
         return <WorkspaceStateShared workspace={workspace} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />;
+      case "team-access":
+        return <WorkspaceTeamAccess workspace={workspace} manageWorkspace={manageWorkspace} />;
       default:
         return (
           <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />
@@ -88,6 +91,7 @@ export const WorkspaceSettings = ({
         { key: "sshkey", label: "SSH Key" },
         { key: "webhook", label: "Webhook" },
         { key: "state-shared", label: "State Shared" },
+        { key: "team-access", label: "Team Access" },
         { key: "advanced", label: "Destruction and Deletion" },
       ],
     },
