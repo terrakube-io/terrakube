@@ -264,7 +264,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // (e.g. repository discovery, where the installation is picked from /app/installations)
     public String getInstallationToken(String installationId, String apiUrl, String jws, String owner)
             throws JsonMappingException, JsonProcessingException {
-        return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner);
+        return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner).token();
     }
 
     // Calls a GitHub API endpoint authenticated with the app JWT (used for /app/installations)

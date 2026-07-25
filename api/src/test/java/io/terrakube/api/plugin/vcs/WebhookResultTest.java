@@ -59,6 +59,13 @@ public class WebhookResultTest {
     }
 
     @Test
+    public void normalizedEventNullDoesNotThrow() {
+        WebhookResult result = new WebhookResult();
+        assertNull(result.getEvent());
+        assertEquals("unknown", result.getNormalizedEvent());
+    }
+
+    @Test
     public void prCommentFieldsAreSetCorrectly() {
         WebhookResult result = new WebhookResult();
         result.setPrComment(true);
