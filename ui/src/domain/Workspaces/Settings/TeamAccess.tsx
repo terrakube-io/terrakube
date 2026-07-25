@@ -271,6 +271,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "Team",
       dataIndex: "name",
       key: "name",
+      width: 220,
       render: (name: string) => (
         <Space size={8}>
           <TeamOutlined style={{ color: token.colorTextSecondary }} />
@@ -282,6 +283,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "Role",
       dataIndex: "role",
       key: "role",
+      width: 320,
       render: (role: string, record: WorkspaceAccessModel) => {
         if (canManage && editingId === record.id) {
           return (
@@ -362,6 +364,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "",
       key: "actions",
       align: "right" as const,
+      width: 120,
       render: (_: any, record: WorkspaceAccessModel) => (
         <Popconfirm
           title={`Remove team "${record.name}" from this workspace?`}
@@ -400,6 +403,8 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
           columns={columns}
           rowKey="id"
           pagination={false}
+          tableLayout="fixed"
+          scroll={{ x: 996 }}
           locale={{
             emptyText: (
               <Empty
