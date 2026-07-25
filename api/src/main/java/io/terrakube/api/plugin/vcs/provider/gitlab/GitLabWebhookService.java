@@ -52,6 +52,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
     private int pagesize = 25;
     private int timeout = 30;
 
+    @Value("${io.terrakube.webhook.insecure-ssl:1}")
+    private String insecureSsl;
+
     public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
         this.objectMapper = objectMapper;
         this.hostname = hostname;
@@ -607,7 +610,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * signatures, it sends the configured token back verbatim.
      */
     public boolean verifyGitlabToken(Map<String, String> headers, String secret) {
-        String tokenHeader = headers.get("x-gitlab-token");
+        String tokenHeader = headers.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase("x-gitlab-token"))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
         if (tokenHeader == null || !tokenHeader.equals(secret)) {
             log.error("X-Gitlab-Token header is missing or doesn't match!");
             return false;
@@ -679,6 +686,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         Vcs vcs = repoWebhook.getVcs();
+        if (vcs == null) {
+            log.error("Cannot create or update repo webhook: Vcs is null on RepoWebhook {}", repoWebhook.getId());
+            return remoteHookId;
+        }
         String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
         String token = vcs.getAccessToken();
         String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId());
@@ -688,12 +699,14 @@ public class GitLabWebhookService extends WebhookServiceBase {
         boolean releaseEvents = eventTypes.contains(WebhookEventType.RELEASE);
         boolean noteEvents = eventTypes.contains(WebhookEventType.PR_COMMENT);
 
+        boolean enableSsl = !"1".equals(insecureSsl);
+
         String body = "{\"url\":\"" + webhookUrl
                 + "\",\"push_events\":" + pushEvents
                 + ", \"merge_requests_events\":" + mergeRequestEvents
                 + ", \"releases_events\":" + releaseEvents
                 + ", \"note_events\":" + noteEvents
-                + ", \"enable_ssl_verification\":\"false\",\"token\":\"" + repoWebhook.getWebhookSecret() + "\"}";
+                + ", \"enable_ssl_verification\":" + enableSsl + ",\"token\":\"" + repoWebhook.getWebhookSecret() + "\"}";
 
         String projectId = "";
         try {
@@ -735,6 +748,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
             return;
         }
         Vcs vcs = repoWebhook.getVcs();
+        if (vcs == null) {
+            log.warn("Cannot delete repo webhook: Vcs is null on RepoWebhook {}", repoWebhook.getId());
+            return;
+        }
         try {
             String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
             String projectId = getGitlabProjectId(ownerAndRepo, vcs.getAccessToken(), vcs.getApiUrl());
