@@ -44,6 +44,7 @@ public class WebhookService {
     ScheduleJobService scheduleJobService;
     ObjectMapper objectMapper;
     WorkspaceRepository workspaceRepository;
+    PrCommentService prCommentService;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -108,6 +109,7 @@ public class WebhookService {
 
                 if (matchedEvent.isPrWorkflowEnabled() && webhookResult.getPrNumber() != null) {
                     savedJob.setPrNumber(webhookResult.getPrNumber().intValue());
+                    savedJob.setPrApplyEnabled(matchedEvent.isPrApplyEnabled());
                     jobRepository.save(savedJob);
                 }
 
@@ -119,19 +121,33 @@ public class WebhookService {
         return result;
     }
 
-    private void handlePrCommentCommand(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
+    void handlePrCommentCommand(WebhookResult webhookResult, Webhook webhook, Workspace workspace) throws Exception {
         String command = webhookResult.getCommentCommand();
         log.info("PR comment command '{}' received for workspace {}", command, workspace.getName());
+
+        acknowledgeCommand(workspace, webhookResult);
 
         WebhookEvent matchedEvent = findMatchingEvent(webhookResult, webhook);
 
         if ("plan".equals(command)) {
+            if (!matchedEvent.isPrWorkflowEnabled()) {
+                log.info("Ignoring PR plan comment for workspace {}: PR workflow is not enabled", workspace.getName());
+                return;
+            }
             log.info("PR comment plan for workspace {}, using template {}", workspace.getName(), matchedEvent.getTemplateId());
             Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
             savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
+            savedJob.setPrApplyEnabled(matchedEvent.isPrApplyEnabled());
+            savedJob.setCommandCommentId(webhookResult.getCommentId());
             jobRepository.save(savedJob);
             sendCommitStatus(savedJob);
         } else if ("apply".equals(command)) {
+            Integer prNumber = webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null;
+            if (!matchedEvent.isPrWorkflowEnabled() || !matchedEvent.isPrApplyEnabled()) {
+                log.info("Rejecting PR apply comment for workspace {}: apply via PR comment is not enabled", workspace.getName());
+                prCommentService.postApplyDisabledNotice(workspace, prNumber);
+                return;
+            }
             String templateId = workspace.getDefaultTemplate();
             if (templateId == null || templateId.isEmpty()) {
                 log.error("No default template configured for apply in PR workflow on workspace {}", workspace.getName());
@@ -139,13 +155,49 @@ public class WebhookService {
             }
             log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
             workspace.setLocked(true);
-            workspace.setLockDescription("Locked by PR #" + webhookResult.getPrNumber() + " apply");
+            workspace.setLockDescription(buildPrApplyLockDescription(prNumber));
             workspaceRepository.save(workspace);
             Job savedJob = createAndScheduleJob(templateId, webhookResult, workspace);
-            savedJob.setPrNumber(webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : null);
+            savedJob.setPrNumber(prNumber);
             savedJob.setAutoApply(true);
+            savedJob.setCommandCommentId(webhookResult.getCommentId());
             jobRepository.save(savedJob);
             sendCommitStatus(savedJob);
+        }
+    }
+
+    /**
+     * Shared with ScheduleJob's workspace-lock guard, which must recognize this exact lock as
+     * belonging to the auto-apply job it created, so that job (and only that job) can proceed
+     * and eventually release the lock once it finishes.
+     */
+    public static String buildPrApplyLockDescription(Integer prNumber) {
+        return "Locked by PR #" + prNumber + " apply";
+    }
+
+    /**
+     * Adds an "eyes" reaction to the triggering comment as soon as a valid terrakube plan/apply
+     * command is recognized, so the user gets immediate feedback that the command was seen while
+     * the job (and later PR comment) is still running. Bitbucket Cloud has no comment-reaction API,
+     * so it's a no-op there. Failures here must never block the actual plan/apply from proceeding.
+     */
+    private void acknowledgeCommand(Workspace workspace, WebhookResult webhookResult) {
+        String commentId = webhookResult.getCommentId();
+        if (commentId == null || commentId.isEmpty()) return;
+
+        try {
+            switch (workspace.getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.addCommentReaction(workspace, commentId, "eyes");
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.addNoteReaction(workspace, webhookResult.getPrNumber(), commentId, "eyes");
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to acknowledge PR comment command for workspace {}: {}", workspace.getName(), e.getMessage());
         }
     }
 

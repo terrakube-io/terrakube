@@ -157,6 +157,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                         result.setPrComment(true);
                         result.setCommentBody(commentBody);
                         result.setCommentCommand(command);
+                        result.setCommentId(rootNode.path("comment").path("id").asText());
                         result.setPrNumber(issueNode.path("number").asInt());
                         result.setCreatedBy(rootNode.path("comment").path("user").path("login").asText());
 
@@ -439,7 +440,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return null;
     }
 
-    public void updatePrComment(Job job, String commentId, String markdownBody) {
+    public boolean updatePrComment(Job job, String commentId, String markdownBody) {
         Workspace workspace = job.getWorkspace();
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
@@ -450,9 +451,24 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
         ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl, HttpMethod.PATCH);
         if (response != null && response.getStatusCode().is2xxSuccessful()) {
-            log.info("PR comment updated successfully on workspace {}", workspace.getName());
+            log.info("PR comment {} updated successfully on workspace {}", commentId, workspace.getName());
+            return true;
+        }
+        log.error("Failed to update PR comment {} on workspace {}", commentId, workspace.getName());
+        return false;
+    }
+
+    public void addCommentReaction(Workspace workspace, String commentId, String reactionContent) {
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
+                + "/issues/comments/" + commentId + "/reactions";
+
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo,
+                "{\"content\":\"" + reactionContent + "\"}", apiUrl, HttpMethod.POST);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            log.info("Added {} reaction to PR comment {} in workspace {}", reactionContent, commentId, workspace.getName());
         } else {
-            log.error("Failed to update PR comment on workspace {}", workspace.getName());
+            log.error("Failed to add reaction to PR comment {} in workspace {}", commentId, workspace.getName());
         }
     }
 

@@ -24,6 +24,7 @@ public class WebhookResult {
     private boolean isRelease;
     private String commentBody;
     private String commentCommand;
+    private String commentId;
     private boolean isPrComment;
     private String prFilesUrl;
 

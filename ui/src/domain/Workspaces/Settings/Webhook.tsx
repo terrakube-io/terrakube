@@ -46,6 +46,7 @@ const createEmptyWebhookEvent = (key: number) => {
     key,
     id: uuid(),
     prWorkflowEnabled: false,
+    prApplyEnabled: false,
     pathType: WebhookEventPathType.PATTERN,
   };
 };
@@ -104,12 +105,13 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
               key: i++,
               id: event.id,
               priority: event.attributes.priority,
-              event: event.attributes.event,
+              event: (event.attributes.event || "").toString().toLowerCase(),
               branch: event.attributes.branch,
               file: event.attributes.path,
               pathType: event.attributes.pathType || WebhookEventPathType.REGEX,
               template: event.attributes.templateId,
               prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
+              prApplyEnabled: event.attributes.prApplyEnabled || false,
               created: true,
             };
           });
@@ -263,6 +265,7 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
                   pathType: event.pathType || WebhookEventPathType.PATTERN,
                   templateId: event.template,
                   prWorkflowEnabled: event.prWorkflowEnabled || false,
+                  prApplyEnabled: event.prApplyEnabled || false,
                 },
               },
             };
@@ -402,8 +405,8 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     },
     {
       title: (
-        <Tooltip title="Enable Atlantis-style workflow: post plan/apply results as PR comments and accept 'terrakube plan' / 'terrakube apply' commands from PR comments">
-          PR Workflow <InfoCircleOutlined />
+        <Tooltip title="Post a plan comment on every pull request (TFE-style plan-only workflow). Also enables the 'terrakube plan' PR-comment command to re-run a plan.">
+          Post Plan on PR <InfoCircleOutlined />
         </Tooltip>
       ),
       dataIndex: "prWorkflowEnabled",
@@ -414,7 +417,31 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
           <Switch
             size="small"
             checked={record.prWorkflowEnabled || false}
-            onChange={(checked) => handleEventChange(index, record.key, "prWorkflowEnabled", checked)}
+            onChange={(checked) => {
+              handleEventChange(index, record.key, "prWorkflowEnabled", checked);
+              if (!checked) {
+                handleEventChange(index, record.key, "prApplyEnabled", false);
+              }
+            }}
+          />
+        ) : null,
+    },
+    {
+      title: (
+        <Tooltip title="Allow the 'terrakube apply' PR-comment command to apply this workspace (Atlantis-style). Requires 'Post Plan on PR' to be enabled.">
+          Allow Apply via PR Comment <InfoCircleOutlined />
+        </Tooltip>
+      ),
+      dataIndex: "prApplyEnabled",
+      key: "prApplyEnabled",
+      width: isMobile ? 110 : 140,
+      render: (_: string, record: any, index: number) =>
+        record.event === "pull_request" ? (
+          <Switch
+            size="small"
+            checked={record.prApplyEnabled || false}
+            disabled={!record.prWorkflowEnabled}
+            onChange={(checked) => handleEventChange(index, record.key, "prApplyEnabled", checked)}
           />
         ) : null,
     },

@@ -104,6 +104,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "pr_comment_id")
     private String prCommentId;
 
+    @Exclude
+    @Column(name = "command_comment_id")
+    private String commandCommentId;
+
+    @Exclude
+    @Column(name = "pr_apply_enabled")
+    private boolean prApplyEnabled = false;
+
     @CreatePermission(expression = "user is a super service")
     @UpdatePermission(expression = "user is a super service")
     @Column(name = "pr_comment_error")

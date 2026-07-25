@@ -446,6 +446,7 @@ export type WebhookEventAttributes = {
   priority: number;
   event: WebhookEventType;
   prWorkflowEnabled: boolean;
+  prApplyEnabled: boolean;
 };
 
 // Agent

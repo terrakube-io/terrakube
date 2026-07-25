@@ -128,6 +128,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             JsonNode rootNode = objectMapper.readTree(jsonPayload);
             JsonNode pullRequestNode = rootNode.path("pullrequest");
 
+            result.setPrNumber(pullRequestNode.path("id").asInt());
+
             String sourceBranch = pullRequestNode.path("source").path("branch").path("name").asText();
             result.setBranch(sourceBranch);
 
@@ -202,6 +204,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             result.setPrComment(true);
             result.setCommentBody(commentBody);
             result.setCommentCommand(command);
+            result.setCommentId(rootNode.path("comment").path("id").asText());
             result.setCreatedBy(rootNode.path("comment").path("user").path("display_name").asText());
 
             JsonNode pullRequestNode = rootNode.path("pullrequest");
@@ -246,6 +249,24 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             log.error("Failed to post PR comment on PR #{} in workspace {}", job.getPrNumber(), workspace.getName());
         }
         return null;
+    }
+
+    public boolean updatePrComment(Job job, String commentId, String markdownBody) {
+        Workspace workspace = job.getWorkspace();
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repositories/" + String.join("/", ownerAndRepo)
+                + "/pullrequests/" + job.getPrNumber() + "/comments/" + commentId;
+
+        String escapedBody = escapeJsonString(markdownBody);
+        String body = "{\"content\":{\"raw\":\"" + escapedBody + "\"}}";
+
+        ResponseEntity<String> response = callBitBucketApi(workspace.getVcs().getAccessToken(), body, apiUrl, HttpMethod.PUT);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            log.info("PR comment {} updated successfully on PR #{} in workspace {}", commentId, job.getPrNumber(), workspace.getName());
+            return true;
+        }
+        log.error("Failed to update PR comment {} on PR #{} in workspace {}", commentId, job.getPrNumber(), workspace.getName());
+        return false;
     }
 
     private List<String> getFileChanges(String diffFile, String workspaceId) {

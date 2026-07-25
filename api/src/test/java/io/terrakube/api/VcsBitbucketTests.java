@@ -347,6 +347,7 @@ public class VcsBitbucketTests extends ServerApplicationTests{
         webhookResult = bitBucketWebhookService.handleEvent(payload,webhookResult, headers);
 
         Assert.isTrue(webhookResult.getFileChanges().size()==1,"File changes is not 1");
+        Assert.isTrue(webhookResult.getPrNumber() != null && webhookResult.getPrNumber().intValue() == 6, "PR number was not set from pull request event");
 
         workspace.setDeleted(true);
         workspace.setVcs(null);

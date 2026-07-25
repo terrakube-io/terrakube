@@ -49,6 +49,9 @@ public class WebhookEvent extends GenericAuditFields {
     @Column(name = "pr_workflow_enabled")
     private boolean prWorkflowEnabled = false;
 
+    @Column(name = "pr_apply_enabled")
+    private boolean prApplyEnabled = false;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Webhook webhook;
 }
