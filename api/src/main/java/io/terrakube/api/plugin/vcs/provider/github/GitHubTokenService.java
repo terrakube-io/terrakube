@@ -209,7 +209,8 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         if (tokenResponse.getStatusCode().value() == 201) {
             JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
             token = rootNode.path("token").asText();
-            expiresAt = Instant.parse(rootNode.path("expires_at").asText());
+            String expiresAtText = rootNode.path("expires_at").asText();
+            expiresAt = expiresAtText.isEmpty() ? null : Instant.parse(expiresAtText);
         }
         return new GitHubAppInstallationToken(token, expiresAt);
     }

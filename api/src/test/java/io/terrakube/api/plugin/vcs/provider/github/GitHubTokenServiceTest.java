@@ -58,6 +58,7 @@ public class GitHubTokenServiceTest {
     private AtomicInteger installationHits;
     private String tokenToReturn;
     private String expiresAtToReturn;
+    private boolean includeExpiresAt;
 
     @BeforeEach
     public void setup() throws Exception {
@@ -82,6 +83,7 @@ public class GitHubTokenServiceTest {
         installationHits = new AtomicInteger(0);
         tokenToReturn = "ghs_refreshed-token";
         expiresAtToReturn = Instant.now().plus(1, ChronoUnit.HOURS).toString();
+        includeExpiresAt = true;
 
         httpServer = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         httpServer.createContext("/repos/" + OWNER + "/" + REPO + "/installation", exchange -> {
@@ -90,8 +92,10 @@ public class GitHubTokenServiceTest {
         });
         httpServer.createContext("/app/installations/" + INSTALLATION_ID + "/access_tokens", exchange -> {
             accessTokenHits.incrementAndGet();
-            writeJson(exchange, 201,
-                    "{\"token\":\"" + tokenToReturn + "\",\"expires_at\":\"" + expiresAtToReturn + "\"}");
+            String body = includeExpiresAt
+                    ? "{\"token\":\"" + tokenToReturn + "\",\"expires_at\":\"" + expiresAtToReturn + "\"}"
+                    : "{\"token\":\"" + tokenToReturn + "\"}";
+            writeJson(exchange, 201, body);
         });
         httpServer.start();
     }
@@ -211,6 +215,21 @@ public class GitHubTokenServiceTest {
 
         assertNull(result);
         verify(gitHubAppTokenRepository, times(1)).delete(orphaned);
+    }
+
+    // Repository discovery calls getInstallationToken directly, without ever caching or
+    // checking expiry - a response with no expires_at (or a caller/mock that omits it) must
+    // not blow up the whole call with a DateTimeParseException.
+    @Test
+    public void getInstallationToken_missingExpiresAt_doesNotThrow() throws Exception {
+        Vcs vcs = createVcs();
+        includeExpiresAt = false;
+        String jws = subject.generateAppJwt(vcs);
+
+        String result = subject.getInstallationToken(INSTALLATION_ID, vcs.getApiUrl(), jws, OWNER);
+
+        assertEquals(tokenToReturn, result);
+        assertEquals(1, accessTokenHits.get());
     }
 
     @Test
