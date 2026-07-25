@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
@@ -48,6 +49,9 @@ import reactor.netty.transport.ProxyProvider;
 public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     private static final String DEFAULT_ENDPOINT = "https://github.com";
+    // Treat a cached token as expired slightly before GitHub actually expires it,
+    // so a request never races the real expiry.
+    private static final Duration EXPIRY_SAFETY_BUFFER = Duration.ofMinutes(1);
 
     @Autowired
     ObjectMapper objectMapper;
@@ -110,9 +114,23 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     public String refreshAccessToken(GitHubAppToken gitHubAppToken)
             throws NoSuchAlgorithmException, InvalidKeySpecException, JsonMappingException, JsonProcessingException {
         Vcs vcs = vcsRepository.findFirstByClientId(gitHubAppToken.getAppId());
+        if (vcs == null) {
+            log.warn("No Vcs found for GitHub App id {}, removing orphaned GitHubAppToken {} for owner {}",
+                    gitHubAppToken.getAppId(), gitHubAppToken.getId(), gitHubAppToken.getOwner());
+            try {
+                scheduleGitHubAppTokenService.deleteTask(gitHubAppToken.getId().toString());
+            } catch (SchedulerException e) {
+                log.error("Failed to delete refresh schedule for orphaned GitHubAppToken {}, error {}",
+                        gitHubAppToken.getId(), e);
+            }
+            gitHubAppTokenRepository.delete(gitHubAppToken);
+            return null;
+        }
         String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-        return fetchGitHubAppInstallationToken(gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws,
-                gitHubAppToken.getOwner());
+        GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
+                gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, gitHubAppToken.getOwner());
+        gitHubAppToken.setExpiresAt(installationToken.expiresAt());
+        return installationToken.token();
     }
 
     public GitHubAppToken getGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
@@ -122,6 +140,15 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         if (gitHubAppToken == null) {
             log.info("No token found in GitHubAppToken table, fetching new token");
             gitHubAppToken = fetchGitHubAppInstallationToken(vcs, ownerAndRepo);
+        } else if (isExpired(gitHubAppToken.getExpiresAt())) {
+            log.info("Cached GitHub App token for user/organization {} is expired or missing an expiry, refreshing",
+                    ownerAndRepo[0]);
+            String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
+            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
+                    gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, ownerAndRepo[0]);
+            gitHubAppToken.setToken(installationToken.token());
+            gitHubAppToken.setExpiresAt(installationToken.expiresAt());
+            gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
         }
 
         log.info("Token fetched for user/organization {}", ownerAndRepo[0]);
@@ -149,9 +176,10 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             gitHubAppToken.setInstallationId(installationId);
             gitHubAppToken.setOwner(ownerAndRepo[0]);
             gitHubAppToken.setAppId(vcs.getClientId());
-            gitHubAppToken
-                    .setToken(fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(), jws, ownerAndRepo[0]));
-
+            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(installationId,
+                    vcs.getApiUrl(), jws, ownerAndRepo[0]);
+            gitHubAppToken.setToken(installationToken.token());
+            gitHubAppToken.setExpiresAt(installationToken.expiresAt());
         }
 
         gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
@@ -171,16 +199,26 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     // Gets the access token with app installation ID for a specific installation of
     // the app
-    private String fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl, String jws, String owner)
-            throws JsonMappingException, JsonProcessingException {
+    private GitHubAppInstallationToken fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl,
+            String jws, String owner) throws JsonMappingException, JsonProcessingException {
         String token = null;
+        Instant expiresAt = null;
         String url = vcsApiUrl + "/app/installations/" + installationId + "/access_tokens";
         log.debug("Getting access token for installation {} on user/organization {}", installationId, owner);
         ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.POST, jws);
         if (tokenResponse.getStatusCode().value() == 201) {
-            token = objectMapper.readTree(tokenResponse.getBody()).path("token").asText();
+            JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
+            token = rootNode.path("token").asText();
+            expiresAt = Instant.parse(rootNode.path("expires_at").asText());
         }
-        return token;
+        return new GitHubAppInstallationToken(token, expiresAt);
+    }
+
+    private boolean isExpired(Instant expiresAt) {
+        return expiresAt == null || !expiresAt.isAfter(Instant.now().plus(EXPIRY_SAFETY_BUFFER));
+    }
+
+    private record GitHubAppInstallationToken(String token, Instant expiresAt) {
     }
 
     // Generates a JWT token for the GitHub App
