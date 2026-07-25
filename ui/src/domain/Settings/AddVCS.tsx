@@ -5,7 +5,7 @@ import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { v1 as uuidv1 } from "uuid";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
@@ -45,9 +45,14 @@ type CreateVcsForm = {
 
 export const AddVCS = ({ setMode, loadVCS }: Props) => {
   const { orgid, vcsName } = useParams<Params>();
+  const [searchParams] = useSearchParams();
   const [current, setCurrent] = useState(vcsName ? 1 : 0);
   const [vcsType, setVcsType] = useState<VcsTypeExtended>(vcsName ? vcsName : VcsTypeExtended.GITHUB);
-  const [connectionType, setConnectionType] = useState(VcsConnectionType.OAUTH);
+  const [connectionType, setConnectionType] = useState(
+    searchParams.get("connectionType") === VcsConnectionType.STANDALONE
+      ? VcsConnectionType.STANDALONE
+      : VcsConnectionType.OAUTH
+  );
   const [uuid] = useState(uuidv1());
 
   const validatePrivateKeyFormat = (_: any, value: string) => {
