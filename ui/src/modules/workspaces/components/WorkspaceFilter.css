@@ -167,3 +167,60 @@
 .workspace-filter-left .ant-segmented {
   background: transparent;
 }
+
+/* Compact density (used by the "New" list view) */
+.workspace-filter-container--compact {
+  margin-top: 8px;
+}
+
+.workspace-filter-container--compact .workspace-filter-search-row {
+  margin-bottom: 8px;
+}
+
+.workspace-filter-container--compact .workspace-filter-bar {
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+/* Compact-only: project chips + group-by-project toggle row */
+.workspace-filter-projects-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  background: var(--tk-bg-container);
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+}
+
+.workspace-project-search {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+/* Project chips scroll horizontally instead of wrapping or overflowing when
+   an organization has many projects — the group toggle stays fixed on the right. */
+.workspace-project-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.workspace-project-scroll .ant-segmented {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.workspace-group-toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Compact-only: removable chips for currently active tag filters */
+.workspace-active-tags-row {
+  margin-top: 8px;
+}

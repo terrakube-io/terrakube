@@ -186,7 +186,18 @@ const AppLayout = () => {
       sessionStorage.setItem(ORGANIZATION_NAME, org.name);
       setOrganizationName(org.name);
     }
-    navigate(`/organizations/${orgId}/workspaces`);
+
+    // Stay on the same top-level section (workspaces/registry/settings/projects)
+    // under the new organization instead of always bouncing to Workspaces.
+    // Deeper sub-paths (a specific workspace, run, etc.) are dropped since
+    // those resource ids belong to the old organization and won't resolve
+    // under the new one.
+    const knownSections = ["workspaces", "registry", "settings", "projects"];
+    const paths = location.pathname.split("/").filter(Boolean);
+    const orgIdx = paths.indexOf("organizations");
+    const section = orgIdx >= 0 ? paths[orgIdx + 2] : undefined;
+
+    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "workspaces"}`);
   };
 
   return (

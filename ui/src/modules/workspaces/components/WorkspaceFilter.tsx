@@ -9,46 +9,68 @@ import {
   DeleteOutlined,
   DownOutlined,
 } from "@ant-design/icons";
-import { Row, Col, Select, Input, Button, Popover, Badge, Segmented } from "antd";
+import { Row, Col, Select, Input, Button, Popover, Badge, Segmented, Switch, Flex, Typography, Tag } from "antd";
+import clsx from "classnames";
 import { JobStatus } from "../../../domain/types";
 import { useEffect, useMemo, useState } from "react";
-import { WorkspaceListItem } from "@/modules/workspaces/types";
 import organizationService from "@/modules/organizations/organizationService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { mapTag } from "@/modules/organizations/organizationMapper";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceSortOption, WORKSPACE_SORT_OPTIONS } from "../utils/workspaceSort";
+import { WorkspaceStatusFilter } from "../utils/workspaceFilter";
 import "./WorkspaceFilter.css";
 
 type Props = {
   organizationId: string;
-  workspaces: WorkspaceListItem[];
-  onFiltered: (workspaces: WorkspaceListItem[]) => void;
+  status: string;
+  onStatusChange: (status: string) => void;
+  search: string;
+  onSearchChange: (search: string) => void;
+  tagIds: string[];
+  onTagIdsChange: (tagIds: string[]) => void;
+  projectId: string | null;
+  onProjectIdChange: (projectId: string | null) => void;
+  groupByProject: boolean;
+  onGroupByProjectChange: (value: boolean) => void;
   onTagsLoaded: (tags: TagModel[]) => void;
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
   projects?: { id: string; name: string }[];
+  compact?: boolean;
 };
 
-enum Additional {
-  All = "All",
-  NeverExecuted = "NeverExecuted",
-}
-
 export default function WorkspaceFilter({
-  workspaces,
-  onFiltered,
   organizationId,
+  status,
+  onStatusChange,
+  search,
+  onSearchChange,
+  tagIds,
+  onTagIdsChange,
+  projectId,
+  onProjectIdChange,
+  groupByProject,
+  onGroupByProjectChange,
   onTagsLoaded,
   sortOption,
   onSortChange,
   projects = [],
+  compact = false,
 }: Props) {
-  const [statusFilter, setStatusFilter] = useState<string>(sessionStorage.getItem("filterValue") || "All");
-  const [searchFilter, setSearchFilter] = useState(sessionStorage.getItem("searchValue") || "");
-  const [tagsFilter, setTagsFilter] = useState<string[]>((sessionStorage.getItem("selectedTags") as any) || []);
-  const [projectFilter, setProjectFilter] = useState<string | null>(sessionStorage.getItem("projectFilter") || null);
+  const [searchInputValue, setSearchInputValue] = useState(search);
   const [tags, setTags] = useState<TagModel[]>([]);
+  const [projectSearch, setProjectSearch] = useState("");
+
+  const projectOptions = useMemo(() => {
+    const term = projectSearch.trim().toLowerCase();
+    const matchingProjects = term ? projects.filter((p) => p.name.toLowerCase().includes(term)) : projects;
+    return [
+      { label: "All projects", value: "__all__" },
+      ...matchingProjects.map((p) => ({ label: p.name, value: p.id })),
+      { label: "(unassigned)", value: "__unassigned__" },
+    ];
+  }, [projects, projectSearch]);
 
   const { execute } = useApiRequest({
     action: () => organizationService.listOrganizationTags(organizationId),
@@ -59,60 +81,21 @@ export default function WorkspaceFilter({
     },
   });
 
-  const options = useMemo(() => {
-    return tags.map((t) => ({ label: t.name, value: t.id }));
-  }, [tags]);
-
-  function filterItems(isClear?: boolean) {
-    let internalSearchFilter = searchFilter;
-    if (isClear) internalSearchFilter = "";
-
-    let filteredWorkspaces =
-      statusFilter === Additional.All
-        ? workspaces
-        : statusFilter === Additional.NeverExecuted
-          ? workspaces.filter((x) => !x.lastStatus)
-          : workspaces.filter((x) => x.lastStatus === statusFilter);
-
-    filteredWorkspaces = filteredWorkspaces.filter((workspace) => {
-      if (workspace.description) {
-        return workspace.name.includes(internalSearchFilter) || workspace.description?.includes(internalSearchFilter);
-      } else {
-        return workspace.name.includes(internalSearchFilter);
-      }
-    });
-
-    filteredWorkspaces = filteredWorkspaces.filter((workspace) => {
-      if (tagsFilter && tagsFilter.length > 0) {
-        return workspace.tags?.some((tag) => tagsFilter.includes(tag));
-      } else {
-        return true;
-      }
-    });
-
-    filteredWorkspaces = filteredWorkspaces.filter((workspace) => {
-      if (!projectFilter) return true;
-      if (projectFilter === "__unassigned__") return !workspace.projectId;
-      return workspace.projectId === projectFilter;
-    });
-
-    onFiltered(filteredWorkspaces);
-  }
-
-  useEffect(() => {
-    filterItems();
-  }, [statusFilter, tagsFilter, projectFilter]);
   useEffect(() => {
     execute();
   }, []);
+
+  const options = useMemo(() => {
+    return tags.map((t) => ({ label: t.name, value: t.id }));
+  }, [tags]);
 
   const [isTagsPopoverOpen, setIsTagsPopoverOpen] = useState(false);
   const [tempTagRows, setTempTagRows] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
 
   const handleOpenChange = (newOpen: boolean) => {
     if (newOpen) {
-      if (tagsFilter.length > 0) {
-        setTempTagRows(tagsFilter.map((tagId) => ({ key: tagId, value: "" })));
+      if (tagIds.length > 0) {
+        setTempTagRows(tagIds.map((tagId) => ({ key: tagId, value: "" })));
       } else {
         setTempTagRows([{ key: "", value: "" }]);
       }
@@ -122,7 +105,7 @@ export default function WorkspaceFilter({
 
   const handleApplyTags = () => {
     const validTags = tempTagRows.map((r) => r.key).filter((k) => k);
-    setTagsFilter(validTags);
+    onTagIdsChange(validTags);
     setIsTagsPopoverOpen(false);
   };
 
@@ -190,15 +173,26 @@ export default function WorkspaceFilter({
     </div>
   );
 
+  const controlSize = compact ? "small" : "middle";
+
   return (
-    <div className="workspace-filter-container">
+    <div className={clsx("workspace-filter-container", { "workspace-filter-container--compact": compact })}>
       {/* Top row: Search */}
       <div className="workspace-filter-search-row">
         <Input.Search
+          size={controlSize}
           placeholder="Search by name..."
-          value={searchFilter}
-          onChange={(e) => setSearchFilter(e.target.value)}
-          onSearch={() => filterItems()}
+          value={searchInputValue}
+          onChange={(e) => {
+            const value = e.target.value;
+            setSearchInputValue(value);
+            // Compact ("New") view filters live as you type. Legacy view keeps its
+            // original behavior of only committing the search on Enter/search-click.
+            if (compact) {
+              onSearchChange(value);
+            }
+          }}
+          onSearch={() => onSearchChange(searchInputValue)}
           allowClear
           className="workspace-search-input"
         />
@@ -208,12 +202,13 @@ export default function WorkspaceFilter({
       <div className="workspace-filter-bar">
         <div className="workspace-filter-left">
           <Segmented
-            onChange={setStatusFilter}
-            value={statusFilter}
+            size={controlSize}
+            onChange={onStatusChange}
+            value={status}
             options={[
               {
                 label: "All",
-                value: Additional.All,
+                value: WorkspaceStatusFilter.All,
                 icon: <BarsOutlined />,
               },
               {
@@ -238,7 +233,7 @@ export default function WorkspaceFilter({
               },
               {
                 label: "Never Executed",
-                value: Additional.NeverExecuted,
+                value: WorkspaceStatusFilter.NeverExecuted,
                 icon: <InfoCircleOutlined />,
               },
             ]}
@@ -246,16 +241,13 @@ export default function WorkspaceFilter({
         </div>
 
         <div className="workspace-filter-right">
-          {projects.length > 0 && (
+          {!compact && projects.length > 0 && (
             <Select
+              size={controlSize}
               allowClear
               placeholder="Project"
-              value={projectFilter || undefined}
-              onChange={(val) => {
-                const next = val ?? null;
-                setProjectFilter(next);
-                sessionStorage.setItem("projectFilter", next ?? "");
-              }}
+              value={projectId || undefined}
+              onChange={(val) => onProjectIdChange(val ?? null)}
               options={[
                 { label: "(Unassigned)", value: "__unassigned__" },
                 ...projects.map((p) => ({ label: p.name, value: p.id })),
@@ -271,13 +263,14 @@ export default function WorkspaceFilter({
             placement="bottomRight"
             overlayClassName="workspace-filter-popover"
           >
-            <Button className={`filter-button ${tagsFilter.length > 0 ? "active" : ""}`}>
+            <Button size={controlSize} className={`filter-button ${tagIds.length > 0 ? "active" : ""}`}>
               Tags
-              {tagsFilter.length > 0 && <Badge count={tagsFilter.length} style={{ backgroundColor: "#52c41a" }} />}
+              {tagIds.length > 0 && <Badge count={tagIds.length} style={{ backgroundColor: "#52c41a" }} />}
               <DownOutlined />
             </Button>
           </Popover>
           <Select
+            size={controlSize}
             value={sortOption}
             onChange={onSortChange}
             options={WORKSPACE_SORT_OPTIONS}
@@ -286,6 +279,56 @@ export default function WorkspaceFilter({
           />
         </div>
       </div>
+
+      {compact && (
+        <div className="workspace-filter-projects-row">
+          {projects.length > 0 && (
+            <Input
+              size={controlSize}
+              placeholder="Search projects..."
+              allowClear
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              className="workspace-project-search"
+            />
+          )}
+          <div className="workspace-project-scroll">
+            <Segmented
+              size={controlSize}
+              value={projectId ?? "__all__"}
+              onChange={(val) => onProjectIdChange(val === "__all__" ? null : (val as string))}
+              options={projectOptions}
+            />
+          </div>
+          <Flex align="center" gap={6} className="workspace-group-toggle">
+            <Switch size="small" checked={groupByProject} onChange={(checked) => onGroupByProjectChange(checked)} />
+            <Typography.Text style={{ fontSize: 12 }}>Group by project</Typography.Text>
+          </Flex>
+        </div>
+      )}
+
+      {compact && tagIds.length > 0 && (
+        <Flex align="center" gap={6} wrap className="workspace-active-tags-row">
+          <Typography.Text style={{ fontSize: 12 }} type="secondary">
+            Filtering by tag:
+          </Typography.Text>
+          {tagIds.map((tagId) => {
+            const name = tags.find((t) => t.id === tagId)?.name ?? tagId;
+            return (
+              <Tag
+                key={tagId}
+                closable
+                onClose={(e) => {
+                  e.preventDefault();
+                  onTagIdsChange(tagIds.filter((t) => t !== tagId));
+                }}
+              >
+                {name}
+              </Tag>
+            );
+          })}
+        </Flex>
+      )}
     </div>
   );
 }

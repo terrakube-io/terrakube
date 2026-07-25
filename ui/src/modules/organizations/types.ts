@@ -4,6 +4,7 @@ export type OrganizationModel = {
   name: string;
   executionMode?: string;
   icon?: string;
+  workspaceCount?: number;
 };
 
 export type TagModel = {

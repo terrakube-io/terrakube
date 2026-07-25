@@ -10,6 +10,11 @@ import useApiRequest from "@/modules/api/useApiRequest";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
+import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/WorkspaceTable";
+import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
+import { useWorkspaceFilterState } from "@/modules/workspaces/hooks/useWorkspaceFilterState";
+import { filterWorkspaces } from "@/modules/workspaces/utils/workspaceFilter";
 import {
   getStoredWorkspaceSortOption,
   setStoredWorkspaceSortOption,
@@ -26,9 +31,21 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   const { id } = useParams();
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
-  const [filteredWorkspaces, setFilteredWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [sortOption, setSortOption] = useState<WorkspaceSortOption>(() => getStoredWorkspaceSortOption());
   const [tags, setTags] = useState<TagModel[]>([]);
+  const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
+  const filterState = useWorkspaceFilterState();
+
+  const filteredWorkspaces = useMemo(
+    () =>
+      filterWorkspaces(workspaces, {
+        status: filterState.status,
+        search: filterState.search,
+        tagIds: filterState.tagIds,
+        projectId: filterState.projectId,
+      }),
+    [workspaces, filterState.status, filterState.search, filterState.tagIds, filterState.projectId]
+  );
 
   const sortedWorkspaces = useMemo(
     () => sortWorkspaces(filteredWorkspaces, sortOption),
@@ -42,16 +59,36 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       .map((ws) => ({ id: ws.projectId!, name: ws.projectName! }));
   }, [workspaces]);
 
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; items: WorkspaceListItem[] }>();
+    for (const ws of sortedWorkspaces) {
+      const key = ws.projectId ?? "__unassigned__";
+      const label = ws.projectId ? (ws.projectName ?? "Unknown project") : "(unassigned)";
+      if (!map.has(key)) {
+        map.set(key, { key, label, items: [] });
+      }
+      map.get(key)!.items.push(ws);
+    }
+    return Array.from(map.values());
+  }, [sortedWorkspaces]);
+
   const handleSortChange = (option: WorkspaceSortOption) => {
     setSortOption(option);
     setStoredWorkspaceSortOption(option);
+  };
+
+  const handleToggleTag = (tagId: string) => {
+    filterState.setTagIds(
+      filterState.tagIds.includes(tagId)
+        ? filterState.tagIds.filter((t) => t !== tagId)
+        : [...filterState.tagIds, tagId]
+    );
   };
 
   const { loading, execute, error } = useApiRequest({
     action: () => workspaceService.listWorkspaces(id!),
     onReturn: (data) => {
       setWorkspaces(data.workspaces);
-      setFilteredWorkspaces(data.workspaces);
       sessionStorage.setItem(ORGANIZATION_NAME, data.organizationName);
       setOrganizationName(data.organizationName);
     },
@@ -60,11 +97,13 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   useEffect(() => {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, id!);
     execute();
-  }, []);
+  }, [id]);
 
   const handleCreateWorkspace = () => {
     navigate("/workspaces/create");
   };
+
+  const showGrouped = listViewMode === "new" && filterState.groupByProject && filterState.projectId === null;
 
   return (
     <PageWrapper
@@ -80,6 +119,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       fluid
       actions={
         <Space>
+          <ListViewToggle value={listViewMode} onChange={setListViewMode} />
           <Button icon={<ImportOutlined />}>
             <Link to="/workspaces/import">Import workspaces</Link>
           </Button>
@@ -92,28 +132,51 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       <Flex vertical>
         {id && (
           <WorkspaceFilter
-            workspaces={workspaces}
-            onFiltered={(filtered) => setFilteredWorkspaces(filtered)}
             organizationId={id}
             onTagsLoaded={(t) => setTags(t)}
             sortOption={sortOption}
             onSortChange={handleSortChange}
             projects={projects}
+            compact={listViewMode === "new"}
+            status={filterState.status}
+            onStatusChange={filterState.setStatus}
+            search={filterState.search}
+            onSearchChange={filterState.setSearch}
+            tagIds={filterState.tagIds}
+            onTagIdsChange={filterState.setTagIds}
+            projectId={filterState.projectId}
+            onProjectIdChange={filterState.setProjectId}
+            groupByProject={filterState.groupByProject}
+            onGroupByProjectChange={filterState.setGroupByProject}
           />
         )}
-        <List
-          split={false}
-          dataSource={sortedWorkspaces}
-          pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
-          renderItem={(item) => (
-            <List.Item
-              style={{ cursor: "pointer" }}
-              onClick={() => navigate(`/organizations/${id}/workspaces/${item.id}`)}
-            >
-              <WorkspaceCard tags={tags} item={item} />
-            </List.Item>
-          )}
-        />
+        {listViewMode === "new" && id && (
+          <WorkspaceTable
+            organizationId={id}
+            workspaces={sortedWorkspaces}
+            groups={showGrouped ? groups : undefined}
+            tags={tags}
+            onToggleTag={handleToggleTag}
+            onSelectProject={filterState.setProjectId}
+            sortOption={sortOption}
+            onSortChange={handleSortChange}
+          />
+        )}
+        {listViewMode === "legacy" && (
+          <List
+            split={false}
+            dataSource={sortedWorkspaces}
+            pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
+            renderItem={(item) => (
+              <List.Item
+                style={{ cursor: "pointer" }}
+                onClick={() => navigate(`/organizations/${id}/workspaces/${item.id}`)}
+              >
+                <WorkspaceCard tags={tags} item={item} />
+              </List.Item>
+            )}
+          />
+        )}
       </Flex>
     </PageWrapper>
   );

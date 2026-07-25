@@ -18,6 +18,13 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
             description
             executionMode
             icon
+            workspace {
+              edges {
+                node {
+                  id
+                }
+              }
+            }
           }
         }
       }
@@ -43,6 +50,7 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
     description: edge.node.description,
     executionMode: edge.node.executionMode,
     icon: edge.node.icon,
+    workspaceCount: edge.node.workspace?.edges?.length,
   }));
 }
 

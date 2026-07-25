@@ -31,6 +31,7 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  workspaceCount?: number;
 };
 
 export type ApiResponse<T> = {
