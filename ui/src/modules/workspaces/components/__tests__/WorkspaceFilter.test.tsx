@@ -5,7 +5,7 @@ import organizationService from "@/modules/organizations/organizationService";
 jest.mock("@/modules/organizations/organizationService", () => ({
   __esModule: true,
   default: {
-    listOrganizationTags: jest.fn().mockResolvedValue({ isError: false, data: [] }),
+    listOrganizationTags: jest.fn().mockResolvedValue([]),
   },
 }));
 
@@ -33,7 +33,7 @@ describe("WorkspaceFilter", () => {
     Object.values(baseProps).forEach((v) => {
       if (typeof v === "function") (v as jest.Mock).mockClear?.();
     });
-    mockListOrganizationTags.mockResolvedValue({ isError: false, data: [] });
+    mockListOrganizationTags.mockResolvedValue([]);
   });
 
   it("does not apply the compact class by default", () => {
@@ -99,10 +99,7 @@ describe("WorkspaceFilter", () => {
   });
 
   it("shows a removable chip for each active tag filter, and removing one calls onTagIdsChange without it", async () => {
-    mockListOrganizationTags.mockResolvedValue({
-      isError: false,
-      data: [{ id: "tag-1", attributes: { name: "billing" } }],
-    });
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
     render(<WorkspaceFilter {...baseProps} compact tagIds={["tag-1"]} />);
 
     await waitFor(() => expect(screen.getByText("billing")).toBeInTheDocument());

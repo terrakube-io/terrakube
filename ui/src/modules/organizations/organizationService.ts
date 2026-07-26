@@ -1,7 +1,8 @@
 import { apiGet } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import { axiosGraphQL } from "@/config/axiosConfig";
-import { ApiWorkspaceTag, FlatOrganization, Organization } from "../../domain/types";
+import { FlatOrganization, Organization } from "../../domain/types";
+import { TagModel } from "./types";
 
 async function listOrganizations(): Promise<ApiResponse<Organization[]>> {
   return await apiGet("/api/v1/organization", { dataWrapped: true });
@@ -84,8 +85,43 @@ async function getOrganizationNameGraphQL(orgId: string): Promise<string | null>
   return data.organization.edges[0].node.name;
 }
 
-async function listOrganizationTags(organizationId: string): Promise<ApiResponse<ApiWorkspaceTag[]>> {
-  return await apiGet(`/api/v1/organization/${organizationId}/tag`, { dataWrapped: true });
+async function listOrganizationTags(organizationId: string): Promise<TagModel[]> {
+  const body = {
+    query: `{
+      organization(ids: ["${organizationId}"]) {
+        edges {
+          node {
+            tag {
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+  };
+
+  const response = await axiosGraphQL.post("", body, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (response.data?.errors?.length) {
+    throw new Error(response.data.errors[0].message || "Failed to load organization tags");
+  }
+
+  const tagEdges = response.data?.data?.organization?.edges?.[0]?.node?.tag?.edges;
+  if (!tagEdges) {
+    return [];
+  }
+
+  return tagEdges.map((edge: any) => ({
+    id: edge.node.id,
+    name: edge.node.name,
+  }));
 }
 
 const methods = {

@@ -40,6 +40,15 @@ describe("OrganizationTable", () => {
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
 
+  it("shows description as its own column, with a fallback for organizations without one", () => {
+    renderTable([
+      { id: "org-1", name: "acme-platform", description: "Core platform infra", executionMode: "Remote" },
+      { id: "org-3", name: "no-desc-org", executionMode: "Local" },
+    ]);
+    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(screen.getByText("No description set for this organization")).toBeInTheDocument();
+  });
+
   it("shows the workspace count as a badge next to the name", () => {
     renderTable();
     expect(screen.getByText("14 workspaces")).toBeInTheDocument();

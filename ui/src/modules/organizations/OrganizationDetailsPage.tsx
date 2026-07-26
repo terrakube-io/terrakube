@@ -103,7 +103,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     navigate("/workspaces/create");
   };
 
-  const showGrouped = listViewMode === "new" && filterState.groupByProject && filterState.projectId === null;
+  const showGrouped = listViewMode === "compact" && filterState.groupByProject && filterState.projectId === null;
 
   return (
     <PageWrapper
@@ -137,7 +137,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             sortOption={sortOption}
             onSortChange={handleSortChange}
             projects={projects}
-            compact={listViewMode === "new"}
+            compact={listViewMode === "compact"}
             status={filterState.status}
             onStatusChange={filterState.setStatus}
             search={filterState.search}
@@ -150,7 +150,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onGroupByProjectChange={filterState.setGroupByProject}
           />
         )}
-        {listViewMode === "new" && id && (
+        {listViewMode === "compact" && id && (
           <WorkspaceTable
             organizationId={id}
             workspaces={sortedWorkspaces}
@@ -162,7 +162,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onSortChange={handleSortChange}
           />
         )}
-        {listViewMode === "legacy" && (
+        {listViewMode === "cards" && (
           <List
             split={false}
             dataSource={sortedWorkspaces}

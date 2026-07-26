@@ -7,25 +7,25 @@ describe("listViewPreference", () => {
     localStorage.clear();
   });
 
-  it("defaults to 'new' when nothing is stored", () => {
-    expect(getStoredListViewMode()).toBe("new");
+  it("defaults to 'compact' when nothing is stored", () => {
+    expect(getStoredListViewMode()).toBe("compact");
   });
 
-  it("returns 'legacy' when 'legacy' is stored", () => {
-    localStorage.setItem(STORAGE_KEY, "legacy");
-    expect(getStoredListViewMode()).toBe("legacy");
+  it("returns 'cards' when 'cards' is stored", () => {
+    localStorage.setItem(STORAGE_KEY, "cards");
+    expect(getStoredListViewMode()).toBe("cards");
   });
 
-  it("returns 'new' when an invalid value is stored", () => {
+  it("returns 'compact' when an invalid value is stored", () => {
     localStorage.setItem(STORAGE_KEY, "garbage");
-    expect(getStoredListViewMode()).toBe("new");
+    expect(getStoredListViewMode()).toBe("compact");
   });
 
   it("setStoredListViewMode writes the value under the expected key", () => {
-    setStoredListViewMode("legacy");
-    expect(localStorage.getItem(STORAGE_KEY)).toBe("legacy");
+    setStoredListViewMode("cards");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("cards");
 
-    setStoredListViewMode("new");
-    expect(localStorage.getItem(STORAGE_KEY)).toBe("new");
+    setStoredListViewMode("compact");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("compact");
   });
 });

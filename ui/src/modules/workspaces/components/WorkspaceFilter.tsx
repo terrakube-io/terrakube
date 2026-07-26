@@ -14,8 +14,6 @@ import clsx from "classnames";
 import { JobStatus } from "../../../domain/types";
 import { useEffect, useMemo, useState } from "react";
 import organizationService from "@/modules/organizations/organizationService";
-import useApiRequest from "@/modules/api/useApiRequest";
-import { mapTag } from "@/modules/organizations/organizationMapper";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceSortOption, WORKSPACE_SORT_OPTIONS } from "../utils/workspaceSort";
 import { WorkspaceStatusFilter } from "../utils/workspaceFilter";
@@ -72,18 +70,27 @@ export default function WorkspaceFilter({
     ];
   }, [projects, projectSearch]);
 
-  const { execute } = useApiRequest({
-    action: () => organizationService.listOrganizationTags(organizationId),
-    onReturn: (data) => {
-      const mapped = data.map(mapTag);
-      setTags(mapped);
-      onTagsLoaded(mapped);
-    },
-  });
-
   useEffect(() => {
-    execute();
-  }, []);
+    let cancelled = false;
+
+    organizationService
+      .listOrganizationTags(organizationId)
+      .then((loadedTags) => {
+        if (cancelled) return;
+        setTags(loadedTags);
+        onTagsLoaded(loadedTags);
+      })
+      .catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // onTagsLoaded is intentionally excluded: the parent passes a new
+    // inline function on every render, which would otherwise refetch in a loop.
+  }, [organizationId]);
 
   const options = useMemo(() => {
     return tags.map((t) => ({ label: t.name, value: t.id }));

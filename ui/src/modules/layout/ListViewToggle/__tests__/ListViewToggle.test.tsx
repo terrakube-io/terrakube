@@ -8,31 +8,31 @@ describe("ListViewToggle", () => {
     jest.restoreAllMocks();
   });
 
-  it("renders Legacy and New options", () => {
-    render(<ListViewToggle value="new" onChange={jest.fn()} />);
-    expect(screen.getByText("Legacy")).toBeInTheDocument();
-    expect(screen.getByText("New")).toBeInTheDocument();
+  it("renders Cards and Compact options", () => {
+    render(<ListViewToggle value="compact" onChange={jest.fn()} />);
+    expect(screen.getByText("Cards")).toBeInTheDocument();
+    expect(screen.getByText("Compact")).toBeInTheDocument();
   });
 
-  it("calls onChange with 'legacy' and persists it when Legacy is clicked", () => {
+  it("calls onChange with 'cards' and persists it when Cards is clicked", () => {
     const onChange = jest.fn();
     const setSpy = jest.spyOn(preference, "setStoredListViewMode");
-    render(<ListViewToggle value="new" onChange={onChange} />);
+    render(<ListViewToggle value="compact" onChange={onChange} />);
 
-    fireEvent.click(screen.getByText("Legacy"));
+    fireEvent.click(screen.getByText("Cards"));
 
-    expect(onChange).toHaveBeenCalledWith("legacy");
-    expect(setSpy).toHaveBeenCalledWith("legacy");
+    expect(onChange).toHaveBeenCalledWith("cards");
+    expect(setSpy).toHaveBeenCalledWith("cards");
   });
 
-  it("calls onChange with 'new' and persists it when New is clicked", () => {
+  it("calls onChange with 'compact' and persists it when Compact is clicked", () => {
     const onChange = jest.fn();
     const setSpy = jest.spyOn(preference, "setStoredListViewMode");
-    render(<ListViewToggle value="legacy" onChange={onChange} />);
+    render(<ListViewToggle value="cards" onChange={onChange} />);
 
-    fireEvent.click(screen.getByText("New"));
+    fireEvent.click(screen.getByText("Compact"));
 
-    expect(onChange).toHaveBeenCalledWith("new");
-    expect(setSpy).toHaveBeenCalledWith("new");
+    expect(onChange).toHaveBeenCalledWith("compact");
+    expect(setSpy).toHaveBeenCalledWith("compact");
   });
 });

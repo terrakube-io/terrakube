@@ -16,8 +16,8 @@ export default function ListViewToggle({ value, onChange }: Props) {
         onChange(mode);
       }}
       options={[
-        { label: "Legacy", value: "legacy" },
-        { label: "New", value: "new" },
+        { label: "Cards", value: "cards" },
+        { label: "Compact", value: "compact" },
       ]}
     />
   );

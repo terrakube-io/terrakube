@@ -41,24 +41,29 @@ export default function OrganizationTable({ organizations }: Props) {
             <Flex align="center" style={{ width: 24, height: 24, flexShrink: 0 }}>
               {getOrgIcon(iconName, color, 20)}
             </Flex>
-            <Flex vertical gap={0} style={{ minWidth: 0 }}>
-              <Flex align="center" gap={8}>
-                <Typography.Text strong ellipsis>
-                  {record.name}
-                </Typography.Text>
-                {typeof record.workspaceCount === "number" && (
-                  <Tag color="blue" style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>
-                    {record.workspaceCount} workspace{record.workspaceCount === 1 ? "" : "s"}
-                  </Tag>
-                )}
-              </Flex>
-              <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-                {record.description || "No description set for this organization"}
-              </Typography.Text>
-            </Flex>
+            <Typography.Text strong ellipsis>
+              {record.name}
+            </Typography.Text>
+            {typeof record.workspaceCount === "number" && (
+              <Tag color="blue" style={{ fontSize: 12, fontWeight: 600, margin: 0, flexShrink: 0 }}>
+                {record.workspaceCount} workspace{record.workspaceCount === 1 ? "" : "s"}
+              </Tag>
+            )}
           </Flex>
         );
       },
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      sorter: (a: OrganizationModel, b: OrganizationModel) =>
+        (a.description ?? "").localeCompare(b.description ?? ""),
+      render: (description: string | undefined) => (
+        <Typography.Text type="secondary" ellipsis style={{ maxWidth: 320, fontSize: 12 }}>
+          {description || "No description set for this organization"}
+        </Typography.Text>
+      ),
     },
     {
       title: "Execution mode",

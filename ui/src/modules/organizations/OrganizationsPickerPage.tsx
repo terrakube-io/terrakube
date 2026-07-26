@@ -118,10 +118,10 @@ export default function OrganizationsPickerPage() {
           </Empty>
         </Flex>
       )}
-      {!loading && organizations.length > 0 && listViewMode === "new" && (
+      {!loading && organizations.length > 0 && listViewMode === "compact" && (
         <OrganizationTable organizations={organizations} />
       )}
-      {!loading && organizations.length > 0 && listViewMode === "legacy" && (
+      {!loading && organizations.length > 0 && listViewMode === "cards" && (
         <OrganizationGrid organizations={organizations} />
       )}
     </PageWrapper>
