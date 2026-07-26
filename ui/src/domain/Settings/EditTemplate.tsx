@@ -1,11 +1,12 @@
 import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Alert, Button, Form, Input, message, Space, theme } from "antd";
+import { Alert, Button, Form, Input, message, Space, theme, Typography } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Template } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 const validateMessages = {
@@ -98,48 +99,52 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   };
   return (
     <div>
-      <h1>Edit Template</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Edit Template
+      </Typography.Title>
       <Space className="chooseType" direction="vertical">
         {loading ? (
           <p>Data loading...</p>
         ) : error ? (
           <Alert message="Error" description={error} type="error" showIcon />
         ) : template ? (
-          <Form
-            initialValues={{ name: template.attributes.name, description: template.attributes.description }}
-            onFinish={onFinish}
-            validateMessages={validateMessages}
-            name="create-vcs"
-            layout="vertical"
-          >
-            <Form.Item
-              name="name"
-              label="Name"
-              extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
-              rules={[{ required: true }]}
+          <SettingsSection>
+            <Form
+              initialValues={{ name: template.attributes.name, description: template.attributes.description }}
+              onFinish={onFinish}
+              validateMessages={validateMessages}
+              name="create-vcs"
+              layout="vertical"
             >
-              <Input />
-            </Form.Item>
-            <Form.Item name="description" label="Description">
-              <Input.TextArea />
-            </Form.Item>
-            <Form.Item name="tcl" label="Template">
-              <div className="editor">
-                <Editor
-                  height="40vh"
-                  onMount={handleEditorDidMount}
-                  onValidate={handleEditorValidation}
-                  defaultLanguage="yaml"
-                  defaultValue={tcl}
-                  theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                  options={monacoOptions}
-                />
-              </div>
-            </Form.Item>
-            <Button type="primary" htmlType="submit">
-              Save Template
-            </Button>
-          </Form>
+              <Form.Item
+                name="name"
+                label="Name"
+                extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item name="description" label="Description">
+                <Input.TextArea />
+              </Form.Item>
+              <Form.Item name="tcl" label="Template">
+                <div className="editor">
+                  <Editor
+                    height="40vh"
+                    onMount={handleEditorDidMount}
+                    onValidate={handleEditorValidation}
+                    defaultLanguage="yaml"
+                    defaultValue={tcl}
+                    theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
+                    options={monacoOptions}
+                  />
+                </div>
+              </Form.Item>
+              <Button type="primary" htmlType="submit">
+                Save Template
+              </Button>
+            </Form>
+          </SettingsSection>
         ) : (
           <p>Failed to load template...</p>
         )}

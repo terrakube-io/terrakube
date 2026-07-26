@@ -3,6 +3,7 @@ import { Button, Form, Input, message, Modal, Popconfirm, Select, Space, Spin, T
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 // Type definitions for Collection References
@@ -199,15 +200,19 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
           Associate workspaces with this collection to apply its variables to them.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
-        Add workspace reference
-      </Button>
-      <br></br>
+      <SettingsSection maxWidth="100%">
+        <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+          Add workspace reference
+        </Button>
+        <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Associated Workspaces</h3>
-      <Spin spinning={loading} tip="Loading References...">
-        <Table dataSource={references} columns={REFERENCE_COLUMNS} rowKey="id" />
-      </Spin>
+        <Typography.Title level={3} style={{ marginTop: "30px" }}>
+          Associated Workspaces
+        </Typography.Title>
+        <Spin spinning={loading} tip="Loading References...">
+          <Table dataSource={references} columns={REFERENCE_COLUMNS} rowKey="id" />
+        </Spin>
+      </SettingsSection>
 
       <Modal
         width="600px"

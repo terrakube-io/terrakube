@@ -4,6 +4,7 @@ import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
+import { JobStatus } from "@/domain/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
@@ -14,7 +15,7 @@ import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/Works
 import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
 import { useWorkspaceFilterState } from "@/modules/workspaces/hooks/useWorkspaceFilterState";
-import { filterWorkspaces } from "@/modules/workspaces/utils/workspaceFilter";
+import { filterWorkspaces, WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
 import {
   getStoredWorkspaceSortOption,
   setStoredWorkspaceSortOption,
@@ -51,6 +52,25 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     () => sortWorkspaces(filteredWorkspaces, sortOption),
     [filteredWorkspaces, sortOption]
   );
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      [WorkspaceStatusFilter.All]: workspaces.length,
+      [WorkspaceStatusFilter.NeverExecuted]: 0,
+      [JobStatus.WaitingApproval]: 0,
+      [JobStatus.Failed]: 0,
+      [JobStatus.Running]: 0,
+      [JobStatus.Completed]: 0,
+    };
+    for (const ws of workspaces) {
+      if (!ws.lastStatus) {
+        counts[WorkspaceStatusFilter.NeverExecuted]++;
+      } else if (ws.lastStatus in counts) {
+        counts[ws.lastStatus]++;
+      }
+    }
+    return counts;
+  }, [workspaces]);
 
   const projects = useMemo(() => {
     const seen = new Set<string>();
@@ -138,6 +158,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onSortChange={handleSortChange}
             projects={projects}
             compact={listViewMode === "compact"}
+            statusCounts={statusCounts}
             status={filterState.status}
             onStatusChange={filterState.setStatus}
             search={filterState.search}

@@ -1,11 +1,12 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, List, message, Popconfirm } from "antd";
+import { Alert, Button, List, message, Popconfirm, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type Props = {
@@ -74,7 +75,7 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
         )) || (
           <div>
             {" "}
-            <h1 style={{ paddingBottom: "10px" }}>
+            <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
               Templates
               <Button
                 type="primary"
@@ -86,54 +87,56 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
               >
                 Add a Template
               </Button>{" "}
-            </h1>
+            </Typography.Title>
             <br />
-            {loading ? (
-              <p>Data loading...</p>
-            ) : (
-              <List
-                className="vcsList"
-                itemLayout="horizontal"
-                dataSource={templates}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button
-                        onClick={() => {
-                          onEditVCS(item.id);
-                        }}
-                        icon={<EditOutlined />}
-                        type="link"
-                        disabled={!managePermission}
-                      >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            This will permanently delete this template. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta title={item.attributes.name} description={item.attributes.description} />
-                  </List.Item>
-                )}
-              />
-            )}
+            <SettingsSection maxWidth="100%">
+              {loading ? (
+                <p>Data loading...</p>
+              ) : (
+                <List
+                  className="vcsList"
+                  itemLayout="horizontal"
+                  dataSource={templates}
+                  renderItem={(item) => (
+                    <List.Item
+                      actions={[
+                        <Button
+                          onClick={() => {
+                            onEditVCS(item.id);
+                          }}
+                          icon={<EditOutlined />}
+                          type="link"
+                          disabled={!managePermission}
+                        >
+                          Edit
+                        </Button>,
+                        <Popconfirm
+                          onConfirm={() => {
+                            onDelete(item.id);
+                          }}
+                          style={{ width: "20px" }}
+                          title={
+                            <p>
+                              This will permanently delete this template. <br />
+                              Are you sure?
+                            </p>
+                          }
+                          okText="Yes"
+                          cancelText="No"
+                        >
+                          {" "}
+                          <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                            Delete
+                          </Button>
+                        </Popconfirm>,
+                      ]}
+                    >
+                      <List.Item.Meta title={item.attributes.name} description={item.attributes.description} />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </SettingsSection>
           </div>
         )
       )}

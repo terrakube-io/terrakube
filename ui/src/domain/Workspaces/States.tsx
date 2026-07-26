@@ -1,6 +1,6 @@
 import { InfoCircleOutlined, RollbackOutlined, UserOutlined } from "@ant-design/icons";
 import Editor, { OnMount } from "@monaco-editor/react";
-import { Avatar, Button, Card, Col, List, Popconfirm, Row, Space, Tooltip, message, theme } from "antd";
+import { Avatar, Button, Card, Col, List, Popconfirm, Row, Space, Tooltip, Typography, message, theme } from "antd";
 import { useCallback, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
@@ -323,7 +323,9 @@ export const States = ({
               <Avatar shape="square" icon={<UserOutlined />} />
             </Col>
             <Col span={19}>
-              <h3>{currentState?.title}</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                {currentState?.title}
+              </Typography.Title>
               <Space className="stateDetails" size={40} split="|">
                 <span>#{currentState?.id}</span>
                 <span>

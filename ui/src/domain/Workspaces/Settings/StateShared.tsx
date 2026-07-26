@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const { Text } = Typography;
 
@@ -183,92 +184,96 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
 
   return (
     <div className="generalSettings">
-      <h1>State Shared</h1>
-      <Text type="secondary">
-        Configure how the state is shared across workspaces.
-      </Text>
-      <Divider />
-      <Form
-        form={form}
-        layout="vertical"
-        name="state-shared"
-        onFinish={onFinish}
-        initialValues={{
-          globalRemoteState: workspace.attributes.globalRemoteState,
-        }}
-        disabled={!manageWorkspace}
-      >
-        <Form.Item
-          name="globalRemoteState"
-          valuePropName="checked"
-          label="Global Remote State"
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        State Shared
+      </Typography.Title>
+      <Text type="secondary">Configure how the state is shared across workspaces.</Text>
+      <SettingsSection maxWidth="100%">
+        <Divider />
+        <Form
+          form={form}
+          layout="vertical"
+          name="state-shared"
+          onFinish={onFinish}
+          initialValues={{
+            globalRemoteState: workspace.attributes.globalRemoteState,
+          }}
+          disabled={!manageWorkspace}
         >
-          <Checkbox>Allow all workspaces in the organization to access this workspace state</Checkbox>
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={waiting}>
-            Update Workspace
-          </Button>
-        </Form.Item>
-      </Form>
-      {!globalRemoteState && (
-        <>
-          <Divider />
-          <h3>Shared Workspace</h3>
-          <div style={{ marginBottom: 16 }}>
-            <Select
-              showSearch
-              placeholder="Search workspace by name"
-              filterOption={false}
-              onSearch={fetchWorkspaceOptions}
-              onSelect={handleSelectWorkspace}
-              value={null}
-              loading={fetching}
-              style={{ width: "100%" }}
-              disabled={!manageWorkspace}
-              notFoundContent={
-                fetching ? <Select.Option disabled value="searching">Searching...</Select.Option> : null
-              }
-            >
-              {options.map((option) => (
-                <Select.Option key={option.id} value={option.id}>
-                  {option.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </div>
-          <Table
-            dataSource={sharedWorkspaces}
-            loading={loadingTable}
-            rowKey="id"
-            columns={[
-              {
-                title: "Name",
-                dataIndex: "name",
-                key: "name",
-              },
-              {
-                title: "ID",
-                dataIndex: "id",
-                key: "id",
-              },
-              {
-                title: "Action",
-                key: "action",
-                render: (_, record) => (
-                  <Button
-                    type="link"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleDeleteWorkspace(record.id)}
-                    disabled={!manageWorkspace}
-                  />
-                ),
-              },
-            ]}
-          />
-        </>
-      )}
+          <Form.Item name="globalRemoteState" valuePropName="checked" label="Global Remote State">
+            <Checkbox>Allow all workspaces in the organization to access this workspace state</Checkbox>
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={waiting}>
+              Update Workspace
+            </Button>
+          </Form.Item>
+        </Form>
+        {!globalRemoteState && (
+          <>
+            <Divider />
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Shared Workspace
+            </Typography.Title>
+            <div style={{ marginBottom: 16 }}>
+              <Select
+                showSearch
+                placeholder="Search workspace by name"
+                filterOption={false}
+                onSearch={fetchWorkspaceOptions}
+                onSelect={handleSelectWorkspace}
+                value={null}
+                loading={fetching}
+                style={{ width: "100%" }}
+                disabled={!manageWorkspace}
+                notFoundContent={
+                  fetching ? (
+                    <Select.Option disabled value="searching">
+                      Searching...
+                    </Select.Option>
+                  ) : null
+                }
+              >
+                {options.map((option) => (
+                  <Select.Option key={option.id} value={option.id}>
+                    {option.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+            <Table
+              dataSource={sharedWorkspaces}
+              loading={loadingTable}
+              rowKey="id"
+              columns={[
+                {
+                  title: "Name",
+                  dataIndex: "name",
+                  key: "name",
+                },
+                {
+                  title: "ID",
+                  dataIndex: "id",
+                  key: "id",
+                },
+                {
+                  title: "Action",
+                  key: "action",
+                  render: (_, record) => (
+                    <Button
+                      type="link"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDeleteWorkspace(record.id)}
+                      disabled={!manageWorkspace}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </>
+        )}
+      </SettingsSection>
     </div>
   );
 };

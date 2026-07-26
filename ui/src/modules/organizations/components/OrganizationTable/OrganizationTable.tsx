@@ -57,8 +57,7 @@ export default function OrganizationTable({ organizations }: Props) {
       title: "Description",
       dataIndex: "description",
       key: "description",
-      sorter: (a: OrganizationModel, b: OrganizationModel) =>
-        (a.description ?? "").localeCompare(b.description ?? ""),
+      sorter: (a: OrganizationModel, b: OrganizationModel) => (a.description ?? "").localeCompare(b.description ?? ""),
       render: (description: string | undefined) => (
         <Typography.Text type="secondary" ellipsis style={{ maxWidth: 320, fontSize: 12 }}>
           {description || "No description set for this organization"}

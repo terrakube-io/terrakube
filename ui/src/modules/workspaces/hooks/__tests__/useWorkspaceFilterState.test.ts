@@ -4,6 +4,7 @@ import { useWorkspaceFilterState } from "../useWorkspaceFilterState";
 describe("useWorkspaceFilterState", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
   });
 
   it("defaults status to 'All', search to '', tagIds to [], projectId to null, groupByProject to true", () => {
@@ -23,9 +24,9 @@ describe("useWorkspaceFilterState", () => {
     expect(result.current.search).toBe("billing");
   });
 
-  it("initializes projectId and groupByProject from sessionStorage", () => {
+  it("initializes projectId from sessionStorage and groupByProject from localStorage", () => {
     sessionStorage.setItem("projectFilter", "proj-1");
-    sessionStorage.setItem("groupByProject", "false");
+    localStorage.setItem("groupByProject", "false");
     const { result } = renderHook(() => useWorkspaceFilterState());
     expect(result.current.projectId).toBe("proj-1");
     expect(result.current.groupByProject).toBe(false);
@@ -38,11 +39,11 @@ describe("useWorkspaceFilterState", () => {
     expect(sessionStorage.getItem("projectFilter")).toBe("proj-2");
   });
 
-  it("setGroupByProject updates state and persists to sessionStorage", () => {
+  it("setGroupByProject updates state and persists to localStorage", () => {
     const { result } = renderHook(() => useWorkspaceFilterState());
     act(() => result.current.setGroupByProject(false));
     expect(result.current.groupByProject).toBe(false);
-    expect(sessionStorage.getItem("groupByProject")).toBe("false");
+    expect(localStorage.getItem("groupByProject")).toBe("false");
   });
 
   it("setTagIds updates state", () => {

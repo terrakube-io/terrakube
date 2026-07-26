@@ -36,6 +36,7 @@ type Props = {
   onSortChange: (option: WorkspaceSortOption) => void;
   projects?: { id: string; name: string }[];
   compact?: boolean;
+  statusCounts?: Record<string, number>;
 };
 
 export default function WorkspaceFilter({
@@ -55,20 +56,10 @@ export default function WorkspaceFilter({
   onSortChange,
   projects = [],
   compact = false,
+  statusCounts,
 }: Props) {
   const [searchInputValue, setSearchInputValue] = useState(search);
   const [tags, setTags] = useState<TagModel[]>([]);
-  const [projectSearch, setProjectSearch] = useState("");
-
-  const projectOptions = useMemo(() => {
-    const term = projectSearch.trim().toLowerCase();
-    const matchingProjects = term ? projects.filter((p) => p.name.toLowerCase().includes(term)) : projects;
-    return [
-      { label: "All projects", value: "__all__" },
-      ...matchingProjects.map((p) => ({ label: p.name, value: p.id })),
-      { label: "(unassigned)", value: "__unassigned__" },
-    ];
-  }, [projects, projectSearch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,12 +173,22 @@ export default function WorkspaceFilter({
 
   const controlSize = compact ? "small" : "middle";
 
+  const withCount = (label: string, value: string) => {
+    const count = statusCounts?.[value];
+    if (count === undefined) return label;
+    return (
+      <>
+        {label} <span className="workspace-status-count">{count}</span>
+      </>
+    );
+  };
+
   return (
     <div className={clsx("workspace-filter-container", { "workspace-filter-container--compact": compact })}>
-      {/* Top row: Search */}
+      {/* Top row: Search (+ project picker and group-by-project in compact mode) */}
       <div className="workspace-filter-search-row">
         <Input.Search
-          size={controlSize}
+          size={compact ? "large" : "middle"}
           placeholder="Search by name..."
           value={searchInputValue}
           onChange={(e) => {
@@ -203,6 +204,28 @@ export default function WorkspaceFilter({
           allowClear
           className="workspace-search-input"
         />
+        {compact && projects.length > 0 && (
+          <Select
+            size="large"
+            showSearch
+            allowClear
+            placeholder="All projects"
+            value={projectId ?? undefined}
+            onChange={(val) => onProjectIdChange(val ?? null)}
+            optionFilterProp="label"
+            options={[
+              { label: "(Unassigned)", value: "__unassigned__" },
+              ...projects.map((p) => ({ label: p.name, value: p.id })),
+            ]}
+            className="workspace-project-select"
+          />
+        )}
+        {compact && (
+          <Flex align="center" gap={8} className="workspace-group-toggle">
+            <Switch checked={groupByProject} onChange={(checked) => onGroupByProjectChange(checked)} />
+            <Typography.Text style={{ fontSize: 14 }}>Group by project</Typography.Text>
+          </Flex>
+        )}
       </div>
 
       {/* Bottom row: Status (left) | Tags + Sort (right) */}
@@ -214,32 +237,32 @@ export default function WorkspaceFilter({
             value={status}
             options={[
               {
-                label: "All",
+                label: withCount("All", WorkspaceStatusFilter.All),
                 value: WorkspaceStatusFilter.All,
                 icon: <BarsOutlined />,
               },
               {
-                label: "Awaiting approval",
+                label: withCount("Awaiting approval", JobStatus.WaitingApproval),
                 value: JobStatus.WaitingApproval,
                 icon: <ExclamationCircleOutlined style={{ color: "#fa8f37" }} />,
               },
               {
-                label: "Failed",
+                label: withCount("Failed", JobStatus.Failed),
                 value: JobStatus.Failed,
                 icon: <StopOutlined style={{ color: "#FB0136" }} />,
               },
               {
-                label: "Running",
+                label: withCount("Running", JobStatus.Running),
                 value: JobStatus.Running,
                 icon: <SyncOutlined style={{ color: "#108ee9" }} />,
               },
               {
-                label: "Completed",
+                label: withCount("Completed", JobStatus.Completed),
                 value: JobStatus.Completed,
                 icon: <CheckCircleOutlined style={{ color: "#2eb039" }} />,
               },
               {
-                label: "Never Executed",
+                label: withCount("Never Executed", WorkspaceStatusFilter.NeverExecuted),
                 value: WorkspaceStatusFilter.NeverExecuted,
                 icon: <InfoCircleOutlined />,
               },
@@ -286,33 +309,6 @@ export default function WorkspaceFilter({
           />
         </div>
       </div>
-
-      {compact && (
-        <div className="workspace-filter-projects-row">
-          {projects.length > 0 && (
-            <Input
-              size={controlSize}
-              placeholder="Search projects..."
-              allowClear
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-              className="workspace-project-search"
-            />
-          )}
-          <div className="workspace-project-scroll">
-            <Segmented
-              size={controlSize}
-              value={projectId ?? "__all__"}
-              onChange={(val) => onProjectIdChange(val === "__all__" ? null : (val as string))}
-              options={projectOptions}
-            />
-          </div>
-          <Flex align="center" gap={6} className="workspace-group-toggle">
-            <Switch size="small" checked={groupByProject} onChange={(checked) => onGroupByProjectChange(checked)} />
-            <Typography.Text style={{ fontSize: 12 }}>Group by project</Typography.Text>
-          </Flex>
-        </div>
-      )}
 
       {compact && tagIds.length > 0 && (
         <Flex align="center" gap={6} wrap className="workspace-active-tags-row">

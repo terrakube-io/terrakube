@@ -4,33 +4,24 @@
   margin-block: 10px;
 }
 
-.ant-layout-header {
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
+.layout {
+  height: 100vh;
+  overflow: hidden;
 }
 
-.logo {
-  width: 35px;
-  margin-right: 16px;
-}
-
-.user {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  height: 100%;
-  gap: 8px;
-}
-
-.menu {
+.app-content-shell {
+  position: relative;
   flex: 1;
   min-width: 0;
-  margin-left: 16px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.org-selector-container {
-  margin-right: 16px;
+.app-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .site-layout-content {
@@ -45,20 +36,4 @@
 
 .avatar-hover-effect:hover {
   color: #fff;
-}
-
-/* Round corners on selected menu item and add spacing */
-.ant-layout-header .ant-menu-horizontal .ant-menu-item {
-  border-radius: 8px !important;
-  margin: 0 4px !important;
-}
-
-.ant-layout-header .ant-menu-horizontal .ant-menu-item-selected {
-  border-radius: 8px !important;
-  background-color: var(--ant-color-primary) !important;
-  border: none !important;
-}
-
-.menu {
-  margin-left: 32px !important;
 }

@@ -182,15 +182,15 @@ function WorkspaceRow({
             </Tag>
           )}
         </div>
-        {(item.description || (item.tags && item.tags.length > 0)) && (
+        {item.description && (
           <div className="workspace-name-line2">
-            {item.description && (
-              <Typography.Text className="workspace-desc" title={item.description}>
-                {item.description}
-              </Typography.Text>
-            )}
-            {renderTagPills(item, tags, onToggleTag)}
+            <Typography.Text className="workspace-desc" title={item.description}>
+              {item.description}
+            </Typography.Text>
           </div>
+        )}
+        {item.tags && item.tags.length > 0 && (
+          <div className="workspace-name-line3">{renderTagPills(item, tags, onToggleTag)}</div>
         )}
       </div>
       <div className="workspace-col-status">

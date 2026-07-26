@@ -14,8 +14,36 @@
   width: 100%;
 }
 
+/* Compact: search + project picker + group-by-project share one row */
+.workspace-filter-container--compact .workspace-filter-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-filter-container--compact .workspace-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
 .workspace-sort-select {
   min-width: 180px;
+}
+
+.workspace-status-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tk-text-secondary);
+  background: var(--tk-fill-secondary);
+  border-radius: 10px;
+  padding: 0 6px;
+  margin-left: 2px;
+}
+
+.workspace-filter-container--compact .workspace-status-count {
+  font-size: 12.5px;
+  padding: 1px 8px;
 }
 
 /* Bottom row: Status + Tags */
@@ -195,24 +223,9 @@
   border-radius: 8px;
 }
 
-.workspace-project-search {
-  width: 160px;
+.workspace-project-select {
+  width: 220px;
   flex-shrink: 0;
-}
-
-/* Project chips scroll horizontally instead of wrapping or overflowing when
-   an organization has many projects — the group toggle stays fixed on the right. */
-.workspace-project-scroll {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.workspace-project-scroll .ant-segmented {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  white-space: nowrap;
 }
 
 .workspace-group-toggle {

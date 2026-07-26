@@ -4,6 +4,7 @@
 // learn more: https://github.com/testing-library/jest-dom
 import "@testing-library/jest-dom";
 import { TextEncoder, TextDecoder } from "node:util";
+import { MessageChannel } from "node:worker_threads";
 
 // In the real app, window._env_ is injected by env-config.js at runtime. Several
 // modules (apiWrapper.ts, axiosConfig.ts) read it at import time, so it must exist
@@ -31,6 +32,17 @@ global.TextDecoder = TextDecoder as typeof global.TextDecoder;
 // Drop the pseudo-element argument so jsdom's real implementation handles the call instead.
 const originalGetComputedStyle = window.getComputedStyle.bind(window);
 window.getComputedStyle = ((elt: Element) => originalGetComputedStyle(elt)) as typeof window.getComputedStyle;
+
+// jsdom doesn't provide MessageChannel, but rc-select (antd Select's open/close scheduling) needs one.
+// Ports are unref'd so a leftover scheduled message doesn't keep the Jest worker process alive.
+class UnrefMessageChannel extends MessageChannel {
+  constructor() {
+    super();
+    (this.port1 as unknown as { unref: () => void }).unref();
+    (this.port2 as unknown as { unref: () => void }).unref();
+  }
+}
+global.MessageChannel = UnrefMessageChannel as unknown as typeof global.MessageChannel;
 
 // jsdom doesn't implement ResizeObserver, but antd's Table/rc-resize-observer needs one.
 global.ResizeObserver = class ResizeObserver {

@@ -24,6 +24,20 @@
   --tk-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --tk-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --tk-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  --tk-sidebar-bg: #161b22;
+  --tk-sidebar-border: #21262d;
+  --tk-sidebar-text: #e6edf3;
+  --tk-sidebar-text-secondary: #8b949e;
+
+  /* Accent color follows the chosen color scheme (see themeConfig.ts), not theme mode */
+  --tk-accent: #722ed1;
+  --tk-accent-tint: rgba(114, 46, 209, 0.18);
+}
+
+[data-color-scheme="default"] {
+  --tk-accent: #1890ff;
+  --tk-accent-tint: rgba(24, 144, 255, 0.15);
 }
 
 [data-theme="dark"] {
@@ -66,4 +80,9 @@
   --tk-scrollbar-track: #161b22;
   --tk-scrollbar-thumb: #30363d;
   --tk-scrollbar-thumb-hover: #484f58;
+
+  --tk-sidebar-bg: #161b22;
+  --tk-sidebar-border: #21262d;
+  --tk-sidebar-text: #e6edf3;
+  --tk-sidebar-text-secondary: #8b949e;
 }

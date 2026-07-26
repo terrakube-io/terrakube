@@ -56,12 +56,19 @@
 .workspace-name-line2 {
   display: flex;
   align-items: center;
-  gap: 6px;
   min-width: 0;
   padding-left: 16px;
 }
 
-.workspace-name-line2 .ant-tag {
+.workspace-name-line3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 16px;
+}
+
+.workspace-name-line3 .ant-tag {
   flex-shrink: 0;
 }
 
@@ -152,8 +159,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 40px;
-  flex-shrink: 1;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .workspace-tag-dot {

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import WorkspaceFilter from "../WorkspaceFilter";
 import organizationService from "@/modules/organizations/organizationService";
 
@@ -52,22 +52,22 @@ describe("WorkspaceFilter", () => {
     expect(screen.queryByText("All projects")).not.toBeInTheDocument();
   });
 
-  it("compact mode renders project chips and a group-by-project switch instead of the dropdown", () => {
+  it("compact mode renders a native project select and a group-by-project switch instead of the legacy dropdown", () => {
     render(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
     expect(screen.getByText("All projects")).toBeInTheDocument();
-    expect(screen.getByText("platform")).toBeInTheDocument();
     expect(screen.getByText("Group by project")).toBeInTheDocument();
     expect(screen.queryByText("Project")).not.toBeInTheDocument();
   });
 
-  it("clicking a project chip calls onProjectIdChange with that project's id", () => {
+  it("selecting a project from the compact select calls onProjectIdChange with that project's id", () => {
     render(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
+    fireEvent.mouseDown(screen.getByText("All projects"));
     fireEvent.click(screen.getByText("platform"));
     expect(baseProps.onProjectIdChange).toHaveBeenCalledWith("p1");
   });
 
-  it("filters project chips by the project search box, keeping All projects and (unassigned) visible", () => {
-    render(
+  it("compact project select can be filtered by typing", () => {
+    const { container } = render(
       <WorkspaceFilter
         {...baseProps}
         compact
@@ -78,12 +78,12 @@ describe("WorkspaceFilter", () => {
       />
     );
 
-    fireEvent.change(screen.getByPlaceholderText("Search projects..."), { target: { value: "bill" } });
+    fireEvent.mouseDown(screen.getByText("All projects"));
+    const projectSelect = container.querySelector(".workspace-project-select") as HTMLElement;
+    fireEvent.change(within(projectSelect).getByRole("combobox"), { target: { value: "bill" } });
 
     expect(screen.getByText("billing-project")).toBeInTheDocument();
     expect(screen.queryByText("platform")).not.toBeInTheDocument();
-    expect(screen.getByText("All projects")).toBeInTheDocument();
-    expect(screen.getByText("(unassigned)")).toBeInTheDocument();
   });
 
   it("toggling the group-by-project switch calls onGroupByProjectChange", () => {

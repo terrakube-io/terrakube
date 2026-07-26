@@ -10,6 +10,7 @@ import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, 
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 // Type definitions for Variable Collections
@@ -177,118 +178,126 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
   return (
     <div className="setting">
-      <h1>Variable Collections</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Variable Collections
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           Variable Collections allow you to define and apply variables one time across multiple workspaces within an
           organization.
         </Typography.Text>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px", marginTop: "20px" }}>
-        <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />} disabled={!managePermission}>
-          Create variable collection
-        </Button>
-      </div>
-      <div style={{ marginBottom: "20px", width: "100%" }}>
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder="Search by variable collections name"
-          style={{ width: "100%" }}
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-      </div>
+      <SettingsSection maxWidth="100%">
+        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
+          <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />} disabled={!managePermission}>
+            Create variable collection
+          </Button>
+        </div>
+        <div style={{ marginBottom: "20px", width: "100%" }}>
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="Search by variable collections name"
+            style={{ width: "100%" }}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
 
-      {error ? (
-        <Alert
-          message={error.includes("permission") ? "Access Denied" : "Error"}
-          description={error}
-          type="error"
-          showIcon
-          style={{ marginTop: "20px" }}
-        />
-      ) : (
-        <Spin spinning={loading}>
-          <List
-            grid={{ gutter: 16, column: 1 }}
-            dataSource={paginatedCollections}
-            renderItem={(item) => (
-              <List.Item>
-                <Card hoverable style={{ width: "100%", cursor: "pointer" }} onClick={() => handleViewDetails(item.id)}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div>
-                      <Typography.Title level={4} style={{ margin: 0 }}>
-                        {item.attributes.name}
-                      </Typography.Title>
-                      <Typography.Paragraph style={{ marginTop: "8px" }}>
-                        {item.attributes.description}
-                      </Typography.Paragraph>
-                      <Space style={{ marginTop: "16px" }}>
-                        <span style={{ display: "inline-flex", alignItems: "center" }}>
-                          <AppstoreOutlined style={{ marginRight: "5px" }} />
-                          {item.relationships?.workspaces?.data?.length || 0} workspaces
-                        </span>
-                        <span style={{ display: "inline-flex", alignItems: "center", marginLeft: "20px" }}>
-                          <UnorderedListOutlined style={{ marginRight: "5px" }} />
-                          {item.relationships?.variables?.data?.length || 0} variables
-                        </span>
-                      </Space>
-                    </div>
-                    <Space>
-                      <Button
-                        type="text"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditCollection(item.id);
-                        }}
-                        disabled={!managePermission}
-                      >
-                        Edit
-                      </Button>
-                      <Popconfirm
-                        title="Delete this variable collection?"
-                        description="This will permanently delete this variable collection and all its variables. Are you sure?"
-                        onConfirm={(e) => {
-                          e?.stopPropagation();
-                          onDelete(item.id);
-                        }}
-                        onCancel={(e) => e?.stopPropagation()}
-                        okText="Yes"
-                        cancelText="No"
-                      >
+        {error ? (
+          <Alert
+            message={error.includes("permission") ? "Access Denied" : "Error"}
+            description={error}
+            type="error"
+            showIcon
+            style={{ marginTop: "20px" }}
+          />
+        ) : (
+          <Spin spinning={loading}>
+            <List
+              grid={{ gutter: 16, column: 1 }}
+              dataSource={paginatedCollections}
+              renderItem={(item) => (
+                <List.Item>
+                  <Card
+                    hoverable
+                    style={{ width: "100%", cursor: "pointer" }}
+                    onClick={() => handleViewDetails(item.id)}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <Typography.Title level={4} style={{ margin: 0 }}>
+                          {item.attributes.name}
+                        </Typography.Title>
+                        <Typography.Paragraph style={{ marginTop: "8px" }}>
+                          {item.attributes.description}
+                        </Typography.Paragraph>
+                        <Space style={{ marginTop: "16px" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            <AppstoreOutlined style={{ marginRight: "5px" }} />
+                            {item.relationships?.workspaces?.data?.length || 0} workspaces
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", marginLeft: "20px" }}>
+                            <UnorderedListOutlined style={{ marginRight: "5px" }} />
+                            {item.relationships?.variables?.data?.length || 0} variables
+                          </span>
+                        </Space>
+                      </div>
+                      <Space>
                         <Button
-                          danger
                           type="text"
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => e.stopPropagation()}
-                          loading={deleteLoading === item.id}
+                          icon={<EditOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditCollection(item.id);
+                          }}
                           disabled={!managePermission}
                         >
-                          Delete
+                          Edit
                         </Button>
-                      </Popconfirm>
-                    </Space>
-                  </div>
-                </Card>
-              </List.Item>
-            )}
-          />
+                        <Popconfirm
+                          title="Delete this variable collection?"
+                          description="This will permanently delete this variable collection and all its variables. Are you sure?"
+                          onConfirm={(e) => {
+                            e?.stopPropagation();
+                            onDelete(item.id);
+                          }}
+                          onCancel={(e) => e?.stopPropagation()}
+                          okText="Yes"
+                          cancelText="No"
+                        >
+                          <Button
+                            danger
+                            type="text"
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                            loading={deleteLoading === item.id}
+                            disabled={!managePermission}
+                          >
+                            Delete
+                          </Button>
+                        </Popconfirm>
+                      </Space>
+                    </div>
+                  </Card>
+                </List.Item>
+              )}
+            />
 
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
-            {filteredCollections.length > 0 && (
-              <Pagination
-                current={currentPage}
-                pageSize={pageSize}
-                total={filteredCollections.length}
-                onChange={setCurrentPage}
-                showSizeChanger={false}
-                simple={false}
-              />
-            )}
-          </div>
-        </Spin>
-      )}
+            <div style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
+              {filteredCollections.length > 0 && (
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={filteredCollections.length}
+                  onChange={setCurrentPage}
+                  showSizeChanger={false}
+                  simple={false}
+                />
+              )}
+            </div>
+          </Spin>
+        )}
+      </SettingsSection>
     </div>
   );
 };

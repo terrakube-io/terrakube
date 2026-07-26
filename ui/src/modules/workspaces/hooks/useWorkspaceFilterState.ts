@@ -6,7 +6,7 @@ export function useWorkspaceFilterState() {
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [projectId, setProjectIdState] = useState<string | null>(sessionStorage.getItem("projectFilter") || null);
   const [groupByProject, setGroupByProjectState] = useState<boolean>(
-    sessionStorage.getItem("groupByProject") !== "false"
+    localStorage.getItem("groupByProject") !== "false"
   );
 
   const setProjectId = (value: string | null) => {
@@ -16,7 +16,7 @@ export function useWorkspaceFilterState() {
 
   const setGroupByProject = (value: boolean) => {
     setGroupByProjectState(value);
-    sessionStorage.setItem("groupByProject", String(value));
+    localStorage.setItem("groupByProject", String(value));
   };
 
   return {

@@ -30,6 +30,7 @@ import workspaceAccessService, {
   WorkspaceAccessPermissions,
 } from "@/modules/workspaces/workspaceAccessService";
 import { Workspace } from "../../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 type Props = {
   workspace: Workspace;
@@ -389,100 +390,104 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div style={{ width: "100%" }}>
-      <h1>Team Access</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Team Access
+      </Typography.Title>
       <p>Teams granted access to this workspace via the Terrakube UI or the terrakube_workspace_access resource.</p>
 
-      <Space align="center" style={{ marginBottom: 12 }}>
-        <TeamOutlined style={{ color: token.colorTextSecondary }} />
-        <Typography.Text type="secondary">{teamCountLabel}</Typography.Text>
-      </Space>
+      <SettingsSection maxWidth="100%">
+        <Space align="center" style={{ marginBottom: 12 }}>
+          <TeamOutlined style={{ color: token.colorTextSecondary }} />
+          <Typography.Text type="secondary">{teamCountLabel}</Typography.Text>
+        </Space>
 
-      <Spin spinning={loading}>
-        <Table
-          dataSource={accessList}
-          columns={columns}
-          rowKey="id"
-          pagination={false}
-          tableLayout="fixed"
-          scroll={{ x: 996 }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  canManage
-                    ? "No teams have been granted workspace-level access."
-                    : "You don't have permission to view or manage team assignments for this workspace."
-                }
-              >
-                {canManage && (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={scrollToAddForm}>
-                    Add a team
-                  </Button>
-                )}
-              </Empty>
-            ),
-          }}
-          style={{ marginBottom: 32 }}
-        />
-      </Spin>
+        <Spin spinning={loading}>
+          <Table
+            dataSource={accessList}
+            columns={columns}
+            rowKey="id"
+            pagination={false}
+            tableLayout="fixed"
+            scroll={{ x: 996 }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    canManage
+                      ? "No teams have been granted workspace-level access."
+                      : "You don't have permission to view or manage team assignments for this workspace."
+                  }
+                >
+                  {canManage && (
+                    <Button type="primary" icon={<PlusOutlined />} onClick={scrollToAddForm}>
+                      Add a team
+                    </Button>
+                  )}
+                </Empty>
+              ),
+            }}
+            style={{ marginBottom: 32 }}
+          />
+        </Spin>
 
-      {canManage && (
-        <Card
-          ref={addFormRef}
-          size="small"
-          title={
-            <Space>
-              <UsergroupAddOutlined />
-              <span>Grant Access</span>
-            </Space>
-          }
-          style={{ maxWidth: 640, marginBottom: 16 }}
-        >
-          <Form form={form} layout="vertical" onFinish={onAdd}>
-            <Space align="start" wrap>
-              <Form.Item name="teamName" label="Team" rules={[{ required: true, message: "Team name is required" }]}>
-                <Select
-                  showSearch
-                  placeholder="Select a team"
-                  optionFilterProp="label"
-                  loading={loadingTeams}
-                  style={{ minWidth: 220 }}
-                  options={teams.map((t) => ({
-                    label: t.name,
-                    value: t.name,
-                    disabled: accessList.some((a) => a.name === t.name),
-                  }))}
-                />
-              </Form.Item>
-              <Form.Item name="role" label="Role" initialValue="write" rules={[{ required: true }]}>
-                {renderRoleSelect(addRole ?? "write", (value) => form.setFieldsValue({ role: value }))}
-              </Form.Item>
-            </Space>
-
-            {addRole === "custom" && (
-              <Space wrap size={16} style={{ marginBottom: 8 }}>
-                {PERMISSION_FIELDS.map((field) => (
-                  <Form.Item key={field.key} name={field.key} valuePropName="checked" style={{ marginBottom: 0 }}>
-                    <Checkbox>{field.label}</Checkbox>
-                  </Form.Item>
-                ))}
+        {canManage && (
+          <Card
+            ref={addFormRef}
+            size="small"
+            title={
+              <Space>
+                <UsergroupAddOutlined />
+                <span>Grant Access</span>
               </Space>
-            )}
+            }
+            style={{ maxWidth: 640, marginBottom: 16 }}
+          >
+            <Form form={form} layout="vertical" onFinish={onAdd}>
+              <Space align="start" wrap>
+                <Form.Item name="teamName" label="Team" rules={[{ required: true, message: "Team name is required" }]}>
+                  <Select
+                    showSearch
+                    placeholder="Select a team"
+                    optionFilterProp="label"
+                    loading={loadingTeams}
+                    style={{ minWidth: 220 }}
+                    options={teams.map((t) => ({
+                      label: t.name,
+                      value: t.name,
+                      disabled: accessList.some((a) => a.name === t.name),
+                    }))}
+                  />
+                </Form.Item>
+                <Form.Item name="role" label="Role" initialValue="write" rules={[{ required: true }]}>
+                  {renderRoleSelect(addRole ?? "write", (value) => form.setFieldsValue({ role: value }))}
+                </Form.Item>
+              </Space>
 
-            <Form.Item style={{ marginBottom: 0 }}>
-              <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
-                Add Team
-              </Button>
-            </Form.Item>
-          </Form>
-        </Card>
-      )}
+              {addRole === "custom" && (
+                <Space wrap size={16} style={{ marginBottom: 8 }}>
+                  {PERMISSION_FIELDS.map((field) => (
+                    <Form.Item key={field.key} name={field.key} valuePropName="checked" style={{ marginBottom: 0 }}>
+                      <Checkbox>{field.label}</Checkbox>
+                    </Form.Item>
+                  ))}
+                </Space>
+              )}
 
-      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 16 }}>
-        Teams added here can access this workspace based on their assigned role, in addition to any organization-level
-        or project-level permissions they already have.
-      </Typography.Text>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+                  Add Team
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        )}
+
+        <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 16 }}>
+          Teams added here can access this workspace based on their assigned role, in addition to any organization-level
+          or project-level permissions they already have.
+        </Typography.Text>
+      </SettingsSection>
     </div>
   );
 };
