@@ -32,7 +32,7 @@ public class PrCommentService {
     private static final Pattern PLAN_SUMMARY_PATTERN = Pattern.compile(
             "(Plan: \\d+ to add, \\d+ to change, \\d+ to destroy\\.|No changes\\. Your infrastructure matches the configuration\\.)");
     private static final Pattern ANSI_PATTERN = Pattern.compile(
-            "[\\u001b\\u009b][\\[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]");
+            "[\\u001b\\u009b][\\[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{1,4})*)?[0-9A-ORZcf-nq-uy=><~]");
 
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
