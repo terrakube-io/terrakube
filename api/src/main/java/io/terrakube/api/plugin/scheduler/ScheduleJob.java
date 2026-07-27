@@ -176,6 +176,9 @@ public class ScheduleJob implements org.quartz.Job {
                 case cancelled:
                 case failed:
                 case rejected:
+                    if (job.getStatus().equals(JobStatus.rejected)) {
+                        executeOnRejectCommands(job);
+                    }
                     log.info("Deleting Failed/Cancelled/Rejected Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                     updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                     updateJobStatusOnVcs(job, JobStatus.failed);
@@ -416,6 +419,26 @@ public class ScheduleJob implements org.quartz.Job {
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
             }
+        }
+    }
+
+    // Fire-and-forget: the job must stay rejected, so unlike the pending/approved paths the
+    // job is never moved to queue and dispatch errors only get logged. The executor skips its
+    // job status callbacks for rejected jobs so this run cannot resurrect the flow.
+    private void executeOnRejectCommands(Job job) {
+        try {
+            Flow flow = tclService.getNextFlow(job);
+            if (flow != null
+                    && FlowType.approval.name().equals(flow.getType())
+                    && flow.getOnReject() != null
+                    && !flow.getOnReject().isEmpty()) {
+                String stepId = tclService.getCurrentStepId(job);
+                flow.setCommands(flow.getOnReject());
+                log.info("Executing onReject commands for job {} step {}", job.getId(), stepId);
+                executorService.execute(job, stepId, flow);
+            }
+        } catch (Exception e) {
+            log.error("Failed to execute onReject commands for job {}: {}", job.getId(), e.getMessage());
         }
     }
 

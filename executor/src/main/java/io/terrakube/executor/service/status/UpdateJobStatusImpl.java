@@ -43,13 +43,17 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 }
             }
 
-            job.getAttributes().setStatus("running");
-            job.getAttributes().setCommitId(commitId);
+            if (job.getAttributes().getStatus().equals("rejected")) {
+                log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
+            } else {
+                job.getAttributes().setStatus("running");
+                job.getAttributes().setCommitId(commitId);
 
-            JobRequest jobRequest = new JobRequest();
-            jobRequest.setData(job);
+                JobRequest jobRequest = new JobRequest();
+                jobRequest.setData(job);
 
-            terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
+                terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
+            }
 
             updateStepLogs(terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId());
         }
@@ -59,15 +63,16 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             updateStepStatus(successful, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
-            if(!isJobCancelled(terraformJob))
+            if(!isJobCancelledOrRejected(terraformJob))
                 updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId);
         }
     }
 
-    private boolean isJobCancelled(TerraformJob terraformJob){
+    private boolean isJobCancelledOrRejected(TerraformJob terraformJob){
         Job job = terrakubeClient.getJobById(terraformJob.getOrganizationId(), terraformJob.getJobId()).getData();
-        if(job.getAttributes().getStatus().equals("cancelled")) {
-            log.warn("Job {} was cancelled when running executor", terraformJob.getJobId());
+        String status = job.getAttributes().getStatus();
+        if(status.equals("cancelled") || status.equals("rejected")) {
+            log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), status);
             return true;
         }
         else {
