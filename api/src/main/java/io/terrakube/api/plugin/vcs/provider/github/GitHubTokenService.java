@@ -20,7 +20,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -235,11 +234,15 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey key = keyFactory.generatePrivate(keySpec);
 
+        // GitHub rejects a JWT if, from its own clock, "iat" looks like it's in the
+        // future or "exp" is more than 10 minutes out. Backdating "iat" by 60 seconds
+        // and keeping "exp" a bit under the 10-minute cap gives room for clock drift
+        // between this server and GitHub's, as GitHub's own docs recommend.
         Instant now = Instant.now();
         String jws = Jwts.builder()
                 .setIssuer(clientId)
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plus(10, ChronoUnit.MINUTES)))
+                .setIssuedAt(Date.from(now.minus(60, ChronoUnit.SECONDS)))
+                .setExpiration(Date.from(now.plus(9, ChronoUnit.MINUTES)))
                 .signWith(key, SignatureAlgorithm.RS256)
                 .compact();
         return jws;
@@ -274,17 +277,22 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     }
 
     public RestTemplate getRestTemplateWithProxy() {
+        // JdkClientHttpRequestFactory (java.net.http.HttpClient) is used instead of the
+        // legacy SimpleClientHttpRequestFactory (java.net.HttpURLConnection): the latter
+        // was observed to intermittently return an empty error body even when the server
+        // sent one (e.g. GitHub's actual "'Expiration time' claim..." message came back
+        // as "[no body]"), which made failures from this client impossible to diagnose.
         if (System.getProperty("http.proxyHost") != null) {
             log.info("RestTemplate proxy host: {} port: {}", System.getProperty("http.proxyHost"), System.getProperty("http.proxyPort"));
-            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
             String proxyHost = System.getProperty("http.proxyHost");
             int proxyPort = Integer.parseInt(System.getProperty("http.proxyPort"));
-            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
-            requestFactory.setProxy(proxy);
-            return new RestTemplate(requestFactory);
+            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+                    .proxy(java.net.ProxySelector.of(new InetSocketAddress(proxyHost, proxyPort)))
+                    .build();
+            return new RestTemplate(new org.springframework.http.client.JdkClientHttpRequestFactory(httpClient));
         } else {
             log.info("No proxy setup");
-            return new RestTemplate();
+            return new RestTemplate(new org.springframework.http.client.JdkClientHttpRequestFactory());
         }
     }
 }
