@@ -14,7 +14,6 @@ import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,19 +48,26 @@ public class RepoWebhookService {
     @Transactional
     public RepoWebhook getOrCreateRepoWebhook(Workspace workspace) {
         String normalizedUrl = RepoUrlNormalizer.normalize(workspace.getSource());
+
+        // Serialize concurrent find-or-create attempts for the same
+        // repository URL. Without this, two transactions can both see "no
+        // row yet" from findByRepositoryUrl below and both attempt to
+        // insert, and only one wins the unique constraint on
+        // repository_url — the loser's transaction is then poisoned
+        // (Postgres refuses further statements until rollback), so a
+        // catch-and-retry inside the same transaction can't recover from
+        // it. pg_advisory_xact_lock is transaction-scoped and releases
+        // automatically at commit/rollback, so concurrent callers simply
+        // queue up here instead of racing the insert.
+        repoWebhookRepository.acquireRepoWebhookLock(normalizedUrl);
+
         return repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
                 .orElseGet(() -> {
-                    try {
-                        RepoWebhook repoWebhook = new RepoWebhook();
-                        repoWebhook.setRepositoryUrl(normalizedUrl);
-                        repoWebhook.setWebhookSecret(UUID.randomUUID().toString());
-                        repoWebhook.setVcs(workspace.getVcs());
-                        return repoWebhookRepository.save(repoWebhook);
-                    } catch (DataIntegrityViolationException e) {
-                        return repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
-                                .orElseThrow(() -> new IllegalStateException(
-                                        "Failed to create or find RepoWebhook for " + normalizedUrl, e));
-                    }
+                    RepoWebhook repoWebhook = new RepoWebhook();
+                    repoWebhook.setRepositoryUrl(normalizedUrl);
+                    repoWebhook.setWebhookSecret(UUID.randomUUID().toString());
+                    repoWebhook.setVcs(workspace.getVcs());
+                    return repoWebhookRepository.save(repoWebhook);
                 });
     }
 

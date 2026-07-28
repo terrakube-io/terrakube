@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -27,8 +28,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -142,31 +143,42 @@ class RepoWebhookServiceTest {
         }
 
         @Test
-        void handlesRaceConditionOnConcurrentInsert() {
+        void acquiresAdvisoryLockBeforeCheckingForExistingRow() {
+            // Concurrent callers for the same repository URL must serialize
+            // on the advisory lock before either one checks whether a row
+            // already exists — otherwise two callers can both observe "no
+            // row yet" and both attempt the insert, racing the unique
+            // constraint on repository_url (this was the original bug: the
+            // old find-then-insert-then-catch approach let two transactions
+            // both pass the check before either committed).
+            Workspace ws = workspaceWithSource("https://github.com/owner/repo");
+            when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
+                    .thenReturn(Optional.empty());
+            when(repoWebhookRepository.save(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.getOrCreateRepoWebhook(ws);
+
+            InOrder order = inOrder(repoWebhookRepository);
+            order.verify(repoWebhookRepository).acquireRepoWebhookLock("https://github.com/owner/repo");
+            order.verify(repoWebhookRepository).findByRepositoryUrl("https://github.com/owner/repo");
+            order.verify(repoWebhookRepository).save(any(RepoWebhook.class));
+        }
+
+        @Test
+        void acquiresAdvisoryLockEvenWhenRowAlreadyExists() {
+            // The lock must be held for the whole find-or-create decision,
+            // not just the insert branch, so a concurrent creator can't slip
+            // in between this caller's check and its use of the result.
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             RepoWebhook existing = repoWebhookWith("https://github.com/owner/repo", "secret");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
-                    .thenReturn(Optional.empty())
                     .thenReturn(Optional.of(existing));
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
-                    .thenThrow(new DataIntegrityViolationException("Duplicate"));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
             assertThat(result).isSameAs(existing);
-        }
-
-        @Test
-        void throwsWhenRaceConditionRetryAlsoFails() {
-            Workspace ws = workspaceWithSource("https://github.com/owner/repo");
-            when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
-                    .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
-                    .thenThrow(new DataIntegrityViolationException("Duplicate"));
-
-            assertThatThrownBy(() -> subject.getOrCreateRepoWebhook(ws))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Failed to create or find RepoWebhook");
+            verify(repoWebhookRepository).acquireRepoWebhookLock("https://github.com/owner/repo");
+            verify(repoWebhookRepository, never()).save(any());
         }
 
         @Test
