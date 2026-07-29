@@ -165,11 +165,45 @@ const actionMeta: Record<
   },
 };
 
-const applyStatusMeta: Record<ApplyChange["status"], { label: string; className: string }> = {
-  pending: { label: "pending", className: "pending" },
-  applying: { label: "applying", className: "applying" },
-  applied: { label: "applied", className: "applied" },
-  errored: { label: "errored", className: "errored" },
+// Verb forms for the in-progress/done apply-status badge, so a destroy reads "destroying" /
+// "destroyed" rather than the generic "applying" / "applied" every other action shares.
+const applyStatusVerbs: Record<ActionName, { gerund: string; done: string }> = {
+  create: { gerund: "creating", done: "created" },
+  update: { gerund: "modifying", done: "modified" },
+  replace: { gerund: "replacing", done: "replaced" },
+  delete: { gerund: "destroying", done: "destroyed" },
+  read: { gerund: "reading", done: "refreshed" },
+  import: { gerund: "importing", done: "imported" },
+  unknown: { gerund: "applying", done: "applied" },
+  "no-op": { gerund: "applying", done: "applied" },
+};
+
+// Only actions whose "done" badge shouldn't read as the default green "applied" need an
+// entry here - e.g. a destroy succeeding is still notable and shouldn't look identical to a
+// create succeeding.
+const appliedClassNameByAction: Partial<Record<ActionName, string>> = {
+  delete: "destroyed",
+  replace: "replaced",
+  import: "imported",
+};
+
+const getApplyStatusMeta = (
+  action: ActionName,
+  status: ApplyChange["status"],
+): { label: string; className: string } => {
+  switch (status) {
+    case "pending":
+      return { label: "pending", className: "pending" };
+    case "applying":
+      return { label: applyStatusVerbs[action].gerund, className: "applying" };
+    case "applied":
+      return {
+        label: applyStatusVerbs[action].done,
+        className: appliedClassNameByAction[action] ?? "applied",
+      };
+    case "errored":
+      return { label: `${actionMeta[action].displayLabel} failed`, className: "errored" };
+  }
 };
 
 const providerIconMap = {
@@ -1385,6 +1419,8 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                 ? buildResourceDiff(row.change, row.action, true).rows
                 : row.diff.rows;
               const rowActionMeta = actionMeta[row.action];
+              const rowApplyStatusMeta =
+                applyMode && row.applyStatus ? getApplyStatusMeta(row.action, row.applyStatus) : null;
               const normalizedProviderName = row.providerName.toLowerCase() as keyof typeof providerIconMap;
               const ProviderIcon = providerIconMap[normalizedProviderName];
 
@@ -1420,11 +1456,11 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                       <span className="structured-plan-address" title={row.resourceLabel}>
                         {row.resourceLabel}
                       </span>
-                      {applyMode && row.applyStatus ? (
+                      {rowApplyStatusMeta ? (
                         <span
-                          className={`structured-plan-applyStatus structured-plan-applyStatus--${applyStatusMeta[row.applyStatus].className}`}
+                          className={`structured-plan-applyStatus structured-plan-applyStatus--${rowApplyStatusMeta.className}`}
                         >
-                          {applyStatusMeta[row.applyStatus].label}
+                          {rowApplyStatusMeta.label}
                         </span>
                       ) : null}
                     </button>

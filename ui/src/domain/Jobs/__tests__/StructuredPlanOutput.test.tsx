@@ -149,7 +149,47 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("1 of 2 applied")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /aws_instance\.applying/i }));
-    expect(screen.getByText("applying", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
+    expect(screen.getByText("modifying", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
+  });
+
+  it("labels the apply-status badge for the resource's action, not a generic applied/errored", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.destroy_me",
+            action: "delete",
+            actions: ["delete"],
+            before: { id: "i-1" },
+            status: "applied",
+          },
+          {
+            address: "aws_instance.destroy_failed",
+            action: "delete",
+            actions: ["delete"],
+            before: { id: "i-2" },
+            status: "errored",
+          },
+          {
+            address: "random_string.imported_example",
+            action: "import",
+            actions: ["no-op"],
+            after: { id: "abc" },
+            importing: { id: "abc" },
+            status: "applied",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.destroy_me/i }));
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.destroy_failed/i }));
+    fireEvent.click(screen.getByRole("button", { name: /random_string\.imported_example/i }));
+
+    expect(screen.getByText("destroyed", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
+    expect(screen.getByText("destroy failed", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
+    expect(screen.getByText("imported", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
   });
 
   it("filters rows by address", () => {

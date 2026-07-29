@@ -183,4 +183,41 @@ class ApplyStructuredOutputServiceTest {
         Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
         assertEquals("nested-id", resolvedAfter.get("id"));
     }
+
+    @Test
+    void marksAnImportAsAppliedWhenItNeverReceivedAnApplyJsonEvent() {
+        // Terraform's `apply -json` stream never emits apply_start/apply_complete hook
+        // events for resources handled by a config-driven `import` block (it's a distinct
+        // PreApplyImport/PostApplyImport hook pair that the JSON view doesn't wire up), so
+        // ApplyJsonEventParser has nothing to key off of and the row stays "pending" forever.
+        // Its presence in the post-apply state is the only signal we have that it succeeded.
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", "already-known-at-plan-time");
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "random_string.imported_example");
+        change.put("action", "import");
+        change.put("status", "pending");
+        change.put("after", after);
+        change.put("afterUnknown", new HashMap<>());
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "random_string.imported_example",
+                          "values": {"id": "already-known-at-plan-time"}
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        assertEquals("applied", change.get("status"));
+    }
 }

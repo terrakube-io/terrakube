@@ -133,6 +133,16 @@ public class ApplyStructuredOutputService {
                 continue;
             }
 
+            // Config-driven `import` blocks never emit an apply_start/apply_complete hook
+            // event over `apply -json` (Terraform calls a separate PreApplyImport/PostApplyImport
+            // hook pair that its own JSON view doesn't implement), so ApplyJsonEventParser has
+            // nothing to key off of and these rows are stuck at the seeded "pending" status.
+            // The resource's presence in the post-apply state is the only signal available that
+            // it was actually applied, so use it to unstick anything still marked pending.
+            if ("pending".equals(change.get("status"))) {
+                change.put("status", "applied");
+            }
+
             Object afterRaw = change.get("after");
             Object afterUnknownRaw = change.get("afterUnknown");
             if (!(afterRaw instanceof Map<?, ?> after) || !(afterUnknownRaw instanceof Map<?, ?> afterUnknown)) {

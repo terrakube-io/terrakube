@@ -748,6 +748,21 @@
   color: #cf3d38;
 }
 
+.structured-plan-applyStatus--destroyed {
+  background: #fff2f1;
+  color: #cf3d38;
+}
+
+.structured-plan-applyStatus--replaced {
+  background: #f4f5f7;
+  color: #55606e;
+}
+
+.structured-plan-applyStatus--imported {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
 [data-theme="dark"] .structured-plan-applyStatus--pending {
   background: rgba(139, 148, 158, 0.2);
   color: var(--tk-text-tertiary);
@@ -766,6 +781,21 @@
 [data-theme="dark"] .structured-plan-applyStatus--errored {
   background: rgba(248, 81, 73, 0.2);
   color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--destroyed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--replaced {
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--imported {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
 }
 
 .structured-plan-noChanges {
