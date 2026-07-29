@@ -68,6 +68,15 @@ class RepoWebhookSyncCoalescingIntegrationTest {
         registry.add("io.terrakube.api.plugin.datasource.databaseName", postgreSQLContainer::getDatabaseName);
         registry.add("io.terrakube.api.plugin.datasource.databaseUser", postgreSQLContainer::getUsername);
         registry.add("io.terrakube.api.plugin.datasource.databasePassword", postgreSQLContainer::getPassword);
+        // Quartz's SchedulerFactoryBean registers its DataSource in a JVM-wide static
+        // registry (org.quartz.utils.DBConnectionManager) keyed by scheduler instance
+        // name, which otherwise defaults to the "schedulerFactoryBean" bean name shared
+        // with the default (H2) test ApplicationContext. Without a distinct name here,
+        // this context's registration clobbers that shared entry; when this context's
+        // Postgres container is torn down afterwards, the default context's still-running
+        // Quartz background threads are left pointing at a dead connection pool for the
+        // rest of the test suite.
+        registry.add("io.terrakube.api.plugin.scheduler.instanceName", () -> "repoWebhookSyncCoalescingIT");
     }
 
     @Autowired
