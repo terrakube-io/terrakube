@@ -1,6 +1,6 @@
 import { ThemeConfig, theme } from "antd";
 
-export type ColorSchemeOption = "default" | "terrakube";
+export type ColorSchemeOption = "blue" | "terrakube";
 export type ThemeMode = "light" | "dark";
 
 const darkThemeTokens = {
@@ -32,7 +32,7 @@ const darkThemeTokens = {
 };
 
 export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeMode): ThemeConfig => {
-  const colorPrimary = colorScheme === "default" ? "#1890ff" : "#722ED1";
+  const colorPrimary = colorScheme === "blue" ? "#1890ff" : "#722ED1";
   const isTerrakube = colorScheme === "terrakube";
 
   if (typeof document !== "undefined" && document.documentElement) {

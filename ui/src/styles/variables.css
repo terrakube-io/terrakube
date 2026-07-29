@@ -35,7 +35,7 @@
   --tk-accent-tint: rgba(114, 46, 209, 0.18);
 }
 
-[data-color-scheme="default"] {
+[data-color-scheme="blue"] {
   --tk-accent: #1890ff;
   --tk-accent-tint: rgba(24, 144, 255, 0.15);
 }
