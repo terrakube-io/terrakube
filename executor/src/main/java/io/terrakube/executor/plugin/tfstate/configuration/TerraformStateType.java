@@ -5,5 +5,6 @@ public enum TerraformStateType {
     AwsTerraformStateImpl,
 
     GcpTerraformStateImpl,
-    LocalTerraformStateImpl
+    LocalTerraformStateImpl,
+    ApiTerraformStateImpl
 }

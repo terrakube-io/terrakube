@@ -72,9 +72,14 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
     @Override
     public String generateAccessToken(int minutes) {
+        return generateAccessToken(null, minutes);
+    }
+
+    @Override
+    public String generateAccessToken(String workspaceId, int minutes) {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .setHeaderParam("typ", "JWT")
                 .setIssuer(WorkspaceSecurityImpl.ISSUER)
                 .setSubject(WorkspaceSecurityImpl.SUBJECT)
@@ -83,9 +88,13 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("email_verified", true)
                 .claim("name", WorkspaceSecurityImpl.NAME)
                 .setIssuedAt(Date.from(Instant.now()))
-                .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)))
-                .signWith(key, SignatureAlgorithm.HS256)
-                .compact();
+                .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)));
+        // Scope the token to a single workspace so a leaked backend password
+        // cannot be replayed against other workspaces' http-backend endpoints.
+        if (workspaceId != null) {
+            builder.claim("workspaceId", workspaceId);
+        }
+        return builder.signWith(key, SignatureAlgorithm.HS256).compact();
     }
 
     @Override

@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.terraform;
 
+import io.terrakube.executor.plugin.tfstate.StateUploadFailedException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -107,5 +108,88 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertTrue(result.getOutputLog().contains("init stderr"));
+    }
+
+    @Test
+    void planSurfacesStateUploadFailureFromSaveTerraformPlan() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        // exit 2 = plan succeeded with changes, so executionPlan is true and saveTerraformPlan is called
+        when(terraformClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        when(terraformState.saveTerraformPlan(anyString(), anyString(), anyString(), anyString(), any(File.class)))
+                .thenThrow(new StateUploadFailedException("API rejected upload: HTTP 500"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        // The upload failure is appended to the error buffer (and surfaced via
+        // surfaceUploadFailure -> setOutputErrorLog) so the failed job carries
+        // the user-facing reason. The success-path outputLog snapshot was taken
+        // before the catch block, so we don't assert on it here.
+        assertTrue(result.getOutputErrorLog().contains("API rejected upload: HTTP 500"),
+                "Expected error log to include the upload failure reason, got: " + result.getOutputErrorLog());
+    }
+
+    @Test
+    void planBracketsRunWithStartAndStopHeartbeat() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        org.mockito.InOrder inOrder = Mockito.inOrder(terraformState);
+        inOrder.verify(terraformState).startHeartbeat(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+        inOrder.verify(terraformState).stopHeartbeat();
+    }
+
+    @Test
+    void planStopsHeartbeatEvenWhenInitFails() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformState).startHeartbeat(anyString(), anyString());
+        verify(terraformState).stopHeartbeat();
+    }
+
+    @Test
+    void planSurfacesHeartbeatFailureFromAwaitWithHeartbeat() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        // Plan future never completes, so awaitWithHeartbeat will poll
+        // checkHeartbeatHealth on its 2s tick. We trip it on the first call.
+        CompletableFuture<Integer> neverComplete = new CompletableFuture<>();
+        when(terraformClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(neverComplete);
+        org.mockito.Mockito.doNothing()
+                .doThrow(new StateUploadFailedException("Lost contact with the Terrakube API for 240s"))
+                .when(terraformState).checkHeartbeatHealth();
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getOutputErrorLog().contains("Lost contact with the Terrakube API"),
+                "Expected heartbeat-loss reason in error log, got: " + result.getOutputErrorLog());
+        // Heartbeat is still stopped on the failure path.
+        verify(terraformState).stopHeartbeat();
+        assertTrue(neverComplete.isCancelled(), "awaitWithHeartbeat should cancel the terraform future on health failure");
     }
 }
