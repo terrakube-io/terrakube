@@ -3,10 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StructuredPlanOutput } from "../StructuredPlanOutput";
 
 describe("StructuredPlanOutput", () => {
-  it("renders an empty state when there are no changes", () => {
+  it("renders a success-toned empty state when there are no changes", () => {
     render(<StructuredPlanOutput changes={[]} />);
 
-    expect(screen.getByText("No resource changes detected.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
+    ).toBeInTheDocument();
   });
 
   it("renders a normalized replacement label", () => {
@@ -39,6 +41,115 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("instance_type")).toBeInTheDocument();
     expect(screen.getByText('"t3.small"')).toBeInTheDocument();
     expect(screen.getByText('"t3.medium"')).toBeInTheDocument();
+  });
+
+  it("expands to reveal unchanged attributes on demand and collapses again", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "aws_instance.example",
+            action: "update",
+            actions: ["update"],
+            before: {
+              instance_type: "t3.small",
+              ami: "ami-12345",
+            },
+            after: {
+              instance_type: "t3.medium",
+              ami: "ami-12345",
+            },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.example/i }));
+
+    expect(screen.getByText("Show 1 unchanged attribute")).toBeInTheDocument();
+    expect(screen.queryByText("ami")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 unchanged attribute" }));
+
+    expect(screen.getByText("ami")).toBeInTheDocument();
+    expect(screen.getByText('"ami-12345"')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide unchanged attributes" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide unchanged attributes" }));
+
+    expect(screen.queryByText("ami")).not.toBeInTheDocument();
+    expect(screen.getByText("Show 1 unchanged attribute")).toBeInTheDocument();
+  });
+
+  it("filters rows by multiple selected actions with counts shown", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "aws_instance.create_me",
+            action: "create",
+            actions: ["create"],
+            after: { name: "new" },
+          },
+          {
+            address: "aws_instance.update_me",
+            action: "update",
+            actions: ["update"],
+            before: { name: "old" },
+            after: { name: "new" },
+          },
+          {
+            address: "aws_instance.delete_me",
+            action: "delete",
+            actions: ["delete"],
+            before: { name: "old" },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /filter by operation/i }));
+
+    expect(screen.getByText("Create (1)")).toBeInTheDocument();
+    expect(screen.getByText("Change (1)")).toBeInTheDocument();
+    expect(screen.getByText("Destroy (1)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Create \(1\)/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Destroy \(1\)/i }));
+
+    expect(screen.getByRole("button", { name: /aws_instance\.create_me/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /aws_instance\.delete_me/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /aws_instance\.update_me/i })).not.toBeInTheDocument();
+  });
+
+  it("shows a live per-resource status badge and progress summary in apply mode", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.applied",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-1" },
+            status: "applied",
+          },
+          {
+            address: "aws_instance.applying",
+            action: "update",
+            actions: ["update"],
+            before: { name: "old" },
+            after: { name: "new" },
+            status: "applying",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("1 of 2 applied")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.applying/i }));
+    expect(screen.getByText("applying", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
   });
 
   it("filters rows by address", () => {
@@ -324,5 +435,80 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText('"1"')).toBeInTheDocument();
     expect(screen.getByText('"2"')).toBeInTheDocument();
     expect(screen.getAllByText(/unchanged attribute/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows an import's attributes expanded by default instead of a no-changes empty state", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "random_string.imported_example",
+            action: "import",
+            actions: ["no-op"],
+            importing: { id: "AbcXyz1234567890" },
+            before: { id: "AbcXyz1234567890", length: 16 },
+            after: { id: "AbcXyz1234567890", length: 16 },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /random_string\.imported_example/i }));
+
+    expect(screen.queryByText("No visible attribute changes.")).not.toBeInTheDocument();
+    expect(screen.getByText("id")).toBeInTheDocument();
+    expect(screen.getByText('"AbcXyz1234567890"')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide unchanged attributes" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide unchanged attributes" }));
+
+    expect(screen.queryByText('"AbcXyz1234567890"')).not.toBeInTheDocument();
+    expect(screen.getByText("No visible attribute changes.")).toBeInTheDocument();
+  });
+
+  it("renders an Outputs section in apply mode, masking sensitive values", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_password.example",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
+        ]}
+        outputs={[
+          { name: "random_value", value: "sad-otter", sensitive: false },
+          { name: "random_password_result", value: null, sensitive: true },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("Outputs")).toBeInTheDocument();
+    expect(screen.getByText("random_value")).toBeInTheDocument();
+    expect(screen.getByText('"sad-otter"')).toBeInTheDocument();
+    expect(screen.getByText("random_password_result")).toBeInTheDocument();
+    expect(screen.getByText("sensitive value")).toBeInTheDocument();
+  });
+
+  it("does not render an Outputs section when there are no outputs", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText("Outputs")).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.terraform;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
@@ -25,8 +26,11 @@ import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -40,6 +44,7 @@ import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIR
 public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private static final String STEP_SEPARATOR = "***************************************";
+    private static final long APPLY_PROGRESS_FLUSH_INTERVAL_MS = 2000;
 
     TerraformClient terraformClient;
     TerraformState terraformState;
@@ -49,14 +54,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ProcessLogs logsService;
     int redisTimeout;
     PlanStructuredOutputService planStructuredOutputService;
+    ApplyStructuredOutputService applyStructuredOutputService;
+    TerraformOutputsService terraformOutputsService;
+    ObjectMapper objectMapper;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
         this.redisTemplate = redisTemplate;
         this.logsService = logsService;
         this.planStructuredOutputService = planStructuredOutputService;
+        this.applyStructuredOutputService = applyStructuredOutputService;
+        this.terraformOutputsService = terraformOutputsService;
+        this.objectMapper = objectMapper;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
     }
@@ -228,10 +239,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
                             terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
                             terraformWorkingDir) ? new HashMap<>() : terraformParameters));
-                    execution = terraformClient.apply(
-                            terraformProcessData,
-                            applyOutput,
-                            null).get();
+
+                    execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
                 }
@@ -250,6 +259,78 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result = setError(exception);
         }
         return result;
+    }
+
+    private boolean runJsonApply(TerraformJob terraformJob, TerraformProcessData terraformProcessData, Consumer<String> applyOutput)
+            throws IOException, ExecutionException, InterruptedException {
+        List<Map<String, Object>> changes = applyStructuredOutputService.seedFromPlan(
+                terraformJob.getOrganizationId(), terraformJob.getJobId());
+
+        if (changes.isEmpty()) {
+            // No plan structured output to seed from (custom TCL with 0/2+ plan steps, or plan
+            // publishing failed) — fall back to a plain apply through the shared client, exactly
+            // as before this feature existed.
+            return terraformClient.apply(terraformProcessData, applyOutput, null).get();
+        }
+
+        applyStructuredOutputService.publishApplyProgress(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes);
+
+        ApplyJsonEventParser eventParser = new ApplyJsonEventParser(objectMapper);
+        AtomicLong lastFlush = new AtomicLong(System.currentTimeMillis());
+
+        Consumer<String> jsonLineConsumer = (line) -> {
+            String humanMessage = eventParser.parseLine(line, changes);
+            if (humanMessage != null) {
+                applyOutput.accept(humanMessage);
+            }
+
+            long now = System.currentTimeMillis();
+            if (now - lastFlush.get() > APPLY_PROGRESS_FLUSH_INTERVAL_MS) {
+                lastFlush.set(now);
+                applyStructuredOutputService.publishApplyProgress(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes);
+            }
+        };
+
+        TerraformClient jsonApplyClient = buildJsonEnabledApplyClient();
+
+        boolean execution = jsonApplyClient.apply(terraformProcessData, jsonLineConsumer, null).get();
+
+        String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
+        if (stateJson != null) {
+            applyStructuredOutputService.resolveFinalValues(changes, stateJson);
+        }
+
+        applyStructuredOutputService.publishApplyProgress(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes);
+
+        return execution;
+    }
+
+    // Package-private (not private) so tests can spy/stub this one seam instead of letting
+    // runJsonApply construct a real TerraformClient that would launch an actual OS process.
+    TerraformClient buildJsonEnabledApplyClient() {
+        return TerraformClient.builder()
+                .jsonOutput(true)
+                .showColor(false)
+                .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
+                .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .build();
+    }
+
+    private String getCurrentStateJson(TerraformJob terraformJob, TerraformProcessData terraformProcessData)
+            throws IOException, ExecutionException, InterruptedException {
+        TextStringBuilder stateOutput = new TextStringBuilder();
+        TextStringBuilder stateErrorOutput = new TextStringBuilder();
+        boolean success = terraformClient.show(terraformProcessData, stateOutput::append, stateErrorOutput::append).get();
+        if (!success) {
+            log.warn("Unable to read current state for job {} step {}. Error: {}", terraformJob.getJobId(),
+                    terraformJob.getStepId(), stateErrorOutput);
+            return null;
+        }
+
+        return stateOutput.toString();
     }
 
     @Override
@@ -418,6 +499,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             Boolean showOutput = terraformClient.output(terraformProcessData, terraformJsonOutput, terraformJsonOutput).get();
             if (Boolean.TRUE.equals(showOutput)) {
                 terraformJob.setTerraformOutput(jsonOutput.toString());
+                terraformOutputsService.publishOutputs(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jsonOutput.toString());
             }
 
         }

@@ -1,0 +1,186 @@
+package io.terrakube.executor.service.terraform;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class ApplyStructuredOutputServiceTest {
+
+    private ApplyStructuredOutputService subject() {
+        return new ApplyStructuredOutputService(
+                Mockito.mock(WorkspaceSecurity.class),
+                new ObjectMapper(),
+                "http://terrakube-api",
+                Mockito.mock(TerrakubeClient.class));
+    }
+
+    @Test
+    void seedsPendingStatusFromTheSolePlanStepEntry() {
+        Map<String, Object> context = new HashMap<>();
+        context.put("planStructuredOutput", Map.of(
+                "plan-step-1", List.of(Map.of("address", "aws_instance.example", "action", "create"))));
+
+        List<Map<String, Object>> seeded = subject().seedFromPlan(context);
+
+        assertEquals(1, seeded.size());
+        assertEquals("aws_instance.example", seeded.get(0).get("address"));
+        assertEquals("pending", seeded.get(0).get("status"));
+    }
+
+    @Test
+    void skipsSeedingWhenThereIsNoPlanStructuredOutput() {
+        List<Map<String, Object>> seeded = subject().seedFromPlan(new HashMap<>());
+
+        assertTrue(seeded.isEmpty());
+    }
+
+    @Test
+    void skipsSeedingWhenMultiplePlanStepsExist() {
+        Map<String, Object> context = new HashMap<>();
+        context.put("planStructuredOutput", Map.of(
+                "plan-step-1", List.of(Map.of("address", "aws_instance.a", "action", "create")),
+                "plan-step-2", List.of(Map.of("address", "aws_instance.b", "action", "create"))));
+
+        List<Map<String, Object>> seeded = subject().seedFromPlan(context);
+
+        assertTrue(seeded.isEmpty());
+    }
+
+    @Test
+    void updateApplyContextMergesWithoutDroppingExistingKeys() {
+        Map<String, Object> context = new HashMap<>();
+        context.put("custom", "value");
+        context.put("applyStructuredOutput", Map.of("existing-step", List.of(Map.of("address", "existing"))));
+
+        Map<String, Object> updated = subject().updateApplyContext(
+                context, "new-step", List.of(Map.of("address", "aws_instance.new", "status", "pending")));
+
+        assertEquals("value", updated.get("custom"));
+        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
+        assertTrue(applyOutput.containsKey("existing-step"));
+        assertTrue(applyOutput.containsKey("new-step"));
+    }
+
+    @Test
+    void resolvesUnknownAttributesFromCurrentStateJson() {
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+        after.put("input", "hello");
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.example",
+                          "values": {"id": "4cdc25f5-37c5", "input": "hello"}
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertEquals("4cdc25f5-37c5", resolvedAfter.get("id"));
+    }
+
+    @Test
+    void neverResolvesASensitiveUnknownAttributeToItsRealValue() {
+        Map<String, Object> after = new HashMap<>();
+        after.put("result", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("result", true);
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("result", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "random_password.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "random_password.example",
+                          "values": {"result": "top-secret-real-value"}
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertNull(resolvedAfter.get("result"));
+    }
+
+    @Test
+    void resolvesAttributesForResourcesInsideNestedModules() {
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "module.child.terraform_data.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [],
+                      "child_modules": [
+                        {
+                          "address": "module.child",
+                          "resources": [
+                            {
+                              "address": "module.child.terraform_data.example",
+                              "values": {"id": "nested-id"}
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertEquals("nested-id", resolvedAfter.get("id"));
+    }
+}

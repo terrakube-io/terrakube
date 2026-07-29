@@ -1,24 +1,53 @@
-import { CopyOutlined, DownloadOutlined, DownOutlined, FilterOutlined, RightOutlined } from "@ant-design/icons";
+import {
+  CheckCircleOutlined,
+  CopyOutlined,
+  DeploymentUnitOutlined,
+  DownloadOutlined,
+  DownOutlined,
+  FilterOutlined,
+  RightOutlined,
+} from "@ant-design/icons";
 import { Empty, message } from "antd";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { FaAws, FaDiscord, FaDocker, FaGithub, FaGitlab, FaGoogle, FaSlack } from "react-icons/fa6";
+import { FaAws, FaDiscord, FaDocker, FaGithub, FaGitlab, FaGoogle, FaMicrosoft, FaSlack } from "react-icons/fa6";
+import {
+  SiCloudflare,
+  SiConsul,
+  SiDatadog,
+  SiDigitalocean,
+  SiElastic,
+  SiGrafana,
+  SiHelm,
+  SiKubernetes,
+  SiMongodb,
+  SiMysql,
+  SiNewrelic,
+  SiOkta,
+  SiPagerduty,
+  SiPostgresql,
+  SiSnowflake,
+  SiTerraform,
+  SiVault,
+  SiVmware,
+} from "react-icons/si";
 import { stripAnsi } from "./stripAnsi";
-import { PlanChange, getPlanChangeActionLabel } from "./structuredPlan";
+import { ApplyChange, PlanChange, TerraformOutputValue, getPlanChangeActionLabel } from "./structuredPlan";
 import "./StructuredPlanOutput.css";
 
 type Props = {
-  changes: PlanChange[];
+  changes: PlanChange[] | ApplyChange[];
   outputLog?: string;
+  applyMode?: boolean;
+  outputs?: TerraformOutputValue[];
 };
 
 type ActionName = "create" | "update" | "replace" | "delete" | "read" | "import" | "unknown" | "no-op";
-type ActionFilter = "all" | "create" | "update" | "replace" | "delete" | "read" | "import";
 
 type DiffRow = {
   key: string;
   label: string;
-  kind: "group" | "added" | "removed" | "changed" | "unknown" | "sensitive";
+  kind: "group" | "added" | "removed" | "changed" | "unknown" | "sensitive" | "unchanged";
   before?: unknown;
   after?: unknown;
   children?: DiffRow[];
@@ -59,15 +88,15 @@ type SummaryCounts = {
 type PreparedChangeRow = {
   key: string;
   panelId: string;
-  change: PlanChange;
+  change: PlanChange | ApplyChange;
   action: ActionName;
   resourceLabel: string;
   providerName: string;
-  providerLabel: string;
   isDataSource: boolean;
   diff: DiffResult;
   visibleChanges: number;
   hiddenCount: number;
+  applyStatus?: ApplyChange["status"];
 };
 
 type SummarySegment = {
@@ -136,6 +165,13 @@ const actionMeta: Record<
   },
 };
 
+const applyStatusMeta: Record<ApplyChange["status"], { label: string; className: string }> = {
+  pending: { label: "pending", className: "pending" },
+  applying: { label: "applying", className: "applying" },
+  applied: { label: "applied", className: "applied" },
+  errored: { label: "errored", className: "errored" },
+};
+
 const providerIconMap = {
   aws: FaAws,
   google: FaGoogle,
@@ -145,6 +181,33 @@ const providerIconMap = {
   gitlab: FaGitlab,
   slack: FaSlack,
   discord: FaDiscord,
+  azurerm: FaMicrosoft,
+  azuread: FaMicrosoft,
+  kubernetes: SiKubernetes,
+  helm: SiHelm,
+  cloudflare: SiCloudflare,
+  datadog: SiDatadog,
+  digitalocean: SiDigitalocean,
+  vault: SiVault,
+  consul: SiConsul,
+  postgresql: SiPostgresql,
+  mysql: SiMysql,
+  mongodbatlas: SiMongodb,
+  elasticstack: SiElastic,
+  newrelic: SiNewrelic,
+  pagerduty: SiPagerduty,
+  grafana: SiGrafana,
+  snowflake: SiSnowflake,
+  okta: SiOkta,
+  vsphere: SiVmware,
+  random: SiTerraform,
+  "null": SiTerraform,
+  time: SiTerraform,
+  tls: SiTerraform,
+  local: SiTerraform,
+  archive: SiTerraform,
+  external: SiTerraform,
+  http: SiTerraform,
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -402,7 +465,8 @@ const buildDiffRows = (
   beforeSensitive: unknown,
   afterSensitive: unknown,
   changedSensitive: unknown,
-  label = "resource"
+  label = "resource",
+  includeUnchanged = false
 ): DiffResult => {
   const isSensitive = shouldRenderSensitiveDiff(before, after, beforeSensitive, afterSensitive, changedSensitive);
   const isUnknown = afterUnknown === true;
@@ -484,7 +548,8 @@ const buildDiffRows = (
           beforeEntry?.beforeSensitive,
           afterEntry?.afterSensitive,
           changedSensitiveEntries.get(identity)?.changedSensitive,
-          itemLabel
+          itemLabel,
+          includeUnchanged
         );
 
         hiddenCount += childDiff.hiddenCount;
@@ -523,7 +588,8 @@ const buildDiffRows = (
           beforeSensitiveArray[index],
           afterSensitiveArray[index],
           changedSensitiveArray[index],
-          itemLabel
+          itemLabel,
+          includeUnchanged
         );
 
         hiddenCount += childDiff.hiddenCount;
@@ -560,8 +626,23 @@ const buildDiffRows = (
   const treatAsLeaf = isPrimitiveValue(before) || isPrimitiveValue(after);
   if (treatAsLeaf) {
     if (areValuesEqual(before, after)) {
+      if (!includeUnchanged) {
+        return {
+          rows: [],
+          hiddenCount: 1,
+        };
+      }
+
       return {
-        rows: [],
+        rows: [
+          {
+            key: label,
+            label,
+            kind: "unchanged",
+            before,
+            after,
+          },
+        ],
         hiddenCount: 1,
       };
     }
@@ -606,7 +687,8 @@ const buildDiffRows = (
       beforeSensitiveRecord[key],
       afterSensitiveRecord[key],
       changedSensitiveRecord[key],
-      key
+      key,
+      includeUnchanged
     );
 
     hiddenCount += childDiff.hiddenCount;
@@ -658,6 +740,10 @@ const getDiffMarker = (kind: Exclude<DiffRow["kind"], "group">) => {
     return "*";
   }
 
+  if (kind === "unchanged") {
+    return "=";
+  }
+
   return "~";
 };
 
@@ -704,7 +790,7 @@ const renderDiffRows = (rows: DiffRow[], parentKey = "root"): ReactNode => {
     }
 
     return (
-      <div key={rowKey} className={`structured-plan-diffRow structured-plan-diffRow--${row.kind}`}>
+      <div key={rowKey} className="structured-plan-diffRow">
         <div className="structured-plan-diffLabel">
           <span className={`structured-plan-diffMarker structured-plan-diffMarker--${row.kind}`}>{marker}</span>
           <span>{row.label}</span>
@@ -778,29 +864,6 @@ const getProviderName = (change: PlanChange) => {
   return "terraform";
 };
 
-const getProviderLabel = (providerName: string) => {
-  const normalizedProviderName = providerName.replace(/[^a-z0-9]+/gi, " ").trim();
-  const parts = normalizedProviderName.split(" ").filter((part) => part.length > 0);
-
-  if (parts.length >= 2) {
-    return parts
-      .map((part) => part[0].toUpperCase())
-      .join("")
-      .slice(0, 2);
-  }
-
-  const compactProviderName = providerName.replace(/[^a-z0-9]/gi, "");
-  if (compactProviderName.length >= 2) {
-    return compactProviderName.slice(0, 2).toUpperCase();
-  }
-
-  if (compactProviderName.length === 1) {
-    return compactProviderName.toUpperCase();
-  }
-
-  return "TF";
-};
-
 const isDataSourceChange = (change: PlanChange, action: ActionName) => {
   if (action === "read") {
     return true;
@@ -818,13 +881,31 @@ const isDataSourceChange = (change: PlanChange, action: ActionName) => {
   return false;
 };
 
-const buildResourceDiff = (change: PlanChange, action: ActionName) => {
+const buildResourceDiff = (change: PlanChange, action: ActionName, includeUnchanged = false) => {
   if (action === "create") {
-    return buildDiffRows(undefined, change.after, change.afterUnknown, undefined, change.afterSensitive, change.changedSensitive);
+    return buildDiffRows(
+      undefined,
+      change.after,
+      change.afterUnknown,
+      undefined,
+      change.afterSensitive,
+      change.changedSensitive,
+      "resource",
+      includeUnchanged
+    );
   }
 
   if (action === "delete") {
-    return buildDiffRows(change.before, undefined, undefined, change.beforeSensitive, undefined, change.changedSensitive);
+    return buildDiffRows(
+      change.before,
+      undefined,
+      undefined,
+      change.beforeSensitive,
+      undefined,
+      change.changedSensitive,
+      "resource",
+      includeUnchanged
+    );
   }
 
   return buildDiffRows(
@@ -833,7 +914,9 @@ const buildResourceDiff = (change: PlanChange, action: ActionName) => {
     change.afterUnknown,
     change.beforeSensitive,
     change.afterSensitive,
-    change.changedSensitive
+    change.changedSensitive,
+    "resource",
+    includeUnchanged
   );
 };
 
@@ -985,10 +1068,12 @@ const matchesAddressFilter = (row: PreparedChangeRow, filterValue: string) => {
   });
 };
 
-export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
+export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, outputs }: Props) => {
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
+  const [expandedAttributeKeys, setExpandedAttributeKeys] = useState<string[]>([]);
   const [addressFilter, setAddressFilter] = useState("");
-  const [operationFilter, setOperationFilter] = useState<ActionFilter>("all");
+  const [operationFilters, setOperationFilters] = useState<Set<ActionName>>(new Set());
+  const [isOperationFilterOpen, setIsOperationFilterOpen] = useState(false);
 
   const preparedRows = useMemo<PreparedChangeRow[]>(() => {
     return changes.map((change, index) => {
@@ -996,6 +1081,7 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
       const resourceLabel = getResourceAddress(change);
       const providerName = getProviderName(change);
       const diff = buildResourceDiff(change, normalizedAction);
+      const applyStatus = "status" in change ? (change as ApplyChange).status : undefined;
 
       return {
         key: `${resourceLabel}-${normalizedAction}-${index}`,
@@ -1004,14 +1090,23 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
         action: normalizedAction,
         resourceLabel,
         providerName,
-        providerLabel: getProviderLabel(providerName),
         isDataSource: isDataSourceChange(change, normalizedAction),
         diff,
         visibleChanges: countVisibleLeaves(diff.rows),
         hiddenCount: diff.hiddenCount,
+        applyStatus,
       };
     });
   }, [changes]);
+
+  const applyProgress = useMemo(() => {
+    if (!applyMode) {
+      return null;
+    }
+
+    const appliedCount = preparedRows.filter((row) => row.applyStatus === "applied").length;
+    return { appliedCount, totalCount: preparedRows.length };
+  }, [applyMode, preparedRows]);
 
   const summary = useMemo(() => {
     return buildSummary(preparedRows);
@@ -1063,7 +1158,7 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
         return false;
       }
 
-      if (operationFilter !== "all" && row.action !== operationFilter) {
+      if (operationFilters.size > 0 && !operationFilters.has(row.action)) {
         return false;
       }
 
@@ -1073,14 +1168,19 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
 
       return true;
     });
-  }, [addressFilter, operationFilter, preparedRows, showDataSources]);
+  }, [addressFilter, operationFilters, preparedRows, showDataSources]);
 
   if (!changes?.length) {
-    return <Empty description="No resource changes detected." image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+    return (
+      <div className="structured-plan-noChanges">
+        <CheckCircleOutlined className="structured-plan-noChangesIcon" />
+        <span>Your infrastructure matches the configuration — no changes needed.</span>
+      </div>
+    );
   }
 
   const isFilteredView =
-    filteredRows.length !== preparedRows.length || addressFilter.trim().length > 0 || operationFilter !== "all";
+    filteredRows.length !== preparedRows.length || addressFilter.trim().length > 0 || operationFilters.size > 0;
 
   let emptyDescription = "No resources match the current filters.";
   if (!showDataSources && hasDataSourceChanges) {
@@ -1097,29 +1197,48 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
     });
   };
 
+  const toggleAttributesExpanded = (rowKey: string) => {
+    setExpandedAttributeKeys((currentKeys) => {
+      if (currentKeys.includes(rowKey)) {
+        return currentKeys.filter((currentKey) => currentKey !== rowKey);
+      }
+
+      return [...currentKeys, rowKey];
+    });
+  };
+
   const handleAddressFilterChange = (event: ChangeEvent<HTMLInputElement>) => {
     setAddressFilter(event.target.value);
   };
 
-  const handleOperationFilterChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    setOperationFilter(event.target.value as ActionFilter);
+  const toggleOperationFilter = (action: ActionName) => {
+    setOperationFilters((currentFilters) => {
+      const nextFilters = new Set(currentFilters);
+      if (nextFilters.has(action)) {
+        nextFilters.delete(action);
+      } else {
+        nextFilters.add(action);
+      }
+
+      return nextFilters;
+    });
   };
 
   const handleShowDataSourcesChange = (event: ChangeEvent<HTMLInputElement>) => {
     setShowDataSources(event.target.checked);
   };
 
-  const handleCopyAddress = async (resourceLabel: string) => {
+  const handleCopyValue = async (value: string) => {
     if (!navigator.clipboard?.writeText) {
       message.error("Clipboard access is unavailable in this browser.");
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(resourceLabel);
-      message.success("Copied resource address");
+      await navigator.clipboard.writeText(value);
+      message.success("Copied to clipboard");
     } catch {
-      message.error("Failed to copy resource address");
+      message.error("Failed to copy to clipboard");
     }
   };
 
@@ -1164,8 +1283,16 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
             )}
           </div>
           <div className="structured-plan-summaryMeta">
-            <span>Resources: {formatResourceSummary(summary)}</span>
-            <span>Actions: {summary.read} to invoke</span>
+            {applyProgress ? (
+              <span>
+                {applyProgress.appliedCount} of {applyProgress.totalCount} applied
+              </span>
+            ) : (
+              <>
+                <span>Resources: {formatResourceSummary(summary)}</span>
+                <span>Actions: {summary.read} to invoke</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -1180,24 +1307,47 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
               value={addressFilter}
             />
 
-            <label className="structured-plan-selectWrap">
-              <FilterOutlined className="structured-plan-selectIcon" />
-              <select
+            <div className="structured-plan-actionFilter">
+              <button
+                aria-expanded={isOperationFilterOpen}
                 aria-label="Filter by operation"
-                className="structured-plan-select"
-                onChange={handleOperationFilterChange}
-                value={operationFilter}
+                className="structured-plan-selectWrap structured-plan-actionFilterButton"
+                onClick={() => setIsOperationFilterOpen((isOpen) => !isOpen)}
+                type="button"
               >
-                <option value="all">All operations</option>
-                <option value="create">{actionMeta.create.filterLabel}</option>
-                <option value="update">{actionMeta.update.filterLabel}</option>
-                <option value="replace">{actionMeta.replace.filterLabel}</option>
-                <option value="delete">{actionMeta.delete.filterLabel}</option>
-                <option value="read">{actionMeta.read.filterLabel}</option>
-                <option value="import">{actionMeta.import.filterLabel}</option>
-              </select>
-              <DownOutlined className="structured-plan-selectChevron" />
-            </label>
+                <FilterOutlined className="structured-plan-selectIcon" />
+                <span>{operationFilters.size === 0 ? "All operations" : `${operationFilters.size} selected`}</span>
+                <DownOutlined className="structured-plan-selectChevron" />
+              </button>
+
+              {isOperationFilterOpen ? (
+                <div className="structured-plan-actionFilterPanel">
+                  {(
+                    [
+                      ["create", summary.create],
+                      ["update", summary.update],
+                      ["replace", summary.create + summary.delete],
+                      ["delete", summary.delete],
+                      ["read", summary.read],
+                      ["import", summary.import],
+                    ] as [ActionName, number][]
+                  ).map(([action, count]) => {
+                    const label = `${actionMeta[action].filterLabel} (${count})`;
+
+                    return (
+                      <label className="structured-plan-checkbox" key={action}>
+                        <input
+                          checked={operationFilters.has(action)}
+                          onChange={() => toggleOperationFilter(action)}
+                          type="checkbox"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
 
             <label className="structured-plan-checkbox">
               <input checked={showDataSources} onChange={handleShowDataSourcesChange} type="checkbox" />
@@ -1225,6 +1375,15 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
           {filteredRows.length ? (
             filteredRows.map((row) => {
               const isExpanded = expandedRowKeys.includes(row.key);
+              // An import has no diff to hide by default - every attribute is just the
+              // resource's current real value, so showing them up front (and letting the
+              // toggle collapse them away) is more useful than an empty "no changes" state.
+              const attributesExpandedByDefault = row.action === "import";
+              const isAttributeToggleActive = expandedAttributeKeys.includes(row.key);
+              const isAttributesExpanded = attributesExpandedByDefault ? !isAttributeToggleActive : isAttributeToggleActive;
+              const visibleDiffRows = isAttributesExpanded
+                ? buildResourceDiff(row.change, row.action, true).rows
+                : row.diff.rows;
               const rowActionMeta = actionMeta[row.action];
               const normalizedProviderName = row.providerName.toLowerCase() as keyof typeof providerIconMap;
               const ProviderIcon = providerIconMap[normalizedProviderName];
@@ -1255,12 +1414,19 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
                         {ProviderIcon ? (
                           <ProviderIcon className="structured-plan-providerBadgeIcon" />
                         ) : (
-                          <span>{row.providerLabel}</span>
+                          <DeploymentUnitOutlined className="structured-plan-providerBadgeIcon structured-plan-providerBadgeIcon--generic" />
                         )}
                       </span>
                       <span className="structured-plan-address" title={row.resourceLabel}>
                         {row.resourceLabel}
                       </span>
+                      {applyMode && row.applyStatus ? (
+                        <span
+                          className={`structured-plan-applyStatus structured-plan-applyStatus--${applyStatusMeta[row.applyStatus].className}`}
+                        >
+                          {applyStatusMeta[row.applyStatus].label}
+                        </span>
+                      ) : null}
                     </button>
 
                     <button
@@ -1268,7 +1434,7 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
                       className="structured-plan-copyButton"
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleCopyAddress(row.resourceLabel);
+                        void handleCopyValue(row.resourceLabel);
                       }}
                       title="Copy resource address"
                       type="button"
@@ -1305,21 +1471,37 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
                             <span>
                               {row.visibleChanges} visible change{getPluralSuffix(row.visibleChanges)}
                             </span>
-                            {row.hiddenCount ? (
-                              <span>
-                                {row.hiddenCount} unchanged attribute{getPluralSuffix(row.hiddenCount)} hidden
-                              </span>
-                            ) : null}
                           </div>
                         </div>
 
-                        {row.diff.rows.length ? (
-                          <div className="structured-plan-diffList">{renderDiffRows(row.diff.rows)}</div>
+                        {visibleDiffRows.length ? (
+                          <div className="structured-plan-diffList">{renderDiffRows(visibleDiffRows)}</div>
                         ) : (
-                          <div className="structured-plan-emptyState">
-                            <Empty description="No visible attribute changes." image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                          </div>
+                          <div className="structured-plan-noAttributeChanges">No visible attribute changes.</div>
                         )}
+
+                        {row.hiddenCount ? (
+                          <button
+                            aria-expanded={isAttributesExpanded}
+                            className="structured-plan-hiddenCountToggle"
+                            onClick={() => toggleAttributesExpanded(row.key)}
+                            type="button"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`structured-plan-chevron structured-plan-hiddenCountChevron${
+                                isAttributesExpanded ? " structured-plan-chevron--expanded" : ""
+                              }`}
+                            >
+                              <RightOutlined />
+                            </span>
+                            <span>
+                              {isAttributesExpanded
+                                ? "Hide unchanged attributes"
+                                : `Show ${row.hiddenCount} unchanged attribute${getPluralSuffix(row.hiddenCount)}`}
+                            </span>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -1332,6 +1514,33 @@ export const StructuredPlanOutput = ({ changes, outputLog }: Props) => {
             </div>
           )}
         </div>
+
+        {applyMode && outputs?.length ? (
+          <div className="structured-plan-outputs">
+            <div className="structured-plan-outputsHeader">Outputs</div>
+            <div className="structured-plan-outputsList">
+              {outputs.map((output) => (
+                <div className="structured-plan-outputRow" key={output.name}>
+                  <span className="structured-plan-outputName">{output.name}</span>
+                  {renderValueToken(output.value, output.sensitive ? "sensitive" : "unchanged", {
+                    sensitive: output.sensitive,
+                  })}
+                  {!output.sensitive && typeof output.value === "string" ? (
+                    <button
+                      aria-label={`Copy value for ${output.name}`}
+                      className="structured-plan-copyButton"
+                      onClick={() => void handleCopyValue(String(output.value))}
+                      title="Copy value"
+                      type="button"
+                    >
+                      <CopyOutlined />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
