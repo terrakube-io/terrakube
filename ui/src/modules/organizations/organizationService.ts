@@ -3,6 +3,16 @@ import { ApiResponse } from "@/modules/api/types";
 import { axiosGraphQL } from "@/config/axiosConfig";
 import { FlatOrganization, Organization } from "../../domain/types";
 import { TagModel } from "./types";
+import { WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
+
+function computeWorkspaceStatusCounts(edges: { node: { lastJobStatus?: string } }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const edge of edges) {
+    const status = edge.node.lastJobStatus || WorkspaceStatusFilter.NeverExecuted;
+    counts[status] = (counts[status] || 0) + 1;
+  }
+  return counts;
+}
 
 async function listOrganizations(): Promise<ApiResponse<Organization[]>> {
   return await apiGet("/api/v1/organization", { dataWrapped: true });
@@ -23,6 +33,7 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
               edges {
                 node {
                   id
+                  lastJobStatus
                 }
               }
             }
@@ -52,6 +63,7 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
     executionMode: edge.node.executionMode,
     icon: edge.node.icon,
     workspaceCount: edge.node.workspace?.edges?.length,
+    workspaceStatusCounts: computeWorkspaceStatusCounts(edge.node.workspace?.edges ?? []),
   }));
 }
 

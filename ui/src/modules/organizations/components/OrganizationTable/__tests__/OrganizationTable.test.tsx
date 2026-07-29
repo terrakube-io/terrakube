@@ -55,6 +55,30 @@ describe("OrganizationTable", () => {
     expect(screen.getByText("0 workspaces")).toBeInTheDocument();
   });
 
+  it("shows no status breakdown badges when workspaceStatusCounts is not provided", () => {
+    const { container } = renderTable();
+    expect(container.querySelectorAll(".organization-status-badge")).toHaveLength(0);
+  });
+
+  it("shows a compact status breakdown badge for each non-zero status, omitting zero counts", () => {
+    const { container } = renderTable([
+      {
+        id: "org-1",
+        name: "acme-platform",
+        executionMode: "Remote",
+        workspaceCount: 14,
+        workspaceStatusCounts: { failed: 2, running: 1, completed: 10, waitingApproval: 0 },
+      },
+    ]);
+
+    const badges = container.querySelectorAll(".organization-status-badge");
+    expect(badges).toHaveLength(3);
+    expect(container.querySelector('[title="Failed: 2"]')).toBeInTheDocument();
+    expect(container.querySelector('[title="Running: 1"]')).toBeInTheDocument();
+    expect(container.querySelector('[title="Completed: 10"]')).toBeInTheDocument();
+    expect(container.querySelector('[title^="Awaiting approval"]')).not.toBeInTheDocument();
+  });
+
   it("filters rows by search term against name and description", () => {
     renderTable();
     fireEvent.change(screen.getByPlaceholderText("Search organizations..."), { target: { value: "data" } });
@@ -80,5 +104,39 @@ describe("OrganizationTable", () => {
     renderTable();
     fireEvent.click(screen.getAllByLabelText("organization settings")[0]);
     expect(sessionStorage.getItem(ORGANIZATION_ARCHIVE)).toBeNull();
+  });
+
+  it("is keyboard-operable: Enter on a row navigates", () => {
+    renderTable();
+    fireEvent.keyDown(screen.getByText("acme-platform"), { key: "Enter" });
+    expect(sessionStorage.getItem(ORGANIZATION_ARCHIVE)).toBe("org-1");
+  });
+
+  it("shows a Workspaces column header and sorts by workspace count when clicked", () => {
+    const { container } = renderTable();
+    expect(screen.getByText("Workspaces")).toBeInTheDocument();
+
+    const rowText = () => Array.from(container.querySelectorAll(".organization-row")).map((r) => r.textContent);
+    expect(rowText()[0]).toContain("acme-platform");
+
+    fireEvent.click(screen.getByText("Workspaces"));
+
+    expect(rowText()[0]).toContain("data-eng");
+  });
+
+  it("defaults to sorting by name ascending, and clicking the Name header toggles to descending", () => {
+    const { container } = renderTable();
+    const rowText = () => Array.from(container.querySelectorAll(".organization-row")).map((r) => r.textContent);
+
+    expect(rowText()[0]).toContain("acme-platform");
+
+    fireEvent.click(screen.getByText("Name"));
+
+    expect(rowText()[0]).toContain("data-eng");
+  });
+
+  it("shows pagination", () => {
+    const { container } = renderTable();
+    expect(container.querySelector(".ant-pagination")).toBeInTheDocument();
   });
 });

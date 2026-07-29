@@ -34,6 +34,7 @@ export default function OrganizationsPickerPage() {
           executionMode: org.executionMode,
           icon: org.icon,
           workspaceCount: org.workspaceCount,
+          workspaceStatusCounts: org.workspaceStatusCounts,
         }))
       );
     } catch (err: any) {

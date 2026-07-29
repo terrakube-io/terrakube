@@ -92,7 +92,7 @@ describe("WorkspaceFilter", () => {
     expect(baseProps.onGroupByProjectChange).toHaveBeenCalledWith(false);
   });
 
-  it("calls onStatusChange when a status segment is clicked", () => {
+  it("calls onStatusChange when a status pill is clicked in legacy (non-compact) mode", () => {
     render(<WorkspaceFilter {...baseProps} />);
     fireEvent.click(screen.getByText("Failed"));
     expect(baseProps.onStatusChange).toHaveBeenCalledWith("failed");
@@ -125,5 +125,47 @@ describe("WorkspaceFilter", () => {
     const input = screen.getByPlaceholderText("Search by name...");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
+  });
+
+  it("compact mode renders status pills", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} compact />);
+    expect(container.querySelector(".workspace-status-pills")).toBeInTheDocument();
+  });
+
+  it("legacy (non-compact) mode also renders status pills, not a segmented control", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} />);
+    expect(container.querySelector(".workspace-status-pills")).toBeInTheDocument();
+    expect(container.querySelector(".ant-segmented")).not.toBeInTheDocument();
+  });
+
+  it("marks only the active status pill with aria-pressed=true", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="failed" />);
+    expect(screen.getByText("Failed").closest("button")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("All").closest("button")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("clicking a status pill in compact mode calls onStatusChange", () => {
+    render(<WorkspaceFilter {...baseProps} compact />);
+    fireEvent.click(screen.getByText("Failed"));
+    expect(baseProps.onStatusChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("shows counts on status pills when statusCounts is provided", () => {
+    render(<WorkspaceFilter {...baseProps} compact statusCounts={{ All: 12, failed: 3 }} />);
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("does not show a Clear all action when no filters are active", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="All" tagIds={[]} projectId={null} />);
+    expect(screen.queryByText("Clear all")).not.toBeInTheDocument();
+  });
+
+  it("shows a Clear all action when a filter is active, and clicking it resets status, tags and project", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="failed" tagIds={["tag-1"]} projectId="p1" />);
+    fireEvent.click(screen.getByText("Clear all"));
+    expect(baseProps.onStatusChange).toHaveBeenCalledWith("All");
+    expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
+    expect(baseProps.onProjectIdChange).toHaveBeenCalledWith(null);
   });
 });

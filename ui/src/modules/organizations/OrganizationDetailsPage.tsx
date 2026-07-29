@@ -8,6 +8,7 @@ import { JobStatus } from "@/domain/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
+import { usePolling } from "@/hooks";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
@@ -97,14 +98,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     setStoredWorkspaceSortOption(option);
   };
 
-  const handleToggleTag = (tagId: string) => {
-    filterState.setTagIds(
-      filterState.tagIds.includes(tagId)
-        ? filterState.tagIds.filter((t) => t !== tagId)
-        : [...filterState.tagIds, tagId]
-    );
-  };
-
   const { loading, execute, error } = useApiRequest({
     action: () => workspaceService.listWorkspaces(id!),
     onReturn: (data) => {
@@ -118,6 +111,21 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, id!);
     execute();
   }, [id]);
+
+  // Silently refresh workspace status in the background so job status/icon changes
+  // (e.g. running -> completed) show up without a manual reload. Bypasses useApiRequest
+  // so it doesn't toggle the page-level loading spinner on every poll.
+  usePolling(
+    () => {
+      if (!id) return;
+      workspaceService.listWorkspaces(id).then((response) => {
+        if (!response.isError && response.data) {
+          setWorkspaces(response.data.workspaces);
+        }
+      });
+    },
+    { interval: 10000, enabled: Boolean(id), immediate: false }
+  );
 
   const handleCreateWorkspace = () => {
     navigate("/workspaces/create");
@@ -176,8 +184,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             organizationId={id}
             workspaces={sortedWorkspaces}
             groups={showGrouped ? groups : undefined}
-            tags={tags}
-            onToggleTag={handleToggleTag}
             onSelectProject={filterState.setProjectId}
             sortOption={sortOption}
             onSortChange={handleSortChange}

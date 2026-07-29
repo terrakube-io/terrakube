@@ -2,7 +2,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import WorkspaceTable from "../WorkspaceTable";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
-import { TagModel } from "@/modules/organizations/types";
 import { JobStatus } from "@/domain/types";
 
 const mockNavigate = jest.fn();
@@ -10,13 +9,6 @@ jest.mock("react-router-dom", () => ({
   ...jest.requireActual("react-router-dom"),
   useNavigate: () => mockNavigate,
 }));
-
-const tags: TagModel[] = [
-  { id: "tag-1", name: "billing" },
-  { id: "tag-2", name: "critical" },
-  { id: "tag-3", name: "quarterly" },
-  { id: "tag-4", name: "extra" },
-];
 
 const workspaces: WorkspaceListItem[] = [
   {
@@ -29,7 +21,7 @@ const workspaces: WorkspaceListItem[] = [
     lastStatus: JobStatus.Running,
     lastRun: "2024-06-01T00:00:00.000Z",
     terraformVersion: "1.8.0",
-    tags: ["tag-1", "tag-2", "tag-3", "tag-4"],
+    tags: ["tag-1", "tag-2"],
     projectId: "proj-1",
     projectName: "platform",
     locked: true,
@@ -49,8 +41,6 @@ const workspaces: WorkspaceListItem[] = [
 const defaultProps = {
   organizationId: "org-1",
   workspaces,
-  tags,
-  onToggleTag: jest.fn(),
   onSelectProject: jest.fn(),
   sortOption: "status" as const,
   onSortChange: jest.fn(),
@@ -67,7 +57,6 @@ function renderTable(props = {}) {
 describe("WorkspaceTable", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
-    defaultProps.onToggleTag.mockClear();
     defaultProps.onSelectProject.mockClear();
     (defaultProps.onSortChange as jest.Mock).mockClear();
   });
@@ -79,40 +68,21 @@ describe("WorkspaceTable", () => {
     expect(screen.getAllByText("Name")).toHaveLength(1);
   });
 
-  it("renders visible tags as pills, up to the cap", () => {
-    renderTable();
-    expect(screen.getByText("billing")).toBeInTheDocument();
-    expect(screen.getByText("critical")).toBeInTheDocument();
-    expect(screen.getByText("quarterly")).toBeInTheDocument();
+  it("renders the project as a chip on its own line beneath the name", () => {
+    const { container } = renderTable();
+    expect(screen.getByText("platform")).toBeInTheDocument();
+    const line2 = container.querySelector(".workspace-name-line2");
+    expect(line2).toContainElement(screen.getByText("platform"));
   });
 
-  it("caps visible tags at 3 and shows a +N badge with the rest in its title", () => {
+  it("does not render the workspace description or tag pills in the row", () => {
     renderTable();
-    expect(screen.queryByText("extra")).not.toBeInTheDocument();
-    const overflow = screen.getByText("+1");
-    expect(overflow).toHaveAttribute("title", "extra");
+    expect(screen.queryByText("Handles invoice generation and payment webhooks")).not.toBeInTheDocument();
+    expect(screen.queryByText("tag-1")).not.toBeInTheDocument();
+    expect(document.querySelector(".workspace-name-line3")).not.toBeInTheDocument();
   });
 
-  it("clicking the +N overflow badge does not navigate", () => {
-    renderTable();
-    fireEvent.click(screen.getByText("+1"));
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("renders the description, truncated with a title attribute holding the full text", () => {
-    renderTable();
-    const desc = screen.getByText("Handles invoice generation and payment webhooks");
-    expect(desc).toHaveAttribute("title", "Handles invoice generation and payment webhooks");
-  });
-
-  it("calls onToggleTag with the tag id when a tag pill is clicked, without navigating", () => {
-    renderTable();
-    fireEvent.click(screen.getByText("billing"));
-    expect(defaultProps.onToggleTag).toHaveBeenCalledWith("tag-1");
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("calls onSelectProject with the project id when the project tag is clicked, without navigating", () => {
+  it("calls onSelectProject with the project id when the project chip is clicked, without navigating", () => {
     renderTable();
     fireEvent.click(screen.getByText("platform"));
     expect(defaultProps.onSelectProject).toHaveBeenCalledWith("proj-1");
@@ -122,6 +92,28 @@ describe("WorkspaceTable", () => {
   it("shows a lock icon only for locked workspaces", () => {
     renderTable();
     expect(screen.getByLabelText("lock")).toBeInTheDocument();
+  });
+
+  it("shows a spinning sync icon for a running workspace", () => {
+    const { container } = renderTable();
+    const icon = container.querySelector(".workspace-status-icon .anticon-sync");
+    expect(icon).toBeInTheDocument();
+    expect(icon).toHaveClass("anticon-spin");
+  });
+
+  it("shows a non-spinning status icon for a non-running workspace", () => {
+    const { container } = renderTable();
+    const rows = container.querySelectorAll(".workspace-row");
+    const failedRowIcon = rows[1].querySelector(".workspace-status-icon .anticon");
+    expect(failedRowIcon).toBeInTheDocument();
+    expect(failedRowIcon).not.toHaveClass("anticon-spin");
+  });
+
+  it("still shows a status icon for a workspace with no last run", () => {
+    const { container } = renderTable({
+      workspaces: [{ id: "ws-3", name: "never-run-ws", iacType: "terraform", source: "" }],
+    });
+    expect(container.querySelector(".workspace-status-icon .anticon")).toBeInTheDocument();
   });
 
   it("navigates to the workspace on row click", () => {

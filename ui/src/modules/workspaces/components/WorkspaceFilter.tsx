@@ -1,22 +1,12 @@
-import {
-  BarsOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-  CheckCircleOutlined,
-  InfoCircleOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  DownOutlined,
-} from "@ant-design/icons";
-import { Row, Col, Select, Input, Button, Popover, Badge, Segmented, Switch, Flex, Typography, Tag } from "antd";
+import { PlusOutlined, DeleteOutlined, DownOutlined } from "@ant-design/icons";
+import { Row, Col, Select, Input, Button, Popover, Badge, Switch, Flex, Typography, Tag } from "antd";
 import clsx from "classnames";
-import { JobStatus } from "../../../domain/types";
 import { useEffect, useMemo, useState } from "react";
 import organizationService from "@/modules/organizations/organizationService";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceSortOption, WORKSPACE_SORT_OPTIONS } from "../utils/workspaceSort";
 import { WorkspaceStatusFilter } from "../utils/workspaceFilter";
+import { WORKSPACE_STATUS_PALETTE } from "../utils/workspaceStatusPalette";
 import "./WorkspaceFilter.css";
 
 type Props = {
@@ -173,14 +163,11 @@ export default function WorkspaceFilter({
 
   const controlSize = compact ? "small" : "middle";
 
-  const withCount = (label: string, value: string) => {
-    const count = statusCounts?.[value];
-    if (count === undefined) return label;
-    return (
-      <>
-        {label} <span className="workspace-status-count">{count}</span>
-      </>
-    );
+  const hasActiveFilters = status !== WorkspaceStatusFilter.All || tagIds.length > 0 || !!projectId;
+  const handleClearFilters = () => {
+    onStatusChange(WorkspaceStatusFilter.All);
+    onTagIdsChange([]);
+    onProjectIdChange(null);
   };
 
   return (
@@ -188,7 +175,7 @@ export default function WorkspaceFilter({
       {/* Top row: Search (+ project picker and group-by-project in compact mode) */}
       <div className="workspace-filter-search-row">
         <Input.Search
-          size={compact ? "large" : "middle"}
+          size="large"
           placeholder="Search by name..."
           value={searchInputValue}
           onChange={(e) => {
@@ -231,43 +218,32 @@ export default function WorkspaceFilter({
       {/* Bottom row: Status (left) | Tags + Sort (right) */}
       <div className="workspace-filter-bar">
         <div className="workspace-filter-left">
-          <Segmented
-            size={controlSize}
-            onChange={onStatusChange}
-            value={status}
-            options={[
-              {
-                label: withCount("All", WorkspaceStatusFilter.All),
-                value: WorkspaceStatusFilter.All,
-                icon: <BarsOutlined />,
-              },
-              {
-                label: withCount("Awaiting approval", JobStatus.WaitingApproval),
-                value: JobStatus.WaitingApproval,
-                icon: <ExclamationCircleOutlined style={{ color: "#fa8f37" }} />,
-              },
-              {
-                label: withCount("Failed", JobStatus.Failed),
-                value: JobStatus.Failed,
-                icon: <StopOutlined style={{ color: "#FB0136" }} />,
-              },
-              {
-                label: withCount("Running", JobStatus.Running),
-                value: JobStatus.Running,
-                icon: <SyncOutlined style={{ color: "#108ee9" }} />,
-              },
-              {
-                label: withCount("Completed", JobStatus.Completed),
-                value: JobStatus.Completed,
-                icon: <CheckCircleOutlined style={{ color: "#2eb039" }} />,
-              },
-              {
-                label: withCount("Never Executed", WorkspaceStatusFilter.NeverExecuted),
-                value: WorkspaceStatusFilter.NeverExecuted,
-                icon: <InfoCircleOutlined />,
-              },
-            ]}
-          />
+          <div className="workspace-status-pills">
+            {WORKSPACE_STATUS_PALETTE.map((opt) => {
+              const active = status === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={active}
+                  className={clsx("workspace-status-pill", { "workspace-status-pill--active": active })}
+                  style={opt.color ? { color: opt.color, borderColor: active ? opt.color : undefined } : undefined}
+                  onClick={() => onStatusChange(opt.value)}
+                >
+                  {opt.icon}
+                  {opt.label}
+                  {statusCounts?.[opt.value] !== undefined && (
+                    <span className="workspace-status-count">{statusCounts[opt.value]}</span>
+                  )}
+                </button>
+              );
+            })}
+            {hasActiveFilters && (
+              <button type="button" className="workspace-clear-filters" onClick={handleClearFilters}>
+                Clear all
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="workspace-filter-right">

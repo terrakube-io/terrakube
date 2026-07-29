@@ -10,18 +10,16 @@ import { DateTime } from "luxon";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
-import { TagModel } from "@/modules/organizations/types";
 import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
 import IacTypeLogo from "@/modules/workspaces/components/IacTypeLogo";
 import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
-import stringToDeterministicColor from "@/modules/utils/stringToDeterministicColor";
 import "./WorkspaceTable.css";
 
-const MAX_VISIBLE_TAGS = 3;
 const GROUP_PREVIEW_SIZE = 10;
 
 export type WorkspaceGroup = {
@@ -34,8 +32,6 @@ type Props = {
   organizationId: string;
   workspaces: WorkspaceListItem[];
   groups?: WorkspaceGroup[];
-  tags: TagModel[];
-  onToggleTag: (tagId: string) => void;
   onSelectProject: (projectId: string | null) => void;
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
@@ -97,55 +93,13 @@ function SortableHeader({
   );
 }
 
-function renderTagPills(item: WorkspaceListItem, tags: TagModel[], onToggleTag: (tagId: string) => void) {
-  if (!item.tags || item.tags.length === 0) return null;
-  const resolved = item.tags
-    .map((tagId) => ({ tagId, name: tags.find((t) => t.id === tagId)?.name }))
-    .filter((t): t is { tagId: string; name: string } => !!t.name);
-  if (resolved.length === 0) return null;
-
-  const visible = resolved.slice(0, MAX_VISIBLE_TAGS);
-  const overflow = resolved.slice(MAX_VISIBLE_TAGS);
-
-  return (
-    <>
-      {visible.map(({ tagId, name }) => (
-        <Tag
-          key={tagId}
-          className="workspace-clickable-tag"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleTag(tagId);
-          }}
-        >
-          <span className="workspace-tag-dot" style={{ backgroundColor: stringToDeterministicColor(tagId) }} />
-          {name}
-        </Tag>
-      ))}
-      {overflow.length > 0 && (
-        <Tag
-          className="workspace-tag-more"
-          title={overflow.map((t) => t.name).join(", ")}
-          onClick={(e) => e.stopPropagation()}
-        >
-          +{overflow.length}
-        </Tag>
-      )}
-    </>
-  );
-}
-
 function WorkspaceRow({
   item,
-  tags,
   organizationId,
-  onToggleTag,
   onSelectProject,
 }: {
   item: WorkspaceListItem;
-  tags: TagModel[];
   organizationId: string;
-  onToggleTag: (tagId: string) => void;
   onSelectProject: (projectId: string | null) => void;
 }) {
   const navigate = useNavigate();
@@ -161,14 +115,18 @@ function WorkspaceRow({
       <div className="workspace-col-name">
         <div className="workspace-name-line1">
           <span
-            className="workspace-dot"
-            style={{ backgroundColor: (item.lastStatus && statusColors[item.lastStatus]) || "#8b949e" }}
-          />
+            className="workspace-status-icon"
+            style={{ color: (item.lastStatus && statusColors[item.lastStatus]) || "#8b949e" }}
+          >
+            {getWorkspaceStatusIcon(item.lastStatus)}
+          </span>
           {item.locked && <LockOutlined aria-label="lock" className="workspace-lock-icon" />}
           <Typography.Text className="workspace-name" ellipsis title={item.name}>
             {item.name}
           </Typography.Text>
-          {item.projectName && (
+        </div>
+        {item.projectName && (
+          <div className="workspace-name-line2">
             <Tag
               icon={<FolderOutlined />}
               color="blue"
@@ -180,17 +138,7 @@ function WorkspaceRow({
             >
               {item.projectName}
             </Tag>
-          )}
-        </div>
-        {item.description && (
-          <div className="workspace-name-line2">
-            <Typography.Text className="workspace-desc" title={item.description}>
-              {item.description}
-            </Typography.Text>
           </div>
-        )}
-        {item.tags && item.tags.length > 0 && (
-          <div className="workspace-name-line3">{renderTagPills(item, tags, onToggleTag)}</div>
         )}
       </div>
       <div className="workspace-col-status">
@@ -233,8 +181,6 @@ export default function WorkspaceTable({
   organizationId,
   workspaces,
   groups,
-  tags,
-  onToggleTag,
   onSelectProject,
   sortOption,
   onSortChange,
@@ -327,9 +273,7 @@ export default function WorkspaceTable({
                   <WorkspaceRow
                     key={item.id}
                     item={item}
-                    tags={tags}
                     organizationId={organizationId}
-                    onToggleTag={onToggleTag}
                     onSelectProject={onSelectProject}
                   />
                 ))}
@@ -348,14 +292,7 @@ export default function WorkspaceTable({
             );
           })
         : pagedWorkspaces.map((item) => (
-            <WorkspaceRow
-              key={item.id}
-              item={item}
-              tags={tags}
-              organizationId={organizationId}
-              onToggleTag={onToggleTag}
-              onSelectProject={onSelectProject}
-            />
+            <WorkspaceRow key={item.id} item={item} organizationId={organizationId} onSelectProject={onSelectProject} />
           ))}
 
       {!isGrouped && (

@@ -36,6 +36,44 @@ describe("organizationService.listOrganizationsGraphQL", () => {
 
     expect(result[0].workspaceCount).toBe(2);
   });
+
+  it("groups workspace.edges by lastJobStatus into workspaceStatusCounts, treating a missing status as NeverExecuted", async () => {
+    mockPost.mockResolvedValue({
+      data: {
+        data: {
+          organization: {
+            edges: [
+              {
+                node: {
+                  id: "org-1",
+                  name: "acme",
+                  description: "desc",
+                  executionMode: "remote",
+                  icon: "",
+                  workspace: {
+                    edges: [
+                      { node: { id: "ws-1", lastJobStatus: "failed" } },
+                      { node: { id: "ws-2", lastJobStatus: "failed" } },
+                      { node: { id: "ws-3", lastJobStatus: "completed" } },
+                      { node: { id: "ws-4", lastJobStatus: null } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await organizationService.listOrganizationsGraphQL();
+
+    expect(result[0].workspaceStatusCounts).toEqual({
+      failed: 2,
+      completed: 1,
+      NeverExecuted: 1,
+    });
+  });
 });
 
 describe("organizationService.listOrganizationTags", () => {

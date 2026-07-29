@@ -32,6 +32,7 @@ export type OrganizationAttributes = {
   executionMode?: string;
   icon?: string;
   workspaceCount?: number;
+  workspaceStatusCounts?: Record<string, number>;
 };
 
 export type ApiResponse<T> = {
