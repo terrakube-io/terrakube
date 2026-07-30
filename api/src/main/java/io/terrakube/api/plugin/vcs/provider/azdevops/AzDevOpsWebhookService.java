@@ -70,6 +70,15 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     private static final String EVENT_PR_UPDATED = "git.pullrequest.updated";
     private static final String EVENT_PR_COMMENT = "ms.vss-code.git-pullrequest-comment-event";
 
+    private static final String FIELD_RESOURCE = "resource";
+    private static final String FIELD_RESOURCE_VERSION = "resourceVersion";
+    private static final String FIELD_REPOSITORY = "repository";
+    private static final String FIELD_COMMIT_ID = "commitId";
+    private static final String REF_TAGS_PREFIX = "refs/tags/";
+    private static final String REF_HEADS_PREFIX = "refs/heads/";
+    private static final String NO_RESPONSE = "No response";
+    private static final String UNABLE_TO_PARSE_SOURCE_MESSAGE = "Unable to parse Azure DevOps repository from source {}";
+
     private final ObjectMapper objectMapper;
     private final AzDevOpsTokenService azDevOpsTokenService;
 
@@ -87,7 +96,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             Workspace workspace) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
-        result.setVia(JobVia.AzureDevops.name());
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
         result.setFileChanges(new ArrayList<>());
         result.setWorkspaceId(workspace.getId().toString());
 
@@ -114,13 +123,13 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         String eventType = rootNode.path("eventType").asText();
         log.info("Azure DevOps event type: {}", eventType);
 
-        JsonNode resource = rootNode.get("resource");
+        JsonNode resource = rootNode.get(FIELD_RESOURCE);
         if (resource == null || resource.isNull()) {
             // Typical when the Azure subscription was created with an invalid
             // resourceDetailsToSend value or an unsupported resourceVersion.
             log.error(
                     "Azure DevOps webhook for event {} has resource=null (resourceVersion={}); recreate the service hook subscription",
-                    eventType, rootNode.path("resourceVersion").asText(null));
+                    eventType, rootNode.path(FIELD_RESOURCE_VERSION).asText(null));
             result.setValid(false);
             return result;
         }
@@ -141,15 +150,15 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     }
 
     private WebhookResult handlePushEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
-        JsonNode resource = rootNode.path("resource");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
         JsonNode refUpdate = resource.path("refUpdates").path(0);
         String refName = refUpdate.path("name").asText();
 
         // Tag pushes (refs/tags/...) are treated as releases, branch pushes as regular pushes
-        if (refName.startsWith("refs/tags/")) {
+        if (refName.startsWith(REF_TAGS_PREFIX)) {
             result.setEvent("release");
             result.setRelease(true);
-            result.setBranch(refName.substring("refs/tags/".length()));
+            result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
         } else {
             result.setEvent("push");
             result.setBranch(stripRefPrefix(refName));
@@ -161,7 +170,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         // Azure DevOps push payloads do not contain the changed files, so we collect them
         // from the API. The event's commits[] array is unreliable (often empty), so we
         // prefer diffing the pushed range oldObjectId..newObjectId.
-        JsonNode repository = resource.path("repository");
+        JsonNode repository = resource.path(FIELD_REPOSITORY);
         String repositoryId = repository.path("id").asText();
         AzureRepo repo = parseSource(workspace.getSource());
 
@@ -195,7 +204,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         // Fallback 1: per-commit changes from the event payload
         if (files.isEmpty()) {
             for (JsonNode commit : resource.path("commits")) {
-                String commitId = commit.path("commitId").asText();
+                String commitId = commit.path(FIELD_COMMIT_ID).asText();
                 if (!commitId.isEmpty()) {
                     files.addAll(getCommitChanges(vcs, repo, repositoryId, commitId));
                 }
@@ -237,15 +246,15 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private WebhookResult handlePullRequestEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
         result.setEvent("pull_request");
-        JsonNode resource = rootNode.path("resource");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
 
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
-        result.setCommit(resource.path("lastMergeSourceCommit").path("commitId").asText());
+        result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
 
-        JsonNode repository = resource.path("repository");
+        JsonNode repository = resource.path(FIELD_REPOSITORY);
         String repositoryId = repository.path("id").asText();
         AzureRepo repo = parseSource(workspace.getSource());
 
@@ -258,7 +267,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private WebhookResult handlePullRequestCommentEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
         result.setEvent("issue_comment");
-        JsonNode resource = rootNode.path("resource");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
 
         String commentBody = resource.path("comment").path("content").asText().trim();
         String command = parseTerrakubeCommand(commentBody);
@@ -276,9 +285,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
-        result.setCommit(pullRequest.path("lastMergeSourceCommit").path("commitId").asText());
+        result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
 
-        JsonNode repository = pullRequest.path("repository");
+        JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
         String repositoryId = repository.path("id").asText();
         AzureRepo repo = parseSource(workspace.getSource());
 
@@ -292,12 +301,12 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {
         AzureRepo repo = parseSource(workspace.getSource());
         if (repo == null) {
-            log.error("Unable to parse Azure DevOps repository from source {}", workspace.getSource());
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
             return "";
         }
 
         String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
-        if (repositoryAndProject == null) {
+        if (repositoryAndProject.length == 0) {
             log.error("Unable to resolve Azure DevOps repository id for {}", workspace.getSource());
             return "";
         }
@@ -355,7 +364,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
                 log.info("Azure DevOps subscription {} deleted successfully", subscriptionId);
             } else {
                 log.warn("Failed to delete Azure DevOps subscription {}, message {}", subscriptionId,
-                        response != null ? response.getBody() : "No response");
+                        response != null ? response.getBody() : NO_RESPONSE);
             }
         }
     }
@@ -369,11 +378,11 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         AzureRepo repo = parseSource(workspace.getSource());
         if (repo == null) {
-            log.error("Unable to parse Azure DevOps repository from source {}", workspace.getSource());
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
             return;
         }
         String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
-        if (repositoryAndProject == null) {
+        if (repositoryAndProject.length == 0) {
             log.error("Unable to resolve Azure DevOps repository id for commit status on {}", workspace.getSource());
             return;
         }
@@ -424,7 +433,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
                 log.info("Job status sent successfully to Azure DevOps for commit {}", job.getCommitId());
             } else {
                 log.error("Failed to send job status to Azure DevOps, message {}",
-                        response != null ? response.getBody() : "No response");
+                        response != null ? response.getBody() : NO_RESPONSE);
             }
         } catch (Exception e) {
             log.error("Error sending commit status to Azure DevOps", e);
@@ -439,11 +448,11 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     public String getLatestCommit(Workspace workspace, String branch) {
         AzureRepo repo = parseSource(workspace.getSource());
         if (repo == null) {
-            log.error("Unable to parse Azure DevOps repository from source {}", workspace.getSource());
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
             return null;
         }
         String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
-        if (repositoryAndProject == null) {
+        if (repositoryAndProject.length == 0) {
             return null;
         }
 
@@ -459,7 +468,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         }
         try {
             JsonNode rootNode = objectMapper.readTree(response.getBody());
-            String expectedName = "refs/heads/" + branch;
+            String expectedName = REF_HEADS_PREFIX + branch;
             for (JsonNode ref : rootNode.path("value")) {
                 if (expectedName.equals(ref.path("name").asText())) {
                     return ref.path("objectId").asText();
@@ -477,7 +486,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
      */
     public WebhookResult buildPushResult(Workspace workspace, String branch, String baseCommit, String newCommit) {
         WebhookResult result = new WebhookResult();
-        result.setVia(JobVia.AzureDevops.name());
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
         result.setEvent("push");
         result.setValid(true);
         result.setBranch(branch);
@@ -489,7 +498,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         AzureRepo repo = parseSource(workspace.getSource());
         if (repo != null) {
             String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
-            if (repositoryAndProject != null) {
+            if (repositoryAndProject.length > 0) {
                 List<String> files = (baseCommit != null && !baseCommit.isEmpty())
                         ? getDiffChanges(workspace.getVcs(), repo, repositoryAndProject[0], baseCommit, newCommit)
                         : getCommitChanges(workspace.getVcs(), repo, repositoryAndProject[0], newCommit);
@@ -536,7 +545,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             String projectId, String webhookUrl, String secret) {
         Map<String, Object> publisherInputs = new LinkedHashMap<>();
         publisherInputs.put("projectId", projectId);
-        publisherInputs.put("repository", repositoryId);
+        publisherInputs.put(FIELD_REPOSITORY, repositoryId);
 
         Map<String, Object> consumerInputs = new LinkedHashMap<>();
         consumerInputs.put("url", webhookUrl);
@@ -556,7 +565,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("publisherId", "tfs");
         body.put("eventType", azureEventType);
-        body.put("resourceVersion", resourceVersion);
+        body.put(FIELD_RESOURCE_VERSION, resourceVersion);
         body.put("consumerId", "webHooks");
         body.put("consumerActionId", "httpRequest");
         body.put("publisherInputs", publisherInputs);
@@ -571,7 +580,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             if (response != null && response.getStatusCode().is2xxSuccessful()) {
                 JsonNode rootNode = objectMapper.readTree(response.getBody());
                 String id = rootNode.path("id").asText();
-                String storedVersion = rootNode.path("resourceVersion").asText(null);
+                String storedVersion = rootNode.path(FIELD_RESOURCE_VERSION).asText(null);
                 String storedResourceDetails = rootNode.path("consumerInputs").path("resourceDetailsToSend")
                         .asText(null);
                 log.info(
@@ -585,7 +594,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
                 return id;
             }
             log.error("Failed to create Azure DevOps subscription for event {}, message {}", azureEventType,
-                    response != null ? response.getBody() : "No response");
+                    response != null ? response.getBody() : NO_RESPONSE);
         } catch (Exception e) {
             log.error("Error creating Azure DevOps subscription for event {}", azureEventType, e);
         }
@@ -595,7 +604,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     /**
      * Resolves the Azure DevOps repository id and project id from the repository name in the source URL.
      *
-     * @return a two element array {@code [repositoryId, projectId]} or {@code null} on failure.
+     * @return a two element array {@code [repositoryId, projectId]} or an empty array on failure.
      */
     private String[] resolveRepository(Vcs vcs, AzureRepo repo) {
         String apiUrl = String.format("%s/%s/_apis/git/repositories/%s?api-version=%s",
@@ -605,7 +614,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.GET);
         if (response == null || !response.getStatusCode().is2xxSuccessful()) {
             log.error("Failed to resolve Azure DevOps repository {}/{}", repo.project, repo.repository);
-            return null;
+            return new String[0];
         }
         try {
             JsonNode rootNode = objectMapper.readTree(response.getBody());
@@ -614,7 +623,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             return new String[] { repositoryId, projectId };
         } catch (Exception e) {
             log.error("Error parsing Azure DevOps repository response", e);
-            return null;
+            return new String[0];
         }
     }
 
@@ -747,8 +756,8 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         if (ref == null) {
             return "";
         }
-        if (ref.startsWith("refs/heads/")) {
-            return ref.substring("refs/heads/".length());
+        if (ref.startsWith(REF_HEADS_PREFIX)) {
+            return ref.substring(REF_HEADS_PREFIX.length());
         }
         if (ref.startsWith("refs/tags/")) {
             return ref.substring("refs/tags/".length());
@@ -794,7 +803,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             String project;
             String repository;
             if (host.endsWith("visualstudio.com")) {
-                // org is the subdomain, path is {project}/{repo}
+                // org is the subdomain, path holds project then repo
                 orgBaseUrl = scheme + "://" + hostPort;
                 if (segments.size() < 2) {
                     return null;
@@ -802,7 +811,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
                 project = segments.get(0);
                 repository = segments.get(segments.size() - 1);
             } else {
-                // dev.azure.com or Azure DevOps Server, path is {org}/{project}/{repo}
+                // dev.azure.com or Azure DevOps Server, path holds org then project then repo
                 if (segments.size() < 3) {
                     return null;
                 }

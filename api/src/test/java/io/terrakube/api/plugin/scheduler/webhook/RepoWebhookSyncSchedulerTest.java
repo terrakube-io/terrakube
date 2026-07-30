@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.webhook;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -59,8 +60,8 @@ class RepoWebhookSyncSchedulerTest {
         when(scheduler.scheduleJob(any(JobDetail.class), any(Trigger.class)))
                 .thenThrow(new ObjectAlreadyExistsException("already scheduled"));
 
-        subject.scheduleSync("https://github.com/owner/repo", "ws-1");
-        // No exception propagated — that's the assertion.
+        assertThatCode(() -> subject.scheduleSync("https://github.com/owner/repo", "ws-1"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -73,8 +74,8 @@ class RepoWebhookSyncSchedulerTest {
         when(scheduler.scheduleJob(any(JobDetail.class), any(Trigger.class)))
                 .thenThrow(new JobPersistenceException("duplicate key value violates unique constraint"));
 
-        subject.scheduleSync("https://github.com/owner/repo", "ws-1");
-        // No exception propagated — that's the assertion.
+        assertThatCode(() -> subject.scheduleSync("https://github.com/owner/repo", "ws-1"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -82,11 +83,8 @@ class RepoWebhookSyncSchedulerTest {
         when(scheduler.scheduleJob(any(JobDetail.class), any(Trigger.class)))
                 .thenThrow(new SchedulerException("boom"));
 
-        try {
-            subject.scheduleSync("https://github.com/owner/repo", "ws-1");
-            org.junit.jupiter.api.Assertions.fail("expected IllegalStateException");
-        } catch (IllegalStateException e) {
-            verify(scheduler, never()).triggerJob(any());
-        }
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> subject.scheduleSync("https://github.com/owner/repo", "ws-1"));
+        verify(scheduler, never()).triggerJob(any());
     }
 }

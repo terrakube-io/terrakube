@@ -14,7 +14,6 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import lombok.extern.slf4j.Slf4j;
@@ -41,8 +40,11 @@ public class RepoWebhookSyncScheduler {
     public static final String DATA_KEY_WORKSPACE_ID = "workspaceId";
     static final String JOB_GROUP = "repo-webhook-sync";
 
-    @Autowired
-    private Scheduler scheduler;
+    private final Scheduler scheduler;
+
+    public RepoWebhookSyncScheduler(Scheduler scheduler) {
+        this.scheduler = scheduler;
+    }
 
     /**
      * Requests a sync of the shared webhook for {@code normalizedRepositoryUrl}.
@@ -73,7 +75,7 @@ public class RepoWebhookSyncScheduler {
         try {
             scheduler.scheduleJob(jobDetail, trigger);
             log.info("Scheduled repo webhook sync job {} for {}", jobKey, normalizedRepositoryUrl);
-        } catch (ObjectAlreadyExistsException e) {
+        } catch (ObjectAlreadyExistsException _) {
             // Another concurrent caller already scheduled the sync for this
             // exact URL. That job re-queries every workspace currently
             // sharing the URL (including this caller's), so there's

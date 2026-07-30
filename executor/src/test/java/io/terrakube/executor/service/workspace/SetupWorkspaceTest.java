@@ -27,7 +27,6 @@ import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.eclipse.jgit.api.errors.TransportException;
 import org.eclipse.jgit.revwalk.RevCommit;
-import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -140,6 +139,7 @@ public class SetupWorkspaceTest {
     private static class NoopWorkspaceSecurity implements WorkspaceSecurity {
         @Override
         public void addTerraformCredentials(String workspaceId) {
+            // no-op: this test double doesn't exercise credential setup
         }
 
         @Override
@@ -222,7 +222,7 @@ public class SetupWorkspaceTest {
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, job.getFolder(), "main.tf");
-        Assert.assertTrue(terrformDir.exists());
+        Assertions.assertTrue(terrformDir.exists());
     }
 
     @Test
@@ -231,7 +231,7 @@ public class SetupWorkspaceTest {
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File shallowMarker = FileUtils.getFile(workspaceDir, ".git", "shallow");
-        Assert.assertTrue(shallowMarker.exists());
+        Assertions.assertTrue(shallowMarker.exists());
     }
 
     @Test
@@ -297,7 +297,7 @@ public class SetupWorkspaceTest {
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, "commitHash.info");
-        Assert.assertTrue(terrformDir.exists());
+        Assertions.assertTrue(terrformDir.exists());
     }
 
     @Test
@@ -305,8 +305,8 @@ public class SetupWorkspaceTest {
         TerraformJob job = successfulGitJob();
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         job.setCommitId("nonsense");
-        WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
-        Assert.assertEquals(RefNotFoundException.class, e.getCause().getClass());
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+        Assertions.assertEquals(RefNotFoundException.class, e.getCause().getClass());
     }
 
     @Test
@@ -314,8 +314,8 @@ public class SetupWorkspaceTest {
         TerraformJob job = successfulGitJob();
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         job.setSource("nonsense");
-        WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
-        Assert.assertEquals(InvalidRemoteException.class, e.getCause().getClass());
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+        Assertions.assertEquals(InvalidRemoteException.class, e.getCause().getClass());
     }
 
     @Test
@@ -324,7 +324,7 @@ public class SetupWorkspaceTest {
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, "main.tf");
-        Assert.assertTrue(terrformDir.exists());
+        Assertions.assertTrue(terrformDir.exists());
     }
 
     @Test
@@ -332,8 +332,8 @@ public class SetupWorkspaceTest {
         TerraformJob job = successfulTarGzJob();
         job.setSource("file:/nonsense");
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        WorkspaceException e = Assert.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
-        Assert.assertEquals(FileNotFoundException.class, e.getCause().getClass());
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+        Assertions.assertEquals(FileNotFoundException.class, e.getCause().getClass());
     }
 
     @Test

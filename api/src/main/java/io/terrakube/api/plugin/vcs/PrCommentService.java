@@ -32,7 +32,7 @@ public class PrCommentService {
     private static final Pattern PLAN_SUMMARY_PATTERN = Pattern.compile(
             "(Plan: \\d+ to add, \\d+ to change, \\d+ to destroy\\.|No changes\\. Your infrastructure matches the configuration\\.)");
     private static final Pattern ANSI_PATTERN = Pattern.compile(
-            "[\\u001b\\u009b][\\[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{1,4})*)?[0-9A-ORZcf-nq-uy=><~]");
+            "[\\u001b\\u009b][\\[()#;?]*(?:\\d{1,4}(?:;\\d{1,4})*)?[0-9A-ORZcf-nq-uy=><~]");
 
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
@@ -190,10 +190,14 @@ public class PrCommentService {
         transientJob.setWorkspace(workspace);
         transientJob.setPrNumber(prNumber);
 
-        String markdown = "## Terrakube Apply\n\n" +
-                "⚠️ Apply via PR comment is not enabled for this workspace.\n\n" +
-                "Ask a workspace admin to enable **Allow Apply via PR Comment** in the webhook settings, " +
-                "or apply this plan from the Terrakube UI.\n";
+        String markdown = """
+                ## Terrakube Apply
+
+                ⚠️ Apply via PR comment is not enabled for this workspace.
+
+                Ask a workspace admin to enable **Allow Apply via PR Comment** in the webhook settings, \
+                or apply this plan from the Terrakube UI.
+                """;
 
         postComment(transientJob, markdown);
     }

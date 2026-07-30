@@ -44,9 +44,9 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                         case POSTCOMMIT:
                             try {
                                 organizationManageService.postCreationSetup(organization);
-                            } catch (Throwable t) {
-                                log.error("postCreationSetup failed for organization {}", organization.getId(), t);
-                                throw t;
+                            } catch (Exception e) {
+                                log.error("postCreationSetup failed for organization {}", organization.getId(), e);
+                                throw e;
                             }
                             break;
                         default:

@@ -10,7 +10,6 @@ import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,14 +20,18 @@ public class TeamLimitedManageWorkspaceAccess extends OperationCheck<Access> {
 
     public static final String RULE = "team limited manage workspace access";
 
-    @Autowired
-    AuthenticatedUser authenticatedUser;
+    private final AuthenticatedUser authenticatedUser;
 
-    @Autowired
-    GroupService groupService;
+    private final GroupService groupService;
 
-    @Autowired
-    RbacService rbacService;
+    private final RbacService rbacService;
+
+    public TeamLimitedManageWorkspaceAccess(AuthenticatedUser authenticatedUser, GroupService groupService,
+            RbacService rbacService) {
+        this.authenticatedUser = authenticatedUser;
+        this.groupService = groupService;
+        this.rbacService = rbacService;
+    }
 
     @Override
     public boolean ok(Access access, RequestScope requestScope, Optional<ChangeSpec> optional) {

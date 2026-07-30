@@ -7,7 +7,6 @@ import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,17 +39,21 @@ import lombok.extern.slf4j.Slf4j;
 @DisallowConcurrentExecution
 public class RepoWebhookSyncJob implements Job {
 
-    @Autowired
-    private RepoWebhookRepository repoWebhookRepository;
+    private final RepoWebhookRepository repoWebhookRepository;
 
-    @Autowired
-    private WorkspaceRepository workspaceRepository;
+    private final WorkspaceRepository workspaceRepository;
 
-    @Autowired
-    private RepoWebhookService repoWebhookService;
+    private final RepoWebhookService repoWebhookService;
+
+    public RepoWebhookSyncJob(RepoWebhookRepository repoWebhookRepository, WorkspaceRepository workspaceRepository,
+            RepoWebhookService repoWebhookService) {
+        this.repoWebhookRepository = repoWebhookRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.repoWebhookService = repoWebhookService;
+    }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void execute(JobExecutionContext context) throws JobExecutionException {
         String repositoryUrl = context.getJobDetail().getJobDataMap()
                 .getString(RepoWebhookSyncScheduler.DATA_KEY_REPOSITORY_URL);
@@ -83,7 +86,7 @@ public class RepoWebhookSyncJob implements Job {
                         return ws;
                     }
                 }
-            } catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException _) {
                 // Not a valid UUID (or blank); fall through to the default below.
             }
         }

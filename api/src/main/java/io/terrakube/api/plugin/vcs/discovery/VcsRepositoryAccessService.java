@@ -3,7 +3,6 @@ package io.terrakube.api.plugin.vcs.discovery;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
@@ -18,14 +17,18 @@ import io.terrakube.api.rs.vcs.Vcs;
 @Service
 public class VcsRepositoryAccessService {
 
-    @Autowired
-    private TeamRepository teamRepository;
+    private final TeamRepository teamRepository;
 
-    @Autowired
-    private VcsRepository vcsRepository;
+    private final VcsRepository vcsRepository;
 
-    @Autowired
-    private RbacService rbacService;
+    private final RbacService rbacService;
+
+    public VcsRepositoryAccessService(TeamRepository teamRepository, VcsRepository vcsRepository,
+            RbacService rbacService) {
+        this.teamRepository = teamRepository;
+        this.vcsRepository = vcsRepository;
+        this.rbacService = rbacService;
+    }
 
     @Transactional
     public boolean hasViewPermission(Authentication authentication, String vcsId) {

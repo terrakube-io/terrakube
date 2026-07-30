@@ -126,8 +126,8 @@ public class InactiveJobs implements org.quartz.Job {
     }
 
     private boolean isManualOrScheduledJob(Job job) {
-        return JobVia.CLI.name().equals(job.getVia())
-                || JobVia.UI.name().equals(job.getVia())
-                || JobVia.Schedule.name().equals(job.getVia());
+        return JobVia.CLI.getValue().equals(job.getVia())
+                || JobVia.UI.getValue().equals(job.getVia())
+                || JobVia.SCHEDULE.getValue().equals(job.getVia());
     }
 }

@@ -73,7 +73,7 @@ public class AzDevOpsPollingService {
             if (!pollExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
                 pollExecutor.shutdownNow();
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             pollExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }

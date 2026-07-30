@@ -223,7 +223,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         try (RevWalk revWalk = new RevWalk(git.getRepository())) {
             revWalk.parseCommit(objectId);
             return true;
-        } catch (MissingObjectException e) {
+        } catch (MissingObjectException _) {
             return false;
         }
     }
