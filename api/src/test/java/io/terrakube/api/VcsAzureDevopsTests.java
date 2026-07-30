@@ -62,24 +62,25 @@ public class VcsAzureDevopsTests extends ServerApplicationTests {
 
     @Test
     void azureDevopsWebhookPush() {
-        String payload = "{\n" +
-                "  \"eventType\": \"git.push\",\n" +
-                "  \"publisherId\": \"tfs\",\n" +
-                "  \"resource\": {\n" +
-                "    \"commits\": [ { \"commitId\": \"33b55f7cb7e7e245323987634f960cf4a6e6bc74\" } ],\n" +
-                "    \"refUpdates\": [ {\n" +
-                "        \"name\": \"refs/heads/main\",\n" +
-                "        \"oldObjectId\": \"aaaa\",\n" +
-                "        \"newObjectId\": \"33b55f7cb7e7e245323987634f960cf4a6e6bc74\"\n" +
-                "    } ],\n" +
-                "    \"repository\": {\n" +
-                "      \"id\": \"repo-guid\",\n" +
-                "      \"name\": \"myrepo\",\n" +
-                "      \"project\": { \"id\": \"proj-guid\", \"name\": \"myproject\" }\n" +
-                "    },\n" +
-                "    \"pushedBy\": { \"displayName\": \"John Doe\", \"uniqueName\": \"john@example.com\" }\n" +
-                "  }\n" +
-                "}";
+        String payload = """
+                {
+                  "eventType": "git.push",
+                  "publisherId": "tfs",
+                  "resource": {
+                    "commits": [ { "commitId": "33b55f7cb7e7e245323987634f960cf4a6e6bc74" } ],
+                    "refUpdates": [ {
+                        "name": "refs/heads/main",
+                        "oldObjectId": "aaaa",
+                        "newObjectId": "33b55f7cb7e7e245323987634f960cf4a6e6bc74"
+                    } ],
+                    "repository": {
+                      "id": "repo-guid",
+                      "name": "myrepo",
+                      "project": { "id": "proj-guid", "name": "myproject" }
+                    },
+                    "pushedBy": { "displayName": "John Doe", "uniqueName": "john@example.com" }
+                  }
+                }""";
 
         String changesResponse = "{ \"changes\": [ " +
                 "{ \"item\": { \"gitObjectType\": \"blob\", \"path\": \"/work1/main.tf\" }, \"changeType\": \"edit\" }, " +
@@ -115,18 +116,19 @@ public class VcsAzureDevopsTests extends ServerApplicationTests {
 
     @Test
     void azureDevopsWebhookTag() {
-        String payload = "{\n" +
-                "  \"eventType\": \"git.push\",\n" +
-                "  \"resource\": {\n" +
-                "    \"commits\": [ { \"commitId\": \"abc\" } ],\n" +
-                "    \"refUpdates\": [ {\n" +
-                "        \"name\": \"refs/tags/v1.0\",\n" +
-                "        \"newObjectId\": \"abc\"\n" +
-                "    } ],\n" +
-                "    \"repository\": { \"id\": \"repo-guid\", \"project\": { \"id\": \"proj-guid\" } },\n" +
-                "    \"pushedBy\": { \"uniqueName\": \"john@example.com\" }\n" +
-                "  }\n" +
-                "}";
+        String payload = """
+                {
+                  "eventType": "git.push",
+                  "resource": {
+                    "commits": [ { "commitId": "abc" } ],
+                    "refUpdates": [ {
+                        "name": "refs/tags/v1.0",
+                        "newObjectId": "abc"
+                    } ],
+                    "repository": { "id": "repo-guid", "project": { "id": "proj-guid" } },
+                    "pushedBy": { "uniqueName": "john@example.com" }
+                  }
+                }""";
 
         Vcs vcs = createAzureVcs();
         Workspace workspace = createWorkspace(vcs);
@@ -147,18 +149,19 @@ public class VcsAzureDevopsTests extends ServerApplicationTests {
 
     @Test
     void azureDevopsWebhookPullRequest() {
-        String payload = "{\n" +
-                "  \"eventType\": \"git.pullrequest.created\",\n" +
-                "  \"resource\": {\n" +
-                "    \"pullRequestId\": 5,\n" +
-                "    \"status\": \"active\",\n" +
-                "    \"sourceRefName\": \"refs/heads/feature\",\n" +
-                "    \"targetRefName\": \"refs/heads/main\",\n" +
-                "    \"lastMergeSourceCommit\": { \"commitId\": \"def456\" },\n" +
-                "    \"createdBy\": { \"displayName\": \"Jane\", \"uniqueName\": \"jane@example.com\" },\n" +
-                "    \"repository\": { \"id\": \"repo-guid\", \"project\": { \"id\": \"proj-guid\" } }\n" +
-                "  }\n" +
-                "}";
+        String payload = """
+                {
+                  "eventType": "git.pullrequest.created",
+                  "resource": {
+                    "pullRequestId": 5,
+                    "status": "active",
+                    "sourceRefName": "refs/heads/feature",
+                    "targetRefName": "refs/heads/main",
+                    "lastMergeSourceCommit": { "commitId": "def456" },
+                    "createdBy": { "displayName": "Jane", "uniqueName": "jane@example.com" },
+                    "repository": { "id": "repo-guid", "project": { "id": "proj-guid" } }
+                  }
+                }""";
 
         stubFor(get(urlPathEqualTo("/myorg/myproject/_apis/git/repositories/repo-guid/pullRequests/5/iterations"))
                 .withPort(wireMockServer.port())
@@ -195,14 +198,15 @@ public class VcsAzureDevopsTests extends ServerApplicationTests {
 
     @Test
     void azureDevopsWebhookTokenValidation() {
-        String payload = "{\n" +
-                "  \"eventType\": \"git.push\",\n" +
-                "  \"resource\": {\n" +
-                "    \"refUpdates\": [ { \"name\": \"refs/tags/v1.0\", \"newObjectId\": \"abc\" } ],\n" +
-                "    \"repository\": { \"id\": \"repo-guid\", \"project\": { \"id\": \"proj-guid\" } },\n" +
-                "    \"pushedBy\": { \"uniqueName\": \"john@example.com\" }\n" +
-                "  }\n" +
-                "}";
+        String payload = """
+                {
+                  "eventType": "git.push",
+                  "resource": {
+                    "refUpdates": [ { "name": "refs/tags/v1.0", "newObjectId": "abc" } ],
+                    "repository": { "id": "repo-guid", "project": { "id": "proj-guid" } },
+                    "pushedBy": { "uniqueName": "john@example.com" }
+                  }
+                }""";
 
         Vcs vcs = createAzureVcs();
         Workspace workspace = createWorkspace(vcs);

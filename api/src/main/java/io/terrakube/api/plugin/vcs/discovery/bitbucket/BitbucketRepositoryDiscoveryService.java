@@ -32,6 +32,9 @@ import lombok.extern.slf4j.Slf4j;
 public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscoveryProvider {
 
     private static final int PAGE_SIZE = 50;
+    private static final String PATH_VALUES = "values";
+    private static final String PATH_LINKS = "links";
+    private static final String PATH_CLONE = "clone";
     private final ObjectMapper objectMapper;
 
     public BitbucketRepositoryDiscoveryService(ObjectMapper objectMapper) {
@@ -60,7 +63,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
         JsonNode response = callApi(url, vcs.getAccessToken()).orElse(null);
         List<VcsGroupSummary> groups = new ArrayList<>();
         if (response != null) {
-            for (JsonNode workspace : response.path("values")) {
+            for (JsonNode workspace : response.path(PATH_VALUES)) {
                 groups.add(VcsGroupSummary.builder()
                         .id(workspace.path("slug").asText())
                         .name(workspace.path("name").asText())
@@ -81,7 +84,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
         JsonNode response = callApi(builder.toUriString(), vcs.getAccessToken()).orElse(null);
         List<VcsRepositorySummary> items = new ArrayList<>();
         if (response != null) {
-            for (JsonNode repo : response.path("values")) {
+            for (JsonNode repo : response.path(PATH_VALUES)) {
                 items.add(VcsRepositorySummary.builder()
                         .name(repo.path("name").asText())
                         .fullName(repo.path("full_name").asText())
@@ -97,12 +100,12 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     }
 
     private String extractCloudCloneUrl(JsonNode repo) {
-        for (JsonNode link : repo.path("links").path("clone")) {
+        for (JsonNode link : repo.path(PATH_LINKS).path(PATH_CLONE)) {
             if ("https".equals(link.path("name").asText())) {
                 return link.path("href").asText();
             }
         }
-        return repo.path("links").path("html").path("href").asText() + ".git";
+        return repo.path(PATH_LINKS).path("html").path("href").asText() + ".git";
     }
 
     private List<VcsGroupSummary> listServerProjects(Vcs vcs, String search) {
@@ -114,7 +117,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
         JsonNode response = callApi(builder.toUriString(), vcs.getAccessToken()).orElse(null);
         List<VcsGroupSummary> groups = new ArrayList<>();
         if (response != null) {
-            for (JsonNode project : response.path("values")) {
+            for (JsonNode project : response.path(PATH_VALUES)) {
                 groups.add(VcsGroupSummary.builder()
                         .id(project.path("key").asText())
                         .name(project.path("name").asText())
@@ -136,7 +139,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
         JsonNode response = callApi(builder.toUriString(), vcs.getAccessToken()).orElse(null);
         List<VcsRepositorySummary> items = new ArrayList<>();
         if (response != null) {
-            for (JsonNode repo : response.path("values")) {
+            for (JsonNode repo : response.path(PATH_VALUES)) {
                 items.add(VcsRepositorySummary.builder()
                         .name(repo.path("name").asText())
                         .fullName(group + "/" + repo.path("slug").asText())
@@ -152,13 +155,13 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     }
 
     private String extractServerCloneUrl(JsonNode repo) {
-        for (JsonNode link : repo.path("links").path("clone")) {
+        for (JsonNode link : repo.path(PATH_LINKS).path(PATH_CLONE)) {
             if ("http".equalsIgnoreCase(link.path("name").asText()) || "https".equalsIgnoreCase(link.path("name").asText())) {
                 return link.path("href").asText();
             }
         }
-        if (repo.path("links").path("clone").isArray() && repo.path("links").path("clone").size() > 0) {
-            return repo.path("links").path("clone").get(0).path("href").asText();
+        if (repo.path(PATH_LINKS).path(PATH_CLONE).isArray() && repo.path(PATH_LINKS).path(PATH_CLONE).size() > 0) {
+            return repo.path(PATH_LINKS).path(PATH_CLONE).get(0).path("href").asText();
         }
         return "";
     }

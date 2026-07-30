@@ -199,7 +199,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // Gets the access token with app installation ID for a specific installation of
     // the app
     private GitHubAppInstallationToken fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl,
-            String jws, String owner) throws JsonMappingException, JsonProcessingException {
+            String jws, String owner) throws JsonProcessingException {
         String token = null;
         Instant expiresAt = null;
         String url = vcsApiUrl + "/app/installations/" + installationId + "/access_tokens";
@@ -267,7 +267,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // Exposes the installation access token fetch for callers that already know the installation id
     // (e.g. repository discovery, where the installation is picked from /app/installations)
     public String getInstallationToken(String installationId, String apiUrl, String jws, String owner)
-            throws JsonMappingException, JsonProcessingException {
+            throws JsonProcessingException {
         return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner).token();
     }
 

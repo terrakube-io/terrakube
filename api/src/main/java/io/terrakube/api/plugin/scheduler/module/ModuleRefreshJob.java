@@ -205,18 +205,15 @@ public class ModuleRefreshJob implements Job {
             log.info("vcs using ssh {}", ssh.getId());
 
             transportConfigCallback = transport -> {
-                if (transport instanceof SshTransport) {
-                    if (transport instanceof SshTransport) {
-                        TerrakubeSshdSessionFactory terrakubeSshdSessionFactory = TerrakubeSshdSessionFactory
-                                .builder()
-                                .sshId(ssh.getId().toString())
-                                .sshFileName(ssh.getSshType().getFileName())
-                                .privateKey(ssh.getPrivateKey())
-                                .build();
-                        ((SshTransport) transport)
-                                .setSshSessionFactory(terrakubeSshdSessionFactory.getSshdSessionFactory());
-                        ((SshTransport) transport).setTimeout(GIT_TIMEOUT_SECONDS);
-                    }
+                if (transport instanceof SshTransport sshTransport) {
+                    TerrakubeSshdSessionFactory terrakubeSshdSessionFactory = TerrakubeSshdSessionFactory
+                            .builder()
+                            .sshId(ssh.getId().toString())
+                            .sshFileName(ssh.getSshType().getFileName())
+                            .privateKey(ssh.getPrivateKey())
+                            .build();
+                    sshTransport.setSshSessionFactory(terrakubeSshdSessionFactory.getSshdSessionFactory());
+                    sshTransport.setTimeout(GIT_TIMEOUT_SECONDS);
                 }
             };
 

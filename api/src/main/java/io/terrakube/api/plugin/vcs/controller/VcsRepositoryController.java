@@ -42,7 +42,7 @@ public class VcsRepositoryController {
         }
         try {
             return ResponseEntity.ok(discoveryFacade.listGroups(vcs));
-        } catch (VcsDiscoveryNotSupportedException e) {
+        } catch (VcsDiscoveryNotSupportedException _) {
             return ResponseEntity.unprocessableEntity().body(List.of());
         } catch (Exception e) {
             log.error("Error listing VCS groups for vcs {}: {}", vcsId, e.getMessage());
@@ -62,7 +62,7 @@ public class VcsRepositoryController {
         }
         try {
             return ResponseEntity.ok(discoveryFacade.listRepositories(vcs, group, search, page));
-        } catch (VcsDiscoveryNotSupportedException e) {
+        } catch (VcsDiscoveryNotSupportedException _) {
             return ResponseEntity.unprocessableEntity()
                     .body(VcsRepositoryPage.builder().items(List.of()).page(page).hasMore(false).build());
         } catch (Exception e) {

@@ -36,18 +36,18 @@ class WebhookLifeCycleHookBindingTest {
                 .map(b -> new Binding(b.operation(), b.phase()))
                 .collect(Collectors.toSet());
 
-        // PRECOMMIT: synchronous, request-scoped work (v1 hook create/update,
-        // and deleting the old v1 hook when migrating to v2).
-        assertThat(registered).contains(
-                new Binding(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT),
-                new Binding(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT));
-
-        // POSTCOMMIT: schedules the async shared-webhook sync, and must run
-        // only after the workspace's migrated Webhook/WebhookEvent rows are
-        // durably committed and visible to the job's own query.
-        assertThat(registered).contains(
-                new Binding(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT),
-                new Binding(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT),
-                new Binding(LifeCycleHookBinding.Operation.DELETE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT));
+        assertThat(registered)
+                // PRECOMMIT: synchronous, request-scoped work (v1 hook create/update,
+                // and deleting the old v1 hook when migrating to v2).
+                .contains(
+                        new Binding(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT),
+                        new Binding(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT))
+                // POSTCOMMIT: schedules the async shared-webhook sync, and must run
+                // only after the workspace's migrated Webhook/WebhookEvent rows are
+                // durably committed and visible to the job's own query.
+                .contains(
+                        new Binding(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT),
+                        new Binding(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT),
+                        new Binding(LifeCycleHookBinding.Operation.DELETE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT));
     }
 }

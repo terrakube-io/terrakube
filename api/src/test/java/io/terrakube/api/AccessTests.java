@@ -144,17 +144,18 @@ public class AccessTests extends ServerApplicationTests {
         // access grant on this workspace, so it must not be able to create workspace access.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("PROJECT_TEAM_MEMBER"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"access\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"name\": \"SHOULD_NOT_BE_CREATED\",\n" +
-                        "      \"manageWorkspace\": true,\n" +
-                        "      \"manageJob\": true,\n" +
-                        "      \"manageState\": true\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
+                .body("""
+                        {
+                          "data": {
+                            "type": "access",
+                            "attributes": {
+                              "name": "SHOULD_NOT_BE_CREATED",
+                              "manageWorkspace": true,
+                              "manageJob": true,
+                              "manageState": true
+                            }
+                          }
+                        }""")
                 .when()
                 .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/access")
                 .then()
@@ -167,17 +168,18 @@ public class AccessTests extends ServerApplicationTests {
     void manageWorkspaceAccessWithWorkspaceAdminRole() {
         String workspaceId = given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"workspace\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"name\": \"manageWorkspaceAccessWithWorkspaceAdminRole\",\n" +
-                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
-                        "      \"branch\": \"main\",\n" +
-                        "      \"terraformVersion\": \"1.0.11\"\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
+                .body("""
+                        {
+                          "data": {
+                            "type": "workspace",
+                            "attributes": {
+                              "name": "manageWorkspaceAccessWithWorkspaceAdminRole",
+                              "source": "https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git",
+                              "branch": "main",
+                              "terraformVersion": "1.0.11"
+                            }
+                          }
+                        }""")
                 .when()
                 .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace")
                 .then()
@@ -190,15 +192,16 @@ public class AccessTests extends ServerApplicationTests {
         // WORKSPACE_ACCESS_ADMIN_MEMBER cannot manage workspace access before being granted admin role
         given()
                 .headers("Authorization", "Bearer " + generatePAT("WORKSPACE_ACCESS_ADMIN_MEMBER"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"access\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"name\": \"SOME_TEAM\",\n" +
-                        "      \"role\": \"read\"\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
+                .body("""
+                        {
+                          "data": {
+                            "type": "access",
+                            "attributes": {
+                              "name": "SOME_TEAM",
+                              "role": "read"
+                            }
+                          }
+                        }""")
                 .when()
                 .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
                 .then()
@@ -209,15 +212,16 @@ public class AccessTests extends ServerApplicationTests {
         // Org admin grants WORKSPACE_ACCESS_ADMIN_MEMBER an admin role on the workspace
         String adminAccessId = given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"access\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"name\": \"WORKSPACE_ACCESS_ADMIN_MEMBER\",\n" +
-                        "      \"role\": \"admin\"\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
+                .body("""
+                        {
+                          "data": {
+                            "type": "access",
+                            "attributes": {
+                              "name": "WORKSPACE_ACCESS_ADMIN_MEMBER",
+                              "role": "admin"
+                            }
+                          }
+                        }""")
                 .when()
                 .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
                 .then()
@@ -229,15 +233,16 @@ public class AccessTests extends ServerApplicationTests {
         // WORKSPACE_ACCESS_ADMIN_MEMBER can now create a new access entry
         String newAccessId = given()
                 .headers("Authorization", "Bearer " + generatePAT("WORKSPACE_ACCESS_ADMIN_MEMBER"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"access\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"name\": \"SOME_TEAM\",\n" +
-                        "      \"role\": \"read\"\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
+                .body("""
+                        {
+                          "data": {
+                            "type": "access",
+                            "attributes": {
+                              "name": "SOME_TEAM",
+                              "role": "read"
+                            }
+                          }
+                        }""")
                 .when()
                 .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId + "/access")
                 .then()

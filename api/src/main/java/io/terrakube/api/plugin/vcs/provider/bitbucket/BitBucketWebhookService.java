@@ -30,6 +30,8 @@ import java.util.*;
 @Slf4j
 public class BitBucketWebhookService extends WebhookServiceBase {
 
+    private static final String PATH_COMMENT = "comment";
+
     private final ObjectMapper objectMapper;
 
     @Value("${io.terrakube.hostname}")
@@ -193,7 +195,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         result.setEvent("issue_comment");
         try {
             JsonNode rootNode = objectMapper.readTree(jsonPayload);
-            String commentBody = rootNode.path("comment").path("content").path("raw").asText().trim();
+            String commentBody = rootNode.path(PATH_COMMENT).path("content").path("raw").asText().trim();
             String command = parseTerrakubeCommand(commentBody);
 
             if (command == null) {
@@ -204,8 +206,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             result.setPrComment(true);
             result.setCommentBody(commentBody);
             result.setCommentCommand(command);
-            result.setCommentId(rootNode.path("comment").path("id").asText());
-            result.setCreatedBy(rootNode.path("comment").path("user").path("display_name").asText());
+            result.setCommentId(rootNode.path(PATH_COMMENT).path("id").asText());
+            result.setCreatedBy(rootNode.path(PATH_COMMENT).path("user").path("display_name").asText());
 
             JsonNode pullRequestNode = rootNode.path("pullrequest");
             result.setPrNumber(pullRequestNode.path("id").asInt());

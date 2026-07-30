@@ -10,7 +10,6 @@ import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,14 +20,18 @@ public class TeamWorkspaceAdminManagesAccessField extends OperationCheck<Workspa
 
     public static final String RULE = "team workspace admin manages access field";
 
-    @Autowired
-    AuthenticatedUser authenticatedUser;
+    private final AuthenticatedUser authenticatedUser;
 
-    @Autowired
-    GroupService groupService;
+    private final GroupService groupService;
 
-    @Autowired
-    RbacService rbacService;
+    private final RbacService rbacService;
+
+    public TeamWorkspaceAdminManagesAccessField(AuthenticatedUser authenticatedUser, GroupService groupService,
+            RbacService rbacService) {
+        this.authenticatedUser = authenticatedUser;
+        this.groupService = groupService;
+        this.rbacService = rbacService;
+    }
 
     @Override
     public boolean ok(Workspace workspace, RequestScope requestScope, Optional<ChangeSpec> optional) {

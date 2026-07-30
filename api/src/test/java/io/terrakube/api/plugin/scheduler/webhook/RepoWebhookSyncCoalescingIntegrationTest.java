@@ -9,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
@@ -113,7 +112,7 @@ class RepoWebhookSyncCoalescingIntegrationTest {
             CountDownLatch start = new CountDownLatch(1);
             List<AtomicReference<Throwable>> failures = IntStream.range(0, concurrency)
                     .mapToObj(i -> new AtomicReference<Throwable>())
-                    .collect(Collectors.toList());
+                    .toList();
 
             for (int i = 0; i < concurrency; i++) {
                 AtomicReference<Throwable> failure = failures.get(i);
@@ -140,7 +139,7 @@ class RepoWebhookSyncCoalescingIntegrationTest {
 
             assertThat(executed.await(10, TimeUnit.SECONDS)).isTrue();
             // Give any incorrect duplicate execution a moment to show up before asserting.
-            Thread.sleep(500);
+            TimeUnit.MILLISECONDS.sleep(500);
             assertThat(executionCount.get())
                     .as("exactly one RepoWebhookSyncJob execution should occur for %s despite %d concurrent scheduleSync calls",
                             repositoryUrl, concurrency)

@@ -121,6 +121,11 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
 
     private void scheduleSync(Webhook elideEntity) {
         String normalizedUrl = RepoUrlNormalizer.normalize(elideEntity.getWorkspace().getSource());
+        if (normalizedUrl == null) {
+            log.warn("Skipping repo webhook sync for workspace {}: workspace has no source URL",
+                    elideEntity.getWorkspace().getId());
+            return;
+        }
         String workspaceId = elideEntity.getWorkspace().getId() == null ? null : elideEntity.getWorkspace().getId().toString();
         repoWebhookSyncScheduler.scheduleSync(normalizedUrl, workspaceId);
     }

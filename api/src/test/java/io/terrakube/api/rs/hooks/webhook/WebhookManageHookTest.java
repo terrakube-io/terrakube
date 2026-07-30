@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -71,7 +72,7 @@ class WebhookManageHookTest {
         subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
         verify(gitHubWebhookService).deleteWebhook(workspace, "v1-hook-id");
-        assertTrue(webhook.getRemoteHookId() == null);
+        assertNull(webhook.getRemoteHookId());
         verifyNoInteractions(repoWebhookSyncScheduler);
     }
 
