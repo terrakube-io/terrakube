@@ -1,12 +1,10 @@
 package io.terrakube.api.rs.hooks.webhook;
 
-import io.terrakube.api.plugin.vcs.RepoWebhookService;
+import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
-import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
-import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -38,13 +36,10 @@ class WebhookManageHookTest {
     WebhookService webhookService;
 
     @Mock
-    RepoWebhookService repoWebhookService;
-
-    @Mock
     GitHubWebhookService gitHubWebhookService;
 
     @Mock
-    RepoWebhookRepository repoWebhookRepository;
+    RepoWebhookSyncScheduler repoWebhookSyncScheduler;
 
     @InjectMocks
     WebhookManageHook subject;
@@ -57,8 +52,11 @@ class WebhookManageHookTest {
     }
 
     @Test
-    void execute_migrationV2_removesV1Webhook() {
-        // Setup
+    void execute_migrationV2_precommitRemovesV1WebhookButDoesNotSyncYet() {
+        // The v1-hook cleanup is workspace-specific and stays synchronous in
+        // PRECOMMIT; the shared-repo sync must NOT happen here, since the
+        // workspace's migrated Webhook row isn't durably committed yet for
+        // the (eventually async) job to see.
         Workspace workspace = new Workspace();
         workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
@@ -70,17 +68,108 @@ class WebhookManageHookTest {
         webhook.setMigratedV2(true);
         webhook.setRemoteHookId("v1-hook-id");
 
-        RepoWebhook repoWebhook = new RepoWebhook();
-        when(repoWebhookService.getOrCreateRepoWebhook(workspace)).thenReturn(repoWebhook);
-
-        // Execute
         subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
-        // Verify
-        verify(repoWebhookService).getOrCreateRepoWebhook(workspace);
-        verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
         verify(gitHubWebhookService).deleteWebhook(workspace, "v1-hook-id");
-        assert(webhook.getRemoteHookId() == null);
+        assertTrue(webhook.getRemoteHookId() == null);
+        verifyNoInteractions(repoWebhookSyncScheduler);
+    }
+
+    @Test
+    void execute_migrationV2_postcommitSchedulesSync() {
+        Workspace workspace = new Workspace();
+        workspace.setId(java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        workspace.setSource("https://github.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITHUB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://github.com/owner/repo", "11111111-1111-1111-1111-111111111111");
+    }
+
+    // Covers a real bug found via live UI testing: reverting the last
+    // migrated-v2 workspace on a shared repo left the shared RepoWebhook
+    // permanently orphaned — both the DB row and the live GitHub webhook —
+    // because POSTCOMMIT only scheduled a sync when the entity was *still*
+    // migratedV2 after the update. A revert (migratedV2 true -> false) needs
+    // the same sync scheduled, so the job can notice this workspace no
+    // longer shares the repo and clean up if it was the last one.
+    @Test
+    void execute_revertFromMigratedV2_postcommitStillSchedulesSync() {
+        Workspace workspace = new Workspace();
+        workspace.setId(java.util.UUID.fromString("33333333-3333-3333-3333-333333333333"));
+        workspace.setSource("https://github.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITHUB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(false);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://github.com/owner/repo", "33333333-3333-3333-3333-333333333333");
+    }
+
+    @Test
+    void execute_nonGitHub_postcommitDoesNotScheduleSync() {
+        Workspace workspace = new Workspace();
+        workspace.setSource("https://gitlab.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITLAB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(false);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verifyNoInteractions(repoWebhookSyncScheduler);
+    }
+
+    @Test
+    void execute_delete_migratedV2_postcommitSchedulesSync() {
+        Workspace workspace = new Workspace();
+        workspace.setId(java.util.UUID.fromString("22222222-2222-2222-2222-222222222222"));
+        workspace.setSource("https://github.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITHUB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+
+        subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://github.com/owner/repo", "22222222-2222-2222-2222-222222222222");
+        verify(webhookService, never()).deleteWorkspaceWebhook(any());
+    }
+
+    @Test
+    void execute_delete_notMigratedV2_deletesWorkspaceWebhookDirectly() {
+        Workspace workspace = new Workspace();
+        workspace.setSource("https://github.com/owner/repo");
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(false);
+
+        subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(webhookService).deleteWorkspaceWebhook(webhook);
+        verifyNoInteractions(repoWebhookSyncScheduler);
     }
 
     @Test

@@ -19,7 +19,7 @@ import {
 } from "antd";
 import { useEffect, useState } from "react";
 import { v7 as uuid } from "uuid";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader, renderVCSLogo } from "../Workspaces";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
@@ -150,14 +150,18 @@ export const WorkspaceWebhook = ({
     const newWebhookEvents = webhookEvents.filter((item) => item.key !== record.key);
     if (record.created) {
       axiosInstance
-        .delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events/${record.id}`)
-        .then((response) => {
-          if (response.status != 204) {
-            message.error("Failed to delete webhook event");
-            return;
-          }
+        // Explicitly drop Content-Type: Elide's Spring routing maps DELETE
+        // requests carrying "application/vnd.api+json" to its relationship-delete
+        // handler, which then requires a JSON:API body this call doesn't send.
+        .delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events/${record.id}`, {
+          headers: { "Content-Type": undefined },
+        })
+        .then(() => {
           message.success("Webhook event deleted successfully");
           setRecordIndex(recordIndex - 1);
+        })
+        .catch((error) => {
+          message.error(getErrorMessage(error) || "Failed to delete webhook event");
         });
     }
     if (newWebhookEvents.length == 0) {
@@ -169,18 +173,24 @@ export const WorkspaceWebhook = ({
     setWaiting(true);
     if (!webhookEnabled) {
       axiosInstance
-        .delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`)
-        .then((response) => {
-          if (response.status != 204) {
-            message.error("Failed to disable webhook");
-            setWaiting(false);
-            return;
-          }
+        // Explicitly drop Content-Type: Elide's Spring routing maps DELETE
+        // requests carrying "application/vnd.api+json" to its relationship-delete
+        // handler instead of the resource-delete one, which then rejects this
+        // call outright since it isn't a relationship removal.
+        .delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`, {
+          headers: { "Content-Type": undefined },
+        })
+        .then(() => {
+          message.success("Webhook disabled successfully");
+          setWebhookEvents([]);
+          onWorkspaceUpdate?.();
+        })
+        .catch((error) => {
+          message.error(getErrorMessage(error) || "Failed to disable webhook");
+        })
+        .finally(() => {
+          setWaiting(false);
         });
-      message.success("Webhook disabled successfully");
-      setWebhookEvents([]);
-      setWaiting(false);
-      onWorkspaceUpdate?.();
       return;
     }
     if (webhookEnabled && webhookEvents.length === 0) {
