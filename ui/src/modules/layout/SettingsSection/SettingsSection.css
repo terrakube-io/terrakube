@@ -1,0 +1,24 @@
+.settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-section-description {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.settings-section-content {
+  width: 100%;
+}
+
+.settings-section-danger {
+  border-color: #ff4d4f;
+}
+
+.settings-section-danger .ant-card-head {
+  border-bottom-color: rgba(255, 77, 79, 0.3);
+}
+
+.settings-section-danger .ant-card-head-title .ant-typography {
+  color: #ff4d4f;
+}

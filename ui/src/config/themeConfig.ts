@@ -1,6 +1,6 @@
 import { ThemeConfig, theme } from "antd";
 
-export type ColorSchemeOption = "default" | "terrakube";
+export type ColorSchemeOption = "blue" | "terrakube";
 export type ThemeMode = "light" | "dark";
 
 const darkThemeTokens = {
@@ -32,7 +32,8 @@ const darkThemeTokens = {
 };
 
 export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeMode): ThemeConfig => {
-  const colorPrimary = colorScheme === "default" ? "#1890ff" : "#722ED1";
+  const colorPrimary = colorScheme === "blue" ? "#1890ff" : "#722ED1";
+  const isTerrakube = colorScheme === "terrakube";
 
   if (typeof document !== "undefined" && document.documentElement) {
     document.documentElement.setAttribute("data-theme", themeMode);
@@ -40,7 +41,6 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
   }
 
   if (themeMode === "dark") {
-    const isTerrakube = colorScheme === "terrakube";
     return {
       algorithm: theme.darkAlgorithm,
       token: {
@@ -54,14 +54,14 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
           headerBg: "#161b22",
           bodyBg: "#0d1117",
           footerBg: "#0d1117",
+          siderBg: "#161b22",
         },
         Menu: {
           darkItemBg: "#161b22",
           darkPopupBg: "#161b22",
-          darkItemSelectedBg: "#21262d",
-          darkItemHoverBg: "#21262d",
-          itemBg: "#161b22",
-          popupBg: "#161b22",
+          darkItemSelectedBg: isTerrakube ? "#2d1548" : "#0d2942",
+          darkItemHoverBg: isTerrakube ? "#2a1f3d" : "#16232f",
+          darkSubMenuItemBg: "#161b22",
         },
         Card: {
           colorBgContainer: "#161b22",
@@ -158,18 +158,21 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
     },
     components: {
       Menu: {
-        darkItemBg: "#1e2837",
-        darkPopupBg: "#1e2837",
-        darkSubMenuItemBg: "#1e2837",
+        darkItemBg: "#161b22",
+        darkPopupBg: "#161b22",
+        darkSubMenuItemBg: "#161b22",
+        darkItemSelectedBg: isTerrakube ? "#2d1548" : "#0d2942",
+        darkItemHoverBg: isTerrakube ? "#2a1f3d" : "#16232f",
       },
       Layout: {
         headerBg: "#1e2837",
+        siderBg: "#161b22",
       },
     },
   };
 };
 
-export const defaultColorScheme: ColorSchemeOption = "default";
+export const defaultColorScheme: ColorSchemeOption = "terrakube";
 export const defaultThemeMode: ThemeMode = "light";
 
 // Export a default theme configuration using the default color scheme and theme mode

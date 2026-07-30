@@ -1,11 +1,15 @@
 package io.terrakube.api.rs.hooks.workspace;
 
+import java.util.List;
 import java.util.Optional;
+
+import org.apache.hc.core5.http.HttpStatus;
 
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.WebhookRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -24,6 +28,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
     WebhookService webhookService;
     WebhookRepository webhookRepository;
     GlobalVarRepository globalVarRepository;
+    WorkspaceRepository workspaceRepository;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -39,6 +44,15 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
             case CREATE:
                 switch (transactionPhase) {
                     case PRECOMMIT:
+                        List<Workspace> matches = workspaceRepository.findAllByOrganizationNameAndName(
+                                workspace.getOrganization().getName(), workspace.getName());
+                        boolean conflict = matches.stream()
+                                .anyMatch(match -> !match.getId().equals(workspace.getId()));
+                        if (conflict) {
+                            throw new WorkspaceManagementException(HttpStatus.SC_CONFLICT,
+                                    "A workspace named " + workspace.getName() + " already exists in this organization.");
+                        }
+
                         if (workspace.getExecutionMode() == null) {
                             log.debug("setting default execution mode");
                             workspace.setExecutionMode(workspace.getOrganization().getExecutionMode());

@@ -222,7 +222,9 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
 
   return (
     <div>
-      <h2>Schedules</h2>
+      <Typography.Title level={2} style={{ margin: 0 }}>
+        Schedules
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           Schedules allows you to automatically trigger a Job in your workspace on a scheduled basis.
