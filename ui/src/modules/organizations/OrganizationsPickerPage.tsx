@@ -1,4 +1,4 @@
-import { Button, Empty, Flex } from "antd";
+import { Button, Empty, Flex, Space } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -7,7 +7,10 @@ import organizationService from "@/modules/organizations/organizationService";
 import { OrganizationModel } from "./types";
 import { ErrorInformation } from "@/modules/api/types";
 import OrganizationGrid from "./components/OrganizationGrid/OrganizationGrid";
+import OrganizationTable from "./components/OrganizationTable/OrganizationTable";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
 
 export default function OrganizationsPickerPage() {
   const [organizations, setOrganizations] = useState<OrganizationModel[]>([]);
@@ -17,6 +20,7 @@ export default function OrganizationsPickerPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
+  const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
 
   const execute = async () => {
     setLoading(true);
@@ -29,6 +33,8 @@ export default function OrganizationsPickerPage() {
           description: org.description,
           executionMode: org.executionMode,
           icon: org.icon,
+          workspaceCount: org.workspaceCount,
+          workspaceStatusCounts: org.workspaceStatusCounts,
         }))
       );
     } catch (err: any) {
@@ -91,9 +97,12 @@ export default function OrganizationsPickerPage() {
       actions={
         !loading &&
         organizations.length > 0 && (
-          <Button type="primary" onClick={() => navigate("/organizations/create")}>
-            <PlusOutlined /> Create organization
-          </Button>
+          <Space>
+            <ListViewToggle value={listViewMode} onChange={setListViewMode} />
+            <Button type="primary" onClick={() => navigate("/organizations/create")}>
+              <PlusOutlined /> Create organization
+            </Button>
+          </Space>
         )
       }
     >
@@ -110,7 +119,12 @@ export default function OrganizationsPickerPage() {
           </Empty>
         </Flex>
       )}
-      {!loading && organizations.length > 0 && <OrganizationGrid organizations={organizations} />}
+      {!loading && organizations.length > 0 && listViewMode === "compact" && (
+        <OrganizationTable organizations={organizations} />
+      )}
+      {!loading && organizations.length > 0 && listViewMode === "cards" && (
+        <OrganizationGrid organizations={organizations} />
+      )}
     </PageWrapper>
   );
 }

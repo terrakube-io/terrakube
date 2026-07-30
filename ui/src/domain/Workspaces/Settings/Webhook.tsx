@@ -22,6 +22,7 @@ import { v7 as uuid } from "uuid";
 import axiosInstance from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader, renderVCSLogo } from "../Workspaces";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const isValidRegexList = (str: string | undefined) => {
   if (!str) {
@@ -63,7 +64,13 @@ type Props = {
   onWorkspaceUpdate?: () => void;
 };
 
-export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
+export const WorkspaceWebhook = ({
+  workspace,
+  vcsProvider,
+  orgTemplates,
+  manageWorkspace,
+  onWorkspaceUpdate,
+}: Props) => {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [waiting, setWaiting] = useState(true);
@@ -311,17 +318,21 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     if (!webhookId) return;
     setWaiting(true);
     axiosInstance
-      .patch(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`, {
-        data: {
-          type: "webhook",
-          id: webhookId,
-          attributes: {
-            migratedV2: true,
+      .patch(
+        `organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`,
+        {
+          data: {
+            type: "webhook",
+            id: webhookId,
+            attributes: {
+              migratedV2: true,
+            },
           },
         },
-      }, {
-        headers: { "Content-Type": "application/vnd.api+json" },
-      })
+        {
+          headers: { "Content-Type": "application/vnd.api+json" },
+        }
+      )
       .then((response) => {
         if (response.status === 200 || response.status === 204) {
           setMigratedV2(true);
@@ -341,17 +352,21 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
     if (!webhookId) return;
     setWaiting(true);
     axiosInstance
-      .patch(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`, {
-        data: {
-          type: "webhook",
-          id: webhookId,
-          attributes: {
-            migratedV2: false,
+      .patch(
+        `organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`,
+        {
+          data: {
+            type: "webhook",
+            id: webhookId,
+            attributes: {
+              migratedV2: false,
+            },
           },
         },
-      }, {
-        headers: { "Content-Type": "application/vnd.api+json" },
-      })
+        {
+          headers: { "Content-Type": "application/vnd.api+json" },
+        }
+      )
       .then((response) => {
         if (response.status === 200 || response.status === 204) {
           setMigratedV2(false);
@@ -550,7 +565,9 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
 
   return (
     <div>
-      <h1>Webhook</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Webhook
+      </Typography.Title>
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
         Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works
         with VCS flow workspace.
@@ -559,92 +576,96 @@ export const WorkspaceWebhook = ({ workspace, vcsProvider, orgTemplates, manageW
         Use <b>Pattern</b> for simple wildcards like <code>terraform/*</code> or <code>modules/**</code>. Use{" "}
         <b>Regex</b> when you need full regular expression matching. Branch and release matching always use regex.
       </Typography.Text>
-      <h2>VCS Webhook Configuration</h2>
-      <Spin spinning={waiting}>
-        <Form onFinish={onFinish}>
-          <Form.Item
-            label="Enable VCS Webhook?"
-            hidden={vcsProvider === undefined}
-            tooltip={{
-              title: "Whether to enable webhook on the VCS provider",
-              icon: <InfoCircleOutlined />,
-            }}
-          >
-            <Switch onChange={handleWebhookClick} checked={webhookEnabled} disabled={!manageWorkspace} />
-          </Form.Item>
-          <Row hidden={!webhookEnabled}>
-            <Col xs={24} md={12}>
-              <Form.Item label="ID" hidden={!webhookEnabled}>
-                {webhookId}
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item hidden={!webhookEnabled} label={renderVCSLogo(vcsProvider!)}>
-                {migratedV2 ? <Typography.Text type="success">Shared</Typography.Text> : remoteHookId}
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row hidden={!webhookEnabled || vcsProvider !== "GITHUB"}>
-            <Col span={24} style={{ marginBottom: 16 }}>
-              {migratedV2 ? (
-                <Space>
-                  <Typography.Text type="success">Shared repo webhook active</Typography.Text>
-                  <Popconfirm
-                    title="Revert to per-workspace webhook?"
-                    description="This will create a new per-workspace webhook on your next save."
-                    onConfirm={handleRevertV2}
-                    okText="Yes"
-                    cancelText="No"
-                    disabled={!manageWorkspace}
-                  >
-                    <Button type="default" size="small" disabled={!manageWorkspace}>
-                      Revert
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              ) : (
-                <Space>
-                  <Typography.Text type="secondary">
-                    Consolidate webhooks across workspaces sharing this repository
-                  </Typography.Text>
-                  <Popconfirm
-                    title="Migrate to shared webhook? (Experimental)"
-                    description="This will replace the per-workspace webhook with a single shared webhook for this repository."
-                    onConfirm={handleMigrateV2}
-                    okText="Yes"
-                    cancelText="No"
-                    disabled={!manageWorkspace}
-                  >
-                    <Button type="default" size="small" disabled={!manageWorkspace}>
-                      Migrate to Shared Webhook
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              )}
-            </Col>
-          </Row>
-          <Row hidden={!webhookEnabled}>
-            <Col span={24}>
-              <Table
-                tableLayout="fixed"
-                columns={columns}
-                dataSource={webhookEvents}
-                pagination={false}
-                size={isMobile ? "small" : "middle"}
-                scroll={{ x: "max-content" }}
-                style={{ width: "100%" }}
-              />
-            </Col>
-          </Row>
-          <Form.Item>
-            <Flex justify="flex-start" align="flex-start">
-              <Button type="primary" htmlType="submit" disabled={!manageWorkspace} block={isMobile}>
-                Save webhooks
-              </Button>
-            </Flex>
-          </Form.Item>
-        </Form>
-      </Spin>
+      <Typography.Title level={2} style={{ margin: 0 }}>
+        VCS Webhook Configuration
+      </Typography.Title>
+      <SettingsSection maxWidth="100%">
+        <Spin spinning={waiting}>
+          <Form onFinish={onFinish}>
+            <Form.Item
+              label="Enable VCS Webhook?"
+              hidden={vcsProvider === undefined}
+              tooltip={{
+                title: "Whether to enable webhook on the VCS provider",
+                icon: <InfoCircleOutlined />,
+              }}
+            >
+              <Switch onChange={handleWebhookClick} checked={webhookEnabled} disabled={!manageWorkspace} />
+            </Form.Item>
+            <Row hidden={!webhookEnabled}>
+              <Col xs={24} md={12}>
+                <Form.Item label="ID" hidden={!webhookEnabled}>
+                  {webhookId}
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item hidden={!webhookEnabled} label={renderVCSLogo(vcsProvider!)}>
+                  {migratedV2 ? <Typography.Text type="success">Shared</Typography.Text> : remoteHookId}
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row hidden={!webhookEnabled || vcsProvider !== "GITHUB"}>
+              <Col span={24} style={{ marginBottom: 16 }}>
+                {migratedV2 ? (
+                  <Space>
+                    <Typography.Text type="success">Shared repo webhook active</Typography.Text>
+                    <Popconfirm
+                      title="Revert to per-workspace webhook?"
+                      description="This will create a new per-workspace webhook on your next save."
+                      onConfirm={handleRevertV2}
+                      okText="Yes"
+                      cancelText="No"
+                      disabled={!manageWorkspace}
+                    >
+                      <Button type="default" size="small" disabled={!manageWorkspace}>
+                        Revert
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                ) : (
+                  <Space>
+                    <Typography.Text type="secondary">
+                      Consolidate webhooks across workspaces sharing this repository
+                    </Typography.Text>
+                    <Popconfirm
+                      title="Migrate to shared webhook? (Experimental)"
+                      description="This will replace the per-workspace webhook with a single shared webhook for this repository."
+                      onConfirm={handleMigrateV2}
+                      okText="Yes"
+                      cancelText="No"
+                      disabled={!manageWorkspace}
+                    >
+                      <Button type="default" size="small" disabled={!manageWorkspace}>
+                        Migrate to Shared Webhook
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                )}
+              </Col>
+            </Row>
+            <Row hidden={!webhookEnabled}>
+              <Col span={24}>
+                <Table
+                  tableLayout="fixed"
+                  columns={columns}
+                  dataSource={webhookEvents}
+                  pagination={false}
+                  size={isMobile ? "small" : "middle"}
+                  scroll={{ x: "max-content" }}
+                  style={{ width: "100%" }}
+                />
+              </Col>
+            </Row>
+            <Form.Item>
+              <Flex justify="flex-start" align="flex-start">
+                <Button type="primary" htmlType="submit" disabled={!manageWorkspace} block={isMobile}>
+                  Save webhooks
+                </Button>
+              </Flex>
+            </Form.Item>
+          </Form>
+        </Spin>
+      </SettingsSection>
     </div>
   );
 };

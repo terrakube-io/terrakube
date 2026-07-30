@@ -2,6 +2,7 @@ import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "
 import {
   Alert,
   Button,
+  Collapse,
   Form,
   Input,
   message,
@@ -20,6 +21,7 @@ import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const VARIABLES_COLUMS = (
   onEdit: (variable: FlatVariable) => void,
@@ -29,16 +31,18 @@ const VARIABLES_COLUMS = (
   {
     title: "Key",
     dataIndex: "key",
-    width: "30%",
+    width: "35%",
     key: "key",
     sorter: (a: FlatVariable, b: FlatVariable) => a.key.localeCompare(b.key),
     defaultSortOrder: "ascend" as const,
     render: (_: string, record: FlatVariable) => {
       return (
-        <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>} {record.incomplete && <Tag color="orange">Incomplete</Tag>}
-        </div>
+        <Space>
+          {record.key}
+          {record.hcl && <Tag color="blue">HCL</Tag>}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
+          {record.incomplete && <Tag color="red">Incomplete</Tag>}
+        </Space>
       );
     },
   },
@@ -73,16 +77,6 @@ const VARIABLES_COLUMS = (
           </div>
         </Tooltip>
       );
-    },
-  },
-  {
-    title: "Category",
-    dataIndex: "category",
-    key: "category",
-    width: "15%",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
-    render: (_: string, record: FlatVariable) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
     },
   },
   {
@@ -131,8 +125,8 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     render: (_: string, record: any) => {
       return (
         <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
+          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag color="blue">HCL</Tag>}{" "}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
         </div>
       );
     },
@@ -199,8 +193,8 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     render: (_: string, record: FlatVariable) => {
       return (
         <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
+          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag color="blue">HCL</Tag>}{" "}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
         </div>
       );
     },
@@ -385,7 +379,9 @@ export const Variables = ({
 
   return (
     <div>
-      <h1>Variables</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Variables
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           <p>
@@ -407,59 +403,75 @@ export const Variables = ({
           description="Complete or delete the highlighted variables before starting a new run."
         />
       )}
-      <h2>Workspace variables ({workspaceVariables.length})</h2>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          These Terraform variables are set using a terraform.tfvars file. To use interpolation or set a non-string
-          value for a variable, click its HCL checkbox.
-        </Typography.Text>
-      </div>
 
-      <Table
-        dataSource={workspaceVariables}
-        columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
-        rowKey="key"
-      />
-      <Button
-        type="primary"
-        htmlType="button"
-        onClick={() => {
-          setMode("create");
-          form.resetFields();
-          setCategory("TERRAFORM"); // Default to Terraform
-          setVisible(true);
-        }}
-        disabled={!manageWorkspace}
-        icon={<PlusOutlined />}
+      <SettingsSection
+        title={`Workspace variables (${workspaceVariables.length})`}
+        description="These Terraform variables are set using a terraform.tfvars file. To use interpolation or set a non-string value for a variable, click its HCL checkbox."
+        maxWidth="100%"
       >
-        Add variable
-      </Button>
+        <Collapse
+          defaultActiveKey={["TERRAFORM", "ENV"]}
+          style={{ marginBottom: 16 }}
+          items={[
+            {
+              key: "TERRAFORM",
+              label: `Terraform Variables (${vars.length})`,
+              children: (
+                <Table
+                  dataSource={vars}
+                  columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
+                  rowKey="key"
+                  pagination={false}
+                  locale={{ emptyText: "No terraform variables defined yet." }}
+                />
+              ),
+            },
+            {
+              key: "ENV",
+              label: `Environment Variables (${env.length})`,
+              children: (
+                <Table
+                  dataSource={env}
+                  columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
+                  rowKey="key"
+                  pagination={false}
+                  locale={{ emptyText: "No environment variables defined yet." }}
+                />
+              ),
+            },
+          ]}
+        />
+        <Button
+          type="primary"
+          htmlType="button"
+          onClick={() => {
+            setMode("create");
+            form.resetFields();
+            setCategory("TERRAFORM"); // Default to Terraform
+            setVisible(true);
+          }}
+          disabled={!manageWorkspace}
+          icon={<PlusOutlined />}
+        >
+          Add variable
+        </Button>
+      </SettingsSection>
 
-      <div className="envVariables">
-        <h2>Collection Variables ({collectionVariables.length})</h2>
-        <div>
-          <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the collection used by this workspace, these values are injected
-              inside the Terrakube remote jobs.
-            </p>
-          </Typography.Text>
-        </div>
+      <SettingsSection
+        title={`Collection Variables (${collectionVariables.length})`}
+        description="The following values are taken from the collection used by this workspace, these values are injected inside the Terrakube remote jobs."
+        maxWidth="100%"
+      >
         <Table dataSource={collectionVariables} columns={COLLECTION_VARIABLES_COLUMNS()} rowKey="key" />
-      </div>
+      </SettingsSection>
 
-      <div className="envVariables">
-        <h2>Global Variables ({globalVars.length})</h2>
-        <div>
-          <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the organization global variables, these values are injected inside
-              the Terrakube remote jobs.
-            </p>
-          </Typography.Text>
-        </div>
+      <SettingsSection
+        title={`Global Variables (${globalVars.length})`}
+        description="The following values are taken from the organization global variables, these values are injected inside the Terrakube remote jobs."
+        maxWidth="100%"
+      >
         <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
-      </div>
+      </SettingsSection>
 
       <Modal
         width="600px"

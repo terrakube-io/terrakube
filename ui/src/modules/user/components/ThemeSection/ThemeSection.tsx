@@ -27,14 +27,14 @@ export const ThemeSection = () => {
 
   const colorOptions = [
     {
-      value: "default",
-      color: "#1890ff",
-      label: "Default (The classic Terrakube theme)",
-    },
-    {
       value: "terrakube",
       color: "#722ED1",
-      label: "Terrakube (Uses the main Terrakube logo colors)",
+      label: "Terrakube (Default — uses the main Terrakube logo colors)",
+    },
+    {
+      value: "blue",
+      color: "#1890ff",
+      label: "Blue (The classic Terrakube theme)",
     },
   ];
 

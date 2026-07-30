@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
 
@@ -618,11 +619,11 @@ export const CreateEditCollection = ({
     <div className="setting">
       <Spin spinning={loading}>
         <div style={{ marginBottom: "20px" }}>
-          <h1>
+          <Typography.Title level={1} style={{ margin: 0 }}>
             {mode === "create"
               ? "Create a new organization variable collection"
               : "Edit organization variable collection"}
-          </h1>
+          </Typography.Title>
         </div>
 
         <div style={{ marginBottom: "20px" }}>
@@ -631,8 +632,6 @@ export const CreateEditCollection = ({
             organization.
           </Typography.Text>
         </div>
-
-        <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "20px" }}>Configure settings</h2>
 
         <Form
           form={collectionForm}
@@ -644,32 +643,30 @@ export const CreateEditCollection = ({
             scope: "specific",
           }}
         >
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: "Please enter a name for the collection" }]}
-          >
-            <Input placeholder="Collection name" />
-          </Form.Item>
+          <SettingsSection title="Configure settings">
+            <Form.Item
+              name="name"
+              label="Name"
+              rules={[{ required: true, message: "Please enter a name for the collection" }]}
+            >
+              <Input placeholder="Collection name" />
+            </Form.Item>
 
-          <Form.Item name="description" label="Description (Optional)">
-            <Input.TextArea rows={3} placeholder="Describe the purpose of this collection" />
-          </Form.Item>
+            <Form.Item name="description" label="Description (Optional)">
+              <Input.TextArea rows={3} placeholder="Describe the purpose of this collection" />
+            </Form.Item>
 
-          <Form.Item
-            name="priority"
-            label="Priority"
-            rules={[{ required: true, message: "Please enter a priority" }]}
-            help="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
-          >
-            <Input type="number" min={1} max={100} defaultValue={10} />
-          </Form.Item>
+            <Form.Item
+              name="priority"
+              label="Priority"
+              rules={[{ required: true, message: "Please enter a priority" }]}
+              help="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
+            >
+              <Input type="number" min={1} max={100} defaultValue={10} />
+            </Form.Item>
+          </SettingsSection>
 
-          <div style={{ marginTop: "50px", marginBottom: "10px" }}>
-            <h2 style={{ fontSize: "20px", fontWeight: "bold" }}>Variable collection scope</h2>
-          </div>
-
-          <div style={{ marginBottom: "30px" }}>
+          <SettingsSection title="Variable collection scope">
             <div style={{ marginBottom: "10px" }}>
               <Typography.Text strong>Apply to workspaces</Typography.Text>
             </div>
@@ -690,19 +687,18 @@ export const CreateEditCollection = ({
                 </Select.Option>
               ))}
             </Select>
-          </div>
+          </SettingsSection>
 
-          <div style={{ marginTop: "50px", marginBottom: "10px" }}>
-            <h2 style={{ fontSize: "20px", fontWeight: "bold" }}>Variables</h2>
-          </div>
+          <SettingsSection title="Variables" maxWidth="100%">
+            {mode === "create" ? (
+              <div style={{ marginBottom: "15px" }}>
+                <Typography.Text>Create the collection first. Then you can add variables to it.</Typography.Text>
+              </div>
+            ) : (
+              variableListing
+            )}
+          </SettingsSection>
 
-          {mode === "create" ? (
-            <div style={{ marginBottom: "15px" }}>
-              <Typography.Text>Create the collection first. Then you can add variables to it.</Typography.Text>
-            </div>
-          ) : (
-            variableListing
-          )}
           <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
             <Space>
               <Button onClick={handleCancel}>Cancel</Button>

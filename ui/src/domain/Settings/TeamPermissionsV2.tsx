@@ -8,6 +8,7 @@ import {
   CodeOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 type TeamPermissionsV2Props = {
   managePermissions: boolean;
@@ -189,8 +190,10 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
   }, [role, form]);
 
   return (
-    <div>
-      <h2 style={{ marginBottom: 4 }}>Role</h2>
+    <SettingsSection maxWidth="100%">
+      <Typography.Title level={2} style={{ marginBottom: 4, marginTop: 0 }}>
+        Role
+      </Typography.Title>
       <Typography.Text type="secondary">
         Choose a preset role or select Custom for fine-grained control.
       </Typography.Text>
@@ -234,14 +237,14 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
 
       <Divider />
 
-      <h2 style={{ marginBottom: 4 }}>
+      <Typography.Title level={2} style={{ marginBottom: 4, marginTop: 0 }}>
         Permissions
         {role !== "custom" && (
           <Typography.Text type="secondary" style={{ fontSize: 14, marginLeft: 12, fontWeight: "normal" }}>
             Determined by the <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role
           </Typography.Text>
         )}
-      </h2>
+      </Typography.Title>
 
       {role === "custom" && (
         <Alert
@@ -301,6 +304,6 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
           </div>
         </div>
       ))}
-    </div>
+    </SettingsSection>
   );
 };

@@ -1,30 +1,10 @@
 import { DownOutlined, QuestionCircleOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { Dropdown } from "antd";
+import { useState } from "react";
 import "./HelpMenu.css";
 
 export const HelpMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
 
   const helpItems = [
     {
@@ -45,13 +25,12 @@ export const HelpMenu = () => {
   ];
 
   return (
-    <div className="help-menu-container" ref={containerRef}>
-      <button className="help-menu-button" onClick={handleToggle} aria-expanded={isOpen} aria-label="help menu">
-        <QuestionCircleOutlined className="help-menu-icon" />
-        <DownOutlined className="help-menu-arrow" />
-      </button>
-
-      {isOpen && (
+    <Dropdown
+      trigger={["click"]}
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      placement="bottomRight"
+      popupRender={() => (
         <div className="help-menu-dropdown">
           <div className="help-menu-header">Help & Support</div>
           {helpItems.map((item) => (
@@ -68,7 +47,12 @@ export const HelpMenu = () => {
           ))}
         </div>
       )}
-    </div>
+    >
+      <button type="button" className="help-menu-button" aria-expanded={isOpen} aria-label="help menu">
+        <QuestionCircleOutlined className="help-menu-icon" />
+        <DownOutlined className="help-menu-arrow" />
+      </button>
+    </Dropdown>
   );
 };
 

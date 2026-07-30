@@ -888,7 +888,9 @@ export const ImportWorkspace = () => {
 
       <div className="site-layout-content" style={{ background: colorBgContainer }}>
         <div className="importWorkspace">
-          <h2>Import Workspaces</h2>
+          <Typography.Title level={2} style={{ margin: 0 }}>
+            Import Workspaces
+          </Typography.Title>
           <div className="App-text">
             Easily transfer workspaces from Terraform Cloud and Terraform Enterprise to Terrakube.
             <Alert
@@ -903,7 +905,9 @@ export const ImportWorkspace = () => {
             <Steps direction="horizontal" size="small" current={current} onChange={handleChange} items={stepItems} />
             {current == 0 && (
               <Space className="chooseType" direction="vertical">
-                <h3>Select a Platform for Workspace Import </h3>
+                <Typography.Title level={3} style={{ margin: 0 }}>
+                  Select a Platform for Workspace Import{" "}
+                </Typography.Title>
                 <List
                   grid={{ gutter: 1, column: 4 }}
                   dataSource={platforms}
@@ -937,7 +941,9 @@ export const ImportWorkspace = () => {
 
             {current === 1 && (
               <Space className="chooseType" direction="vertical">
-                <h3>Choose your workflow </h3>
+                <Typography.Title level={3} style={{ margin: 0 }}>
+                  Choose your workflow{" "}
+                </Typography.Title>
                 <Card hoverable onClick={handleClick}>
                   <IconContext.Provider value={{ size: "1.3em" }}>
                     <BiBookBookmark />
@@ -972,7 +978,9 @@ export const ImportWorkspace = () => {
 
             {current === 2 && versionControlFlow && (
               <Space className="chooseType" direction="vertical">
-                <h3>Connect to a version control provider</h3>
+                <Typography.Title level={3} style={{ margin: 0 }}>
+                  Connect to a version control provider
+                </Typography.Title>
                 <div className="workflowDescription2 App-text">
                   Choose the version control provider hosting your Terraform configurations for workspace import. For
                   workspaces across different VCS providers, please run the importer separately for each.
@@ -1057,7 +1065,9 @@ export const ImportWorkspace = () => {
               }}
             >
               <Space hidden={step3Hidden} className="chooseType" direction="vertical">
-                <h3>Connect to Platform</h3>
+                <Typography.Title level={3} style={{ margin: 0 }}>
+                  Connect to Platform
+                </Typography.Title>
                 <div className="workflowDescription2 App-text">
                   Provide the API token to connect with Terraform Cloud API. Terrakube will use this token exclusively
                   for the duration of the migration process and will not store it. For guidance on generating an API
@@ -1095,7 +1105,9 @@ export const ImportWorkspace = () => {
             </Form>
 
             <Space className="chooseType" hidden={workspacesHidden} direction="vertical">
-              <h3>Import Workspaces</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Import Workspaces
+              </Typography.Title>
               <div className="workflowDescription2 App-text">
                 Select one or multiple workspaces that you wish to import. After making your selection, click the
                 &apos;Import&apos; button to initiate the import process. The chosen workspaces will be imported into
@@ -1415,7 +1427,9 @@ export const ImportWorkspace = () => {
             </Space>
           </Modal>
           <Space hidden={listHidden} direction="vertical">
-            <h3>Importing Workspaces</h3>
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Importing Workspaces
+            </Typography.Title>
             <div className="workflowDescription2 App-text">
               Import of the selected workspaces is underway. You can monitor the progress for each workspace in the
               section below.
