@@ -289,12 +289,12 @@ export const Variables = ({
       data: {
         type: "variable",
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
-          category: category,
+          category: values.category,
         },
       },
     };
@@ -322,12 +322,12 @@ export const Variables = ({
         type: "variable",
         id: variableId,
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
-          category: category,
+          category: values.category,
         },
       },
     };
