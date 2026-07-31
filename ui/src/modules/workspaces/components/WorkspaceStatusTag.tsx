@@ -16,6 +16,8 @@ export default function WorkspaceStatusTag({ status }: Props) {
         return "No Changes";
       case JobStatus.Running:
         return JobStatus.Running;
+      case JobStatus.Queue:
+        return "Queued";
       case JobStatus.WaitingApproval:
         return "Waiting Approval";
       case "NeverExecuted":

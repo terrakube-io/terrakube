@@ -5,6 +5,7 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 import { JobStatus } from "@/domain/types";
 import { WorkspaceStatusFilter } from "./workspaceFilter";
@@ -27,6 +28,7 @@ export const WORKSPACE_STATUS_PALETTE: WorkspaceStatusPaletteEntry[] = [
     color: "#fa8f37",
   },
   { value: JobStatus.Failed, label: "Failed", icon: <StopOutlined />, color: "#FB0136" },
+  { value: JobStatus.Queue, label: "Queued", icon: <ClockCircleOutlined />, color: "#8c8c8c" },
   { value: JobStatus.Running, label: "Running", icon: <SyncOutlined />, color: "#108ee9" },
   { value: JobStatus.Completed, label: "Completed", icon: <CheckCircleOutlined />, color: "#2eb039" },
   { value: WorkspaceStatusFilter.NeverExecuted, label: "Never Executed", icon: <InfoCircleOutlined /> },
