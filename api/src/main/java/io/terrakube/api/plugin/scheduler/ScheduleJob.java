@@ -40,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
@@ -195,11 +196,15 @@ public class ScheduleJob implements org.quartz.Job {
     private void deleteOldJobs(Job job) {
         AtomicInteger keepHistory = new AtomicInteger();
         keepHistory.set(0);
+        AtomicBoolean softDelete = new AtomicBoolean(false);
 
         Optional<List<Globalvar>> globalsList = Optional.ofNullable(globalVarRepository.findByOrganization(job.getOrganization()));
         globalsList.ifPresent(variableList -> variableList.forEach(variable -> {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
+            }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
             }
         }));
 
@@ -208,10 +213,13 @@ public class ScheduleJob implements org.quartz.Job {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
             }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
+            }
         }));
 
         if (keepHistory.get() > 0) {
-            log.info("Keeping history of {} jobs", keepHistory);
+            log.info("Keeping history of {} jobs (softDelete={})", keepHistory, softDelete.get());
             Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
                     job.getWorkspace(),
                     Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
@@ -221,9 +229,15 @@ public class ScheduleJob implements org.quartz.Job {
                 for (int i = 0; i < previousJobs.get().size(); i++) {
                     if (i >= keepHistory.get()) {
                         Job previousJob = previousJobs.get().get(i);
-                        log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
-                        stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
-                        jobRepository.delete(previousJob);
+                        if (softDelete.get()) {
+                            log.info("Soft deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            previousJob.setDeleted(true);
+                            jobRepository.save(previousJob);
+                        } else {
+                            log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
+                            jobRepository.delete(previousJob);
+                        }
                     }
                 }
             }

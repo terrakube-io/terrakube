@@ -625,6 +625,54 @@ public class ScheduleJobTest {
     }
 
     @Test
+    public void completedJobWithHistorySoftDelete() {
+        Job job = job(JobStatus.completed);
+        Job prev1 = job(JobStatus.completed);
+        prev1.setId(4710);
+        Job prev2 = job(JobStatus.completed);
+        prev2.setId(4709);
+
+        Globalvar keepHistory = new Globalvar();
+        keepHistory.setKey("KEEP_JOB_HISTORY");
+        keepHistory.setCategory(Category.ENV);
+        keepHistory.setValue("1");
+
+        Globalvar softDelete = new Globalvar();
+        softDelete.setKey("KEEP_JOB_HISTORY_SOFT_DELETE");
+        softDelete.setCategory(Category.ENV);
+        softDelete.setValue("true");
+
+        doReturn(List.of(keepHistory, softDelete)).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(Optional.of(List.of(prev1, prev2)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        // prev2 should be soft deleted (flagged), never hard deleted
+        verify(jobRepository, never()).delete(any());
+        verify(jobRepository, times(1)).save(prev2);
+        Assertions.assertTrue(prev2.isDeleted());
+        Assertions.assertFalse(prev1.isDeleted());
+    }
+
+    @Test
     public void completedJob() {
         Job job = job(JobStatus.completed);
 
