@@ -494,19 +494,26 @@ public class ScheduleJob implements org.quartz.Job {
             return;
         }
 
-        switch (job.getWorkspace().getVcs().getVcsType()) {
-            case GITHUB:
-                gitHubWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case GITLAB:
-                gitLabWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case AZURE_DEVOPS:
-            case AZURE_SP_MI:
-                azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            default:
-                break;
+        // Notifying the VCS is a side effect of the job, not part of it: a VCS-side failure
+        // (expired token, provider outage, rate limit, missing commit) must never abort the
+        // job itself, since callers here include the job-completion path.
+        try {
+            switch (job.getWorkspace().getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                case AZURE_DEVOPS:
+                case AZURE_SP_MI:
+                    azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("Failed to update VCS commit status for job {}: {}", job.getId(), e.getMessage());
         }
     }
 
