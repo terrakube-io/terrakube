@@ -7,17 +7,16 @@ import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.scheduler.workspace.DeleteStorageBackendJob;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
-import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 
 import java.text.ParseException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +37,8 @@ public class SoftDeleteService {
 
     WorkspaceRepository workspaceRepository;
 
+    JobRepository jobRepository;
+
     Scheduler scheduler;
 
     public void disableWorkspaceSchedules(Workspace workspace){
@@ -55,11 +56,11 @@ public class SoftDeleteService {
     }
 
     public void deleteWorkspaceStorage(Workspace workspace){
-        List<Job> jobList = workspace.getJob();
-        List<Integer> jobIdList = new ArrayList();
-        jobList.forEach(job -> jobIdList.add(job.getId()));
         String workspaceId = workspace.getId().toString();
         String organizationId = workspace.getOrganization().getId().toString();
+        // Use a native query so soft-deleted jobs are also included, otherwise the
+        // @SQLRestriction on Job would hide them and leave their output data orphaned.
+        List<Integer> jobIdList = jobRepository.findAllJobIdsByWorkspaceIncludingDeleted(workspaceId);
 
         try {
             log.info("Setup job to delete storage for organization {} workspace {} jobs {}", organizationId, workspaceId, jobIdList);
