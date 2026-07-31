@@ -143,10 +143,10 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
       data: {
         type: "globalvar",
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
           category: values.category,
         },
@@ -176,9 +176,9 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         type: "globalvar",
         id: variableId,
         attributes: {
-          key: values.key,
-          value: values.value,
-          description: values.description,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
+          description: values.description?.trim(),
           hcl: values.hcl,
           category: values.category,
         },

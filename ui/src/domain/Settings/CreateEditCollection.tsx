@@ -252,12 +252,12 @@ export const CreateEditCollection = ({
               ? {
                   ...v,
                   attributes: {
-                    key: values.key,
-                    value: values.value,
-                    category: values.category,
-                    description: values.description,
-                    hcl: values.hcl,
+                    key: values.key?.trim(),
+                    value: typeof values.value === "string" ? values.value.trim() : values.value,
                     sensitive: values.sensitive,
+                    description: values.description?.trim(),
+                    hcl: values.hcl,
+                    category: values.category,
                   },
                 }
               : v
@@ -274,10 +274,10 @@ export const CreateEditCollection = ({
                 type: "item",
                 id: editingVariableId,
                 attributes: {
-                  key: values.key,
-                  value: values.value,
+                  key: values.key?.trim(),
+                  value: typeof values.value === "string" ? values.value.trim() : values.value,
                   sensitive: values.sensitive,
-                  description: values.description,
+                  description: values.description?.trim(),
                   hcl: values.hcl,
                   category: values.category,
                 },
@@ -317,10 +317,10 @@ export const CreateEditCollection = ({
       const newVariable = {
         id: `temp-${Date.now()}`,
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           category: values.category,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
           sensitive: values.sensitive,
         },
@@ -337,10 +337,10 @@ export const CreateEditCollection = ({
               data: {
                 type: "item",
                 attributes: {
-                  key: values.key,
-                  value: values.value,
+                  key: values.key?.trim(),
+                  value: typeof values.value === "string" ? values.value.trim() : values.value,
                   sensitive: values.sensitive,
-                  description: values.description,
+                  description: values.description?.trim(),
                   hcl: values.hcl,
                   category: values.category,
                 },
@@ -378,10 +378,10 @@ export const CreateEditCollection = ({
     setEditingVariableId(record.id);
     setAddingVariable(true);
     variableForm.setFieldsValue({
-      key: record.attributes.key,
-      value: record.attributes.value,
+      key: record.attributes.key?.trim(),
+      value: typeof record.attributes.value === "string" ? record.attributes.value.trim() : record.attributes.value,
       category: record.attributes.category,
-      description: record.attributes.description,
+      description: record.attributes.description?.trim(),
       hcl: record.attributes.hcl,
       sensitive: record.attributes.sensitive,
     });
