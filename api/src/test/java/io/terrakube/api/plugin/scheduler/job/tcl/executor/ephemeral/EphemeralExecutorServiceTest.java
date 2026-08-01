@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,6 +42,7 @@ import io.fabric8.kubernetes.client.dsl.V1BatchAPIGroupDSL;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 
@@ -378,5 +380,57 @@ public class EphemeralExecutorServiceTest {
         doThrow(new KubernetesClientException("Boom!")).when(resource).serverSideApply();
 
         assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnConnectionLevelFailure() {
+        // No HTTP response reached the apiserver at all - code defaults to 0.
+        doThrow(new KubernetesClientException("connection refused")).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnThrottling() {
+        doThrow(new KubernetesClientException("Too Many Requests", 429, null)).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnServerError() {
+        doThrow(new KubernetesClientException("etcd unavailable", 503, null)).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnResourceQuotaExceeded() {
+        doThrow(new KubernetesClientException(
+                        "jobs.batch is forbidden: exceeded quota: compute-quota, requested: pods=1, used: pods=5, limited: pods=5",
+                        403, null))
+                .when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void failsFastOnRbacDenial() {
+        doThrow(new KubernetesClientException(
+                        "jobs.batch is forbidden: User \"system:serviceaccount:ns:sa\" cannot create resource \"jobs\"",
+                        403, null))
+                .when(resource).serverSideApply();
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+        assertFalse(thrown instanceof ExecutorUnavailableException);
+    }
+
+    @Test
+    public void failsFastOnBadRequest() {
+        doThrow(new KubernetesClientException("invalid quantity for resource cpu", 400, null))
+                .when(resource).serverSideApply();
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+        assertFalse(thrown instanceof ExecutorUnavailableException);
     }
 }
