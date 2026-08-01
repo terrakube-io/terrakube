@@ -50,7 +50,8 @@ public class DexWebSecurityAdapter {
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
-                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**", "/webhook/v2/**"))
+                                                "/tfstate/v1/archive/*/terraform.json.tfstate",
+                                                "/tfstate/v1/http-backend/**", "/webhook/v1/**", "/webhook/v2/**"))
                                 .authorizeHttpRequests(authz -> {
                                         authz
                                                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -72,6 +73,10 @@ public class DexWebSecurityAdapter {
                                                         .permitAll()
                                                         .requestMatchers(HttpMethod.PUT,
                                                                         "/tfstate/v1/archive/*/terraform.json.tfstate")
+                                                        .permitAll()
+                                                        // Terraform "http" backend talks here. Auth is enforced inside the
+                                                        // controller by validating a Basic-Auth password as an internal JWT.
+                                                        .requestMatchers("/tfstate/v1/http-backend/**")
                                                         .permitAll()
                                                         .requestMatchers("/remote/tfe/v2/plans/logs/**").permitAll()
                                                         .requestMatchers("/remote/tfe/v2/applies/logs/**").permitAll()

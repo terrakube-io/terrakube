@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.commons.io.IOUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -40,24 +41,90 @@ public class TerraformStateController {
     @SuppressWarnings("unused")
     @Autowired
     private StateService stateService;
-    private final String hostname; 
+    private final String hostname;
+    private final boolean requireIntegrityHeader;
 
-    public TerraformStateController(StorageTypeService storageTypeService, 
-                                    ArchiveRepository archiveRepository, 
-                                    WorkspaceRepository workspaceRepository, 
-                                    HistoryRepository historyRepository, 
-                                    @Value("${io.terrakube.hostname}") String hostname) {
+    public TerraformStateController(StorageTypeService storageTypeService,
+                                    ArchiveRepository archiveRepository,
+                                    WorkspaceRepository workspaceRepository,
+                                    HistoryRepository historyRepository,
+                                    @Value("${io.terrakube.hostname}") String hostname,
+                                    @Value("${io.terrakube.api.upload.require-integrity-header:false}") boolean requireIntegrityHeader) {
         this.storageTypeService = storageTypeService;
         this.archiveRepository = archiveRepository;
         this.workspaceRepository = workspaceRepository;
         this.historyRepository = historyRepository;
-        this.hostname = hostname;  
+        this.hostname = hostname;
+        this.requireIntegrityHeader = requireIntegrityHeader;
     }
     @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/jobId/{jobId}/step/{stepId}/terraform.tfstate", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public @ResponseBody byte[] getTerraformPlanBinary(@PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId, @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId) {
         return storageTypeService.getTerraformPlan(organizationId, workspaceId, jobId, stepId);
+    }
+
+    @PutMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/jobId/{jobId}/step/{stepId}/terraform.tfstate")
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    public ResponseEntity<String> uploadTerraformPlanBinary(HttpServletRequest httpServletRequest,
+                                                            @PathVariable("organizationId") String organizationId,
+                                                            @PathVariable("workspaceId") String workspaceId,
+                                                            @PathVariable("jobId") String jobId,
+                                                            @PathVariable("stepId") String stepId) throws IOException {
+        log.info("uploadTerraformPlanBinary org={} ws={} job={} step={}", organizationId, workspaceId, jobId, stepId);
+        byte[] planBytes = IOUtils.toByteArray(httpServletRequest.getInputStream());
+        ResponseEntity<String> mismatch = UploadIntegrity.verify(httpServletRequest, planBytes, requireIntegrityHeader);
+        if (mismatch != null) return mismatch;
+        storageTypeService.uploadTerraformPlan(organizationId, workspaceId, jobId, stepId, planBytes);
+        return ResponseEntity.status(HttpStatus.CREATED).body("");
+    }
+
+    @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/history/{historyId}/terraform.tfstate",
+            produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    public @ResponseBody byte[] getHistoryState(@PathVariable("organizationId") String organizationId,
+                                                @PathVariable("workspaceId") String workspaceId,
+                                                @PathVariable("historyId") String historyId) {
+        // Read-back verification path. Mirrors the PUT URL; uses the storage backend's
+        // raw-history key ({historyId}.raw.json) — same bytes that were just committed.
+        return storageTypeService.getTerraformStateJson(organizationId, workspaceId, historyId + ".raw");
+    }
+
+    @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/history/{historyId}/terraform.json.tfstate",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    public @ResponseBody byte[] getHistoryStateJson(@PathVariable("organizationId") String organizationId,
+                                                    @PathVariable("workspaceId") String workspaceId,
+                                                    @PathVariable("historyId") String historyId) {
+        return storageTypeService.getTerraformStateJson(organizationId, workspaceId, historyId);
+    }
+
+    @PutMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/history/{historyId}/terraform.tfstate")
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    public ResponseEntity<String> uploadHistoryState(HttpServletRequest httpServletRequest,
+                                                     @PathVariable("organizationId") String organizationId,
+                                                     @PathVariable("workspaceId") String workspaceId,
+                                                     @PathVariable("historyId") String historyId) throws IOException {
+        log.info("uploadHistoryState org={} ws={} history={}", organizationId, workspaceId, historyId);
+        byte[] bytes = IOUtils.toByteArray(httpServletRequest.getInputStream());
+        ResponseEntity<String> mismatch = UploadIntegrity.verify(httpServletRequest, bytes, requireIntegrityHeader);
+        if (mismatch != null) return mismatch;
+        storageTypeService.uploadState(organizationId, workspaceId, new String(bytes, StandardCharsets.UTF_8), historyId);
+        return ResponseEntity.status(HttpStatus.CREATED).body("");
+    }
+
+    @PutMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/history/{historyId}/terraform.json.tfstate")
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    public ResponseEntity<String> uploadHistoryStateJson(HttpServletRequest httpServletRequest,
+                                                         @PathVariable("organizationId") String organizationId,
+                                                         @PathVariable("workspaceId") String workspaceId,
+                                                         @PathVariable("historyId") String historyId) throws IOException {
+        log.info("uploadHistoryStateJson org={} ws={} history={}", organizationId, workspaceId, historyId);
+        byte[] bytes = IOUtils.toByteArray(httpServletRequest.getInputStream());
+        ResponseEntity<String> mismatch = UploadIntegrity.verify(httpServletRequest, bytes, requireIntegrityHeader);
+        if (mismatch != null) return mismatch;
+        storageTypeService.uploadTerraformStateJson(organizationId, workspaceId, new String(bytes, StandardCharsets.UTF_8), historyId);
+        return ResponseEntity.status(HttpStatus.CREATED).body("");
     }
 
     @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/state/{stateFilename}.json", produces = MediaType.APPLICATION_JSON_VALUE)

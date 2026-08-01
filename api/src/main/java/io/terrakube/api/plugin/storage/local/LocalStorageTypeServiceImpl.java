@@ -39,6 +39,42 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        try {
+            String outputFilePath = String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId);
+            log.info("uploadStepOutput {}", outputFilePath);
+            File outputFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(outputFilePath)));
+            FileUtils.forceMkdir(outputFile.getParentFile());
+            FileUtils.writeByteArrayToFile(outputFile, output);
+        } catch (IOException e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] planContent) {
+        try {
+            String planFilePath = String.format(STATE_DIRECTORY, organizationId, workspaceId, jobId, stepId);
+            log.info("uploadTerraformPlan {}", planFilePath);
+            File planFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(planFilePath)));
+            FileUtils.forceMkdir(planFile.getParentFile());
+            FileUtils.writeByteArrayToFile(planFile, planContent);
+        } catch (IOException e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String currentStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
+        log.info("deleteCurrentTerraformState {}", currentStateFile);
+        File stateFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(currentStateFile)));
+        if (stateFile.exists()) {
+            FileUtils.deleteQuietly(stateFile);
+        }
+    }
+
+    @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
         log.info("Searching: /.terraform-spring-boot/local/state/{}/{}/{}/{}/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId);
         String outputFilePath = String.format(STATE_DIRECTORY, organizationId, workspaceId, jobId, stepId);

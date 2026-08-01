@@ -106,4 +106,55 @@ class LocalStorageTypeServiceImplTest {
             mockedFileUtils.verify(() -> FileUtils.moveToDirectory(any(File.class), any(File.class), eq(true)), times(3));
         }
     }
+
+    @Test
+    void testUploadStepOutput() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            byte[] payload = "step-output".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            localStorageTypeService.uploadStepOutput("org1", "job1", "step1", payload);
+
+            mockedFileUtils.verify(() -> FileUtils.forceMkdir(any(File.class)));
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), eq(payload)));
+        }
+    }
+
+    @Test
+    void testUploadTerraformPlan() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            byte[] plan = new byte[]{1, 2, 3, 4};
+            localStorageTypeService.uploadTerraformPlan("org1", "ws1", "job1", "step1", plan);
+
+            mockedFileUtils.verify(() -> FileUtils.forceMkdir(any(File.class)));
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), eq(plan)));
+        }
+    }
+
+    @Test
+    void testDeleteCurrentTerraformState() throws IOException {
+        File stateFile = tempDir.resolve(".terraform-spring-boot/local/backend/org1/ws1/terraform.tfstate").toFile();
+        stateFile.getParentFile().mkdirs();
+        java.nio.file.Files.writeString(stateFile.toPath(), "{}");
+
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, org.mockito.Mockito.CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            localStorageTypeService.deleteCurrentTerraformState("org1", "ws1");
+
+            assertFalse(stateFile.exists());
+        }
+    }
+
+    @Test
+    void testDeleteCurrentTerraformStateMissingIsNoOp() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, org.mockito.Mockito.CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            // No file exists — should silently succeed.
+            localStorageTypeService.deleteCurrentTerraformState("missing-org", "missing-ws");
+        }
+    }
 }
