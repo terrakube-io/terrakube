@@ -40,6 +40,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,6 +58,17 @@ public class ScheduleJob implements org.quartz.Job {
 
     public static final String JOB_ID = "jobId";
     private final GitLabWebhookService gitLabWebhookService;
+
+    // A job in pending/approved status can be picked up by two overlapping Quartz firings: the
+    // long-lived 30s job-context trigger (ScheduleJobService.createJobContext) and a one-shot
+    // trigger fired on any Job update (JobManageHook -> createJobContextNow). Neither Job nor
+    // Workspace is version-locked, and dispatch only writes the job's status *after* a successful
+    // send, so without this lock two overlapping firings could both pass the status check and both
+    // dispatch the same job to two different executors. TTL comfortably covers
+    // PersistentExecutorService's connect+response timeout (10s + 60s) so an orphaned lock (e.g. a
+    // pod crash mid-dispatch) self-heals well before the next 30s retry would otherwise need it.
+    private static final String DISPATCH_LOCK_PREFIX = "job-dispatch-lock:";
+    private static final Duration DISPATCH_LOCK_TTL = Duration.ofSeconds(90);
 
     JobRepository jobRepository;
 
@@ -272,6 +284,10 @@ public class ScheduleJob implements org.quartz.Job {
                 case terraformApply:
                 case terraformDestroy:
                 case customScripts:
+                    if (!acquireDispatchLock(job)) {
+                        log.warn("Job {} Step {} is already being dispatched by another scheduler run, will retry", job.getId(), stepId);
+                        return false;
+                    }
                     try {
                         executorService.execute(job, stepId, flow.get());
                         job.setStatus(JobStatus.queue);
@@ -281,6 +297,8 @@ public class ScheduleJob implements org.quartz.Job {
                         return false;
                     } catch (ExecutionException e) {
                         errorJobAtStep(job, stepId, e);
+                    } finally {
+                        releaseDispatchLock(job);
                     }
                     break;
                 case approval:
@@ -385,6 +403,16 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Update Job {} to completed", job.getId());
     }
 
+    private boolean acquireDispatchLock(Job job) {
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(DISPATCH_LOCK_PREFIX + job.getId(), "1", DISPATCH_LOCK_TTL);
+        return Boolean.TRUE.equals(acquired);
+    }
+
+    private void releaseDispatchLock(Job job) {
+        redisTemplate.delete(DISPATCH_LOCK_PREFIX + job.getId());
+    }
+
     private void errorJobAtStep(Job job, String stepId, Throwable e) {
         String logMessage = String.format(
             "Error when sending context to executor marking job %s as failed, step count %s",
@@ -430,6 +458,10 @@ public class ScheduleJob implements org.quartz.Job {
             String stepId = tclService.getCurrentStepId(job);
             job.setApprovalTeam("");
             jobRepository.save(job);
+            if (!acquireDispatchLock(job)) {
+                log.warn("Job {} Step {} is already being dispatched by another scheduler run, will retry", job.getId(), stepId);
+                return false;
+            }
             try {
                 executorService.execute(job, stepId, flow.get());
                 job.setStatus(JobStatus.queue);
@@ -439,6 +471,8 @@ public class ScheduleJob implements org.quartz.Job {
                 return false;
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
+            } finally {
+                releaseDispatchLock(job);
             }
         }
         return true;
