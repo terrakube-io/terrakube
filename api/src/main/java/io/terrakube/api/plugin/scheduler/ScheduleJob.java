@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.scheduler;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
@@ -157,12 +158,10 @@ public class ScheduleJob implements org.quartz.Job {
                          throw new AssertionError(String.format("Expected pending job %d to have plan changes", jobId));
                     }
                     log.info("Executing pending job {}", jobId);
-                    executePendingJob(job);
-                    deschedule = true;
+                    deschedule = executePendingJob(job);
                     break;
                 case approved:
-                    executeApprovedJobs(job);
-                    deschedule = true;
+                    deschedule = executeApprovedJobs(job);
                     break;
                 case running:
                     log.info("Job {} running", job.getId());
@@ -253,10 +252,13 @@ public class ScheduleJob implements org.quartz.Job {
         workspaceRepository.save(job.getWorkspace());
     }
 
-    private void executePendingJob(Job job) {
+    // Returns whether the job's Quartz trigger should be descheduled. False keeps it alive so
+    // the existing 30s retrigger (JOB_CONTEXT_INTERVAL) retries once an executor is free, instead
+    // of failing the job just because the whole pool was busy at this particular attempt.
+    private boolean executePendingJob(Job job) {
         job = tclService.initJobConfiguration(job);
         if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
-            return;
+            return true;
         }
 
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
@@ -274,6 +276,9 @@ public class ScheduleJob implements org.quartz.Job {
                         executorService.execute(job, stepId, flow.get());
                         job.setStatus(JobStatus.queue);
                         jobRepository.save(job);
+                    } catch (ExecutorUnavailableException e) {
+                        log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+                        return false;
                     } catch (ExecutionException e) {
                         errorJobAtStep(job, stepId, e);
                     }
@@ -286,7 +291,7 @@ public class ScheduleJob implements org.quartz.Job {
                         log.info("Waiting Approval for Job {} Step Id {}", job.getId(), stepId);
                     } else {
                         log.info("Auto Approving is enabled for Job {} Step Id {}", job.getId(), stepId);
-                        executeApprovedJobs(job);
+                        return executeApprovedJobs(job);
                     }
                     break;
                 case disableWorkspace:
@@ -334,6 +339,7 @@ public class ScheduleJob implements org.quartz.Job {
             completeJob(job);
             deleteOldJobs(job);
         }
+        return true;
     }
 
     private boolean setupScheduler(Job job, Flow flow) {
@@ -412,10 +418,11 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
-    private void executeApprovedJobs(Job job) {
+    // Returns whether the job's Quartz trigger should be descheduled; see executePendingJob.
+    private boolean executeApprovedJobs(Job job) {
         job = tclService.initJobConfiguration(job);
         if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
-            return;
+            return true;
         }
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
         if (flow.isPresent()) {
@@ -427,10 +434,14 @@ public class ScheduleJob implements org.quartz.Job {
                 executorService.execute(job, stepId, flow.get());
                 job.setStatus(JobStatus.queue);
                 jobRepository.save(job);
+            } catch (ExecutorUnavailableException e) {
+                log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+                return false;
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
             }
         }
+        return true;
     }
 
     private void updateJobStepsWithStatus(int jobId, JobStatus jobStatus) {

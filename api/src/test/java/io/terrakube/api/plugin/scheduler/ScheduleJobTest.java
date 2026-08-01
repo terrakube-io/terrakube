@@ -31,6 +31,7 @@ import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
@@ -247,6 +248,37 @@ public class ScheduleJobTest {
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void pendingJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, times(0)).save(any());
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
     @Test
@@ -538,6 +570,36 @@ public class ScheduleJobTest {
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void approvedJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.approved);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        Assertions.assertEquals(JobStatus.approved, job.getStatus());
     }
 
      @Test
