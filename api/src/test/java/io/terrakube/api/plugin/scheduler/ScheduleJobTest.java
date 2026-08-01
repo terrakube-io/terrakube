@@ -63,6 +63,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -317,6 +318,37 @@ public class ScheduleJobTest {
         // Simulate a concurrent Quartz firing (the main 30s trigger racing a status-change
         // one-shot trigger) already holding the dispatch lock for this job.
         doReturn(false).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSkipsDispatchWhenRedisIsUnreachable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // A Redis outage must fail closed (skip dispatch, retry later) rather than dispatch
+        // unprotected - a duplicate terraform apply is worse than a delayed one.
+        doThrow(new RedisConnectionFailureException("connection refused"))
+                .when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
 
         Assert.assertFalse(subject().runExecution(job));
 

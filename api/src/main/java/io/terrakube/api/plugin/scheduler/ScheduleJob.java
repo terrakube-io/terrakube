@@ -35,6 +35,7 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
 import org.quartz.SchedulerException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -403,14 +404,27 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Update Job {} to completed", job.getId());
     }
 
+    // Fails closed: if Redis itself is unreachable, treat it the same as losing the lock race
+    // rather than dispatching unprotected. A duplicate terraform apply is worse than a job
+    // waiting out a Redis blip for its next 30s retry.
     private boolean acquireDispatchLock(Job job) {
-        Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(DISPATCH_LOCK_PREFIX + job.getId(), "1", DISPATCH_LOCK_TTL);
-        return Boolean.TRUE.equals(acquired);
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(DISPATCH_LOCK_PREFIX + job.getId(), "1", DISPATCH_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (DataAccessException e) {
+            log.warn("Could not reach Redis to acquire dispatch lock for Job {}, will retry: {}", job.getId(), e.getMessage());
+            return false;
+        }
     }
 
     private void releaseDispatchLock(Job job) {
-        redisTemplate.delete(DISPATCH_LOCK_PREFIX + job.getId());
+        try {
+            redisTemplate.delete(DISPATCH_LOCK_PREFIX + job.getId());
+        } catch (DataAccessException e) {
+            // The lock's TTL (DISPATCH_LOCK_TTL) self-heals this; nothing else to do here.
+            log.warn("Could not reach Redis to release dispatch lock for Job {}: {}", job.getId(), e.getMessage());
+        }
     }
 
     private void errorJobAtStep(Job job, String stepId, Throwable e) {
