@@ -25,6 +25,8 @@ export function getWorkspaceStatusIcon(status?: string) {
     case JobStatus.Cancelled:
     case JobStatus.Failed:
       return <StopOutlined />;
+    case JobStatus.Queue:
+      return <ClockCircleOutlined />;
     default:
       return <ClockCircleOutlined />;
   }

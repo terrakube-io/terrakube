@@ -94,7 +94,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                         planChanges = false;
                         break;
                     case 2:
-                        status = "pending";
+                        // A plan that finds changes normally waits "pending" for an approval/apply
+                        // step. But if this plan is the job's only step (a plan-only template),
+                        // there's nothing left to run it against - leaving it "pending" forever
+                        // misreports a finished job as still in progress.
+                        status = job.getRelationships().getStep().getData().size() > 1 ? "pending" : "completed";
                         break;
                 }
             }
