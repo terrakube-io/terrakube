@@ -62,4 +62,32 @@ describe("readEventStream", () => {
       })
     ).rejects.toThrow("401");
   });
+
+  it("passes the event's id alongside its data", async () => {
+    const response = makeStreamResponse(["id: 100-0\ndata: line 1\n\n"]);
+    (global.fetch as jest.Mock) = jest.fn().mockResolvedValue(response);
+
+    const received: Array<[string, string | undefined]> = [];
+    await readEventStream("http://localhost/stream", {
+      onMessage: (data, id) => received.push([data, id]),
+      signal: new AbortController().signal,
+    });
+
+    expect(received).toEqual([["line 1", "100-0"]]);
+  });
+
+  it("sends Last-Event-ID as a request header when provided", async () => {
+    const response = makeStreamResponse(["data: line 1\n\n"]);
+    const fetchMock = jest.fn().mockResolvedValue(response);
+    (global.fetch as jest.Mock) = fetchMock;
+
+    await readEventStream("http://localhost/stream", {
+      onMessage: jest.fn(),
+      signal: new AbortController().signal,
+      lastEventId: "100-0",
+    });
+
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(requestInit.headers["Last-Event-ID"]).toBe("100-0");
+  });
 });

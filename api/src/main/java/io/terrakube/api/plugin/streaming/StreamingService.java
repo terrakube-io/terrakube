@@ -49,11 +49,11 @@ public class StreamingService {
     }
 
     @Async
-    public void streamStepLogsAsync(String stepId, SseEmitter emitter) {
-        streamStepLogs(stepId, emitter);
+    public void streamStepLogsAsync(String stepId, SseEmitter emitter, RecordId resumeFrom) {
+        streamStepLogs(stepId, emitter, resumeFrom);
     }
 
-    public void streamStepLogs(String stepId, SseEmitter emitter) {
+    public void streamStepLogs(String stepId, SseEmitter emitter, RecordId resumeFrom) {
         try {
             UUID id = UUID.fromString(stepId);
             // findById (not getReferenceById) because this loop runs on a separate @Async thread with no
@@ -61,7 +61,7 @@ public class StreamingService {
             // the moment any field (including the eagerly-mapped job association) is accessed here.
             Step step = stepRepository.findById(id).orElseThrow();
             String jobId = String.valueOf(step.getJob().getId());
-            RecordId lastId = RecordId.of("0-0");
+            RecordId lastId = resumeFrom;
             int emptyReads = 0;
 
             while (true) {
@@ -84,7 +84,7 @@ public class StreamingService {
                 for (MapRecord record : records) {
                     lastId = record.getId();
                     StringRecord stringRecord = StringRecord.of(record);
-                    emitter.send(stringRecord.getValue().get("output"));
+                    emitter.send(SseEmitter.event().id(lastId.getValue()).data(stringRecord.getValue().get("output")));
                 }
             }
         } catch (IOException e) {

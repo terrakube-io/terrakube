@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useLogStream } from "../useLogStream";
 import { readEventStream } from "../../modules/api/eventStream";
 
@@ -40,5 +40,72 @@ describe("useLogStream", () => {
     rerender({ url: "http://localhost/stream/b" });
 
     await waitFor(() => expect(result.current.text).toBe("line 1"));
+  });
+
+  describe("reconnect behavior", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("resumes from the last received id after a transient error, keeping accumulated text", async () => {
+      const mock = readEventStream as jest.Mock;
+      mock.mockImplementationOnce(async (_url, { onMessage }) => {
+        onMessage("line 1", "10-0");
+        throw new Error("network drop");
+      });
+      mock.mockImplementationOnce(() => new Promise(() => {}));
+
+      const { result } = renderHook(() => useLogStream({ url: "http://localhost/stream", enabled: true }));
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.text).toBe("line 1");
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1000);
+      });
+
+      expect(mock).toHaveBeenCalledTimes(2);
+      expect(mock.mock.calls[1][1]).toEqual(expect.objectContaining({ lastEventId: "10-0" }));
+      expect(result.current.text).toBe("line 1");
+    });
+
+    it("does not reconnect once the effect has been cleaned up", async () => {
+      const mock = readEventStream as jest.Mock;
+      mock.mockImplementationOnce(async () => {
+        throw new Error("network drop");
+      });
+
+      const { unmount } = renderHook(() => useLogStream({ url: "http://localhost/stream", enabled: true }));
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      unmount();
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(30000);
+      });
+
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not reconnect when the stream ends without an error", async () => {
+      const mock = readEventStream as jest.Mock;
+      mock.mockResolvedValueOnce(undefined);
+
+      renderHook(() => useLogStream({ url: "http://localhost/stream", enabled: true }));
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(30000);
+      });
+
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
   });
 });

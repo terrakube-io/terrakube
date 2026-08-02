@@ -165,4 +165,20 @@ public class LocalStorageTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
     }
 
+    @Test
+    void streamEndpointAcceptsLastEventIdHeader() {
+        // Same nonexistent-step path as streamEndpointConnectsAndClosesCleanlyForUnknownStep, just confirming
+        // the endpoint still accepts a Last-Event-ID header without erroring on the header parsing itself
+        // (the 500 comes from the unknown step id, not from the header).
+        given()
+                .headers(
+                        "Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Last-Event-ID", "100-0")
+                .when()
+                .get("/tfoutput/v1/organization/3/job/3/step/11111111-1111-1111-1111-111111111111/stream")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    }
+
 }
