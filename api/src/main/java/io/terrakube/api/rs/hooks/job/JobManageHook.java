@@ -4,6 +4,8 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
+import io.terrakube.api.plugin.subscription.JobStatusEvent;
+import io.terrakube.api.plugin.subscription.JobStatusPublisher;
 import io.terrakube.api.repository.WorkspaceRepository;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ public class JobManageHook implements LifeCycleHook<Job> {
 
     private ScheduleJobService scheduleJobService;
     private WorkspaceRepository workspaceRepository;
+    private JobStatusPublisher jobStatusPublisher;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation, LifeCycleHookBinding.TransactionPhase transactionPhase, Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
@@ -31,6 +34,7 @@ public class JobManageHook implements LifeCycleHook<Job> {
                 case CREATE:
                     updateWorkspaceStatus(job);
                     scheduleJobService.createJobContext(job);
+                    publishStatus(job);
                     break;
                 case UPDATE:
                     updateWorkspaceStatus(job);
@@ -44,6 +48,7 @@ public class JobManageHook implements LifeCycleHook<Job> {
                             log.warn("Skip new quartz job");
                         }
                     }
+                    publishStatus(job);
                     break;
                 default:
                     log.info("Not supported {}", operation);
@@ -53,6 +58,12 @@ public class JobManageHook implements LifeCycleHook<Job> {
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());
         }
+    }
+
+    private void publishStatus(Job job) {
+        jobStatusPublisher.publish(
+                new JobStatusEvent(job.getId(), job.getWorkspace().getId().toString(), job.getStatus().name()),
+                job.getOrganization().getId().toString());
     }
 
     private void updateWorkspaceStatus(Job job) {

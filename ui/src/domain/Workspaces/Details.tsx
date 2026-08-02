@@ -40,7 +40,7 @@ import {
 
 import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { usePolling } from "../../hooks";
+import { useJobStatusSubscription, usePolling } from "../../hooks";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
@@ -364,6 +364,14 @@ export const WorkspaceDetails = ({
     },
     { interval: 10000, enabled: Boolean(id), immediate: false }
   );
+
+  // Pushes an immediate refresh on real job status changes; the poll above stays as a fallback for a
+  // dropped WebSocket connection.
+  useJobStatusSubscription({
+    workspaceId: id ?? "",
+    enabled: Boolean(id),
+    onEvent: () => loadWorkspace(false, false, false),
+  });
 
   const changeJob = (id: string) => {
     setJobId(id);
