@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import io.terrakube.api.plugin.streaming.StreamingService;
 
 import java.nio.charset.StandardCharsets;
@@ -36,5 +37,15 @@ public class TerraformOutputController {
             return storageTypeService.getStepOutput(organizationId, jobId, stepId);
         }
 
+    }
+
+    @GetMapping(
+            value = "/organization/{organizationId}/job/{jobId}/step/{stepId}/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE
+    )
+    public SseEmitter streamOutput(@PathVariable("organizationId") String organizationId, @PathVariable("jobId") String jobId, @PathVariable("stepId") String stepId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        streamingService.streamStepLogsAsync(stepId, emitter);
+        return emitter;
     }
 }

@@ -148,4 +148,21 @@ public class LocalStorageTests extends ServerApplicationTests {
 
     }
 
+    @Test
+    void streamEndpointConnectsAndClosesCleanlyForUnknownStep() {
+        // Nonexistent step id -> EntityNotFoundException on first Redis/DB access, caught by
+        // StreamingService.streamStepLogs and surfaced as emitter.completeWithError before any bytes are
+        // flushed, so Spring falls back to its default 500 JSON error body instead of text/event-stream.
+        // This smoke test only cares that the request returns promptly (doesn't hang) rather than what's in it.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tfoutput/v1/organization/3/job/3/step/11111111-1111-1111-1111-111111111111/stream")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    }
+
 }
