@@ -20,12 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventType;
@@ -43,8 +45,17 @@ public class RepoWebhookService {
     WorkspaceRepository workspaceRepository;
     WebhookEventRepository webhookEventRepository;
     GitHubWebhookService gitHubWebhookService;
+    GitLabWebhookService gitLabWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
+
+    private boolean isGitLab(RepoWebhook repoWebhook) {
+        return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
+    }
+
+    private boolean isGitLab(Workspace workspace) {
+        return workspace.getVcs() != null && workspace.getVcs().getVcsType() == VcsType.GITLAB;
+    }
 
     // Callers reach this exclusively through RepoWebhookSyncJob, which is
     // @DisallowConcurrentExecution and keyed by a hash of the normalized
@@ -97,7 +108,9 @@ public class RepoWebhookService {
             return;
         }
 
-        String remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+        String remoteHookId = isGitLab(repoWebhook)
+                ? gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes)
+                : gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
         repoWebhook.setRemoteHookId(remoteHookId);
         repoWebhookRepository.save(repoWebhook);
     }
@@ -108,7 +121,11 @@ public class RepoWebhookService {
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
 
         if (workspaces.isEmpty()) {
-            gitHubWebhookService.deleteRepoWebhook(repoWebhook);
+            if (isGitLab(repoWebhook)) {
+                gitLabWebhookService.deleteRepoWebhook(repoWebhook);
+            } else {
+                gitHubWebhookService.deleteRepoWebhook(repoWebhook);
+            }
             repoWebhookRepository.delete(repoWebhook);
             log.info("Deleted orphan repo webhook {} for {}", repoWebhook.getId(), repoWebhook.getRepositoryUrl());
         } else {
@@ -121,12 +138,20 @@ public class RepoWebhookService {
         RepoWebhook repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId))
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
 
-        if (!verifyHmacSignature(headers, repoWebhook.getWebhookSecret(), jsonPayload)) {
+        boolean gitlab = isGitLab(repoWebhook);
+        if (gitlab) {
+            if (!verifyGitlabToken(headers, repoWebhook.getWebhookSecret())) {
+                log.error("Token verification failed for repo webhook {}", repoWebhookId);
+                throw new SecurityException("GitLab token verification failed");
+            }
+        } else if (!verifyHmacSignature(headers, repoWebhook.getWebhookSecret(), jsonPayload)) {
             log.error("Signature verification failed for repo webhook {}", repoWebhookId);
             throw new SecurityException("HMAC signature verification failed");
         }
 
-        WebhookResult webhookResult = gitHubWebhookService.parseGitHubPayload(jsonPayload, headers);
+        WebhookResult webhookResult = gitlab
+                ? gitLabWebhookService.parseGitLabPayload(jsonPayload, headers)
+                : gitHubWebhookService.parseGitHubPayload(jsonPayload, headers);
 
         if (webhookResult.getEvent() != null && webhookResult.getEvent().equals("ping")) {
             log.info("Received ping for repo webhook {}", repoWebhookId);
@@ -161,8 +186,11 @@ public class RepoWebhookService {
 
         if (webhookResult.getPrFilesUrl() != null) {
             if (workspace.getVcs() != null) {
-                List<String> prFiles = gitHubWebhookService.fetchPrFileChanges(
-                        workspace.getVcs(), workspace.getSource(), webhookResult.getPrFilesUrl());
+                List<String> prFiles = isGitLab(workspace)
+                        ? gitLabWebhookService.fetchPrFileChanges(
+                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrFilesUrl())
+                        : gitHubWebhookService.fetchPrFileChanges(
+                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrFilesUrl());
                 webhookResult.setFileChanges(prFiles);
             } else {
                 log.warn("Workspace {} has no VCS, cannot fetch PR file changes", workspace.getName());
@@ -199,7 +227,11 @@ public class RepoWebhookService {
             job.setCommitId(webhookResult.getCommit());
             Job savedJob = jobRepository.save(job);
             if (!webhookResult.isRelease() && workspace.getVcs() != null) {
-                gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+                if (isGitLab(workspace)) {
+                    gitLabWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+                } else {
+                    gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+                }
             }
             scheduleJobService.createJobContext(savedJob);
         } catch (IllegalArgumentException e) {
@@ -208,6 +240,17 @@ public class RepoWebhookService {
         } catch (Exception e) {
             log.error("Error creating job for workspace {}", workspace.getName(), e);
         }
+    }
+
+    private boolean verifyGitlabToken(Map<String, String> headers, String secret) {
+        String tokenHeader = headers.get("x-gitlab-token");
+        if (tokenHeader == null) {
+            log.error("x-gitlab-token header is missing!");
+            return false;
+        }
+        return MessageDigest.isEqual(
+                tokenHeader.getBytes(StandardCharsets.UTF_8),
+                secret.getBytes(StandardCharsets.UTF_8));
     }
 
     private boolean verifyHmacSignature(Map<String, String> headers, String secret, String payload) {
