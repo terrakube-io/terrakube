@@ -436,30 +436,6 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         }
     }
 
-    static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
-        String description;
-        switch (jobStatus) {
-            case completed:
-                description = "Your task has been completed successfully.";
-                break;
-            case failed:
-            case rejected:
-            case cancelled:
-                description = "Your task has failed.";
-                break;
-            case unknown:
-                description = "Your task ran into errors.";
-                break;
-            default:
-                description = "Your task is in Terrakube queue.";
-                break;
-        }
-        if (runSummary != null && !runSummary.isBlank()) {
-            description = description + " " + runSummary;
-        }
-        return description;
-    }
-
     /**
      * Returns the current tip commit id of {@code branch}, or null if it cannot be resolved.
      * Used by outbound polling so new commits can be detected without an inbound webhook endpoint

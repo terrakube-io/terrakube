@@ -288,31 +288,9 @@ public class GitHubWebhookService extends WebhookServiceBase {
     }
 
     // GitHub's commit-status description has a hard 140-character API limit.
-    static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
-        String description;
-        switch (jobStatus) {
-            case completed:
-                description = "Your task has been completed successfully.";
-                break;
-            case failed:
-            case rejected:
-            case cancelled:
-                description = "Your task has failed.";
-                break;
-            case unknown:
-                description = "Your task ran into errors.";
-                break;
-            default:
-                description = "Your task is in Terrakube queue.";
-                break;
-        }
-        if (runSummary != null && !runSummary.isBlank()) {
-            description = description + " " + runSummary;
-        }
-        if (description.length() > 140) {
-            description = description.substring(0, 140);
-        }
-        return description;
+    public static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
+        String description = WebhookServiceBase.buildCommitStatusDescription(jobStatus, runSummary);
+        return description.length() > 140 ? description.substring(0, 140) : description;
     }
 
     private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {

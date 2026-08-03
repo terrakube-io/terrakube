@@ -293,7 +293,7 @@ public class ScheduleJobTest {
 
         verify(jobRepository, times(0)).save(any());
         verify(stepRepository, times(0)).save(any());
-        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
@@ -675,7 +675,7 @@ public class ScheduleJobTest {
         Assert.assertFalse(subject().runExecution(job));
 
         verify(stepRepository, times(0)).save(any());
-        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
         Assertions.assertEquals(JobStatus.approved, job.getStatus());
     }
 
