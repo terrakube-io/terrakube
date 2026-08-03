@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.rs.job.Job;
 
 import java.util.*;
@@ -336,9 +338,37 @@ public class EphemeralExecutorService {
 
         try {
             kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
+        } catch (KubernetesClientException e) {
+            if (isRetryable(e)) {
+                throw new ExecutorUnavailableException(e);
+            }
+            throw new ExecutionException(e);
         } catch (Exception e) {
             throw new ExecutionException(e);
         }
+    }
+
+    // Mirrors PersistentExecutorService's ExecutorUnavailableException split: treat capacity/
+    // availability signals from the Kubernetes API as retryable, and genuine request/config
+    // rejections (a bad manifest, RBAC denial) as a real failure that retrying will never fix.
+    private boolean isRetryable(KubernetesClientException e) {
+        int code = e.getCode();
+        if (code <= 0) {
+            // No HTTP response reached at all - apiserver unreachable, connection refused, timed out.
+            return true;
+        }
+        if (code == 429 || code >= 500) {
+            // Throttled, or a server-side error - both expected to clear on their own.
+            return true;
+        }
+        if (code == 403) {
+            // Admission control returns 403 both when a ResourceQuota is exhausted (transient -
+            // frees up as other jobs finish) and on RBAC denial (a real config error). Only the
+            // former is worth retrying.
+            String message = e.getMessage();
+            return message != null && message.contains("exceeded quota");
+        }
+        return false;
     }
 
     private Map<String, String> parseKeyValueString(String input) {
