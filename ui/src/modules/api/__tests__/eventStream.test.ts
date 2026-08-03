@@ -76,6 +76,19 @@ describe("readEventStream", () => {
     expect(received).toEqual([["line 1", "100-0"]]);
   });
 
+  it("preserves indentation beyond the single SSE-spec leading space", async () => {
+    const response = makeStreamResponse(["data:      + arn = (known after apply)\n\n"]);
+    (global.fetch as jest.Mock) = jest.fn().mockResolvedValue(response);
+
+    const received: string[] = [];
+    await readEventStream("http://localhost/stream", {
+      onMessage: (data) => received.push(data),
+      signal: new AbortController().signal,
+    });
+
+    expect(received).toEqual(["     + arn = (known after apply)"]);
+  });
+
   it("sends Last-Event-ID as a request header when provided", async () => {
     const response = makeStreamResponse(["data: line 1\n\n"]);
     const fetchMock = jest.fn().mockResolvedValue(response);

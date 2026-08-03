@@ -150,6 +150,14 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void jsonApplyClientMergesErrorStream() {
+        TerraformClient jsonApplyClient = subject().buildJsonEnabledApplyClient();
+
+        assertTrue(jsonApplyClient.isJsonOutput());
+        assertTrue(jsonApplyClient.isRedirectErrorStream());
+    }
+
+    @Test
     void fallsBackToSharedClientWhenThereIsNoSeedData() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();

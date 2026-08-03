@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ApplyJsonEventParserTest {
 
@@ -68,7 +67,7 @@ class ApplyJsonEventParserTest {
     }
 
     @Test
-    void returnsMessageForNonHookEventsAndNullForUnparsableLines() {
+    void returnsMessageForNonHookEventsAndOriginalLineForUnparsableLines() {
         List<Map<String, Object>> changes = oneChange("aws_instance.foo");
 
         String message = subject().parseLine(
@@ -76,6 +75,6 @@ class ApplyJsonEventParserTest {
                 changes);
 
         assertEquals("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.", message);
-        assertNull(subject().parseLine("not valid json", changes));
+        assertEquals("not valid json", subject().parseLine("not valid json", changes));
     }
 }

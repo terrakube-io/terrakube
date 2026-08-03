@@ -314,6 +314,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return TerraformClient.builder()
                 .jsonOutput(true)
                 .showColor(false)
+                // The normal client merges stderr before every Terraform operation. Keep that
+                // behaviour for the JSON client too: runJsonApply has no separate stderr
+                // listener, so otherwise diagnostics are silently discarded.
+                .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
                 .build();

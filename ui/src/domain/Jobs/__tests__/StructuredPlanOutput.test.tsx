@@ -192,6 +192,31 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("imported", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
   });
 
+  it("surfaces the diagnostic error message as a tooltip on the errored badge", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "null_resource.fails",
+            action: "create",
+            actions: ["create"],
+            after: {},
+            status: "errored",
+            error: "local-exec provisioner error",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /null_resource\.fails/i }));
+
+    expect(screen.getByText("create failed", { selector: ".structured-plan-applyStatus" })).toHaveAttribute(
+      "title",
+      "local-exec provisioner error"
+    );
+  });
+
   it("filters rows by address", () => {
     render(
       <StructuredPlanOutput
