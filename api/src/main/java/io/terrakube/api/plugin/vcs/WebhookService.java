@@ -404,14 +404,14 @@ public class WebhookService {
     private void sendCommitStatus(Job job) {
         switch (job.getWorkspace().getVcs().getVcsType()) {
             case GITHUB:
-                gitHubWebhookService.sendCommitStatus(job, JobStatus.pending);
+                gitHubWebhookService.sendCommitStatus(job, JobStatus.pending, null);
                 break;
             case GITLAB:
-                gitLabWebhookService.sendCommitStatus(job, JobStatus.pending);
+                gitLabWebhookService.sendCommitStatus(job, JobStatus.pending, null);
                 break;
             case AZURE_DEVOPS:
             case AZURE_SP_MI:
-                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.pending);
+                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.pending, null);
                 break;
             default:
                 break;

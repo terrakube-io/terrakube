@@ -503,7 +503,7 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
-    private void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
+    void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
         if (job.getVia().equals(JobVia.UI.getValue()) || job.getVia().equals(JobVia.CLI.getValue()) || job.getVia().equals(JobVia.SCHEDULE.getValue())) {
             return;
         }
@@ -512,16 +512,17 @@ public class ScheduleJob implements org.quartz.Job {
         // (expired token, provider outage, rate limit, missing commit) must never abort the
         // job itself, since callers here include the job-completion path.
         try {
+            String runSummary = prCommentService.extractRunSummary(job).orElse(null);
             switch (job.getWorkspace().getVcs().getVcsType()) {
                 case GITHUB:
-                    gitHubWebhookService.sendCommitStatus(job, jobStatus);
+                    gitHubWebhookService.sendCommitStatus(job, jobStatus, runSummary);
                     break;
                 case GITLAB:
-                    gitLabWebhookService.sendCommitStatus(job, jobStatus);
+                    gitLabWebhookService.sendCommitStatus(job, jobStatus, runSummary);
                     break;
                 case AZURE_DEVOPS:
                 case AZURE_SP_MI:
-                    azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
+                    azDevOpsWebhookService.sendCommitStatus(job, jobStatus, runSummary);
                     break;
                 default:
                     break;

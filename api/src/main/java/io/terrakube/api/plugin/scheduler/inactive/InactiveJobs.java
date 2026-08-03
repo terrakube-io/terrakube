@@ -97,16 +97,16 @@ public class InactiveJobs implements org.quartz.Job {
         switch (workspaceVcs.getVcsType()) {
             case GITHUB:
                 log.info("Updating VCS information for GITHUB on job {}", job.getId());
-                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
                 break;
             case GITLAB:
                 log.info("Updating VCS information for GITLAB on job {}", job.getId());
-                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
                 break;
             case AZURE_DEVOPS:
             case AZURE_SP_MI:
                 log.info("Updating VCS information for AZURE_DEVOPS on job {}", job.getId());
-                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
                 break;
             default:
                 break;

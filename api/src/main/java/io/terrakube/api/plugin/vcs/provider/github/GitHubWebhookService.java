@@ -203,7 +203,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus) {
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
@@ -212,27 +212,24 @@ public class GitHubWebhookService extends WebhookServiceBase {
         GithubCommitStatus commitStatus = GithubCommitStatus.pending;
         String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
                 + workspace.getName();
-        String commitStatusDescription = "Your task is in Terrakube queue.";
 
         // Determine the commit status based on jobStatus
         switch (jobStatus) {
             case completed:
                 commitStatus = GithubCommitStatus.success;
-                commitStatusDescription = "Your task has been completed successfully.";
                 break;
             case failed:
             case rejected:
             case cancelled:
                 commitStatus = GithubCommitStatus.failure;
-                commitStatusDescription = "Your task has failed.";
                 break;
             case unknown:
                 commitStatus = GithubCommitStatus.error;
-                commitStatusDescription = "Your task ran into errors.";
                 break;
             default:
                 break;
         }
+        String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
 
         // API URL for commit status
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos) + "/statuses/"
@@ -288,6 +285,34 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } catch (Exception e) {
             log.error("Error occurred while checking PRs for commit {}: {}", job.getCommitId(), e.getMessage());
         }
+    }
+
+    // GitHub's commit-status description has a hard 140-character API limit.
+    static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
+        String description;
+        switch (jobStatus) {
+            case completed:
+                description = "Your task has been completed successfully.";
+                break;
+            case failed:
+            case rejected:
+            case cancelled:
+                description = "Your task has failed.";
+                break;
+            case unknown:
+                description = "Your task ran into errors.";
+                break;
+            default:
+                description = "Your task is in Terrakube queue.";
+                break;
+        }
+        if (runSummary != null && !runSummary.isBlank()) {
+            description = description + " " + runSummary;
+        }
+        if (description.length() > 140) {
+            description = description.substring(0, 140);
+        }
+        return description;
     }
 
     private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {

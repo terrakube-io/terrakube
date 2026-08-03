@@ -103,6 +103,7 @@ public class ScheduleJobTest {
                 WorkspaceVariableValidationService.class,
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
     }
 
     private ScheduleJob subject() {
@@ -162,11 +163,11 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assertions.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
     }
 
@@ -178,7 +179,7 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doThrow(new RuntimeException("Boom!")).when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doThrow(new RuntimeException("Boom!")).when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assertions.assertTrue(subject().runExecution(job));
 
@@ -237,14 +238,14 @@ public class ScheduleJobTest {
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
         verify(jobRepository, times(1)).save(job);
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
@@ -435,11 +436,11 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
@@ -467,14 +468,14 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
 
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
         verify(jobRepository, times(1)).save(job);
         verify(workspaceRepository, times(2)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.completed, job.getStatus());
     }
 
@@ -529,13 +530,13 @@ public class ScheduleJobTest {
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // TODO Could be true with no extra scheduling, because we know we are done
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
@@ -570,7 +571,7 @@ public class ScheduleJobTest {
                          anyList(),
                          anyInt());
          doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
          doNothing().when(jobRepository).delete(any());
           // Passed directly to other mock, so list does not matter
          doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
@@ -612,7 +613,7 @@ public class ScheduleJobTest {
                         anyList(),
                         anyInt());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(jobRepository).delete(any());
         // Passed directly to other mock, so list does not matter
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
@@ -659,7 +660,7 @@ public class ScheduleJobTest {
                         anyList(),
                         anyInt());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doReturn(job).when(jobRepository).save(any());
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
 
@@ -670,6 +671,19 @@ public class ScheduleJobTest {
         verify(jobRepository, times(1)).save(prev2);
         Assertions.assertTrue(prev2.isDeleted());
         Assertions.assertFalse(prev1.isDeleted());
+    }
+
+    @Test
+    public void completedJobIncludesRunSummaryInCommitStatus() {
+        Job job = job(JobStatus.completed);
+        doReturn(Optional.of("Plan: 2 to add, 0 to change, 1 to destroy."))
+                .when(prCommentService).extractRunSummary(job);
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        subject().updateJobStatusOnVcs(job, JobStatus.completed);
+
+        verify(gitLabWebhookService, times(1))
+                .sendCommitStatus(job, JobStatus.completed, "Plan: 2 to add, 0 to change, 1 to destroy.");
     }
 
     @Test
@@ -689,12 +703,12 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
     }
 
@@ -716,11 +730,11 @@ public class ScheduleJobTest {
         doReturn(null).when(stepRepository).save(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
 
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
 
@@ -945,7 +959,7 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(prCommentService).postApplyResult(any());
         doNothing().when(prCommentService).acknowledgeCompletion(any());
 
@@ -979,7 +993,7 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(prCommentService).postPlanResult(any());
         doNothing().when(prCommentService).acknowledgeCompletion(any());
 
