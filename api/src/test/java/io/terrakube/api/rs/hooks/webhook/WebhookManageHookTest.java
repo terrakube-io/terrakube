@@ -3,6 +3,7 @@ package io.terrakube.api.rs.hooks.webhook;
 import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.Webhook;
@@ -38,6 +39,9 @@ class WebhookManageHookTest {
 
     @Mock
     GitHubWebhookService gitHubWebhookService;
+
+    @Mock
+    GitLabWebhookService gitLabWebhookService;
 
     @Mock
     RepoWebhookSyncScheduler repoWebhookSyncScheduler;
@@ -122,11 +126,11 @@ class WebhookManageHookTest {
     }
 
     @Test
-    void execute_nonGitHub_postcommitDoesNotScheduleSync() {
+    void execute_nonSharedProvider_postcommitDoesNotScheduleSync() {
         Workspace workspace = new Workspace();
-        workspace.setSource("https://gitlab.com/owner/repo");
+        workspace.setSource("https://bitbucket.org/owner/repo");
         Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.GITLAB);
+        vcs.setVcsType(VcsType.BITBUCKET);
         workspace.setVcs(vcs);
 
         Webhook webhook = new Webhook();
@@ -135,6 +139,46 @@ class WebhookManageHookTest {
 
         subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
 
+        verifyNoInteractions(repoWebhookSyncScheduler);
+    }
+
+    @Test
+    void execute_gitlab_postcommitSchedulesSync() {
+        Workspace workspace = new Workspace();
+        workspace.setId(java.util.UUID.fromString("44444444-4444-4444-4444-444444444444"));
+        workspace.setSource("https://gitlab.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITLAB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://gitlab.com/owner/repo", "44444444-4444-4444-4444-444444444444");
+    }
+
+    @Test
+    void execute_gitlab_migrationV2_precommitRemovesV1WebhookButDoesNotSyncYet() {
+        Workspace workspace = new Workspace();
+        workspace.setSource("https://gitlab.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITLAB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+        webhook.setRemoteHookId("gl-v1-hook-id");
+
+        subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(gitLabWebhookService).deleteWebhook(workspace, "gl-v1-hook-id");
+        verifyNoInteractions(gitHubWebhookService);
+        assertNull(webhook.getRemoteHookId());
         verifyNoInteractions(repoWebhookSyncScheduler);
     }
 

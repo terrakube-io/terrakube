@@ -9,6 +9,7 @@ import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -30,6 +31,9 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
     GitHubWebhookService gitHubWebhookService;
 
     @Autowired
+    GitLabWebhookService gitLabWebhookService;
+
+    @Autowired
     RepoWebhookSyncScheduler repoWebhookSyncScheduler;
 
     @Override
@@ -41,12 +45,12 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                 switch (phase) {
                     case PRECOMMIT:
                         try {
-                            if (isMigratedV2GitHub(elideEntity)) {
+                            if (isMigratedV2Shared(elideEntity)) {
                                 // Delete the old per-workspace hook, if any — this is
                                 // workspace-specific cleanup, not the shared-repo setup
                                 // that used to race, so it stays inline here.
                                 if (elideEntity.getRemoteHookId() != null && !elideEntity.getRemoteHookId().isEmpty()) {
-                                    gitHubWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
+                                    deleteWorkspaceHook(elideEntity);
                                     elideEntity.setRemoteHookId(null);
                                 }
                             } else {
@@ -65,16 +69,17 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                         // Only now is the workspace's migrated Webhook/WebhookEvent
                         // data durably committed and visible to the job's own query.
                         //
-                        // Scheduled whenever the workspace is GitHub-backed at all,
-                        // not just when currently migrated-v2: a revert (migratedV2
-                        // true -> false) needs this too, so the job can notice this
-                        // workspace no longer shares the URL and either resync the
-                        // remaining migrated workspaces' event types or, if this was
-                        // the last one, clean up the now-orphaned shared webhook. The
-                        // job itself is cheap and already a no-op when there's
-                        // nothing to do, so this isn't gated on isMigratedV2GitHub.
+                        // Scheduled whenever the workspace is backed by a shared
+                        // webhook provider (GitHub or GitLab) at all, not just when
+                        // currently migrated-v2: a revert (migratedV2 true -> false)
+                        // needs this too, so the job can notice this workspace no
+                        // longer shares the URL and either resync the remaining
+                        // migrated workspaces' event types or, if this was the last
+                        // one, clean up the now-orphaned shared webhook. The job
+                        // itself is cheap and already a no-op when there's nothing to
+                        // do, so this isn't gated on isMigratedV2Shared.
                         try {
-                            if (isGitHub(elideEntity)) {
+                            if (isSharedWebhookProvider(elideEntity)) {
                                 scheduleSync(elideEntity);
                             }
                         } catch (Exception e) {
@@ -90,7 +95,7 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
                 switch (phase) {
                     case POSTCOMMIT:
                         try {
-                            if (isMigratedV2GitHub(elideEntity)) {
+                            if (isMigratedV2Shared(elideEntity)) {
                                 scheduleSync(elideEntity);
                             } else {
                                 webhookService.deleteWorkspaceWebhook(elideEntity);
@@ -110,13 +115,29 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
         }
     }
 
-    private boolean isMigratedV2GitHub(Webhook elideEntity) {
-        return elideEntity.isMigratedV2() && isGitHub(elideEntity);
+    private boolean isMigratedV2Shared(Webhook elideEntity) {
+        return elideEntity.isMigratedV2() && isSharedWebhookProvider(elideEntity);
     }
 
-    private boolean isGitHub(Webhook elideEntity) {
+    // Both GitHub and GitLab participate in the shared, repository-level (v2)
+    // webhook flow reconciled asynchronously by RepoWebhookSyncJob.
+    private boolean isSharedWebhookProvider(Webhook elideEntity) {
+        VcsType vcsType = vcsType(elideEntity);
+        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB;
+    }
+
+    private VcsType vcsType(Webhook elideEntity) {
         return elideEntity.getWorkspace().getVcs() != null
-                && elideEntity.getWorkspace().getVcs().getVcsType() == VcsType.GITHUB;
+                ? elideEntity.getWorkspace().getVcs().getVcsType()
+                : null;
+    }
+
+    private void deleteWorkspaceHook(Webhook elideEntity) {
+        if (vcsType(elideEntity) == VcsType.GITLAB) {
+            gitLabWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
+        } else {
+            gitHubWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
+        }
     }
 
     private void scheduleSync(Webhook elideEntity) {
