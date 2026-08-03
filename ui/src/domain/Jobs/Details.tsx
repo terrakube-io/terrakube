@@ -19,7 +19,7 @@ import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling } from "../../hooks";
 import { Job, JobStep } from "../types";
-import { TerminalOutput } from "./TerminalOutput";
+import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { StructuredPlanOutput } from "./StructuredPlanOutput";
@@ -184,7 +184,7 @@ export const DetailsJob = ({ jobId }: Props) => {
   };
 
   const renderConsoleOutput = (item: JobStep) => {
-    return <TerminalOutput outputLog={item.outputLog} stepName={item.name} isRunning={item.status === "running"} />;
+    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
   };
 
   const getStepStructuredData = (item: JobStep) => {
@@ -395,6 +395,8 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
+              : stepItem.attributes.status === "running"
+              ? ""
               : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
         }))
       );

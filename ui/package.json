@@ -13,6 +13,8 @@
     "cron-to-quartz": "^1.4.15",
     "cronstrue": "^3.24.0",
     "github-markdown-css": "^5.9.0",
+    "graphql": "^17.0.2",
+    "graphql-ws": "^6.2.0",
     "hcl2-parser": "^1.0.3",
     "html-react-parser": "^6.1.5",
     "html-to-image": "^1.11.13",
