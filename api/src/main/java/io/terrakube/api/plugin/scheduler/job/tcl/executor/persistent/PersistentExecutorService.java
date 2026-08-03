@@ -23,6 +23,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import io.netty.channel.ChannelOption;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -90,13 +91,16 @@ public class PersistentExecutorService {
                     .toEntity(ExecutorContext.class)
                     .block();
         } catch (Exception ex) {
-            String hint = "";
             if (ex instanceof WebClientRequestException) {
-                hint = String.format(
+                // No response was ever received: connection refused, timed out, or (in Kubernetes,
+                // when every replica is mid-job and REFUSING_TRAFFIC) the Service has no ready
+                // endpoints. This is a capacity problem, not a broken job, so it's retryable.
+                String hint = String.format(
                         " Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).",
                         executorUrlForRequest);
+                throw new ExecutorUnavailableException(new Throwable(ex.getMessage() + hint, ex));
             }
-            throw new ExecutionException(new Throwable(ex.getMessage() + hint, ex));
+            throw new ExecutionException(new Throwable(ex.getMessage(), ex));
         }
 
         log.debug("Sending Job: /n {}", executorContext.toBuilder()

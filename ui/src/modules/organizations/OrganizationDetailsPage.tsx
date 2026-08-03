@@ -8,7 +8,7 @@ import { JobStatus } from "@/domain/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
-import { usePolling } from "@/hooks";
+import { useOrganizationJobStatusSubscription, usePolling } from "@/hooks";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
@@ -127,6 +127,21 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     },
     { interval: 10000, enabled: Boolean(id), immediate: false }
   );
+
+  // Pushes an immediate refresh on real job status changes anywhere in this organization; the poll
+  // above stays as a fallback for a dropped WebSocket connection.
+  useOrganizationJobStatusSubscription({
+    organizationId: id ?? "",
+    enabled: Boolean(id),
+    onEvent: () => {
+      if (!id) return;
+      workspaceService.listWorkspaces(id).then((response) => {
+        if (!response.isError && response.data) {
+          setWorkspaces(response.data.workspaces);
+        }
+      });
+    },
+  });
 
   const handleCreateWorkspace = () => {
     navigate("/workspaces/create");

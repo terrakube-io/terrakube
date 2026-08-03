@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.scheduler;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -31,6 +33,7 @@ import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
@@ -60,6 +63,9 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 @ExtendWith(MockitoExtension.class)
 public class ScheduleJobTest {
@@ -80,6 +86,8 @@ public class ScheduleJobTest {
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
+    RedisTemplate<String, Object> redisTemplate;
+    ValueOperations<String, Object> valueOperations;
 
     UUID stepId = UUID.randomUUID();
 
@@ -104,6 +112,12 @@ public class ScheduleJobTest {
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
+
+        redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
+        valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
+        lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
+        lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
     }
 
     private ScheduleJob subject() {
@@ -118,7 +132,7 @@ public class ScheduleJobTest {
                 workspaceRepository,
                 softDeleteService,
                 scheduleJobService,
-                null,
+                redisTemplate,
                 gitHubWebhookService,
                 null,
                 prCommentService,
@@ -211,6 +225,8 @@ public class ScheduleJobTest {
 
         verify(executorService, times(1)).execute(any(), any(), any());
         verify(jobRepository, times(1)).save(job);
+        verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
+        verify(redisTemplate, times(1)).delete(anyString());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
@@ -248,6 +264,98 @@ public class ScheduleJobTest {
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void pendingJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, times(0)).save(any());
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSkipsDispatchWhenAlreadyBeingDispatched() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // Simulate a concurrent Quartz firing (the main 30s trigger racing a status-change
+        // one-shot trigger) already holding the dispatch lock for this job.
+        doReturn(false).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSkipsDispatchWhenRedisIsUnreachable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // A Redis outage must fail closed (skip dispatch, retry later) rather than dispatch
+        // unprotected - a duplicate terraform apply is worse than a delayed one.
+        doThrow(new RedisConnectionFailureException("connection refused"))
+                .when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
     @Test
@@ -539,6 +647,36 @@ public class ScheduleJobTest {
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void approvedJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.approved);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any());
+        Assertions.assertEquals(JobStatus.approved, job.getStatus());
     }
 
      @Test

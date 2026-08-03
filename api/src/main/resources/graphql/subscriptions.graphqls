@@ -1,0 +1,17 @@
+type Query {
+    # GraphQL requires a Query root type to exist even though this schema is subscription-only -
+    # this app's regular reads/writes go through Elide's separate GraphQL endpoint (/graphql/api/v1),
+    # not this one, so nothing here is ever expected to actually call this field.
+    _empty: Boolean
+}
+
+type Subscription {
+    jobStatusChanged(workspaceId: ID!): JobStatusEvent!
+    organizationJobStatusChanged(organizationId: ID!): JobStatusEvent!
+}
+
+type JobStatusEvent {
+    jobId: Int!
+    workspaceId: ID!
+    status: String!
+}
