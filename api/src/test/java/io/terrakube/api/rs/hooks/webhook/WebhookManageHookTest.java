@@ -1,11 +1,13 @@
 package io.terrakube.api.rs.hooks.webhook;
 
-import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
+import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
+import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -38,13 +40,16 @@ class WebhookManageHookTest {
     WebhookService webhookService;
 
     @Mock
+    RepoWebhookService repoWebhookService;
+
+    @Mock
     GitHubWebhookService gitHubWebhookService;
 
     @Mock
     GitLabWebhookService gitLabWebhookService;
 
     @Mock
-    RepoWebhookSyncScheduler repoWebhookSyncScheduler;
+    RepoWebhookRepository repoWebhookRepository;
 
     @InjectMocks
     WebhookManageHook subject;
@@ -57,11 +62,9 @@ class WebhookManageHookTest {
     }
 
     @Test
-    void execute_migrationV2_precommitRemovesV1WebhookButDoesNotSyncYet() {
-        // The v1-hook cleanup is workspace-specific and stays synchronous in
-        // PRECOMMIT; the shared-repo sync must NOT happen here, since the
-        // workspace's migrated Webhook row isn't durably committed yet for
-        // the (eventually async) job to see.
+    void execute_migrationV2GitHub_precommitCreatesSharedWebhookAndRemovesV1Hook() {
+        // On migration to v2 the shared repo webhook is created/updated and
+        // the old per-workspace (v1) hook is cleaned up synchronously here.
         Workspace workspace = new Workspace();
         workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
@@ -73,17 +76,21 @@ class WebhookManageHookTest {
         webhook.setMigratedV2(true);
         webhook.setRemoteHookId("v1-hook-id");
 
+        RepoWebhook repoWebhook = new RepoWebhook();
+        when(repoWebhookService.getOrCreateRepoWebhook(workspace)).thenReturn(repoWebhook);
+
         subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
+        verify(repoWebhookService).getOrCreateRepoWebhook(workspace);
+        verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
         verify(gitHubWebhookService).deleteWebhook(workspace, "v1-hook-id");
         assertNull(webhook.getRemoteHookId());
-        verifyNoInteractions(repoWebhookSyncScheduler);
+        verify(webhookService, never()).createOrUpdateWorkspaceWebhook(any());
     }
 
     @Test
-    void execute_migrationV2_postcommitSchedulesSync() {
+    void execute_migrationV2GitHub_precommitWithoutV1HookDoesNotDeleteWebhook() {
         Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"));
         workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
         vcs.setVcsType(VcsType.GITHUB);
@@ -93,60 +100,20 @@ class WebhookManageHookTest {
         webhook.setWorkspace(workspace);
         webhook.setMigratedV2(true);
 
-        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+        RepoWebhook repoWebhook = new RepoWebhook();
+        when(repoWebhookService.getOrCreateRepoWebhook(workspace)).thenReturn(repoWebhook);
 
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://github.com/owner/repo", "11111111-1111-1111-1111-111111111111");
-    }
+        subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
-    // Covers a real bug found via live UI testing: reverting the last
-    // migrated-v2 workspace on a shared repo left the shared RepoWebhook
-    // permanently orphaned — both the DB row and the live GitHub webhook —
-    // because POSTCOMMIT only scheduled a sync when the entity was *still*
-    // migratedV2 after the update. A revert (migratedV2 true -> false) needs
-    // the same sync scheduled, so the job can notice this workspace no
-    // longer shares the repo and clean up if it was the last one.
-    @Test
-    void execute_revertFromMigratedV2_postcommitStillSchedulesSync() {
-        Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("33333333-3333-3333-3333-333333333333"));
-        workspace.setSource("https://github.com/owner/repo");
-        Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.GITHUB);
-        workspace.setVcs(vcs);
-
-        Webhook webhook = new Webhook();
-        webhook.setWorkspace(workspace);
-        webhook.setMigratedV2(false);
-
-        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
-
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://github.com/owner/repo", "33333333-3333-3333-3333-333333333333");
+        verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
+        verify(gitHubWebhookService, never()).deleteWebhook(any(), any());
     }
 
     @Test
-    void execute_unsupportedVcs_postcommitDoesNotScheduleSync() {
-        Workspace workspace = new Workspace();
-        workspace.setSource("https://bitbucket.org/owner/repo");
-        Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.BITBUCKET);
-        workspace.setVcs(vcs);
-
-        Webhook webhook = new Webhook();
-        webhook.setWorkspace(workspace);
-        webhook.setMigratedV2(false);
-
-        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
-
-        verifyNoInteractions(repoWebhookSyncScheduler);
-    }
-
-    @Test
-    void execute_gitlabMigrationV2_precommitRemovesV1WebhookButDoesNotSyncYet() {
-        // Mirrors the GitHub shared-webhook migration: the per-workspace v1
-        // hook cleanup stays synchronous in PRECOMMIT, and the shared-repo
-        // sync is deferred to POSTCOMMIT.
+    void execute_migrationV2Gitlab_precommitCreatesSharedWebhookAndRemovesV1Hook() {
+        // Mirrors the GitHub shared-webhook migration for GitLab-backed
+        // workspaces: create/update the shared repo webhook and drop the
+        // old per-workspace GitLab hook.
         Workspace workspace = new Workspace();
         workspace.setSource("https://gitlab.com/owner/repo");
         Vcs vcs = new Vcs();
@@ -158,75 +125,83 @@ class WebhookManageHookTest {
         webhook.setMigratedV2(true);
         webhook.setRemoteHookId("v1-hook-id");
 
+        RepoWebhook repoWebhook = new RepoWebhook();
+        when(repoWebhookService.getOrCreateRepoWebhook(workspace)).thenReturn(repoWebhook);
+
         subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
+        verify(repoWebhookService).getOrCreateRepoWebhook(workspace);
+        verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
         verify(gitLabWebhookService).deleteWebhook(workspace, "v1-hook-id");
         assertNull(webhook.getRemoteHookId());
-        verifyNoInteractions(repoWebhookSyncScheduler);
+        verify(webhookService, never()).createOrUpdateWorkspaceWebhook(any());
     }
 
     @Test
-    void execute_gitlabMigrationV2_postcommitSchedulesSync() {
+    void execute_notMigratedV2_precommitCreatesWorkspaceWebhook() {
         Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("44444444-4444-4444-4444-444444444444"));
-        workspace.setSource("https://gitlab.com/owner/repo");
+        workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.GITLAB);
-        workspace.setVcs(vcs);
-
-        Webhook webhook = new Webhook();
-        webhook.setWorkspace(workspace);
-        webhook.setMigratedV2(true);
-
-        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
-
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://gitlab.com/owner/repo", "44444444-4444-4444-4444-444444444444");
-    }
-
-    @Test
-    void execute_gitlabRevertFromMigratedV2_postcommitStillSchedulesSync() {
-        Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("55555555-5555-5555-5555-555555555555"));
-        workspace.setSource("https://gitlab.com/owner/repo");
-        Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.GITLAB);
+        vcs.setVcsType(VcsType.GITHUB);
         workspace.setVcs(vcs);
 
         Webhook webhook = new Webhook();
         webhook.setWorkspace(workspace);
         webhook.setMigratedV2(false);
 
-        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+        subject.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
 
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://gitlab.com/owner/repo", "55555555-5555-5555-5555-555555555555");
+        verify(webhookService).createOrUpdateWorkspaceWebhook(webhook);
+        verifyNoInteractions(repoWebhookService);
     }
 
     @Test
-    void execute_delete_gitlabMigratedV2_postcommitSchedulesSync() {
+    void execute_delete_migratedV2GitHub_postcommitCleansUpOrphanSharedWebhook() {
         Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("66666666-6666-6666-6666-666666666666"));
-        workspace.setSource("https://gitlab.com/owner/repo");
+        workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
-        vcs.setVcsType(VcsType.GITLAB);
+        vcs.setVcsType(VcsType.GITHUB);
         workspace.setVcs(vcs);
 
         Webhook webhook = new Webhook();
         webhook.setWorkspace(workspace);
         webhook.setMigratedV2(true);
+
+        RepoWebhook repoWebhook = new RepoWebhook();
+        when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
+                .thenReturn(Optional.of(repoWebhook));
 
         subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
 
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://gitlab.com/owner/repo", "66666666-6666-6666-6666-666666666666");
+        verify(repoWebhookService).cleanupIfOrphan(repoWebhook);
         verify(webhookService, never()).deleteWorkspaceWebhook(any());
     }
 
     @Test
-    void execute_delete_migratedV2_postcommitSchedulesSync() {
+    void execute_delete_migratedV2Gitlab_postcommitCleansUpOrphanSharedWebhook() {
         Workspace workspace = new Workspace();
-        workspace.setId(java.util.UUID.fromString("22222222-2222-2222-2222-222222222222"));
+        workspace.setSource("https://gitlab.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITLAB);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+
+        RepoWebhook repoWebhook = new RepoWebhook();
+        when(repoWebhookRepository.findByRepositoryUrl("https://gitlab.com/owner/repo"))
+                .thenReturn(Optional.of(repoWebhook));
+
+        subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookService).cleanupIfOrphan(repoWebhook);
+        verify(webhookService, never()).deleteWorkspaceWebhook(any());
+    }
+
+    @Test
+    void execute_delete_migratedV2GitHub_noSharedWebhookFound_doesNothing() {
+        Workspace workspace = new Workspace();
         workspace.setSource("https://github.com/owner/repo");
         Vcs vcs = new Vcs();
         vcs.setVcsType(VcsType.GITHUB);
@@ -236,10 +211,12 @@ class WebhookManageHookTest {
         webhook.setWorkspace(workspace);
         webhook.setMigratedV2(true);
 
+        when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
+                .thenReturn(Optional.empty());
+
         subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
 
-        verify(repoWebhookSyncScheduler).scheduleSync(
-                "https://github.com/owner/repo", "22222222-2222-2222-2222-222222222222");
+        verify(repoWebhookService, never()).cleanupIfOrphan(any());
         verify(webhookService, never()).deleteWorkspaceWebhook(any());
     }
 
@@ -255,7 +232,8 @@ class WebhookManageHookTest {
         subject.execute(Operation.DELETE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
 
         verify(webhookService).deleteWorkspaceWebhook(webhook);
-        verifyNoInteractions(repoWebhookSyncScheduler);
+        verifyNoInteractions(repoWebhookRepository);
+        verifyNoInteractions(repoWebhookService);
     }
 
     @Test
