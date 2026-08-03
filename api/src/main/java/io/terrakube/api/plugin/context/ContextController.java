@@ -37,6 +37,10 @@ public class ContextController {
             JobStatus.completed,
             JobStatus.noChanges);
 
+    private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
+    private static final String CONTEXT_APPLY_KEY = "applyStructuredOutput";
+    private static final String CONTEXT_OUTPUTS_KEY = "terraformOutputs";
+
     private final StorageTypeService storageTypeService;
 
     private final JobRepository jobRepository;
@@ -82,19 +86,45 @@ public class ContextController {
     private String sanitizeContextPayload(String context) throws JacksonException, IOException {
         JsonNode rootNode = objectMapper.readTree(context);
         if (rootNode instanceof ObjectNode rootObject) {
-            sanitizeStructuredPlanOutput(rootObject);
+            sanitizeStructuredChanges(rootObject, CONTEXT_PLAN_KEY);
+            sanitizeStructuredChanges(rootObject, CONTEXT_APPLY_KEY);
+            sanitizeTerraformOutputs(rootObject);
         }
 
         return objectMapper.writeValueAsString(rootNode);
     }
 
-    private void sanitizeStructuredPlanOutput(ObjectNode rootNode) {
-        JsonNode structuredPlanOutputNode = rootNode.get("planStructuredOutput");
-        if (!(structuredPlanOutputNode instanceof ObjectNode structuredPlanOutputObject)) {
+    private void sanitizeTerraformOutputs(ObjectNode rootNode) {
+        JsonNode outputsNode = rootNode.get(CONTEXT_OUTPUTS_KEY);
+        if (!(outputsNode instanceof ObjectNode outputsObject)) {
             return;
         }
 
-        structuredPlanOutputObject.fields().forEachRemaining(entry -> {
+        outputsObject.fields().forEachRemaining(entry -> {
+            if (!(entry.getValue() instanceof ArrayNode stepOutputs)) {
+                return;
+            }
+
+            stepOutputs.forEach(outputNode -> {
+                if (!(outputNode instanceof ObjectNode outputObject)) {
+                    return;
+                }
+
+                JsonNode sensitiveNode = outputObject.get("sensitive");
+                if (sensitiveNode != null && sensitiveNode.isBoolean() && sensitiveNode.booleanValue()) {
+                    outputObject.set("value", NullNode.getInstance());
+                }
+            });
+        });
+    }
+
+    private void sanitizeStructuredChanges(ObjectNode rootNode, String contextKey) {
+        JsonNode structuredOutputNode = rootNode.get(contextKey);
+        if (!(structuredOutputNode instanceof ObjectNode structuredOutputObject)) {
+            return;
+        }
+
+        structuredOutputObject.fields().forEachRemaining(entry -> {
             if (!(entry.getValue() instanceof ArrayNode stepChanges)) {
                 return;
             }

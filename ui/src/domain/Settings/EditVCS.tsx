@@ -4,6 +4,7 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type Props = {
@@ -263,7 +264,9 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   return (
     <Spin spinning={loading}>
       <div className="chooseType">
-        <h1>Edit VCS Provider</h1>
+        <Typography.Title level={1} style={{ margin: 0 }}>
+          Edit VCS Provider
+        </Typography.Title>
         <Typography.Text type="secondary" className="App-text">
           Update the {renderVCSType(vcsTypeExtended)} client credentials used by Terrakube to access your version
           control system. For additional information, please read our{" "}
@@ -278,59 +281,61 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
           <b>Provider:</b> {renderVCSType(vcsTypeExtended)}&nbsp;&nbsp;
           <b>Connection type:</b> {connectionType === VcsConnectionType.OAUTH ? "OAuth App" : "GitHub App (Standalone)"}
         </Typography.Text>
-        <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="endpoint"
-            label="HTTPS URL"
-            hidden={httpsHidden(vcsTypeExtended)}
-            rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="apiUrl"
-            label="API URL"
-            hidden={apiUrlHidden(vcsTypeExtended)}
-            rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="clientId"
-            label={getClientIdName(vcsTypeExtended, connectionType)}
-            rules={[{ required: true }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="clientSecret"
-            label={getSecretIdName(vcsTypeExtended, connectionType)}
-            hidden={secretHidden}
-            extra="Leave blank to keep the existing secret"
-          >
-            <Input.Password />
-          </Form.Item>
-          <Form.Item
-            name="privateKey"
-            label={getSecretIdName(vcsTypeExtended, connectionType)}
-            hidden={connectionType === VcsConnectionType.OAUTH}
-            extra="Leave blank to keep the existing private key"
-            rules={[{ validator: validatePrivateKeyFormat }]}
-          >
-            <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                Update
-              </Button>
-              <Button onClick={onCancel}>Cancel</Button>
-            </Space>
-          </Form.Item>
-        </Form>
+        <SettingsSection>
+          <Form form={form} layout="vertical" onFinish={onFinish}>
+            <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="endpoint"
+              label="HTTPS URL"
+              hidden={httpsHidden(vcsTypeExtended)}
+              rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="apiUrl"
+              label="API URL"
+              hidden={apiUrlHidden(vcsTypeExtended)}
+              rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="clientId"
+              label={getClientIdName(vcsTypeExtended, connectionType)}
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="clientSecret"
+              label={getSecretIdName(vcsTypeExtended, connectionType)}
+              hidden={secretHidden}
+              extra="Leave blank to keep the existing secret"
+            >
+              <Input.Password />
+            </Form.Item>
+            <Form.Item
+              name="privateKey"
+              label={getSecretIdName(vcsTypeExtended, connectionType)}
+              hidden={connectionType === VcsConnectionType.OAUTH}
+              extra="Leave blank to keep the existing private key"
+              rules={[{ validator: validatePrivateKeyFormat }]}
+            >
+              <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
+            </Form.Item>
+            <Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit">
+                  Update
+                </Button>
+                <Button onClick={onCancel}>Cancel</Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </SettingsSection>
       </div>
     </Spin>
   );

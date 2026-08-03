@@ -1,0 +1,178 @@
+.app-sidebar {
+  background: var(--tk-sidebar-bg) !important;
+  position: relative;
+  overflow: visible;
+}
+
+/* Defensive: antd's internal Sider wrapper doesn't always carry an explicit
+   height, which breaks the height:100% chain below it and can push the
+   footer (org switcher) out of view on tall nested menus. */
+.app-sidebar .ant-layout-sider-children {
+  height: 100%;
+}
+
+.app-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: visible;
+}
+
+.app-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 12px;
+  flex-shrink: 0;
+}
+
+/* Collapsed (64px) has no room for the logo and the collapse button side by
+   side — stack them so the expand trigger stays reachable. */
+.app-sidebar-header--collapsed {
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 8px;
+}
+
+.app-sidebar-home-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.app-sidebar-home-link:hover {
+  background: var(--tk-accent-tint);
+}
+
+.app-sidebar-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+@keyframes app-sidebar-logo-wiggle {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  35% {
+    transform: scale(1.15) rotate(-10deg);
+  }
+  70% {
+    transform: scale(1.1) rotate(6deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.app-sidebar-home-link:hover .app-sidebar-logo {
+  animation: app-sidebar-logo-wiggle 0.5s ease;
+}
+
+.app-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.app-sidebar-utility {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.app-sidebar-collapse-trigger {
+  background-color: #2e2e2e;
+  border: 1px solid #3d3d3d;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  flex-shrink: 0;
+  height: 32px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.app-sidebar-collapse-trigger:hover {
+  background-color: #3d3d3d;
+  border-color: #4d4d4d;
+  color: #fff;
+}
+
+@keyframes app-sidebar-menu-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-sidebar-menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-inline-end: none !important;
+  animation: app-sidebar-menu-fade-in 0.2s ease;
+}
+
+.app-sidebar-menu .ant-menu-item,
+.app-sidebar-menu .ant-menu-submenu-title {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    padding 0.15s ease;
+}
+
+/* Nested/grouped sections (org settings, workspace settings, account settings)
+   get a visible rail + indent so they read as one level deeper than the
+   top-level nav instead of looking like a flat list. */
+.app-sidebar-menu .ant-menu-item-group-title {
+  padding-left: 24px !important;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tk-sidebar-text-secondary);
+  opacity: 0.75;
+}
+
+.app-sidebar-menu .ant-menu-item-group-list {
+  position: relative;
+  margin-left: 20px;
+  padding-left: 8px;
+  border-left: 1px solid var(--tk-sidebar-border);
+}
+
+.app-sidebar-menu .ant-menu-item-group-list .ant-menu-item {
+  padding-left: 12px !important;
+}
+
+.app-sidebar-menu .ant-menu-item[data-menu-id$="__back__"] {
+  margin-bottom: 8px !important;
+  border-bottom: 1px solid var(--tk-sidebar-border);
+}
+
+.app-sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--tk-sidebar-border);
+  flex-shrink: 0;
+}

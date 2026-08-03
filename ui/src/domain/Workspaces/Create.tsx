@@ -85,6 +85,7 @@ export const CreateWorkspace = () => {
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
   const [orgTemplates, setOrgTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [vcsButtonsVisible, setVCSButtonsVisible] = useState(true);
   const [vcsId, setVcsId] = useState("");
   const [current, setCurrent] = useState(0);
@@ -449,6 +450,11 @@ export const CreateWorkspace = () => {
   };
 
   const onFinish = async (values: CreateWorkspaceForm) => {
+    // Guard against double-submits (e.g. an impatient second click before the
+    // first request resolves).
+    if (creating) return;
+    setCreating(true);
+
     const workspace_lid = uuid();
     const body = {
       "atomic:operations": [
@@ -502,39 +508,43 @@ export const CreateWorkspace = () => {
     }
 
     try {
+      // axios only resolves for 2xx responses, so getting here always means success —
+      // checking for one specific status code risks silently doing nothing if the API
+      // ever returns a different 2xx.
       const response = await axiosInstance.post(`/operations`, body, {
         headers: {
           "Content-Type": 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
           Accept: 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
         },
       });
-      if (response.status === 200) {
-        const workspaceId = response.data["atomic:results"][0].data.id;
-        navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
-      }
+      const workspaceId = response.data["atomic:results"][0].data.id;
+      message.success("Workspace created successfully");
+      navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
     } catch (error: any) {
-      if (error.response) {
-        if (error.response.status === 403) {
-          message.error(
-            <span>
-              You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
-              <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-              <a
-                target="_blank"
-                href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                rel="noreferrer"
-              >
-                Terrakube documentation
-              </a>
-              .
-            </span>
-          );
-        } else {
-          message.error(
-            <span>An error occurred while submitting the workspace. Please contact your system administrator.</span>
-          );
-        }
+      if (error.response?.status === 403) {
+        message.error(
+          <span>
+            You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
+            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
+            <a
+              target="_blank"
+              href="https://docs.terrakube.io/user-guide/organizations/team-management"
+              rel="noreferrer"
+            >
+              Terrakube documentation
+            </a>
+            .
+          </span>
+        );
+      } else {
+        console.error("Failed to create workspace:", error.response?.status, error.response?.data, error);
+        message.error(
+          error.response?.data?.errors?.[0]?.detail ||
+            "An error occurred while submitting the workspace. Please contact your system administrator."
+        );
       }
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -583,7 +593,7 @@ export const CreateWorkspace = () => {
         style={{ margin: "16px 0" }}
         items={[
           {
-            title: organizationName,
+            title: <Link to={`/organizations/${organizationId}/workspaces`}>{organizationName}</Link>,
           },
           {
             title: <Link to={`/organizations/${organizationId}/workspaces`}>Workspaces</Link>,
@@ -596,7 +606,9 @@ export const CreateWorkspace = () => {
 
       <div className="site-layout-content" style={{ background: colorBgContainer }}>
         <div className="createWorkspace">
-          <h2>Create a new Workspace</h2>
+          <Typography.Title level={2} style={{ margin: 0 }}>
+            Create a new Workspace
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary" className="App-text">
               Workspaces determine how Terrakube organizes infrastructure. A workspace contains your configuration
@@ -634,7 +646,9 @@ export const CreateWorkspace = () => {
           </div>
           {current == 0 && (
             <Space className="chooseType" direction="vertical">
-              <h3>Choose your IaC type </h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose your IaC type{" "}
+              </Typography.Title>
               <List
                 grid={{
                   gutter: 24,
@@ -676,7 +690,9 @@ export const CreateWorkspace = () => {
 
           {current === 1 && (
             <Space className="chooseType" direction="vertical">
-              <h3>Choose your workflow </h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose your workflow{" "}
+              </Typography.Title>
               <Card hoverable onClick={handleClick}>
                 <IconContext.Provider value={{ size: "1.3em" }}>
                   <BiBookBookmark />
@@ -712,7 +728,9 @@ export const CreateWorkspace = () => {
 
           {current === 2 && versionControlFlow && (
             <Space className="chooseType" direction="vertical">
-              <h3>Connect to a version control provider</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Connect to a version control provider
+              </Typography.Title>
               <div className="workflowDescription2 App-text">
                 Choose the version control provider that hosts the {iacType?.name}&nbsp; configuration for this
                 workspace.
@@ -803,7 +821,9 @@ export const CreateWorkspace = () => {
             initialValues={{ folder: "/" }}
           >
             <Space hidden={step2Hidden} className="chooseType" direction="vertical" style={{ width: "100%" }}>
-              <h3>Choose a repository</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose a repository
+              </Typography.Title>
               <div className="workflowDescription2 App-text">
                 Choose the repository that hosts your {iacType?.name} source code.
               </div>
@@ -872,8 +892,7 @@ export const CreateWorkspace = () => {
                           style={{
                             cursor: "pointer",
                             padding: "10px 12px",
-                            backgroundColor:
-                              selectedRepoUrl === repo.url ? token.controlItemBgActive : "transparent",
+                            backgroundColor: selectedRepoUrl === repo.url ? token.controlItemBgActive : "transparent",
                             borderLeft:
                               selectedRepoUrl === repo.url
                                 ? `3px solid ${token.colorPrimary}`
@@ -940,7 +959,9 @@ export const CreateWorkspace = () => {
             </Space>
 
             <Space hidden={step3Hidden} className="chooseType" direction="vertical">
-              <h3>Configure settings</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Configure settings
+              </Typography.Title>
               <Form.Item
                 name="name"
                 label="Workspace Name"
@@ -976,8 +997,8 @@ export const CreateWorkspace = () => {
               </Form.Item>
               <Form.Item
                 name="defaultTemplate"
-                label="Default template (VCS Push)"
-                tooltip="Template that will be executed by default when doing a git push to the repository."
+                label="Default Template"
+                tooltip="Template used for the terrakube apply PR comment command, and to pre-fill the template when manually creating a run."
                 rules={[{ required: requiredVcsPush }]}
                 hidden={!versionControlFlow}
               >
@@ -1031,7 +1052,7 @@ export const CreateWorkspace = () => {
                 </Select>
               </Form.Item>
               <Form.Item>
-                <Button type="primary" htmlType="submit">
+                <Button type="primary" htmlType="submit" loading={creating} disabled={creating}>
                   Create Workspace
                 </Button>
               </Form.Item>

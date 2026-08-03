@@ -11,6 +11,7 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { getUiRedirectUri } from "../../config/basePath";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 const { Step } = Steps;
@@ -791,7 +792,9 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
   };
   return (
     <div>
-      <h1>Add VCS Provider</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Add VCS Provider
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           To connect workspaces and modules to git repositories containing configurations, Terrakube needs access to
@@ -803,112 +806,123 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         <Step title="Set up provider" />
       </Steps>
       {current == 0 && (
-        <Space className="chooseType" direction="vertical">
-          <h3>Choose a version control provider to connect</h3>
-          <div className="workflowDescription2 App-text">
-            Choose the version control provider you would like to connect.
-          </div>
-          <Space direction="horizontal">
-            <Dropdown menu={{ items: githubItems }}>
-              <Button size="large">
-                <Space>
-                  <GithubOutlined /> GitHub <DownOutlined />
-                </Space>
-              </Button>
-            </Dropdown>
-            <Dropdown menu={{ items: gitlabItems }}>
-              <Button size="large">
-                <Space>
-                  <GitlabOutlined />
-                  GitLab <DownOutlined />
-                </Space>
-              </Button>
-            </Dropdown>
-            <Dropdown menu={{ items: bitBucketItems }}>
-              <Button size="large">
-                <SiBitbucket /> &nbsp; Bitbucket <DownOutlined />
-              </Button>
-            </Dropdown>
-            <Dropdown menu={{ items: azDevOpsItems }}>
-              <Button size="large">
-                <Space>
-                  <VscAzureDevops /> Azure Devops <DownOutlined />
-                </Space>
-              </Button>
-            </Dropdown>
+        <SettingsSection>
+          <Space className="chooseType" direction="vertical">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Choose a version control provider to connect
+            </Typography.Title>
+            <div className="workflowDescription2 App-text">
+              Choose the version control provider you would like to connect.
+            </div>
+            <Space direction="horizontal">
+              <Dropdown menu={{ items: githubItems }}>
+                <Button size="large">
+                  <Space>
+                    <GithubOutlined /> GitHub <DownOutlined />
+                  </Space>
+                </Button>
+              </Dropdown>
+              <Dropdown menu={{ items: gitlabItems }}>
+                <Button size="large">
+                  <Space>
+                    <GitlabOutlined />
+                    GitLab <DownOutlined />
+                  </Space>
+                </Button>
+              </Dropdown>
+              <Dropdown menu={{ items: bitBucketItems }}>
+                <Button size="large">
+                  <SiBitbucket /> &nbsp; Bitbucket <DownOutlined />
+                </Button>
+              </Dropdown>
+              <Dropdown menu={{ items: azDevOpsItems }}>
+                <Button size="large">
+                  <Space>
+                    <VscAzureDevops /> Azure Devops <DownOutlined />
+                  </Space>
+                </Button>
+              </Dropdown>
+            </Space>
           </Space>
-        </Space>
+        </SettingsSection>
       )}
       {current == 1 && (
-        <Space className="chooseType" direction="vertical">
-          <h3>Set up provider</h3>
-          <Typography.Text type="secondary" className="paragraph">
-            For additional information about connecting to {renderVCSType(vcsType)} to Terrakube, please read our{" "}
-            <Button className="link" target="_blank" href={getDocsUrl(vcsType)} type="link">
-              documentation&nbsp; <HiOutlineExternalLink />.
-            </Button>
-          </Typography.Text>
-          {renderStep1(vcsType)}
-          {renderStep2(vcsType)}
-          <Form
-            onFinish={onFinish}
-            validateMessages={validateMessages}
-            name="create-vcs"
-            layout="vertical"
-            initialValues={{
-              endpoint: getDefaultHttps(vcsType),
-              apiUrl: getAPIUrl(vcsType),
-            }}
-          >
-            <Form.Item
-              name="name"
-              label="Name"
-              extra=" A name for your VCS Provider. This is helpful if you will be configuring multiple instances of the same provider."
-              rules={[{ required: true }]}
+        <SettingsSection>
+          <Space className="chooseType" direction="vertical">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Set up provider
+            </Typography.Title>
+            <Typography.Text type="secondary" className="paragraph">
+              For additional information about connecting to {renderVCSType(vcsType)} to Terrakube, please read our{" "}
+              <Button className="link" target="_blank" href={getDocsUrl(vcsType)} type="link">
+                documentation&nbsp; <HiOutlineExternalLink />.
+              </Button>
+            </Typography.Text>
+            {renderStep1(vcsType)}
+            {renderStep2(vcsType)}
+            <Form
+              onFinish={onFinish}
+              validateMessages={validateMessages}
+              name="create-vcs"
+              layout="vertical"
+              initialValues={{
+                endpoint: getDefaultHttps(vcsType),
+                apiUrl: getAPIUrl(vcsType),
+              }}
             >
-              <Input placeholder={renderVCSType(vcsType)} />
-            </Form.Item>
-            <Form.Item
-              name="endpoint"
-              label="HTTPS URL"
-              rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
-              hidden={httpsHidden(vcsType)}
-            >
-              <Input placeholder={getHttpsPlaceholder(vcsType)} />
-            </Form.Item>
-            <Form.Item
-              name="apiUrl"
-              label="API URL"
-              rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
-              hidden={apiUrlHidden(vcsType)}
-            >
-              <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
-            </Form.Item>
-            <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
-              <Input placeholder={connectionType === "OAUTH" ? "ex. 824ff023a7136981f322" : "970081"} />
-            </Form.Item>
-            {renderStep3(vcsType)}
-            <Form.Item
-              name="clientSecret"
-              label={getSecretIdName(vcsType)}
-              rules={[{ required: connectionType === "OAUTH" && vcsType != "AZURE_DEVOPS" }]}
-              hidden={connectionType != "OAUTH" || vcsType === "AZURE_DEVOPS"}
-            >
-              <Input placeholder="ex. db55545bd64e851dc298ba900dd197a02b42bb3s" />
-            </Form.Item>
-            <Form.Item
-              name="privateKey"
-              label={getSecretIdName(vcsType)}
-              rules={[{ required: connectionType != "OAUTH" ? true : false }, { validator: validatePrivateKeyFormat }]}
-              hidden={connectionType === "OAUTH"}
-            >
-              <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
-            </Form.Item>
-            <Button type="primary" htmlType="submit">
-              Connect and Continue
-            </Button>
-          </Form>
-        </Space>
+              <Form.Item
+                name="name"
+                label="Name"
+                extra=" A name for your VCS Provider. This is helpful if you will be configuring multiple instances of the same provider."
+                rules={[{ required: true }]}
+              >
+                <Input placeholder={renderVCSType(vcsType)} />
+              </Form.Item>
+              <Form.Item
+                name="endpoint"
+                label="HTTPS URL"
+                rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
+                hidden={httpsHidden(vcsType)}
+              >
+                <Input placeholder={getHttpsPlaceholder(vcsType)} />
+              </Form.Item>
+              <Form.Item
+                name="apiUrl"
+                label="API URL"
+                rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
+                hidden={apiUrlHidden(vcsType)}
+              >
+                <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
+              </Form.Item>
+              <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
+                <Input placeholder={connectionType === "OAUTH" ? "ex. 824ff023a7136981f322" : "970081"} />
+              </Form.Item>
+              {renderStep3(vcsType)}
+              <Form.Item
+                name="clientSecret"
+                label={getSecretIdName(vcsType)}
+                rules={[{ required: connectionType === "OAUTH" && vcsType != "AZURE_DEVOPS" }]}
+                hidden={connectionType != "OAUTH" || vcsType === "AZURE_DEVOPS"}
+              >
+                <Input placeholder="ex. db55545bd64e851dc298ba900dd197a02b42bb3s" />
+              </Form.Item>
+              <Form.Item
+                name="privateKey"
+                label={getSecretIdName(vcsType)}
+                rules={[
+                  { required: connectionType != "OAUTH" ? true : false },
+                  { validator: validatePrivateKeyFormat },
+                ]}
+                hidden={connectionType === "OAUTH"}
+              >
+                <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
+              </Form.Item>
+              <Button type="primary" htmlType="submit">
+                Connect and Continue
+              </Button>
+            </Form>
+          </Space>
+        </SettingsSection>
       )}
     </div>
   );

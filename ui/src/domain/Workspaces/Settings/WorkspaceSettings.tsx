@@ -1,16 +1,11 @@
-import { Layout, Menu, theme } from "antd";
-import { useState } from "react";
 import { WorkspaceGeneral } from "./General";
 import { WorkspaceLocking } from "./Locking";
 import { WorkspaceSSHKey } from "./SSHKey";
 import { WorkspaceWebhook } from "./Webhook";
 import { WorkspaceAdvanced } from "./Advanced";
 import { WorkspaceStateShared } from "./StateShared";
+import { WorkspaceTeamAccess } from "./TeamAccess";
 import { Workspace, Template, VcsType } from "../../types";
-import type { MenuProps } from "antd";
-
-const { Content, Sider } = Layout;
-type MenuItem = Required<MenuProps>["items"][number];
 
 type Props = {
   workspace: Workspace;
@@ -18,6 +13,7 @@ type Props = {
   manageWorkspace: boolean;
   vcsProvider?: VcsType;
   onWorkspaceUpdate?: () => void;
+  activeSection: string;
 };
 
 export const WorkspaceSettings = ({
@@ -26,93 +22,62 @@ export const WorkspaceSettings = ({
   manageWorkspace,
   vcsProvider,
   onWorkspaceUpdate,
+  activeSection,
 }: Props) => {
-  const [activeKey, setActiveKey] = useState("general");
-  const { token } = theme.useToken();
-
-  const handleMenuClick: MenuProps["onClick"] = (e) => {
-    setActiveKey(e.key);
-  };
-
   const handleWorkspaceUpdate = () => {
     if (onWorkspaceUpdate) {
       onWorkspaceUpdate();
     }
   };
 
-  const renderContent = () => {
-    switch (activeKey) {
-      case "general":
-        return (
-          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />
-        );
-      case "locking":
-        return (
-          <WorkspaceLocking
-            workspace={workspace}
-            manageWorkspace={manageWorkspace}
-            onWorkspaceUpdate={handleWorkspaceUpdate}
-          />
-        );
-      case "sshkey":
-        return <WorkspaceSSHKey workspace={workspace} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />;
-      case "webhook":
-        return (
-          <WorkspaceWebhook
-            workspace={workspace}
-            vcsProvider={vcsProvider}
-            orgTemplates={orgTemplates}
-            manageWorkspace={manageWorkspace}
-            onWorkspaceUpdate={handleWorkspaceUpdate}
-          />
-        );
-      case "advanced":
-        return <WorkspaceAdvanced workspace={workspace} manageWorkspace={manageWorkspace} />;
-      case "state-shared":
-        return <WorkspaceStateShared workspace={workspace} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />;
-      default:
-        return (
-          <WorkspaceGeneral workspaceData={workspace} orgTemplates={orgTemplates} manageWorkspace={manageWorkspace} onWorkspaceUpdate={handleWorkspaceUpdate} />
-        );
-    }
-  };
-
-  const menuItems: MenuItem[] = [
-    {
-      type: "group",
-      label: "Workspace Settings",
-      key: "workspace-settings",
-      children: [
-        { key: "general", label: "General" },
-        { key: "locking", label: "Locking" },
-        { key: "sshkey", label: "SSH Key" },
-        { key: "webhook", label: "Webhook" },
-        { key: "state-shared", label: "State Shared" },
-        { key: "advanced", label: "Destruction and Deletion" },
-      ],
-    },
-  ];
-
-  return (
-    <Layout style={{ background: token.colorBgContainer }}>
-      <Sider
-        width={200}
-        style={{
-          background: token.colorBgContainer,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-          height: "100%",
-          overflow: "auto",
-        }}
-      >
-        <Menu
-          mode="inline"
-          selectedKeys={[activeKey]}
-          style={{ height: "100%" }}
-          items={menuItems}
-          onClick={handleMenuClick}
+  switch (activeSection) {
+    case "locking":
+      return (
+        <WorkspaceLocking
+          workspace={workspace}
+          manageWorkspace={manageWorkspace}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
         />
-      </Sider>
-      <Content style={{ padding: "0 24px", minHeight: 280 }}>{renderContent()}</Content>
-    </Layout>
-  );
+      );
+    case "sshkey":
+      return (
+        <WorkspaceSSHKey
+          workspace={workspace}
+          manageWorkspace={manageWorkspace}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
+        />
+      );
+    case "webhook":
+      return (
+        <WorkspaceWebhook
+          workspace={workspace}
+          vcsProvider={vcsProvider}
+          orgTemplates={orgTemplates}
+          manageWorkspace={manageWorkspace}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
+        />
+      );
+    case "advanced":
+      return <WorkspaceAdvanced workspace={workspace} manageWorkspace={manageWorkspace} />;
+    case "state-shared":
+      return (
+        <WorkspaceStateShared
+          workspace={workspace}
+          manageWorkspace={manageWorkspace}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
+        />
+      );
+    case "team-access":
+      return <WorkspaceTeamAccess workspace={workspace} manageWorkspace={manageWorkspace} />;
+    case "general":
+    default:
+      return (
+        <WorkspaceGeneral
+          workspaceData={workspace}
+          orgTemplates={orgTemplates}
+          manageWorkspace={manageWorkspace}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
+        />
+      );
+  }
 };

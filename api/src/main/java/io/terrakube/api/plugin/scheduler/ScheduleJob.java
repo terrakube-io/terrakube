@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
+import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -39,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
@@ -115,7 +117,11 @@ public class ScheduleJob implements org.quartz.Job {
             return true;
         }
 
-        if (job.getWorkspace().isLocked()) {
+        // The apply job created for a "terrakube apply" PR comment locks the workspace itself
+        // (see WebhookService.handlePrCommentCommand) to keep other jobs out while it runs. Without
+        // isOwnPrApplyLock() exempting that same job, this guard would block it from ever progressing,
+        // so the workspace would stay locked forever since only postPrCommentIfNeeded() unlocks it.
+        if (job.getWorkspace().isLocked() && !isOwnPrApplyLock(job)) {
             log.warn("Job {}, Workspace is locked. It must be unlocked before Terrakube can execute it.", jobId);
             return false;
         }
@@ -190,11 +196,15 @@ public class ScheduleJob implements org.quartz.Job {
     private void deleteOldJobs(Job job) {
         AtomicInteger keepHistory = new AtomicInteger();
         keepHistory.set(0);
+        AtomicBoolean softDelete = new AtomicBoolean(false);
 
         Optional<List<Globalvar>> globalsList = Optional.ofNullable(globalVarRepository.findByOrganization(job.getOrganization()));
         globalsList.ifPresent(variableList -> variableList.forEach(variable -> {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
+            }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
             }
         }));
 
@@ -203,10 +213,13 @@ public class ScheduleJob implements org.quartz.Job {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
             }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
+            }
         }));
 
         if (keepHistory.get() > 0) {
-            log.info("Keeping history of {} jobs", keepHistory);
+            log.info("Keeping history of {} jobs (softDelete={})", keepHistory, softDelete.get());
             Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
                     job.getWorkspace(),
                     Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
@@ -216,9 +229,15 @@ public class ScheduleJob implements org.quartz.Job {
                 for (int i = 0; i < previousJobs.get().size(); i++) {
                     if (i >= keepHistory.get()) {
                         Job previousJob = previousJobs.get().get(i);
-                        log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
-                        stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
-                        jobRepository.delete(previousJob);
+                        if (softDelete.get()) {
+                            log.info("Soft deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            previousJob.setDeleted(true);
+                            jobRepository.save(previousJob);
+                        } else {
+                            log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
+                            jobRepository.delete(previousJob);
+                        }
                     }
                 }
             }
@@ -450,19 +469,34 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
+    /**
+     * True when the workspace's current lock is the one this exact job's PR-apply-comment flow
+     * created for itself (see WebhookService.handlePrCommentCommand), rather than an unrelated
+     * manual or concurrent lock that should still block the job.
+     */
+    private boolean isOwnPrApplyLock(Job job) {
+        return job.isAutoApply() && job.getPrNumber() != null
+                && WebhookService.buildPrApplyLockDescription(job.getPrNumber()).equals(job.getWorkspace().getLockDescription());
+    }
+
     private void postPrCommentIfNeeded(Job job) {
         if (job.getPrNumber() == null || job.getPrNumber() == 0) return;
 
         try {
-            if (tclService.isTemplatePlanOnly(job.getTemplateReference())) {
-                prCommentService.postPlanResult(job);
-            } else {
+            prCommentService.acknowledgeCompletion(job);
+            // job.isAutoApply() marks the job created by the "terrakube apply" PR comment
+            // specifically (see WebhookService.handlePrCommentCommand); tclService.isTemplatePlanOnly()
+            // reflects the *template's* nature and can misclassify this job if the workspace's
+            // default template isn't recognized as a full apply template.
+            if (job.isAutoApply()) {
                 prCommentService.postApplyResult(job);
                 Workspace workspace = job.getWorkspace();
                 workspace.setLocked(false);
                 workspace.setLockDescription(null);
                 workspaceRepository.save(workspace);
                 log.info("Unlocked workspace {} after PR #{} apply completed", workspace.getName(), job.getPrNumber());
+            } else {
+                prCommentService.postPlanResult(job);
             }
         } catch (Exception e) {
             log.error("Error posting PR comment for job {}: {}", job.getId(), e.getMessage());
@@ -470,23 +504,30 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
-        if (job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.Schedule.name())) {
+        if (job.getVia().equals(JobVia.UI.getValue()) || job.getVia().equals(JobVia.CLI.getValue()) || job.getVia().equals(JobVia.SCHEDULE.getValue())) {
             return;
         }
 
-        switch (job.getWorkspace().getVcs().getVcsType()) {
-            case GITHUB:
-                gitHubWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case GITLAB:
-                gitLabWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case AZURE_DEVOPS:
-            case AZURE_SP_MI:
-                azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            default:
-                break;
+        // Notifying the VCS is a side effect of the job, not part of it: a VCS-side failure
+        // (expired token, provider outage, rate limit, missing commit) must never abort the
+        // job itself, since callers here include the job-completion path.
+        try {
+            switch (job.getWorkspace().getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                case AZURE_DEVOPS:
+                case AZURE_SP_MI:
+                    azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("Failed to update VCS commit status for job {}: {}", job.getId(), e.getMessage());
         }
     }
 

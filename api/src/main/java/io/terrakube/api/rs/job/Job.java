@@ -16,6 +16,8 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
+import org.hibernate.annotations.SQLRestriction;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,6 +40,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity(name = "job")
+@SQLRestriction(value = "deleted = false")
 public class Job extends GenericAuditFields {
 
     @Id
@@ -60,6 +63,10 @@ public class Job extends GenericAuditFields {
     @Exclude
     @Column(name = "auto_apply")
     private boolean autoApply = false;
+
+    @Exclude
+    @Column(name = "deleted")
+    private boolean deleted = false;
 
     @Column(name = "terraform_plan")
     private String terraformPlan;
@@ -103,6 +110,14 @@ public class Job extends GenericAuditFields {
     @Exclude
     @Column(name = "pr_comment_id")
     private String prCommentId;
+
+    @Exclude
+    @Column(name = "command_comment_id")
+    private String commandCommentId;
+
+    @Exclude
+    @Column(name = "pr_apply_enabled")
+    private boolean prApplyEnabled = false;
 
     @CreatePermission(expression = "user is a super service")
     @UpdatePermission(expression = "user is a super service")

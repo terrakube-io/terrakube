@@ -13,7 +13,7 @@ export default function IacTypeLogo({ type }: Props) {
           <SiTerraform />
         </IconContext.Provider>
       );
-    case "opentofu":
+    case "tofu":
       return <img width="18px" alt="opentofu-logo" src={withBasePath("/providers/opentofu.png")} />;
 
     default:

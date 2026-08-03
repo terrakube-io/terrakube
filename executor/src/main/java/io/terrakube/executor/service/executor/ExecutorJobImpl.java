@@ -13,6 +13,9 @@ import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.ReadinessState;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -31,11 +34,17 @@ public class ExecutorJobImpl implements ExecutorJob {
     ExecutorFlagsProperties executorFlagsProperties;
     ShutdownServiceImpl shutdownService;
     ScriptEngineService scriptEngineService;
+    ApplicationEventPublisher eventPublisher;
+    JobExecutionWatchdog jobExecutionWatchdog;
 
     @Async
     @Override
     public void createJob(TerraformJob terraformJob) {
         log.info("Create Job for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+        // Pulls this pod out of the executor Service's endpoints while a job is running,
+        // since the pool underneath this @Async method only runs one job at a time.
+        publishReadiness(ReadinessState.REFUSING_TRAFFIC);
+        jobExecutionWatchdog.markBusy();
         File terraformWorkingDir = null;
         try {
             try {
@@ -55,9 +64,22 @@ public class ExecutorJobImpl implements ExecutorJob {
                 log.error(e.getMessage());
             }
 
+            jobExecutionWatchdog.markFree();
             if (executorFlagsProperties.isEphemeral()) {
                 shutdownService.shutdownApplication();
+            } else {
+                publishReadiness(ReadinessState.ACCEPTING_TRAFFIC);
             }
+        }
+    }
+
+    private void publishReadiness(ReadinessState state) {
+        try {
+            AvailabilityChangeEvent.publish(eventPublisher, this, state);
+        } catch (Exception e) {
+            // A misbehaving listener must never block a job from starting, and must never
+            // leave this method's finally block before the pod is marked free again.
+            log.error("Failed to publish readiness state {}: {}", state, e.getMessage());
         }
     }
 

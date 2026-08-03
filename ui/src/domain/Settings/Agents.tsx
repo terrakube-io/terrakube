@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Agent } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type Params = {
@@ -142,55 +143,67 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : (
         <>
-          <h1>Agents</h1>
+          <Typography.Title level={1} style={{ margin: 0 }}>
+            Agents
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary" className="App-text">
               Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents
               to run jobs, you can have as many agents as you want for a single organization.
             </Typography.Text>
           </div>
-          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-            Create agent pool
-          </Button>
-          <br></br>
+          <SettingsSection maxWidth="100%">
+            <Button
+              type="primary"
+              onClick={onNew}
+              htmlType="button"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+            >
+              Create agent pool
+            </Button>
+            <br></br>
 
-          <h3 style={{ marginTop: "30px" }}>Agents</h3>
-          {loading ? (
-            <p>Data loading...</p>
-          ) : (
-            <List
-              itemLayout="horizontal"
-              dataSource={Agents}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Popconfirm
-                      onConfirm={() => {
-                        onDelete(item.id);
-                      }}
-                      style={{ width: "20px" }}
-                      title={
-                        <p>
-                          This will permanently delete this Terrakube Agent <br />
-                          <br />
-                          Are you sure?
-                        </p>
-                      }
-                      okText="Yes"
-                      cancelText="No"
-                    >
-                      {" "}
-                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                        Delete
-                      </Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                </List.Item>
-              )}
-            />
-          )}
+            <Typography.Title level={3} style={{ marginTop: "30px" }}>
+              Agents
+            </Typography.Title>
+            {loading ? (
+              <p>Data loading...</p>
+            ) : (
+              <List
+                itemLayout="horizontal"
+                dataSource={Agents}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <Popconfirm
+                        onConfirm={() => {
+                          onDelete(item.id);
+                        }}
+                        style={{ width: "20px" }}
+                        title={
+                          <p>
+                            This will permanently delete this Terrakube Agent <br />
+                            <br />
+                            Are you sure?
+                          </p>
+                        }
+                        okText="Yes"
+                        cancelText="No"
+                      >
+                        {" "}
+                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                          Delete
+                        </Button>
+                      </Popconfirm>,
+                    ]}
+                  >
+                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                  </List.Item>
+                )}
+              />
+            )}
+          </SettingsSection>
 
           <Modal
             width="650px"

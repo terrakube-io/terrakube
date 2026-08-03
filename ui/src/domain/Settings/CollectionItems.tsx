@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 // Type definitions for Collection Items
@@ -262,15 +263,19 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
           Add and manage variables for this collection. These variables can be applied to workspaces.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
-        Add variable to collection
-      </Button>
-      <br></br>
+      <SettingsSection maxWidth="100%">
+        <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+          Add variable to collection
+        </Button>
+        <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Collection Variables</h3>
-      <Spin spinning={loading} tip="Loading Collection Variables...">
-        <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
-      </Spin>
+        <Typography.Title level={3} style={{ marginTop: "30px" }}>
+          Collection Variables
+        </Typography.Title>
+        <Spin spinning={loading} tip="Loading Collection Variables...">
+          <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
+        </Spin>
+      </SettingsSection>
 
       <Modal
         width="600px"

@@ -1,4 +1,4 @@
-import { AutoComplete, Button, Divider, Form, Input, Select, Spin, Typography, message } from "antd";
+import { AutoComplete, Button, Form, Input, Select, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Agent, Template, TofuRelease, Workspace } from "../../types";
@@ -14,8 +14,7 @@ import {
 import projectService from "@/modules/projects/projectService";
 import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-
-const { Text } = Typography;
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 type Props = {
   workspaceData: Workspace;
@@ -164,9 +163,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       });
 
     const bodyProject =
-      values.project && values.project !== "none"
-        ? { data: { type: "project", id: values.project } }
-        : { data: null };
+      values.project && values.project !== "none" ? { data: { type: "project", id: values.project } } : { data: null };
 
     axiosInstance
       .patch(`/organization/${organizationId}/workspace/${id}/relationships/project`, bodyProject, genericHeader)
@@ -181,7 +178,9 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
 
   return (
     <div style={{ width: "100%" }} className="generalSettings">
-      <h1>General Settings</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        General Settings
+      </Typography.Title>
       <p>
         Adjust the settings for this workspace. These settings control how the workspace behaves, including execution
         mode, IaC configuration, and security options.
@@ -208,173 +207,168 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
           layout="vertical"
           name="form-settings"
         >
-          {/* Section 1: Identity */}
-          <Form.Item
-            name="name"
-            rules={[
-              { required: true },
-              {
-                pattern: /^[A-Za-z0-9_-]+$/,
-                message: "Only dashes, underscores, and alphanumeric characters are permitted.",
-              },
-            ]}
-            label="Name"
-          >
-            <Input disabled={!manageWorkspace} />
-          </Form.Item>
-
-          <Form.Item valuePropName="value" name="description" label="Description" extra="Optional">
-            <Input.TextArea rows={5} placeholder="Workspace description" disabled={!manageWorkspace} />
-          </Form.Item>
-
-          {/* Section 2: Execution Mode */}
-          <h2>Execution Mode</h2>
-          <Text type="secondary">
-            Select the execution mode for this workspace. Remote indicates Terrakube will run plans and applies. Local
-            indicates users should run locally with remote state.
-          </Text>
-
-          <Form.Item
-            name="executionMode"
-            label="Execution Mode"
-            extra={
-              "Local indicates users should run " +
-              getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-              " " +
-              "locally with remote state/cloud block and just upload the state to Terrakube. Remote " +
-              "indicates Terrakube will run plans and apply. Informational only."
-            }
-            style={{ marginTop: 16 }}
-          >
-            <Select defaultValue={workspaceData.attributes.executionMode} disabled={!manageWorkspace}>
-              <Option key="remote">remote</Option>
-              <Option key="local">local</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name="executorAgent"
-            label="Executor agent to run the job"
-            extra="Use this option to select which executor agent will run the job remotely"
-          >
-            <Select
-              defaultValue={workspaceData.attributes.moduleSshKey}
-              placeholder="select Job Agent"
-              disabled={!manageWorkspace}
+          <SettingsSection title="Identity">
+            <Form.Item
+              name="name"
+              rules={[
+                { required: true },
+                {
+                  pattern: /^[A-Za-z0-9_-]+$/,
+                  message: "Only dashes, underscores, and alphanumeric characters are permitted.",
+                },
+              ]}
+              label="Name"
             >
-              {agentList.map(function (agentKey) {
-                return <Option key={agentKey?.id}>{agentKey?.attributes?.name}</Option>;
-              })}
-              <Option key="default">default</Option>
-            </Select>
-          </Form.Item>
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
 
-          <Divider />
+            <Form.Item valuePropName="value" name="description" label="Description" extra="Optional">
+              <Input.TextArea rows={5} placeholder="Workspace description" disabled={!manageWorkspace} />
+            </Form.Item>
+          </SettingsSection>
 
-          {/* Section 3: IaC Configuration */}
-          <h2>IaC Configuration</h2>
-          <Text type="secondary">Configure the Infrastructure as Code tool and version used for this workspace.</Text>
-
-          <Form.Item
-            name="iacType"
-            label="Select IaC type "
-            extra="IaC type when running the workspace (Example: terraform or tofu) "
-            style={{ marginTop: 16 }}
+          <SettingsSection
+            title="Execution Mode"
+            description="Select the execution mode for this workspace. Remote indicates Terrakube will run plans and applies. Local indicates users should run locally with remote state."
           >
-            <Select
-              defaultValue={workspaceData.attributes?.iacType}
-              onChange={handleIacChange}
-              disabled={!manageWorkspace}
+            <Form.Item
+              name="executionMode"
+              label="Execution Mode"
+              extra={
+                "Local indicates users should run " +
+                getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
+                " " +
+                "locally with remote state/cloud block and just upload the state to Terrakube. Remote " +
+                "indicates Terrakube will run plans and apply. Informational only."
+              }
             >
-              {iacTypes.map(function (iacType) {
-                return (
-                  <Option key={iacType.id}>
-                    {getIaCIconById(iacType.id)} {iacType.name}{" "}
-                  </Option>
-                );
-              })}
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name="terraformVersion"
-            label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"}
-            rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
-            extra={
-              "The version of " +
-              getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-              " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
+              <Select defaultValue={workspaceData.attributes.executionMode} disabled={!manageWorkspace}>
+                <Option key="remote">remote</Option>
+                <Option key="local">local</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="executorAgent"
+              label="Executor agent to run the job"
+              extra="Use this option to select which executor agent will run the job remotely"
+            >
+              <Select
+                defaultValue={workspaceData.attributes.moduleSshKey}
+                placeholder="select Job Agent"
+                disabled={!manageWorkspace}
+              >
+                {agentList.map(function (agentKey) {
+                  return <Option key={agentKey?.id}>{agentKey?.attributes?.name}</Option>;
+                })}
+                <Option key="default">default</Option>
+              </Select>
+            </Form.Item>
+          </SettingsSection>
+
+          <SettingsSection
+            title="IaC Configuration"
+            description="Configure the Infrastructure as Code tool and version used for this workspace."
+          >
+            <Form.Item
+              name="iacType"
+              label="Select IaC type "
+              extra="IaC type when running the workspace (Example: terraform or tofu) "
+            >
+              <Select
+                defaultValue={workspaceData.attributes?.iacType}
+                onChange={handleIacChange}
+                disabled={!manageWorkspace}
+              >
+                {iacTypes.map(function (iacType) {
+                  return (
+                    <Option key={iacType.id}>
+                      {getIaCIconById(iacType.id)} {iacType.name}{" "}
+                    </Option>
+                  );
+                })}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="terraformVersion"
+              label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"}
+              rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
+              extra={
+                "The version of " +
+                getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
+                " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
+              }
+            >
+              <AutoComplete
+                disabled={!manageWorkspace}
+                options={terraformVersions.map((v) => ({ value: v }))}
+                filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                placeholder="e.g. 1.11.0 or ~>1.11.0"
+              />
+            </Form.Item>
+            <Form.Item
+              name="folder"
+              label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Working Directory"}
+              extra={
+                "The directory that " +
+                getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
+                " will execute within. This defaults to the root of your repository and is typically set to a subdirectory matching the environment when multiple environments exist within the same repository."
+              }
+            >
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
+            <Form.Item
+              name="branch"
+              label="Default Branch"
+              tooltip="The branch from which the runs are kicked off, this is used for runs issued from the UI."
+              extra="Don't update the value when using CLI Driven workflows. This is only used in VCS driven workflow."
+            >
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Default Template"
+            description={
+              <>
+                Template used for the <code>terrakube apply</code> PR comment command, and to pre-fill the template
+                when manually creating a run.
+              </>
             }
           >
-            <AutoComplete
-              disabled={!manageWorkspace}
-              options={terraformVersions.map((v) => ({ value: v }))}
-              filterOption={(input, option) => (option?.value ?? "").includes(input)}
-              placeholder="e.g. 1.11.0 or ~>1.11.0"
-            />
-          </Form.Item>
-          <Form.Item
-            name="folder"
-            label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Working Directory"}
-            extra={
-              "The directory that " +
-              getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-              " will execute within. This defaults to the root of your repository and is typically set to a subdirectory matching the environment when multiple environments exist within the same repository."
-            }
-          >
-            <Input disabled={!manageWorkspace} />
-          </Form.Item>
-          <Form.Item
-            name="branch"
-            label="Default Branch"
-            tooltip="The branch from which the runs are kicked off, this is used for runs issued from the UI."
-            extra="Don't update the value when using CLI Driven workflows. This is only used in VCS driven workflow."
-          >
-            <Input disabled={!manageWorkspace} />
-          </Form.Item>
-
-          <Divider />
-
-          {/* Section 4: Default Template */}
-          <h2>Default Template</h2>
-          <Text type="secondary">Configure the default template used when a git push event triggers a run.</Text>
-
-          <Form.Item
-            name="defaultTemplate"
-            label="Default template when doing a git push to the repository"
-            extra="Default template when doing a git push to the repository"
-            style={{ marginTop: 16 }}
-          >
-            <Select
-              defaultValue={workspaceData.attributes.defaultTemplate}
-              placeholder="select default template"
-              disabled={!manageWorkspace}
+            <Form.Item
+              name="defaultTemplate"
+              label="Default template for terrakube apply comments and manual runs"
+              extra="Default template for terrakube apply comments and manual runs"
             >
-              {orgTemplates.map(function (template) {
-                return <Option key={template?.id}>{template?.attributes?.name}</Option>;
-              })}
-            </Select>
-          </Form.Item>
+              <Select
+                defaultValue={workspaceData.attributes.defaultTemplate}
+                placeholder="select default template"
+                disabled={!manageWorkspace}
+              >
+                {orgTemplates.map(function (template) {
+                  return <Option key={template?.id}>{template?.attributes?.name}</Option>;
+                })}
+              </Select>
+            </Form.Item>
+          </SettingsSection>
 
-          <Divider />
-
-          {/* Section 5: Project */}
-          <h2>Project</h2>
-          <Text type="secondary">Assign this workspace to a project for easier organization and filtering.</Text>
-
-          <Form.Item
-            name="project"
-            label="Project"
-            extra="Optional. Assigning a project lets you group and filter workspaces."
-            style={{ marginTop: 16 }}
+          <SettingsSection
+            title="Project"
+            description="Assign this workspace to a project for easier organization and filtering."
           >
-            <Select placeholder="No project" disabled={!manageWorkspace}>
-              {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
-              {projectList.map((p) => (
-                <Option key={p.id}>{p.name}</Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Divider />
+            <Form.Item
+              name="project"
+              label="Project"
+              extra="Optional. Assigning a project lets you group and filter workspaces."
+            >
+              <Select placeholder="No project" disabled={!manageWorkspace}>
+                {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
+                {projectList.map((p) => (
+                  <Option key={p.id}>{p.name}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </SettingsSection>
 
           <Form.Item>
             <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>

@@ -31,6 +31,8 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  workspaceCount?: number;
+  workspaceStatusCounts?: Record<string, number>;
 };
 
 export type ApiResponse<T> = {
@@ -446,6 +448,7 @@ export type WebhookEventAttributes = {
   priority: number;
   event: WebhookEventType;
   prWorkflowEnabled: boolean;
+  prApplyEnabled: boolean;
 };
 
 // Agent

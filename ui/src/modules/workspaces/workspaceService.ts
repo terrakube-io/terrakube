@@ -24,6 +24,7 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                       iacType
                       lastJobStatus
                       lastJobDate
+                      locked
                       workspaceTag {
                         edges {
                           node {
@@ -84,6 +85,7 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
       source: element.node.source,
       normalizedSource: formatSshUrl(element.node.source),
       terraformVersion: element.node.terraformVersion,
+      locked: element.node.locked,
       tags: element.node?.workspaceTag?.edges?.map((e: any) => e.node.tagId),
       projectId: element.node?.project?.edges?.[0]?.node?.id,
       projectName: element.node?.project?.edges?.[0]?.node?.name,

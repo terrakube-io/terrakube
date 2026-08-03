@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { TeamPermissionsV2 } from "./TeamPermissionsV2";
 
@@ -222,8 +223,10 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
 
   return (
     <div className="setting">
-      <h1>{mode === "edit" ? `Team: ${teamName}` : "New Team"}</h1>
-      <Typography.Text type="secondary">
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        {mode === "edit" ? `Team: ${teamName}` : "New Team"}
+      </Typography.Title>
+      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
         {mode === "edit"
           ? "Update this team's role and permissions to control what its members can do within the organization."
           : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."}
@@ -234,49 +237,48 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
       ) : error ? (
         <Alert message="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
       ) : (
-        <Form name="team" form={form} onFinish={onFinish} layout="vertical" style={{ marginTop: 24 }}>
-          {mode === "create" && (
-            <Form.Item
-              name="name"
-              tooltip={{
-                title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
-                icon: <InfoCircleOutlined />,
-              }}
-              label="Team Name"
-              rules={[{ required: true, message: "Team name is required" }]}
-              extra="The team name must correspond to a group in your identity provider."
-            >
-              <Input placeholder="e.g. ENGINEERING_TEAM" />
-            </Form.Item>
-          )}
+        <SettingsSection>
+          <Form name="team" form={form} onFinish={onFinish} layout="vertical">
+            {mode === "create" && (
+              <Form.Item
+                name="name"
+                tooltip={{
+                  title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
+                  icon: <InfoCircleOutlined />,
+                }}
+                label="Team Name"
+                rules={[{ required: true, message: "Team name is required" }]}
+                extra="The team name must correspond to a group in your identity provider."
+              >
+                <Input placeholder="e.g. ENGINEERING_TEAM" />
+              </Form.Item>
+            )}
 
-          <Divider />
+            <Divider />
 
-          <TeamPermissionsV2 managePermissions={true} />
+            <TeamPermissionsV2 managePermissions={true} />
 
-          <Divider />
+            <Divider />
 
-          <Space direction="horizontal">
-            <Button type="primary" htmlType="submit">
-              {mode === "edit" ? "Update team" : "Create team"}
-            </Button>
-            <Button onClick={onCancel} type="default">
-              Cancel
-            </Button>
-          </Space>
-        </Form>
+            <Space direction="horizontal">
+              <Button type="primary" htmlType="submit">
+                {mode === "edit" ? "Update team" : "Create team"}
+              </Button>
+              <Button onClick={onCancel} type="default">
+                Cancel
+              </Button>
+            </Space>
+          </Form>
+        </SettingsSection>
       )}
 
       {mode === "edit" && !loading && !error && (
-        <>
-          <Divider />
-
-          <h2>Team API Tokens</h2>
-          <Typography.Text type="secondary">
-            Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation.
-          </Typography.Text>
-
-          <div style={{ marginTop: 16 }}>
+        <SettingsSection
+          title="Team API Tokens"
+          description="Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation."
+          maxWidth="100%"
+        >
+          <div>
             <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
               <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
                 Create a Team Token
@@ -284,7 +286,9 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
             </Tooltip>
           </div>
 
-          <h4 style={{ marginTop: 24 }}>Existing Tokens</h4>
+          <Typography.Title level={4} style={{ marginTop: 24 }}>
+            Existing Tokens
+          </Typography.Title>
           {loadingTokens ? (
             <Spin style={{ display: "block", marginTop: 16 }} />
           ) : (
@@ -298,7 +302,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
             action={onCreateToken}
             shortlivedTokens={true}
           />
-        </>
+        </SettingsSection>
       )}
 
       {mode === "edit" && (

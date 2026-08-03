@@ -155,7 +155,7 @@ class RepoWebhookServiceTest {
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
             assertThat(result).isSameAs(existing);
-            verify(repoWebhookRepository, never()).save(any());
+            verify(repoWebhookRepository, never()).saveAndFlush(any());
         }
 
         @Test
@@ -163,23 +163,34 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
             assertThat(result.getRepositoryUrl()).isEqualTo("https://github.com/owner/repo");
             assertThat(result.getWebhookSecret()).isNotNull().hasSize(36); // UUID format
-            verify(repoWebhookRepository).save(any(RepoWebhook.class));
+            verify(repoWebhookRepository).saveAndFlush(any(RepoWebhook.class));
         }
 
         @Test
-        void handlesRaceConditionOnConcurrentInsert() {
+        void recoversWhenConcurrentInsertLosesTheRace() {
+            // This is a defense-in-depth fallback: the primary safety
+            // mechanism is that callers only ever reach this method from
+            // within RepoWebhookSyncJob, which Quartz guarantees runs at
+            // most once per repository URL at a time (see
+            // RepoWebhookSyncScheduler). If getOrCreateRepoWebhook is ever
+            // called outside that serialized path and loses a genuine race
+            // on the repository_url unique constraint, it should still
+            // recover by re-querying rather than propagating the raw DB
+            // exception. saveAndFlush (rather than save) is what makes the
+            // constraint violation surface here at all, instead of being
+            // silently queued until an unrelated later commit.
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             RepoWebhook existing = repoWebhookWith("https://github.com/owner/repo", "secret");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty())
                     .thenReturn(Optional.of(existing));
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class)))
                     .thenThrow(new DataIntegrityViolationException("Duplicate"));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
@@ -192,7 +203,7 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class)))
                     .thenThrow(new DataIntegrityViolationException("Duplicate"));
 
             assertThatThrownBy(() -> subject.getOrCreateRepoWebhook(ws))
@@ -205,7 +216,7 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://GitHub.com/Owner/Repo.git");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 

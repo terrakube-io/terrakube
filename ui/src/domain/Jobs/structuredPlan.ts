@@ -72,6 +72,15 @@ export const getPlanChangeActionLabel = (actions: string[] = [], fallback?: stri
   }
 
   if (normalizedActions.includes("no-op")) {
+    // Terraform's plan JSON always reports a clean import as actions: ["no-op"] -
+    // "import" only ever shows up via the separate `importing` field, which the
+    // backend translates into this `fallback` value. Check that before falling
+    // back to a generic no-op, or every import would render as a no-op instead.
+    const fallbackValue = toOptionalString(fallback);
+    if (fallbackValue === "import") {
+      return "import";
+    }
+
     return "no-op";
   }
 
@@ -160,6 +169,111 @@ export const normalizeStructuredPlanOutput = (value: unknown): StructuredPlanOut
   });
 
   return normalizedOutput;
+};
+
+export type ApplyResourceStatus = "pending" | "applying" | "applied" | "errored";
+
+export type ApplyChange = PlanChange & {
+  status: ApplyResourceStatus;
+  error?: string;
+};
+
+export type StructuredApplyOutputByStep = Record<string, ApplyChange[]>;
+
+const APPLY_STATUSES: ApplyResourceStatus[] = ["pending", "applying", "applied", "errored"];
+
+const toApplyStatus = (value: unknown): ApplyResourceStatus => {
+  if (typeof value === "string" && (APPLY_STATUSES as string[]).includes(value)) {
+    return value as ApplyResourceStatus;
+  }
+
+  return "pending";
+};
+
+const normalizeApplyChange = (value: unknown): ApplyChange | null => {
+  const planChange = normalizePlanChange(value);
+  if (planChange === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    ...planChange,
+    status: toApplyStatus(record.status),
+    error: toOptionalString(record.error),
+  };
+};
+
+export const normalizeStructuredApplyOutput = (value: unknown): StructuredApplyOutputByStep => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalizedOutput: StructuredApplyOutputByStep = {};
+
+  Object.entries(value).forEach(([stepId, rawChanges]) => {
+    if (!Array.isArray(rawChanges)) {
+      return;
+    }
+
+    const normalizedChanges = rawChanges
+      .map((rawChange) => normalizeApplyChange(rawChange))
+      .filter((change): change is ApplyChange => change !== null);
+
+    normalizedOutput[stepId] = normalizedChanges;
+  });
+
+  return normalizedOutput;
+};
+
+export type TerraformOutputValue = {
+  name: string;
+  value: unknown;
+  sensitive: boolean;
+  type?: unknown;
+};
+
+export type StructuredOutputsByStep = Record<string, TerraformOutputValue[]>;
+
+const normalizeTerraformOutput = (value: unknown): TerraformOutputValue | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const name = toOptionalString(value.name);
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    value: value.value,
+    sensitive: value.sensitive === true,
+    type: value.type,
+  };
+};
+
+export const normalizeStructuredOutputs = (value: unknown): StructuredOutputsByStep => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalizedOutputs: StructuredOutputsByStep = {};
+
+  Object.entries(value).forEach(([stepId, rawOutputs]) => {
+    if (!Array.isArray(rawOutputs)) {
+      return;
+    }
+
+    const normalizedStepOutputs = rawOutputs
+      .map((rawOutput) => normalizeTerraformOutput(rawOutput))
+      .filter((output): output is TerraformOutputValue => output !== null);
+
+    normalizedOutputs[stepId] = normalizedStepOutputs;
+  });
+
+  return normalizedOutputs;
 };
 
 export const normalizeUITemplates = (value: unknown): Record<string, string> => {

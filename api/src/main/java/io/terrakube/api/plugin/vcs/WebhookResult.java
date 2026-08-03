@@ -24,29 +24,32 @@ public class WebhookResult {
     private boolean isRelease;
     private String commentBody;
     private String commentCommand;
+    private String commentId;
     private boolean isPrComment;
     private String prFilesUrl;
 
     public String getNormalizedEvent() {
-        String normalizedEvent = "";
-        switch (this.event) {
-            case "push":
-                normalizedEvent = "push";
-                break;
-            case "pull_request":
-            case "merge_request":
-                normalizedEvent = "pull_request";
-                break;
-            case "issue_comment":
-            case "note":
-                normalizedEvent = "pr_comment";
-                break;
-            case "release":
-                normalizedEvent = "release";
-                break;
-            default:
-                normalizedEvent = "unknown";
-                break;
+        String normalizedEvent = "unknown";
+        if (this.event != null) {
+            switch (this.event) {
+                case "push":
+                    normalizedEvent = "push";
+                    break;
+                case "pull_request":
+                case "merge_request":
+                    normalizedEvent = "pull_request";
+                    break;
+                case "issue_comment":
+                case "note":
+                    normalizedEvent = "pr_comment";
+                    break;
+                case "release":
+                    normalizedEvent = "release";
+                    break;
+                default:
+                    normalizedEvent = "unknown";
+                    break;
+            }
         }
         log.info("Current event {} Normalized event: {}", this.event, normalizedEvent);
         return normalizedEvent;

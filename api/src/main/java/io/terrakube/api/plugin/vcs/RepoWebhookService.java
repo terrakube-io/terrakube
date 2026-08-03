@@ -49,6 +49,14 @@ public class RepoWebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
 
+    // Callers reach this exclusively through RepoWebhookSyncJob, which is
+    // @DisallowConcurrentExecution and keyed by a hash of the normalized
+    // repository URL — Quartz (cluster mode, JDBC job store) guarantees at
+    // most one execution of that job per URL, cluster-wide, so at most one
+    // caller ever reaches this find-or-create for a given URL at a time.
+    // The catch below is a defense-in-depth fallback (e.g. if this is ever
+    // called from somewhere outside that serialized path), not the primary
+    // safety mechanism.
     @Transactional
     public RepoWebhook getOrCreateRepoWebhook(Workspace workspace) {
         String normalizedUrl = RepoUrlNormalizer.normalize(workspace.getSource());
@@ -59,7 +67,12 @@ public class RepoWebhookService {
                         repoWebhook.setRepositoryUrl(normalizedUrl);
                         repoWebhook.setWebhookSecret(UUID.randomUUID().toString());
                         repoWebhook.setVcs(workspace.getVcs());
-                        return repoWebhookRepository.save(repoWebhook);
+                        // saveAndFlush forces the INSERT to happen here,
+                        // inside this try block, instead of being silently
+                        // queued until the transaction commits — a plain
+                        // save() would let a real conflict surface long
+                        // after this catch block is out of scope.
+                        return repoWebhookRepository.saveAndFlush(repoWebhook);
                     } catch (DataIntegrityViolationException e) {
                         return repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
                                 .orElseThrow(() -> new IllegalStateException(

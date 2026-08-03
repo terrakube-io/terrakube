@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.terraform;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -16,6 +17,8 @@ import org.springframework.data.redis.core.StreamOperations;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -24,7 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +44,9 @@ class TerraformExecutorServiceImplTest {
     private final ScriptEngineService scriptEngineService = Mockito.mock(ScriptEngineService.class);
     private final ProcessLogs logsService = Mockito.mock(ProcessLogs.class);
     private final PlanStructuredOutputService planStructuredOutputService = Mockito.mock(PlanStructuredOutputService.class);
+    private final ApplyStructuredOutputService applyStructuredOutputService = Mockito.mock(ApplyStructuredOutputService.class);
+    private final TerraformOutputsService terraformOutputsService = Mockito.mock(TerraformOutputsService.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final RedisTemplate redisTemplate = Mockito.mock(RedisTemplate.class);
     private final StreamOperations streamOperations = Mockito.mock(StreamOperations.class);
 
@@ -52,6 +61,9 @@ class TerraformExecutorServiceImplTest {
                 scriptEngineService,
                 logsService,
                 planStructuredOutputService,
+                applyStructuredOutputService,
+                terraformOutputsService,
+                objectMapper,
                 false,
                 redisTemplate,
                 1);
@@ -107,5 +119,56 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertTrue(result.getOutputLog().contains("init stderr"));
+    }
+
+    @Test
+    void publishesSeededApplyStatusBeforeRunningApply() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        Map<String, Object> seededChange = new HashMap<>();
+        seededChange.put("address", "aws_instance.example");
+        seededChange.put("status", "pending");
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
+
+        subject.apply(terraformJob, tempDir.toFile());
+
+        verify(applyStructuredOutputService, Mockito.atLeastOnce()).publishApplyProgress(
+                eq("org"), eq("42"), eq("1"), eq(List.of(seededChange)));
+    }
+
+    @Test
+    void fallsBackToSharedClientWhenThereIsNoSeedData() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(terraformClient).apply(any(TerraformProcessData.class), any(Consumer.class), any());
+        verify(applyStructuredOutputService, never()).publishApplyProgress(anyString(), anyString(), anyString(), any());
     }
 }

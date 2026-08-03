@@ -1,16 +1,17 @@
 import { DownOutlined, PoweroffOutlined, SettingOutlined, UserOutlined } from "@ant-design/icons";
-import { Avatar } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { Avatar, Dropdown } from "antd";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useAuth } from "../../config/authConfig";
 import getUserFromStorage from "../../config/authUser";
+import getGravatarUrl from "@/modules/utils/gravatar";
 import "./UserMenu.css";
 
 export const UserMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [username, setUsername] = useState<string>();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string>();
   const auth = useAuth();
   const navigate = useNavigate();
 
@@ -19,27 +20,10 @@ export const UserMenu = () => {
     if (user && user.profile?.name) {
       setUsername(user.profile.name);
     }
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+    if (user?.profile?.email) {
+      getGravatarUrl(user.profile.email).then(setAvatarUrl);
     }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
+  }, []);
 
   const handleUserSettings = () => {
     setIsOpen(false);
@@ -54,13 +38,12 @@ export const UserMenu = () => {
   };
 
   return (
-    <div className="user-menu-container" ref={containerRef}>
-      <button className="user-menu-button" onClick={handleToggle} aria-expanded={isOpen} aria-label="user menu">
-        <Avatar className="user-menu-avatar" size="small" icon={<UserOutlined />} />
-        <DownOutlined className="user-menu-arrow" />
-      </button>
-
-      {isOpen && (
+    <Dropdown
+      trigger={["click"]}
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      placement="bottomRight"
+      popupRender={() => (
         <div className="user-menu-dropdown">
           <div className="user-menu-header">
             <span className="user-menu-signed-in">Signed in as</span>
@@ -76,7 +59,12 @@ export const UserMenu = () => {
           </div>
         </div>
       )}
-    </div>
+    >
+      <button type="button" className="user-menu-button" aria-expanded={isOpen} aria-label="user menu">
+        <Avatar className="user-menu-avatar" size="small" src={avatarUrl} icon={<UserOutlined />} />
+        <DownOutlined className="user-menu-arrow" />
+      </button>
+    </Dropdown>
   );
 };
 

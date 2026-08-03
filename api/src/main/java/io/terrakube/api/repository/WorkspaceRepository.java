@@ -14,6 +14,14 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
     Workspace getByOrganizationNameAndName(String organizationName, String workspaceName);
 
+    // The "(organization_id, name)" unique constraint is DEFERRABLE INITIALLY DEFERRED, so
+    // Hibernate's auto-flush-before-query can momentarily land two rows with the same name
+    // in the table (the pre-existing one plus the pending insert being validated) before
+    // Postgres enforces uniqueness at commit. A single-result derived method would throw
+    // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
+    // uniqueness check must use this list form and filter out the entity being validated.
+    List<Workspace> findAllByOrganizationNameAndName(String organizationName, String workspaceName);
+
     Optional<List<Workspace>> findWorkspacesByOrganizationNameAndNameStartingWith(String organizationName, String workspaceNameStartingWidth);
 
     Optional<List<Workspace>> findWorkspacesByOrganization(Organization organization);

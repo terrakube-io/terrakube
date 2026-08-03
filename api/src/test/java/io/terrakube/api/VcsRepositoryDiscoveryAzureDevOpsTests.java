@@ -6,12 +6,14 @@ import io.terrakube.api.plugin.vcs.discovery.VcsRepositoryPage;
 import io.terrakube.api.plugin.vcs.discovery.azdevops.AzDevOpsRepositoryDiscoveryService;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,6 +27,11 @@ public class VcsRepositoryDiscoveryAzureDevOpsTests extends ServerApplicationTes
     @Autowired
     AzDevOpsRepositoryDiscoveryService azDevOpsRepositoryDiscoveryService;
 
+    // Vcs rows are persisted directly via vcsRepository (bypassing the REST API), so they
+    // must be torn down manually or they leak into the shared test org and are picked up
+    // by unrelated tests (e.g. AccessTests) that assume a clean org.
+    private final List<UUID> createdVcsIds = new ArrayList<>();
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
@@ -33,6 +40,12 @@ public class VcsRepositoryDiscoveryAzureDevOpsTests extends ServerApplicationTes
         // WireMock can't stand in for the real app.vssps.visualstudio.com hostname
         ReflectionTestUtils.setField(azDevOpsRepositoryDiscoveryService, "profileEndpoint",
                 "http://localhost:" + wireMockServer.port());
+    }
+
+    @AfterEach
+    public void cleanup() {
+        createdVcsIds.forEach(vcsRepository::deleteById);
+        createdVcsIds.clear();
     }
 
     private Vcs oauthVcs() {
@@ -45,7 +58,9 @@ public class VcsRepositoryDiscoveryAzureDevOpsTests extends ServerApplicationTes
         vcs.setAccessToken("azdevops-token-abc");
         vcs.setApiUrl("http://localhost:" + wireMockServer.port());
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
-        return vcsRepository.save(vcs);
+        Vcs saved = vcsRepository.save(vcs);
+        createdVcsIds.add(saved.getId());
+        return saved;
     }
 
     private Vcs managedIdentityVcs() {
@@ -57,7 +72,9 @@ public class VcsRepositoryDiscoveryAzureDevOpsTests extends ServerApplicationTes
         vcs.setClientSecret("123");
         vcs.setApiUrl("http://localhost:" + wireMockServer.port());
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
-        return vcsRepository.save(vcs);
+        Vcs saved = vcsRepository.save(vcs);
+        createdVcsIds.add(saved.getId());
+        return saved;
     }
 
     @Test

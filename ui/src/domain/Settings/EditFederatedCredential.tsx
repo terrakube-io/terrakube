@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { FederatedClaim } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type Props = {
@@ -47,10 +48,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   }, [federatedId]);
 
   const loadFederatedCredential = (id: string) => {
-    Promise.all([
-      axiosInstance.get(`federated/${id}`),
-      axiosInstance.get(`federated/${id}/claims`),
-    ])
+    Promise.all([axiosInstance.get(`federated/${id}`), axiosInstance.get(`federated/${id}/claims`)])
       .then(([credentialRes, claimsRes]) => {
         const attrs = credentialRes.data.data.attributes;
         form.setFieldsValue({
@@ -58,14 +56,12 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
           issuerUrl: attrs.issuerUrl,
           audience: attrs.audience,
         });
-        const loadedClaims: ClaimRow[] = (claimsRes.data.data || []).map(
-          (c: FederatedClaim) => ({
-            key: c.id,
-            id: c.id,
-            claimKey: c.attributes.claimKey,
-            claimValue: c.attributes.claimValue,
-          })
-        );
+        const loadedClaims: ClaimRow[] = (claimsRes.data.data || []).map((c: FederatedClaim) => ({
+          key: c.id,
+          id: c.id,
+          claimKey: c.attributes.claimKey,
+          claimValue: c.attributes.claimValue,
+        }));
         setClaims(loadedClaims);
       })
       .catch((err) => {
@@ -129,11 +125,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
 
     // Delete removed claims
     const toDelete = existingClaims.filter((c) => !currentIds.has(c.id));
-    await Promise.all(
-      toDelete.map((c) =>
-        axiosInstance.delete(`federated/${fedId}/claims/${c.id}`)
-      )
-    );
+    await Promise.all(toDelete.map((c) => axiosInstance.delete(`federated/${fedId}/claims/${c.id}`)));
 
     // Create new claims (no id)
     const toCreate = claims.filter((c) => !c.id);
@@ -162,8 +154,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
         const existing = existingClaims.find((e) => e.id === c.id);
         if (
           existing &&
-          (existing.attributes.claimKey !== c.claimKey ||
-            existing.attributes.claimValue !== c.claimValue)
+          (existing.attributes.claimKey !== c.claimKey || existing.attributes.claimValue !== c.claimValue)
         ) {
           return axiosInstance.patch(
             `federated/${fedId}/claims/${c.id}`,
@@ -222,12 +213,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
       key: "action",
       width: 80,
       render: (_: any, record: ClaimRow) => (
-        <Button
-          type="link"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => removeClaim(record.key)}
-        />
+        <Button type="link" danger icon={<DeleteOutlined />} onClick={() => removeClaim(record.key)} />
       ),
     },
   ];
@@ -238,82 +224,93 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
         <Typography.Title level={3}>
           {mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
         </Typography.Title>
-        <Form form={form} layout="vertical" onFinish={onFinish}>
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: "Please enter the federated credential name" }]}
-          >
-            <Input placeholder="e.g. GitHub Actions" />
-          </Form.Item>
-          <Form.Item
-            name="issuerUrl"
-            label="Issuer URL"
-            rules={[{ required: true, message: "Please enter the issuer URL" }]}
-          >
-            <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
-          </Form.Item>
-          <Form.Item
-            name="audience"
-            label="Audience"
-            rules={[{ required: true, message: "Please enter the audience" }]}
-          >
-            <Input placeholder="e.g. terrakube-audience" />
-          </Form.Item>
-
-          <Typography.Title level={5} style={{ marginTop: 24 }}>
-            Claim Conditions
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            Add conditions to restrict which tokens are accepted. All conditions must match for a token to be authorized.
-          </Typography.Text>
-          <div style={{ marginTop: 12, padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px', border: '1px solid #f0f0f0' }}>
-            <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 8 }}>
-              <strong>Examples by provider:</strong>
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 4 }}>
-              • <Typography.Text code>repository_owner</Typography.Text> (GitHub Actions)
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 4 }}>
-              • <Typography.Text code>groups_direct</Typography.Text> (GitLab CI)
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>
-              • <Typography.Text code>amr</Typography.Text> (Azure AD)
-            </Typography.Text>
-          </div>
-
-          <Form form={claimForm} layout="inline" style={{ marginTop: 16, marginBottom: 16 }}>
-            <Form.Item name="claimKey" style={{ flex: 1 }}>
-              <Input placeholder="Claim key (e.g. repository_owner, groups_direct)" />
+        <SettingsSection>
+          <Form form={form} layout="vertical" onFinish={onFinish}>
+            <Form.Item
+              name="name"
+              label="Name"
+              rules={[{ required: true, message: "Please enter the federated credential name" }]}
+            >
+              <Input placeholder="e.g. GitHub Actions" />
             </Form.Item>
-            <Form.Item name="claimValue" style={{ flex: 1 }}>
-              <Input placeholder="Claim value (e.g. terrakube-org)" />
+            <Form.Item
+              name="issuerUrl"
+              label="Issuer URL"
+              rules={[{ required: true, message: "Please enter the issuer URL" }]}
+            >
+              <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
             </Form.Item>
+            <Form.Item
+              name="audience"
+              label="Audience"
+              rules={[{ required: true, message: "Please enter the audience" }]}
+            >
+              <Input placeholder="e.g. terrakube-audience" />
+            </Form.Item>
+
+            <Typography.Title level={5} style={{ marginTop: 24 }}>
+              Claim Conditions
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              Add conditions to restrict which tokens are accepted. All conditions must match for a token to be
+              authorized.
+            </Typography.Text>
+            <div
+              style={{
+                marginTop: 12,
+                padding: "12px",
+                backgroundColor: "#fafafa",
+                borderRadius: "4px",
+                border: "1px solid #f0f0f0",
+              }}
+            >
+              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 8 }}>
+                <strong>Examples by provider:</strong>
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 4 }}>
+                • <Typography.Text code>repository_owner</Typography.Text> (GitHub Actions)
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 4 }}>
+                • <Typography.Text code>groups_direct</Typography.Text> (GitLab CI)
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block" }}>
+                • <Typography.Text code>amr</Typography.Text> (Azure AD)
+              </Typography.Text>
+            </div>
+
+            <Form form={claimForm} layout="inline" style={{ marginTop: 16, marginBottom: 16 }}>
+              <Form.Item name="claimKey" style={{ flex: 1 }}>
+                <Input placeholder="Claim key (e.g. repository_owner, groups_direct)" />
+              </Form.Item>
+              <Form.Item name="claimValue" style={{ flex: 1 }}>
+                <Input placeholder="Claim value (e.g. terrakube-org)" />
+              </Form.Item>
+              <Form.Item>
+                <Button icon={<PlusOutlined />} onClick={addClaim}>
+                  Add
+                </Button>
+              </Form.Item>
+            </Form>
+
+            <Table
+              columns={claimColumns}
+              dataSource={claims}
+              pagination={false}
+              size="small"
+              locale={{ emptyText: "No claim conditions - all tokens from this issuer will be accepted" }}
+              style={{ marginBottom: 24 }}
+            />
+
             <Form.Item>
-              <Button icon={<PlusOutlined />} onClick={addClaim}>
-                Add
-              </Button>
+              <Space>
+                <Button type="primary" htmlType="submit">
+                  {mode === "create" ? "Create" : "Update"}
+                </Button>
+                <Button onClick={() => setMode("list")}>Cancel</Button>
+              </Space>
             </Form.Item>
           </Form>
-
-          <Table
-            columns={claimColumns}
-            dataSource={claims}
-            pagination={false}
-            size="small"
-            locale={{ emptyText: "No claim conditions - all tokens from this issuer will be accepted" }}
-            style={{ marginBottom: 24 }}
-          />
-
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                {mode === "create" ? "Create" : "Update"}
-              </Button>
-              <Button onClick={() => setMode("list")}>Cancel</Button>
-            </Space>
-          </Form.Item>
-        </Form>
+        </SettingsSection>
       </div>
     </Spin>
   );
