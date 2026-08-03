@@ -614,7 +614,9 @@ export const WorkspaceWebhook = ({
                 </Form.Item>
               </Col>
             </Row>
-            <Row hidden={!webhookEnabled || vcsProvider !== "GITHUB"}>
+            <Row
+              hidden={!webhookEnabled || (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB") || migratedV2}
+            >
               <Col span={24} style={{ marginBottom: 16 }}>
                 {migratedV2 ? (
                   <Space>
