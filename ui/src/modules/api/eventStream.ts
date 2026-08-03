@@ -41,7 +41,12 @@ export async function readEventStream(
 
     for (const event of events) {
       const lines = event.split("\n");
-      const dataLines = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart());
+      // Per the SSE spec, only a single leading space after "data:" is stripped -
+      // any further indentation is part of the value and must be preserved.
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5))
+        .map((line) => (line.startsWith(" ") ? line.slice(1) : line));
       const idLine = lines.find((line) => line.startsWith("id:"));
       const id = idLine != null ? idLine.slice(3).trimStart() : undefined;
 

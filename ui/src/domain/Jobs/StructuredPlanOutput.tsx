@@ -97,6 +97,7 @@ type PreparedChangeRow = {
   visibleChanges: number;
   hiddenCount: number;
   applyStatus?: ApplyChange["status"];
+  applyError?: ApplyChange["error"];
 };
 
 type SummarySegment = {
@@ -1116,6 +1117,7 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
       const providerName = getProviderName(change);
       const diff = buildResourceDiff(change, normalizedAction);
       const applyStatus = "status" in change ? (change as ApplyChange).status : undefined;
+      const applyError = "error" in change ? (change as ApplyChange).error : undefined;
 
       return {
         key: `${resourceLabel}-${normalizedAction}-${index}`,
@@ -1129,6 +1131,7 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
         visibleChanges: countVisibleLeaves(diff.rows),
         hiddenCount: diff.hiddenCount,
         applyStatus,
+        applyError,
       };
     });
   }, [changes]);
@@ -1459,6 +1462,7 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                       {rowApplyStatusMeta ? (
                         <span
                           className={`structured-plan-applyStatus structured-plan-applyStatus--${rowApplyStatusMeta.className}`}
+                          title={row.applyStatus === "errored" && row.applyError ? row.applyError : undefined}
                         >
                           {rowApplyStatusMeta.label}
                         </span>

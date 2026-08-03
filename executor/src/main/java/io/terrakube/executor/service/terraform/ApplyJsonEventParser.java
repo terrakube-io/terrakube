@@ -19,8 +19,9 @@ public class ApplyJsonEventParser {
     /**
      * Parses one line of `terraform apply -json` output, updating the matching entry in
      * {@code changes} (matched by "address") in place. Returns the human-readable @message
-     * for the caller to feed into the existing plain-text console log, or null if the line
-     * wasn't parseable JSON.
+     * for the caller to feed into the existing plain-text console log. Plain-text lines can
+     * still be emitted by Terraform or provisioners while JSON output is enabled, so preserve
+     * those lines even though they cannot update structured apply progress.
      */
     public String parseLine(String jsonLine, List<Map<String, Object>> changes) {
         Map<String, Object> event;
@@ -28,8 +29,8 @@ public class ApplyJsonEventParser {
             event = objectMapper.readValue(jsonLine, new TypeReference<>() {
             });
         } catch (Exception e) {
-            log.warn("Unable to parse apply JSON line: {}", jsonLine, e);
-            return null;
+            log.debug("Unable to parse apply JSON line; forwarding it as plain text: {}", jsonLine);
+            return jsonLine;
         }
 
         Object message = event.get("@message");
