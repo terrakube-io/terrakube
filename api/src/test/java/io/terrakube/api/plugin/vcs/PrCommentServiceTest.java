@@ -107,6 +107,53 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void extractRunSummaryReturnsPlanLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nPlan: 2 to add, 1 to change, 0 to destroy.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertTrue(summary.isPresent());
+        assertEquals("Plan: 2 to add, 1 to change, 0 to destroy.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsNoChangesLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("No changes. Your infrastructure matches the configuration.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertEquals("No changes. Your infrastructure matches the configuration.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsApplyCompleteLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nApply complete! Resources: 3 added, 0 changed, 1 destroyed.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertEquals("Apply complete! Resources: 3 added, 0 changed, 1 destroyed.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsEmptyWhenNoStepOutput() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput(null);
+
+        assertTrue(subject.extractRunSummary(job).isEmpty());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsEmptyWhenNoMatch() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some unusual output with no recognizable summary");
+
+        assertTrue(subject.extractRunSummary(job).isEmpty());
+    }
+
+    @Test
     public void postPlanResultSkipsWhenPrNumberIsNull() {
         Job job = createJob(VcsType.GITHUB, null, JobStatus.completed);
 

@@ -199,7 +199,7 @@ public class RepoWebhookService {
             job.setCommitId(webhookResult.getCommit());
             Job savedJob = jobRepository.save(job);
             if (!webhookResult.isRelease() && workspace.getVcs() != null) {
-                gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending);
+                gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
             }
             scheduleJobService.createJobContext(savedJob);
         } catch (IllegalArgumentException e) {

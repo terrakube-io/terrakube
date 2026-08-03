@@ -369,7 +369,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         }
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus) {
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
         Workspace workspace = job.getWorkspace();
         if (job.getCommitId() == null || job.getCommitId().isBlank()) {
             log.warn("No commit id available for job {}, skipping Azure DevOps commit status", job.getId());
@@ -390,27 +390,23 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
         String state;
-        String description;
         switch (jobStatus) {
             case completed:
                 state = "succeeded";
-                description = "Your task has been completed successfully.";
                 break;
             case failed:
             case rejected:
             case cancelled:
                 state = "failed";
-                description = "Your task has failed.";
                 break;
             case unknown:
                 state = "error";
-                description = "Your task ran into errors.";
                 break;
             default:
                 state = "pending";
-                description = "Your task is in Terrakube queue.";
                 break;
         }
+        String description = buildCommitStatusDescription(jobStatus, runSummary);
 
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("name", workspace.getOrganization().getName() + "-" + workspace.getName());

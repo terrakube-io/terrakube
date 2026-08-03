@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,8 +30,10 @@ public class PrCommentService {
 
     private static final int MAX_COMMENT_LENGTH = 60000;
     private static final Set<VcsType> PR_COMMENT_SUPPORTED_VCS = EnumSet.of(VcsType.GITHUB, VcsType.GITLAB, VcsType.BITBUCKET);
-    private static final Pattern PLAN_SUMMARY_PATTERN = Pattern.compile(
-            "(Plan: \\d+ to add, \\d+ to change, \\d+ to destroy\\.|No changes\\. Your infrastructure matches the configuration\\.)");
+    private static final Pattern RUN_SUMMARY_PATTERN = Pattern.compile(
+            "(Plan: \\d+ to add, \\d+ to change, \\d+ to destroy\\."
+            + "|No changes\\. Your infrastructure matches the configuration\\."
+            + "|Apply complete! Resources: \\d+ added, \\d+ changed, \\d+ destroyed\\.)");
     private static final Pattern ANSI_PATTERN = Pattern.compile(
             "[\\u001b\\u009b][\\[()#;?]*(?:\\d{1,4}(?:;\\d{1,4})*)?[0-9A-ORZcf-nq-uy=><~]");
 
@@ -183,6 +186,18 @@ public class PrCommentService {
         return ANSI_PATTERN.matcher(text).replaceAll("");
     }
 
+    private String matchRunSummary(String output) {
+        if (output == null || output.isEmpty()) {
+            return null;
+        }
+        Matcher matcher = RUN_SUMMARY_PATTERN.matcher(output);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    public Optional<String> extractRunSummary(Job job) {
+        return Optional.ofNullable(matchRunSummary(fetchStepOutputText(job)));
+    }
+
     public void postApplyDisabledNotice(Workspace workspace, Integer prNumber) {
         if (prNumber == null || prNumber == 0) return;
 
@@ -279,9 +294,9 @@ public class PrCommentService {
         String icon = statusIcon(job.getStatus());
 
         if (planOutput != null && !planOutput.isEmpty()) {
-            Matcher summaryMatcher = PLAN_SUMMARY_PATTERN.matcher(planOutput);
-            if (summaryMatcher.find()) {
-                sb.append(icon).append(" ").append(summaryMatcher.group(1)).append("\n\n");
+            String summary = matchRunSummary(planOutput);
+            if (summary != null) {
+                sb.append(icon).append(" ").append(summary).append("\n\n");
             }
 
             String content = planOutput;

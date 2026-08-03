@@ -723,7 +723,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         }
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus) {
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
@@ -734,27 +734,24 @@ public class GitLabWebhookService extends WebhookServiceBase {
             GitlabCommitStatus commitStatus = GitlabCommitStatus.pending;
             String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
                     + workspace.getName();
-            String commitStatusDescription = "Your task is in Terrakube queue.";
 
             // Determine the commit status based on jobStatus
             switch (jobStatus) {
                 case completed:
                     commitStatus = GitlabCommitStatus.success;
-                    commitStatusDescription = "Your task has been completed successfully.";
                     break;
                 case failed:
                 case rejected:
                 case cancelled:
                     commitStatus = GitlabCommitStatus.failed;
-                    commitStatusDescription = "Your task has failed.";
                     break;
                 case unknown:
                     commitStatus = GitlabCommitStatus.failed;
-                    commitStatusDescription = "Your task ran into errors.";
                     break;
                 default:
                     break;
             }
+            String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
 
             // Create WebClient instance
             WebClient webClient = webClientBuilder
