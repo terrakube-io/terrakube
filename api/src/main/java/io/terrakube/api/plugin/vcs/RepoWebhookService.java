@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
@@ -46,6 +47,7 @@ public class RepoWebhookService {
     WebhookEventRepository webhookEventRepository;
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
+    AzDevOpsWebhookService azDevOpsWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
 
@@ -55,6 +57,14 @@ public class RepoWebhookService {
 
     private boolean isGitLab(Workspace workspace) {
         return workspace.getVcs() != null && workspace.getVcs().getVcsType() == VcsType.GITLAB;
+    }
+
+    private boolean isAzureDevOps(RepoWebhook repoWebhook) {
+        return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.AZURE_SP_MI;
+    }
+
+    private boolean isAzureDevOps(Workspace workspace) {
+        return workspace.getVcs() != null && workspace.getVcs().getVcsType() == VcsType.AZURE_SP_MI;
     }
 
     // Callers reach this exclusively through RepoWebhookSyncJob, which is
@@ -108,9 +118,14 @@ public class RepoWebhookService {
             return;
         }
 
-        String remoteHookId = isGitLab(repoWebhook)
-                ? gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes)
-                : gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+        String remoteHookId;
+        if (isAzureDevOps(repoWebhook)) {
+            remoteHookId = azDevOpsWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+        } else if (isGitLab(repoWebhook)) {
+            remoteHookId = gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+        } else {
+            remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+        }
         repoWebhook.setRemoteHookId(remoteHookId);
         repoWebhookRepository.save(repoWebhook);
     }
@@ -121,7 +136,9 @@ public class RepoWebhookService {
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
 
         if (workspaces.isEmpty()) {
-            if (isGitLab(repoWebhook)) {
+            if (isAzureDevOps(repoWebhook)) {
+                azDevOpsWebhookService.deleteRepoWebhook(repoWebhook);
+            } else if (isGitLab(repoWebhook)) {
                 gitLabWebhookService.deleteRepoWebhook(repoWebhook);
             } else {
                 gitHubWebhookService.deleteRepoWebhook(repoWebhook);
@@ -139,7 +156,13 @@ public class RepoWebhookService {
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
 
         boolean gitlab = isGitLab(repoWebhook);
-        if (gitlab) {
+        boolean azureDevOps = isAzureDevOps(repoWebhook);
+        if (azureDevOps) {
+            if (!verifyAzDevOpsToken(headers, repoWebhook.getWebhookSecret())) {
+                log.error("Token verification failed for repo webhook {}", repoWebhookId);
+                throw new SecurityException("Azure DevOps token verification failed");
+            }
+        } else if (gitlab) {
             if (!verifyGitlabToken(headers, repoWebhook.getWebhookSecret())) {
                 log.error("Token verification failed for repo webhook {}", repoWebhookId);
                 throw new SecurityException("GitLab token verification failed");
@@ -149,9 +172,14 @@ public class RepoWebhookService {
             throw new SecurityException("HMAC signature verification failed");
         }
 
-        WebhookResult webhookResult = gitlab
-                ? gitLabWebhookService.parseGitLabPayload(jsonPayload, headers)
-                : gitHubWebhookService.parseGitHubPayload(jsonPayload, headers);
+        WebhookResult webhookResult;
+        if (azureDevOps) {
+            webhookResult = azDevOpsWebhookService.parseAzDevOpsPayload(jsonPayload, headers);
+        } else if (gitlab) {
+            webhookResult = gitLabWebhookService.parseGitLabPayload(jsonPayload, headers);
+        } else {
+            webhookResult = gitHubWebhookService.parseGitHubPayload(jsonPayload, headers);
+        }
 
         if (webhookResult.getEvent() != null && webhookResult.getEvent().equals("ping")) {
             log.info("Received ping for repo webhook {}", repoWebhookId);
@@ -184,7 +212,20 @@ public class RepoWebhookService {
             return;
         }
 
-        if (webhookResult.getPrFilesUrl() != null) {
+        // Azure DevOps: file changes require per-workspace API calls (push payloads
+        // don't include changed files, and PR changes need workspace VCS credentials).
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
+            String normalizedEvent = webhookResult.getNormalizedEvent();
+            if ("push".equals(normalizedEvent) && !webhookResult.isRelease() && webhookResult.getRawPayload() != null) {
+                webhookResult.setFileChanges(
+                        azDevOpsWebhookService.fetchPushFileChanges(
+                                workspace.getVcs(), workspace.getSource(), webhookResult.getRawPayload()));
+            } else if ("pull_request".equals(normalizedEvent) && webhookResult.getPrNumber() != null) {
+                webhookResult.setFileChanges(
+                        azDevOpsWebhookService.fetchPrFileChanges(
+                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+            }
+        } else if (webhookResult.getPrFilesUrl() != null) {
             if (workspace.getVcs() != null) {
                 List<String> prFiles = isGitLab(workspace)
                         ? gitLabWebhookService.fetchPrFileChanges(
@@ -227,7 +268,9 @@ public class RepoWebhookService {
             job.setCommitId(webhookResult.getCommit());
             Job savedJob = jobRepository.save(job);
             if (!webhookResult.isRelease() && workspace.getVcs() != null) {
-                if (isGitLab(workspace)) {
+                if (isAzureDevOps(workspace)) {
+                    azDevOpsWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+                } else if (isGitLab(workspace)) {
                     gitLabWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
                 } else {
                     gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
@@ -288,5 +331,16 @@ public class RepoWebhookService {
             log.error("Error parsing the secret", e);
             return false;
         }
+    }
+
+    private boolean verifyAzDevOpsToken(Map<String, String> headers, String secret) {
+        String tokenHeader = headers.get("x-terrakube-token");
+        if (tokenHeader == null) {
+            log.error("x-terrakube-token header is missing!");
+            return false;
+        }
+        return MessageDigest.isEqual(
+                tokenHeader.getBytes(StandardCharsets.UTF_8),
+                secret.getBytes(StandardCharsets.UTF_8));
     }
 }

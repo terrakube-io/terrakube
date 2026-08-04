@@ -31,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
@@ -56,6 +57,7 @@ class RepoWebhookServiceTest {
     WebhookEventRepository webhookEventRepository;
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
+    AzDevOpsWebhookService azDevOpsWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
 
@@ -68,6 +70,7 @@ class RepoWebhookServiceTest {
         webhookEventRepository = mock(WebhookEventRepository.class);
         gitHubWebhookService = mock(GitHubWebhookService.class);
         gitLabWebhookService = mock(GitLabWebhookService.class);
+        azDevOpsWebhookService = mock(AzDevOpsWebhookService.class);
         jobRepository = mock(JobRepository.class);
         scheduleJobService = mock(ScheduleJobService.class);
 
@@ -77,6 +80,7 @@ class RepoWebhookServiceTest {
                 webhookEventRepository,
                 gitHubWebhookService,
                 gitLabWebhookService,
+                azDevOpsWebhookService,
                 jobRepository,
                 scheduleJobService);
     }
@@ -1159,6 +1163,328 @@ class RepoWebhookServiceTest {
 
             verify(gitLabWebhookService).deleteWebhook(workspace, "old-gl-v1-hook-id");
             verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
+            assertThat(webhook.getRemoteHookId()).isNull();
+        }
+    }
+
+    // ======================== Azure DevOps (AZURE_SP_MI) Tests ========================
+
+    private Workspace azDevOpsWorkspaceWithSource(String source) {
+        Workspace ws = workspaceWithSource(source);
+        ws.getVcs().setVcsType(VcsType.AZURE_SP_MI);
+        return ws;
+    }
+
+    private RepoWebhook azDevOpsRepoWebhookWith(String url, String secret) {
+        RepoWebhook rw = repoWebhookWith(url, secret);
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.AZURE_SP_MI);
+        rw.setVcs(vcs);
+        return rw;
+    }
+
+    @Nested
+    class AzDevOpsRepoWebhook {
+
+        @Test
+        void createOrUpdateSharedWebhookDispatchesToAzDevOps() {
+            RepoWebhook rw = azDevOpsRepoWebhookWith("https://dev.azure.com/org/proj/repo", "secret");
+
+            Workspace ws1 = azDevOpsWorkspaceWithSource("https://dev.azure.com/org/proj/repo");
+            Webhook wh1 = new Webhook();
+            WebhookEvent pushEvent = new WebhookEvent();
+            pushEvent.setEvent(WebhookEventType.PUSH);
+            wh1.setEvents(List.of(pushEvent));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = azDevOpsWorkspaceWithSource("https://dev.azure.com/org/proj/repo");
+            Webhook wh2 = new Webhook();
+            WebhookEvent prEvent = new WebhookEvent();
+            prEvent.setEvent(WebhookEventType.PULL_REQUEST);
+            wh2.setEvents(List.of(prEvent));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
+                    .thenReturn(List.of(ws1, ws2));
+            when(azDevOpsWebhookService.createOrUpdateRepoWebhook(eq(rw), any()))
+                    .thenReturn("sub-1,sub-2");
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<WebhookEventType>> captor = ArgumentCaptor.forClass(Set.class);
+            verify(azDevOpsWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture());
+            assertThat(captor.getValue()).containsExactlyInAnyOrder(WebhookEventType.PUSH, WebhookEventType.PULL_REQUEST);
+            assertThat(rw.getRemoteHookId()).isEqualTo("sub-1,sub-2");
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(gitLabWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(repoWebhookRepository).save(rw);
+        }
+
+        @Test
+        void cleanupDeletesAzDevOpsRepoWebhookWhenOrphan() {
+            RepoWebhook rw = azDevOpsRepoWebhookWith("https://dev.azure.com/org/proj/repo", "secret");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
+                    .thenReturn(Collections.emptyList());
+
+            subject.cleanupIfOrphan(rw);
+
+            verify(azDevOpsWebhookService).deleteRepoWebhook(rw);
+            verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
+            verify(gitLabWebhookService, never()).deleteRepoWebhook(any());
+            verify(repoWebhookRepository).delete(rw);
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsTokenVerificationSucceeds() {
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String secret = "az-test-secret";
+            String payload = "{\"eventType\":\"git.push\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-terrakube-token", secret);
+
+            WebhookResult pushResult = new WebhookResult();
+            pushResult.setEvent("push");
+            pushResult.setValid(true);
+            pushResult.setBranch("main");
+            pushResult.setCommit("abc123");
+            pushResult.setFileChanges(List.of());
+            pushResult.setRawPayload(payload);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(pushResult);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(Collections.emptyList());
+
+            // Should not throw
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(azDevOpsWebhookService).parseAzDevOpsPayload(eq(payload), any());
+            verify(gitHubWebhookService, never()).parseGitHubPayload(any(), any());
+            verify(gitLabWebhookService, never()).parseGitLabPayload(any(), any());
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsRejectsWrongToken() {
+            String secret = "correct-token";
+            RepoWebhook rw = azDevOpsRepoWebhookWith("https://dev.azure.com/org/proj/repo", secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-terrakube-token", "wrong-token");
+
+            assertThatThrownBy(() -> subject.processV2Webhook(rw.getId().toString(), "{}", headers))
+                    .isInstanceOf(SecurityException.class)
+                    .hasMessageContaining("Azure DevOps token verification failed");
+
+            verify(jobRepository, never()).save(any());
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsRejectsMissingToken() {
+            RepoWebhook rw = azDevOpsRepoWebhookWith("https://dev.azure.com/org/proj/repo", "secret");
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            assertThatThrownBy(() -> subject.processV2Webhook(rw.getId().toString(), "{}", Map.of()))
+                    .isInstanceOf(SecurityException.class);
+
+            verify(jobRepository, never()).save(any());
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsPushFansOutWithFileChanges() {
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String secret = "az-push-secret";
+            String payload = "{\"eventType\":\"git.push\",\"resource\":{\"refUpdates\":[{\"name\":\"refs/heads/main\",\"newObjectId\":\"abc123\"}]}}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-terrakube-token", secret);
+
+            WebhookResult pushResult = new WebhookResult();
+            pushResult.setEvent("push");
+            pushResult.setValid(true);
+            pushResult.setBranch("main");
+            pushResult.setCommit("abc123");
+            pushResult.setCreatedBy("user@test.com");
+            pushResult.setVia("Azure DevOps");
+            pushResult.setFileChanges(new java.util.ArrayList<>());
+            pushResult.setRawPayload(payload);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(pushResult);
+
+            // Per-workspace file change fetching
+            when(azDevOpsWebhookService.fetchPushFileChanges(any(), eq(repoUrl), eq(payload)))
+                    .thenReturn(List.of("main.tf"));
+
+            Workspace ws1 = azDevOpsWorkspaceWithSource(repoUrl);
+            ws1.setName("az-ws1");
+            Webhook wh1 = new Webhook();
+            WebhookEvent event1 = new WebhookEvent();
+            event1.setEvent(WebhookEventType.PUSH);
+            event1.setBranch("main");
+            event1.setPath("*");
+            event1.setPathType(WebhookEventPathType.PATTERN);
+            event1.setTemplateId("az-template-1");
+            wh1.setEvents(List.of(event1));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = azDevOpsWorkspaceWithSource(repoUrl);
+            ws2.setName("az-ws2");
+            Webhook wh2 = new Webhook();
+            WebhookEvent event2 = new WebhookEvent();
+            event2.setEvent(WebhookEventType.PUSH);
+            event2.setBranch("main");
+            event2.setPath("*");
+            event2.setPathType(WebhookEventPathType.PATTERN);
+            event2.setTemplateId("az-template-2");
+            wh2.setEvents(List.of(event2));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws1, ws2));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh1, WebhookEventType.PUSH))
+                    .thenReturn(List.of(event1));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh2, WebhookEventType.PUSH))
+                    .thenReturn(List.of(event2));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(jobRepository, times(2)).save(any(Job.class));
+            verify(azDevOpsWebhookService, times(2)).fetchPushFileChanges(any(), eq(repoUrl), eq(payload));
+            // Commit status sent via Azure DevOps
+            verify(azDevOpsWebhookService, times(2)).sendCommitStatus(any(Job.class), any(), any());
+            verify(gitHubWebhookService, never()).sendCommitStatus(any(), any(), any());
+            verify(gitLabWebhookService, never()).sendCommitStatus(any(), any(), any());
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsPullRequestFetchesFileChanges() {
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String secret = "az-pr-secret";
+            String payload = "{\"eventType\":\"git.pullrequest.created\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-terrakube-token", secret);
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature-branch");
+            prResult.setCommit("def456");
+            prResult.setPrNumber(42);
+            prResult.setFileChanges(new java.util.ArrayList<>());
+            prResult.setRawPayload(payload);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(prResult);
+
+            when(azDevOpsWebhookService.fetchPrFileChanges(any(), eq(repoUrl), eq(42)))
+                    .thenReturn(List.of("variables.tf"));
+
+            Workspace ws = azDevOpsWorkspaceWithSource(repoUrl);
+            ws.setName("az-pr-ws");
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch("feature-branch");
+            event.setPath("*.tf");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("az-pr-template");
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(azDevOpsWebhookService).fetchPrFileChanges(any(), eq(repoUrl), eq(42));
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            assertThat(jobCaptor.getValue().getTemplateReference()).isEqualTo("az-pr-template");
+            assertThat(jobCaptor.getValue().getCommitId()).isEqualTo("def456");
+            assertThat(jobCaptor.getValue().getOverrideBranch()).isEqualTo("feature-branch");
+        }
+
+        @Test
+        void processV2WebhookAzDevOpsReleaseCreatesJobs() {
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String secret = "az-release-secret";
+            String payload = "{\"eventType\":\"git.push\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-terrakube-token", secret);
+
+            WebhookResult releaseResult = new WebhookResult();
+            releaseResult.setEvent("release");
+            releaseResult.setValid(true);
+            releaseResult.setBranch("v1.0.0");
+            releaseResult.setCommit("tag-sha-123");
+            releaseResult.setRelease(true);
+            releaseResult.setRawPayload(payload);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(releaseResult);
+
+            Workspace ws = azDevOpsWorkspaceWithSource(repoUrl);
+            ws.setName("az-release-ws");
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.RELEASE);
+            event.setBranch("v1.*");
+            event.setTemplateId("az-release-template");
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.RELEASE))
+                    .thenReturn(List.of(event));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            assertThat(jobCaptor.getValue().getTemplateReference()).isEqualTo("az-release-template");
+            assertThat(jobCaptor.getValue().getOverrideBranch()).isEqualTo("refs/tags/v1.0.0");
+            // Releases don't send commit status
+            verify(azDevOpsWebhookService, never()).sendCommitStatus(any(), any(), any());
+        }
+
+        @Test
+        void v2WebhookMigrationRemovalScenarioAzDevOps() {
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+
+            Workspace workspace = azDevOpsWorkspaceWithSource(repoUrl);
+            workspace.setName("az-workspace-v1");
+
+            Webhook webhook = new Webhook();
+            webhook.setWorkspace(workspace);
+            webhook.setMigratedV2(true);
+            webhook.setRemoteHookId("old-az-sub-1,old-az-sub-2");
+            workspace.setWebhook(webhook);
+
+            RepoWebhook repoWebhook = azDevOpsRepoWebhookWith(repoUrl, "new-secret");
+            when(repoWebhookRepository.findByRepositoryUrl(anyString())).thenReturn(Optional.of(repoWebhook));
+
+            // Mirrors the logic from WebhookManageHook for a migrated AZURE_SP_MI webhook
+            if (webhook.isMigratedV2() && workspace.getVcs() != null
+                    && workspace.getVcs().getVcsType() == VcsType.AZURE_SP_MI) {
+                subject.getOrCreateRepoWebhook(workspace);
+                subject.createOrUpdateSharedWebhook(repoWebhook);
+
+                if (webhook.getRemoteHookId() != null && !webhook.getRemoteHookId().isEmpty()) {
+                    azDevOpsWebhookService.deleteWebhook(workspace, webhook.getRemoteHookId());
+                    webhook.setRemoteHookId(null);
+                }
+            }
+
+            verify(azDevOpsWebhookService).deleteWebhook(workspace, "old-az-sub-1,old-az-sub-2");
+            verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
+            verify(gitLabWebhookService, never()).deleteRepoWebhook(any());
             assertThat(webhook.getRemoteHookId()).isNull();
         }
     }
