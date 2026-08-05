@@ -40,6 +40,7 @@ import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
@@ -59,6 +60,7 @@ class RepoWebhookServiceTest {
     GitLabWebhookService gitLabWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
+    PrCommentService prCommentService;
 
     RepoWebhookService subject;
 
@@ -71,6 +73,7 @@ class RepoWebhookServiceTest {
         gitLabWebhookService = mock(GitLabWebhookService.class);
         jobRepository = mock(JobRepository.class);
         scheduleJobService = mock(ScheduleJobService.class);
+        prCommentService = mock(PrCommentService.class);
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -79,7 +82,8 @@ class RepoWebhookServiceTest {
                 gitHubWebhookService,
                 gitLabWebhookService,
                 jobRepository,
-                scheduleJobService);
+                scheduleJobService,
+                prCommentService);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -607,6 +611,259 @@ class RepoWebhookServiceTest {
 
             assertThat(savedJob.getPrNumber()).isEqualTo(7);
             assertThat(savedJob.isPrApplyEnabled()).isTrue();
+        }
+
+        @Test
+        void v2WebhookIssueCommentResolvesPrDetailsPerWorkspaceInsteadOfNpe() throws Exception {
+            // Regression test: GitHubWebhookService.parseGitHubPayload(payload, headers) - the v2-safe
+            // overload - parses issue_comment with vcs=null, since the correct per-workspace Vcs isn't
+            // known yet. Previously handleEvent still tried to fetch PR head SHA/branch immediately
+            // with that null Vcs, so tokenService.getAccessToken(ownerAndRepo, null) NPE'd on
+            // vcs.getAccessToken() as soon as anyone commented "terrakube apply"/"terrakube plan" on a
+            // PR for a repo using the shared webhook. WebhookResult.prDetailsUrl now defers that fetch
+            // to processWorkspaceWebhook, once workspace.getVcs() is known.
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "issue-comment-test-secret";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube plan\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = workspaceWithSource(repoUrl);
+            ws.setName("ws-issue-comment");
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            ws.setWebhook(wh);
+
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch(".*");
+            event.setPath("**");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("plan-template");
+            event.setPrWorkflowEnabled(true);
+            wh.setEvents(List.of(event));
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of(
+                    "x-hub-signature-256", sig,
+                    "x-github-event", "issue_comment");
+
+            // parseGitHubPayload was called with vcs=null (the v2-safe overload), so it couldn't
+            // resolve commit/branch itself - it left them unset and recorded prDetailsUrl instead,
+            // exactly as the real (non-mocked) v2 parse path now does.
+            WebhookResult commentResult = new WebhookResult();
+            commentResult.setEvent("issue_comment");
+            commentResult.setValid(true);
+            commentResult.setBranch("");
+            commentResult.setPrComment(true);
+            commentResult.setCommentCommand("plan");
+            commentResult.setPrNumber(9);
+            commentResult.setPrDetailsUrl("https://api.github.com/repos/owner/repo/pulls/9");
+            commentResult.setPrFilesUrl("https://api.github.com/repos/owner/repo/pulls/9/files");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+
+            when(gitHubWebhookService.resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
+                    eq("https://api.github.com/repos/owner/repo/pulls/9"), eq(commentResult)))
+                    .thenAnswer(inv -> {
+                        commentResult.setCommit("cafe456");
+                        commentResult.setBranch("feature-branch");
+                        return true;
+                    });
+            when(gitHubWebhookService.fetchPrFileChanges(eq(ws.getVcs()), eq(repoUrl),
+                    eq("https://api.github.com/repos/owner/repo/pulls/9/files")))
+                    .thenReturn(List.of("main.tf"));
+
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
+                Job j = inv.getArgument(0);
+                j.setId(300);
+                return j;
+            });
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(gitHubWebhookService).resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
+                    eq("https://api.github.com/repos/owner/repo/pulls/9"), eq(commentResult));
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            Job savedJob = jobCaptor.getValue();
+
+            assertThat(savedJob.getPrNumber()).isEqualTo(9);
+            assertThat(savedJob.getOverrideBranch()).isEqualTo("feature-branch");
+            assertThat(savedJob.getCommitId()).isEqualTo("cafe456");
+        }
+
+        @Test
+        void v2WebhookIssueCommentSkipsWorkspaceWithNoVcsInsteadOfNpe() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "issue-comment-no-vcs-secret";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube plan\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = workspaceWithSource(repoUrl);
+            ws.setName("ws-no-vcs");
+            ws.setVcs(null);
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of(
+                    "x-hub-signature-256", sig,
+                    "x-github-event", "issue_comment");
+
+            WebhookResult commentResult = new WebhookResult();
+            commentResult.setEvent("issue_comment");
+            commentResult.setValid(true);
+            commentResult.setBranch("");
+            commentResult.setPrComment(true);
+            commentResult.setCommentCommand("plan");
+            commentResult.setPrNumber(11);
+            commentResult.setPrDetailsUrl("https://api.github.com/repos/owner/repo/pulls/11");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(gitHubWebhookService, never()).resolvePrDetails(any(), any(), any(), any());
+            verify(jobRepository, never()).save(any(Job.class));
+        }
+
+        private Workspace prCommentWorkspace(String repoUrl, String name, String commentCommand, int prNumber,
+                boolean prWorkflowEnabled, boolean prApplyEnabled) {
+            Workspace ws = workspaceWithSource(repoUrl);
+            ws.setName(name);
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            ws.setWebhook(wh);
+
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch(".*");
+            event.setPath("**");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("plan-template");
+            event.setPrWorkflowEnabled(prWorkflowEnabled);
+            event.setPrApplyEnabled(prApplyEnabled);
+            wh.setEvents(List.of(event));
+
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+            return ws;
+        }
+
+        private WebhookResult resolvedCommentResult(String commentCommand, int prNumber, String commentId) {
+            WebhookResult commentResult = new WebhookResult();
+            commentResult.setEvent("issue_comment");
+            commentResult.setValid(true);
+            commentResult.setPrComment(true);
+            commentResult.setCommentCommand(commentCommand);
+            commentResult.setCommentId(commentId);
+            commentResult.setPrNumber(prNumber);
+            commentResult.setBranch("feature-branch");
+            commentResult.setCommit("cafe456");
+            commentResult.setFileChanges(List.of("main.tf"));
+            return commentResult;
+        }
+
+        @Test
+        void v2WebhookIssueCommentAcknowledgesReceiptWithEyesReaction() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "issue-comment-ack-secret";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube plan\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-ack", "plan", 9, true, false);
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+
+            WebhookResult commentResult = resolvedCommentResult("plan", 9, "comment-1");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of("x-hub-signature-256", sig, "x-github-event", "issue_comment");
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(prCommentService).acknowledgeReceipt(ws, "comment-1", 9);
+        }
+
+        @Test
+        void v2WebhookIssueCommentApplyCreatesAutoApplyJobWhenEnabled() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "issue-comment-apply-secret";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube apply\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-apply-enabled", "apply", 12, true, true);
+            ws.setDefaultTemplate("default-template-id");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+
+            WebhookResult commentResult = resolvedCommentResult("apply", 12, "comment-apply-1");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
+                Job j = inv.getArgument(0);
+                j.setId(400);
+                return j;
+            });
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of("x-hub-signature-256", sig, "x-github-event", "issue_comment");
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            assertThat(ws.isLocked()).isTrue();
+            verify(workspaceRepository).save(ws);
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            Job savedJob = jobCaptor.getValue();
+
+            assertThat(savedJob.getTemplateReference()).isEqualTo("default-template-id");
+            assertThat(savedJob.getPrNumber()).isEqualTo(12);
+            assertThat(savedJob.isAutoApply()).isTrue();
+            assertThat(savedJob.getCommandCommentId()).isEqualTo("comment-apply-1");
+            verify(gitHubWebhookService).sendCommitStatus(eq(savedJob), eq(JobStatus.pending), any());
+            verify(prCommentService, never()).postApplyDisabledNotice(any(), any());
+        }
+
+        @Test
+        void v2WebhookIssueCommentApplyPostsDisabledNoticeWhenNotEnabled() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "issue-comment-apply-disabled-secret";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube apply\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-apply-disabled", "apply", 13, true, false);
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+
+            WebhookResult commentResult = resolvedCommentResult("apply", 13, "comment-apply-2");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of("x-hub-signature-256", sig, "x-github-event", "issue_comment");
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            assertThat(ws.isLocked()).isFalse();
+            verify(prCommentService).postApplyDisabledNotice(ws, 13);
+            verify(jobRepository, never()).save(any(Job.class));
         }
 
         @Test

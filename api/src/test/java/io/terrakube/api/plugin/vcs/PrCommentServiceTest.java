@@ -674,6 +674,44 @@ public class PrCommentServiceTest {
         assertTrue(markdownCaptor.getValue().contains("**Job:** #42"));
     }
 
+    private Workspace workspaceWith(VcsType vcsType) {
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(vcsType);
+        Workspace workspace = new Workspace();
+        workspace.setName("test-workspace");
+        workspace.setVcs(vcs);
+        return workspace;
+    }
+
+    @Test
+    public void acknowledgeReceiptSkipsWhenCommentIdMissing() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), null, 5);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitHub() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), "998877", 5);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(any(Workspace.class), eq("998877"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitLab() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITLAB), "note-1", 5);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(any(Workspace.class), eq(5), eq("note-1"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptIsNoOpForBitbucket() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.BITBUCKET), "55", 5);
+
+        verify(bitBucketWebhookService, never()).postPrComment(any(), any());
+        verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
+    }
+
     @Test
     public void acknowledgeCompletionSkipsWhenCommandCommentIdMissing() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);

@@ -221,6 +221,31 @@ public class PrCommentService {
     }
 
     /**
+     * Reacts to a just-received "terrakube plan"/"terrakube apply" comment with an "eyes" reaction,
+     * so the user gets immediate feedback the command was seen while the job is still running.
+     * Shared by both the per-workspace (v1) and shared (v2) webhook paths. Bitbucket Cloud has no
+     * comment-reaction API, so it's a no-op there. Failures here must never block the plan/apply.
+     */
+    public void acknowledgeReceipt(Workspace workspace, String commentId, Number prNumber) {
+        if (commentId == null || commentId.isEmpty()) return;
+
+        try {
+            switch (workspace.getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.addCommentReaction(workspace, commentId, "eyes");
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.addNoteReaction(workspace, prNumber, commentId, "eyes");
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to acknowledge PR comment command for workspace {}: {}", workspace.getName(), e.getMessage());
+        }
+    }
+
+    /**
      * Reacts to the original "terrakube plan"/"terrakube apply" comment with a checkmark or cross
      * once that job finishes, so a user watching the PR can see the command was actioned without
      * opening the (possibly long) result comment. Bitbucket Cloud has no comment-reaction API, so
