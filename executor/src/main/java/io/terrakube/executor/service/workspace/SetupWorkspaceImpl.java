@@ -30,6 +30,7 @@ import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
@@ -178,6 +179,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setCloneSubmodules(true);
 
             cloneCommand.setDepth(1);
+            cloneCommand.setBranchesToClone(List.of(Constants.R_HEADS + terraformJob.getBranch()));
             cloneCommand.call();
         } else {
             CloneCommand cloneCommand = Git.cloneRepository()
@@ -189,6 +191,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setCloneSubmodules(true);
 
             cloneCommand.setDepth(1);
+            cloneCommand.setBranchesToClone(List.of(Constants.R_HEADS + terraformJob.getBranch()));
             cloneCommand.call();
         }
 
