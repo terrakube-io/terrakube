@@ -101,7 +101,7 @@ public class PrCommentServiceTest {
 
     /** Stubs the last-step output fetch path (empty live logs, then stored bytes) for a job built via createJob(). */
     private void stubStepOutput(String text) {
-        doReturn("").when(streamingService).getCurrentLogs(any());
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
         byte[] bytes = text == null ? null : text.getBytes(StandardCharsets.UTF_8);
         doReturn(bytes).when(storageTypeService).getStepOutput(any(), any(), any());
     }
@@ -115,6 +115,17 @@ public class PrCommentServiceTest {
 
         assertTrue(summary.isPresent());
         assertEquals("Plan: 2 to add, 1 to change, 0 to destroy.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsPlanLineWithImportClause() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nPlan: 1 to import, 8 to add, 0 to change, 0 to destroy.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertTrue(summary.isPresent());
+        assertEquals("Plan: 1 to import, 8 to add, 0 to change, 0 to destroy.", summary.get());
     }
 
     @Test
@@ -474,7 +485,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultPrefersLiveStreamingLogsOverStoredOutput() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any());
+        doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any(), any());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());

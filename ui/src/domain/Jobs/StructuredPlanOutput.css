@@ -305,6 +305,12 @@
   color: #0284c7;
 }
 
+.structured-plan-actionIcon--ephemeral {
+  background: #f5f0fe;
+  border-color: #ddd0fb;
+  color: #7c3aed;
+}
+
 .structured-plan-providerBadge {
   align-items: center;
   background: #f4f6f9;
@@ -721,14 +727,46 @@
 }
 
 .structured-plan-applyStatus {
+  align-items: center;
   border-radius: 999px;
+  display: inline-flex;
   font-size: 11px;
   font-weight: 600;
+  gap: 4px;
   padding: 2px 8px;
   text-transform: capitalize;
 }
 
+.structured-plan-applyStatusSpinner {
+  font-size: 10px;
+}
+
+.structured-plan-applyStatusDots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.structured-plan-applyStatusDot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 6px;
+  width: 6px;
+}
+
+.structured-plan-applyStatusDot--destroy {
+  background: #cf3d38;
+}
+
+.structured-plan-applyStatusDot--create {
+  background: #147d37;
+}
+
 .structured-plan-applyStatus--pending {
+  background: #f1f3f5;
+  color: #6b7280;
+}
+
+.structured-plan-applyStatus--unchanged {
   background: #f1f3f5;
   color: #6b7280;
 }
@@ -754,8 +792,11 @@
 }
 
 .structured-plan-applyStatus--replaced {
-  background: #f4f5f7;
-  color: #55606e;
+  /* Neutral slate, same family as "pending" - the destroy+create story is told by the two small
+     dots (.structured-plan-applyStatusDot) rendered inside the badge instead of by the badge's
+     own background color, so it doesn't need a 7th hue in the palette. */
+  background: #eef0f3;
+  color: #43505f;
 }
 
 .structured-plan-applyStatus--imported {
@@ -763,7 +804,27 @@
   color: #0284c7;
 }
 
+.structured-plan-drift {
+  background: #fff7e6;
+  border-radius: 999px;
+  color: #92600a;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  text-transform: capitalize;
+}
+
+[data-theme="dark"] .structured-plan-drift {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
 [data-theme="dark"] .structured-plan-applyStatus--pending {
+  background: rgba(139, 148, 158, 0.2);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--unchanged {
   background: rgba(139, 148, 158, 0.2);
   color: var(--tk-text-tertiary);
 }
@@ -793,9 +854,129 @@
   color: var(--tk-text-secondary);
 }
 
+[data-theme="dark"] .structured-plan-applyStatusDot--destroy {
+  background: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-applyStatusDot--create {
+  background: #3fb950;
+}
+
 [data-theme="dark"] .structured-plan-applyStatus--imported {
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
+}
+
+.structured-plan-applyStatus--planned,
+.structured-plan-applyStatus--importing,
+.structured-plan-applyStatus--moving {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+.structured-plan-applyStatus--refreshing,
+.structured-plan-applyStatus--reading,
+.structured-plan-applyStatus--provisioning {
+  background: #dde8ff;
+  color: #2563eb;
+}
+
+.structured-plan-applyStatus--ephemeral {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--planned,
+[data-theme="dark"] .structured-plan-applyStatus--importing,
+[data-theme="dark"] .structured-plan-applyStatus--moving {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--refreshing,
+[data-theme="dark"] .structured-plan-applyStatus--reading,
+[data-theme="dark"] .structured-plan-applyStatus--provisioning {
+  background: rgba(56, 139, 253, 0.2);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--ephemeral {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.structured-plan-diagnostics,
+.structured-plan-jobDiagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.structured-plan-jobDiagnostics {
+  padding: 12px 16px;
+}
+
+.structured-plan-diagnostic,
+.structured-plan-jobDiagnostic {
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 2px;
+  padding: 8px 12px;
+}
+
+.structured-plan-diagnostic--warning,
+.structured-plan-jobDiagnostic--warning {
+  background: #fff7e6;
+  color: #92600a;
+}
+
+.structured-plan-diagnostic--error,
+.structured-plan-jobDiagnostic--error {
+  background: #f9e0de;
+  color: #cf3d38;
+}
+
+[data-theme="dark"] .structured-plan-diagnostic--warning,
+[data-theme="dark"] .structured-plan-jobDiagnostic--warning {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
+[data-theme="dark"] .structured-plan-diagnostic--error,
+[data-theme="dark"] .structured-plan-jobDiagnostic--error {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.structured-plan-diagnostic-summary {
+  font-weight: 600;
+}
+
+.structured-plan-diagnostic-location {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.structured-plan-diagnostic-detail {
+  opacity: 0.85;
+}
+
+.structured-plan-provisionerOutput {
+  margin-top: 10px;
+}
+
+.structured-plan-provisionerOutputContent {
+  background: #1e1e1e;
+  border-radius: 6px;
+  color: #ffffff;
+  font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
+  font-size: 12px;
+  margin: 6px 0 0;
+  padding: 12px;
+  white-space: pre-wrap;
 }
 
 .structured-plan-noChanges {
@@ -979,6 +1160,12 @@
   background: rgba(56, 189, 248, 0.15);
   border-color: rgba(56, 189, 248, 0.3);
   color: #38bdf8;
+}
+
+[data-theme="dark"] .structured-plan-actionIcon--ephemeral {
+  background: rgba(167, 139, 250, 0.15);
+  border-color: rgba(167, 139, 250, 0.3);
+  color: #a78bfa;
 }
 
 [data-theme="dark"] .structured-plan-providerBadge {

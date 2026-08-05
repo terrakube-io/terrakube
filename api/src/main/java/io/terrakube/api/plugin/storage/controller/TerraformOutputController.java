@@ -29,7 +29,7 @@ public class TerraformOutputController {
             produces = MediaType.APPLICATION_OCTET_STREAM_VALUE
     )
     public @ResponseBody byte[] getFile(@PathVariable("organizationId") String organizationId, @PathVariable("jobId") String jobId, @PathVariable("stepId") String stepId) {
-        String tempLogs = streamingService.getCurrentLogs(stepId);
+        String tempLogs = streamingService.getCurrentLogs(stepId, "");
 
         if (tempLogs.length() > 0) {
             log.info("Reading output from redis stream....");
@@ -51,7 +51,7 @@ public class TerraformOutputController {
             @PathVariable("stepId") String stepId,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
         SseEmitter emitter = new SseEmitter(0L);
-        streamingService.streamStepLogsAsync(stepId, emitter, parseResumeId(lastEventId));
+        streamingService.streamStepLogsAsync(stepId, emitter, parseResumeId(lastEventId), "");
         return emitter;
     }
 

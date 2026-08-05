@@ -43,6 +43,14 @@ public class LogsServiceApi implements ProcessLogs {
         }
     }
 
+    @Override
+    public void sendStructuredUpdate(Integer jobId, String stepId, String structuredJson) {
+        // No-op: this transport (io.executor.log-via-api=true) has no Redis stream to push to.
+        // Structured output still reaches the UI via the existing poll-based /context/v1 GET/POST
+        // path (ApplyStructuredOutputService/PlanStructuredOutputService), unaffected by this -
+        // it just doesn't get the new live-push latency improvement in this deployment mode.
+    }
+
     @Scheduled(fixedDelay = 5000)  // Send logs every 5 seconds
     public void sendBatchedLogs() {
         log.info("Sending logs to Terrakube API");

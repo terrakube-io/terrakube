@@ -31,7 +31,10 @@ public class PrCommentService {
     private static final int MAX_COMMENT_LENGTH = 60000;
     private static final Set<VcsType> PR_COMMENT_SUPPORTED_VCS = EnumSet.of(VcsType.GITHUB, VcsType.GITLAB, VcsType.BITBUCKET);
     private static final Pattern RUN_SUMMARY_PATTERN = Pattern.compile(
-            "(Plan: \\d+ to add, \\d+ to change, \\d+ to destroy\\."
+            // The "N to import, " clause only appears when the plan includes an import block -
+            // optional, and always first when present (matches Terraform/OpenTofu's own
+            // "Plan: N to import, N to add, N to change, N to destroy." message ordering).
+            "(Plan: (?:\\d+ to import, )?\\d+ to add, \\d+ to change, \\d+ to destroy\\."
             + "|No changes\\. Your infrastructure matches the configuration\\."
             + "|Apply complete! Resources: \\d+ added, \\d+ changed, \\d+ destroyed\\.)");
     private static final Pattern ANSI_PATTERN = Pattern.compile(
@@ -165,7 +168,7 @@ public class PrCommentService {
 
         try {
             String stepId = step.getId().toString();
-            String liveLogs = streamingService.getCurrentLogs(stepId);
+            String liveLogs = streamingService.getCurrentLogs(stepId, "");
             if (liveLogs != null && !liveLogs.isEmpty()) {
                 return stripAnsi(liveLogs);
             }

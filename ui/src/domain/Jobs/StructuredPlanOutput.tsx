@@ -5,6 +5,7 @@ import {
   DownloadOutlined,
   DownOutlined,
   FilterOutlined,
+  LoadingOutlined,
   RightOutlined,
 } from "@ant-design/icons";
 import { Empty, message } from "antd";
@@ -32,7 +33,7 @@ import {
   SiVmware,
 } from "react-icons/si";
 import { stripAnsi } from "./stripAnsi";
-import { ApplyChange, PlanChange, TerraformOutputValue, getPlanChangeActionLabel } from "./structuredPlan";
+import { ApplyChange, Diagnostic, PlanChange, TerraformOutputValue, getPlanChangeActionLabel } from "./structuredPlan";
 import "./StructuredPlanOutput.css";
 
 type Props = {
@@ -40,9 +41,10 @@ type Props = {
   outputLog?: string;
   applyMode?: boolean;
   outputs?: TerraformOutputValue[];
+  jobDiagnostics?: Diagnostic[];
 };
 
-type ActionName = "create" | "update" | "replace" | "delete" | "read" | "import" | "unknown" | "no-op";
+type ActionName = "create" | "update" | "replace" | "delete" | "read" | "import" | "unknown" | "no-op" | "ephemeral";
 
 type DiffRow = {
   key: string;
@@ -83,6 +85,11 @@ type SummaryCounts = {
   read: number;
   import: number;
   unknown: number;
+  // Resources whose action is specifically "replace" - create/delete above also count a replace
+  // toward each of them (matching Terraform's own "Plan: N to add, N to destroy" convention,
+  // where a replace is double-counted), so this can't be derived as create+delete once there are
+  // *also* pure creates or deletes in the same plan - it needs its own tally.
+  replace: number;
 };
 
 type PreparedChangeRow = {
@@ -97,7 +104,11 @@ type PreparedChangeRow = {
   visibleChanges: number;
   hiddenCount: number;
   applyStatus?: ApplyChange["status"];
-  applyError?: ApplyChange["error"];
+  applyDiagnostics?: ApplyChange["diagnostics"];
+  applyElapsedSeconds?: ApplyChange["elapsedSeconds"];
+  applyCurrentProvisioner?: ApplyChange["currentProvisioner"];
+  applyProvisionerOutput?: ApplyChange["provisionerOutput"];
+  driftAction?: PlanChange["driftAction"];
 };
 
 type SummarySegment = {
@@ -164,6 +175,12 @@ const actionMeta: Record<
     symbol: "=",
     className: "unknown",
   },
+  ephemeral: {
+    displayLabel: "ephemeral",
+    filterLabel: "Ephemeral",
+    symbol: "○",
+    className: "ephemeral",
+  },
 };
 
 // Verb forms for the in-progress/done apply-status badge, so a destroy reads "destroying" /
@@ -176,7 +193,17 @@ const applyStatusVerbs: Record<ActionName, { gerund: string; done: string }> = {
   read: { gerund: "reading", done: "refreshed" },
   import: { gerund: "importing", done: "imported" },
   unknown: { gerund: "applying", done: "applied" },
-  "no-op": { gerund: "applying", done: "applied" },
+  // "unchanged", not "applied" - a no-op resource had nothing done to it (it's why it never
+  // shows a diff), so labeling it the same as a resource that was actually just created/updated
+  // would misleadingly imply an apply operation ran against it.
+  "no-op": { gerund: "applying", done: "unchanged" },
+  // getApplyStatusMeta's ephemeral-* status cases (opening/renewed/closing) return their own
+  // fixed labels without consulting this table - but the terminal "applied" status *does* land
+  // here, via TerraformJsonEventParser's ephemeralCompleteStatus, which maps a completed close
+  // to plain "applied" ("closed-and-gone, nothing more to show, treat as done"). "done" - not
+  // "opened" - since by the time that fires the resource has been through its full open-then-
+  // close cycle; "opened" alone would wrongly imply it's still active.
+  ephemeral: { gerund: "opening", done: "done" },
 };
 
 // Only actions whose "done" badge shouldn't read as the default green "applied" need an
@@ -186,7 +213,22 @@ const appliedClassNameByAction: Partial<Record<ActionName, string>> = {
   delete: "destroyed",
   replace: "replaced",
   import: "imported",
+  "no-op": "unchanged",
 };
+
+// Statuses that represent an action actively happening right now, as opposed to a resource that's
+// merely queued (pending/planned) or has reached a terminal state (applied/errored) - these get a
+// spinning indicator on their badge so a running job visibly shows what's in flight.
+const IN_PROGRESS_STATUSES = new Set<ApplyChange["status"]>([
+  "refreshing",
+  "reading",
+  "applying",
+  "provisioning",
+  "importing",
+  "moving",
+  "ephemeral-opening",
+  "ephemeral-closing",
+]);
 
 const getApplyStatusMeta = (
   action: ActionName,
@@ -195,15 +237,35 @@ const getApplyStatusMeta = (
   switch (status) {
     case "pending":
       return { label: "pending", className: "pending" };
+    case "planned":
+      return { label: "planned", className: "planned" };
+    case "refreshing":
+      return { label: "refreshing", className: "refreshing" };
+    case "reading":
+      return { label: "reading", className: "reading" };
     case "applying":
       return { label: applyStatusVerbs[action].gerund, className: "applying" };
+    case "provisioning":
+      return { label: "provisioning", className: "provisioning" };
     case "applied":
       return {
         label: applyStatusVerbs[action].done,
         className: appliedClassNameByAction[action] ?? "applied",
       };
+    case "importing":
+      return { label: "importing", className: "importing" };
+    case "moving":
+      return { label: "moving", className: "moving" };
     case "errored":
       return { label: `${actionMeta[action].displayLabel} failed`, className: "errored" };
+    case "ephemeral-opening":
+      return { label: "opening", className: "ephemeral" };
+    case "ephemeral-renewed":
+      return { label: "renewed", className: "ephemeral" };
+    case "ephemeral-closing":
+      return { label: "closing", className: "ephemeral" };
+    case "ephemeral-errored":
+      return { label: "ephemeral operation failed", className: "errored" };
   }
 };
 
@@ -306,7 +368,7 @@ const getPluralSuffix = (count: number) => {
   return "s";
 };
 
-const getValuePreview = (value: unknown) => {
+const getValuePreview = (value: unknown, quoteStrings: boolean = true) => {
   if (value === undefined) {
     return "not set";
   }
@@ -316,11 +378,11 @@ const getValuePreview = (value: unknown) => {
   }
 
   if (typeof value === "string") {
-    if (value.length <= 48) {
-      return `"${value}"`;
-    }
-
-    return `"${value.slice(0, 45)}..."`;
+    // No manual truncation here - the box this renders into already has CSS
+    // overflow:hidden/text-overflow:ellipsis, which truncates purely visually (and adapts to the
+    // box's actual width) without discarding any of the real value from the DOM, so selecting/
+    // copying the text directly still gets the full value even when the display is clipped.
+    return quoteStrings ? `"${value}"` : value;
   }
 
   if (typeof value === "number" || typeof value === "boolean") {
@@ -354,9 +416,9 @@ const getValuePreview = (value: unknown) => {
 const renderValueToken = (
   value: unknown,
   kind: Exclude<DiffRow["kind"], "group">,
-  options?: { sensitive?: boolean; unknown?: boolean }
+  options?: { sensitive?: boolean; unknown?: boolean; quoteStrings?: boolean }
 ) => {
-  let label = getValuePreview(value);
+  let label = getValuePreview(value, options?.quoteStrings ?? true);
 
   if (options?.sensitive) {
     label = "sensitive value";
@@ -366,7 +428,13 @@ const renderValueToken = (
     label = "known after apply";
   }
 
-  return <span className={`structured-plan-valueToken structured-plan-valueToken--${kind}`}>{label}</span>;
+  // The box this renders into visually truncates long values (CSS ellipsis) - the title gives
+  // the full value on hover rather than only via the separate copy button.
+  return (
+    <span className={`structured-plan-valueToken structured-plan-valueToken--${kind}`} title={label}>
+      {label}
+    </span>
+  );
 };
 
 const countVisibleLeaves = (rows: DiffRow[]): number => {
@@ -845,7 +913,8 @@ const normalizeActionName = (value: string): ActionName => {
     value === "read" ||
     value === "import" ||
     value === "unknown" ||
-    value === "no-op"
+    value === "no-op" ||
+    value === "ephemeral"
   ) {
     return value;
   }
@@ -961,6 +1030,7 @@ const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
       if (row.action === "replace") {
         summary.create += 1;
         summary.delete += 1;
+        summary.replace += 1;
         return summary;
       }
 
@@ -999,6 +1069,7 @@ const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
       read: 0,
       import: 0,
       unknown: 0,
+      replace: 0,
     }
   );
 };
@@ -1103,7 +1174,7 @@ const matchesAddressFilter = (row: PreparedChangeRow, filterValue: string) => {
   });
 };
 
-export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, outputs }: Props) => {
+export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, outputs, jobDiagnostics }: Props) => {
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
   const [expandedAttributeKeys, setExpandedAttributeKeys] = useState<string[]>([]);
   const [addressFilter, setAddressFilter] = useState("");
@@ -1111,28 +1182,48 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
   const [isOperationFilterOpen, setIsOperationFilterOpen] = useState(false);
 
   const preparedRows = useMemo<PreparedChangeRow[]>(() => {
-    return changes.map((change, index) => {
+    return changes.flatMap((change, index) => {
       const normalizedAction = normalizeActionName(getPlanChangeActionLabel(change.actions, change.action));
+
+      // No-op resources (nothing to create/update/destroy) are excluded from the structured view
+      // entirely - matches `terraform plan`'s own CLI output, which never lists unchanged
+      // resources either. Filtering here (rather than upstream) means their live "refreshing"
+      // status still flows through the underlying data fine while a run is active; they just
+      // never render as a row.
+      if (normalizedAction === "no-op") {
+        return [];
+      }
+
       const resourceLabel = getResourceAddress(change);
       const providerName = getProviderName(change);
       const diff = buildResourceDiff(change, normalizedAction);
       const applyStatus = "status" in change ? (change as ApplyChange).status : undefined;
-      const applyError = "error" in change ? (change as ApplyChange).error : undefined;
+      const applyDiagnostics = "diagnostics" in change ? (change as ApplyChange).diagnostics : undefined;
+      const applyElapsedSeconds = "elapsedSeconds" in change ? (change as ApplyChange).elapsedSeconds : undefined;
+      const applyCurrentProvisioner = "currentProvisioner" in change ? (change as ApplyChange).currentProvisioner : undefined;
+      const applyProvisionerOutput = "provisionerOutput" in change ? (change as ApplyChange).provisionerOutput : undefined;
+      const driftAction = change.driftAction;
 
-      return {
-        key: `${resourceLabel}-${normalizedAction}-${index}`,
-        panelId: `structured-plan-panel-${index}`,
-        change,
-        action: normalizedAction,
-        resourceLabel,
-        providerName,
-        isDataSource: isDataSourceChange(change, normalizedAction),
-        diff,
-        visibleChanges: countVisibleLeaves(diff.rows),
-        hiddenCount: diff.hiddenCount,
-        applyStatus,
-        applyError,
-      };
+      return [
+        {
+          key: `${resourceLabel}-${normalizedAction}-${index}`,
+          panelId: `structured-plan-panel-${index}`,
+          change,
+          action: normalizedAction,
+          resourceLabel,
+          providerName,
+          isDataSource: isDataSourceChange(change, normalizedAction),
+          diff,
+          visibleChanges: countVisibleLeaves(diff.rows),
+          hiddenCount: diff.hiddenCount,
+          applyStatus,
+          applyDiagnostics,
+          applyElapsedSeconds,
+          applyCurrentProvisioner,
+          applyProvisionerOutput,
+          driftAction,
+        },
+      ];
     });
   }, [changes]);
 
@@ -1207,7 +1298,14 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
     });
   }, [addressFilter, operationFilters, preparedRows, showDataSources]);
 
-  if (!changes?.length) {
+  const hasJobDiagnostics = Boolean(jobDiagnostics && jobDiagnostics.length);
+
+  // An empty changes list normally means "we compared and nothing differs" - but it's also what
+  // a failed plan looks like before any resource address was ever seen (see
+  // TerraformExecutorServiceImpl.plan()'s final flush). Job-level diagnostics are how that
+  // failure reaches this component, so their presence means "we don't actually know", not
+  // "nothing changed" - fall through to the diagnostics panel below instead of claiming success.
+  if (!changes?.length && !hasJobDiagnostics) {
     return (
       <div className="structured-plan-noChanges">
         <CheckCircleOutlined className="structured-plan-noChangesIcon" />
@@ -1220,7 +1318,9 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
     filteredRows.length !== preparedRows.length || addressFilter.trim().length > 0 || operationFilters.size > 0;
 
   let emptyDescription = "No resources match the current filters.";
-  if (!showDataSources && hasDataSourceChanges) {
+  if (!changes?.length && hasJobDiagnostics) {
+    emptyDescription = "No changes were computed — see diagnostics above.";
+  } else if (!showDataSources && hasDataSourceChanges) {
     emptyDescription = "No resources match the current filters. Enable Show data sources to include read operations.";
   }
 
@@ -1361,10 +1461,17 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                 <div className="structured-plan-actionFilterPanel">
                   {(
                     [
-                      ["create", summary.create],
+                      // The checkbox below filters by each row's own single action strictly
+                      // (row.action === "create", never "replace" too), so its count must show
+                      // exactly what checking it will reveal - summary.create/delete count a
+                      // replace toward *both* (matching the top summary bar's Terraform-native
+                      // "N to add, N to destroy" convention), so that double-counted contribution
+                      // has to be subtracted back out here or the label would promise rows this
+                      // checkbox doesn't actually surface.
+                      ["create", summary.create - summary.replace],
                       ["update", summary.update],
-                      ["replace", summary.create + summary.delete],
-                      ["delete", summary.delete],
+                      ["replace", summary.replace],
+                      ["delete", summary.delete - summary.replace],
                       ["read", summary.read],
                       ["import", summary.import],
                     ] as [ActionName, number][]
@@ -1408,6 +1515,24 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
           </div>
         </div>
 
+        {jobDiagnostics != null && jobDiagnostics.length > 0 ? (
+          <div className="structured-plan-jobDiagnostics">
+            {jobDiagnostics.map((diagnostic, index) => (
+              <div key={index} className={`structured-plan-jobDiagnostic structured-plan-jobDiagnostic--${diagnostic.severity}`}>
+                <span className="structured-plan-diagnostic-summary">
+                  {diagnostic.summary}
+                  {diagnostic.location ? (
+                    <span className="structured-plan-diagnostic-location"> ({diagnostic.location})</span>
+                  ) : null}
+                </span>
+                {diagnostic.detail ? (
+                  <span className="structured-plan-diagnostic-detail">{diagnostic.detail}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="structured-plan-rows">
           {filteredRows.length ? (
             filteredRows.map((row) => {
@@ -1422,8 +1547,16 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                 ? buildResourceDiff(row.change, row.action, true).rows
                 : row.diff.rows;
               const rowActionMeta = actionMeta[row.action];
+              // Outside apply mode, a plan row's status is almost always "planned" - showing that
+              // as a badge next to every single row would just repeat what the action icon
+              // already says. "errored" is the one plan-phase status worth surfacing here: it's
+              // the only indicator (besides the diagnostics list below) that a resource failed
+              // before Terraform ever computed a diff for it, so it never got one of the normal
+              // create/update/delete icons.
               const rowApplyStatusMeta =
-                applyMode && row.applyStatus ? getApplyStatusMeta(row.action, row.applyStatus) : null;
+                row.applyStatus && (applyMode || row.applyStatus === "errored")
+                  ? getApplyStatusMeta(row.action, row.applyStatus)
+                  : null;
               const normalizedProviderName = row.providerName.toLowerCase() as keyof typeof providerIconMap;
               const ProviderIcon = providerIconMap[normalizedProviderName];
 
@@ -1459,11 +1592,47 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                       <span className="structured-plan-address" title={row.resourceLabel}>
                         {row.resourceLabel}
                       </span>
+                      {row.driftAction ? (
+                        <span
+                          className="structured-plan-drift"
+                          title={`Detected outside Terraform/OpenTofu: drifted to ${row.driftAction}`}
+                        >
+                          drift: {row.driftAction}
+                        </span>
+                      ) : null}
+                      {row.action === "replace" && !rowApplyStatusMeta ? (
+                        // The -/+ action icon on the left already says "replace", but it's the
+                        // one action that's genuinely harder to parse at a glance than a plain
+                        // +/-/~ - spell it out here the same way the apply-time "Replaced" badge
+                        // does (dual dot, no new hue), rather than leaving it to the icon alone.
+                        // Only shown while there's no apply-status badge yet (i.e. during plan) -
+                        // once applyMode's own "Replaced" badge appears, this would be redundant.
+                        <span className="structured-plan-applyStatus structured-plan-applyStatus--replaced">
+                          <span className="structured-plan-applyStatusDots" aria-hidden="true">
+                            <span className="structured-plan-applyStatusDot structured-plan-applyStatusDot--destroy" />
+                            <span className="structured-plan-applyStatusDot structured-plan-applyStatusDot--create" />
+                          </span>
+                          will replace
+                        </span>
+                      ) : null}
                       {rowApplyStatusMeta ? (
                         <span
                           className={`structured-plan-applyStatus structured-plan-applyStatus--${rowApplyStatusMeta.className}`}
-                          title={row.applyStatus === "errored" && row.applyError ? row.applyError : undefined}
+                          title={
+                            row.applyStatus === "errored"
+                              ? row.applyDiagnostics?.find((diagnostic) => diagnostic.severity === "error")?.summary
+                              : undefined
+                          }
                         >
+                          {row.applyStatus && IN_PROGRESS_STATUSES.has(row.applyStatus) ? (
+                            <LoadingOutlined className="structured-plan-applyStatusSpinner" />
+                          ) : null}
+                          {rowApplyStatusMeta.className === "replaced" ? (
+                            <span className="structured-plan-applyStatusDots" aria-hidden="true">
+                              <span className="structured-plan-applyStatusDot structured-plan-applyStatusDot--destroy" />
+                              <span className="structured-plan-applyStatusDot structured-plan-applyStatusDot--create" />
+                            </span>
+                          ) : null}
                           {rowApplyStatusMeta.label}
                         </span>
                       ) : null}
@@ -1542,6 +1711,55 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                             </span>
                           </button>
                         ) : null}
+
+                        {row.applyDiagnostics != null && row.applyDiagnostics.length > 0 ? (
+                          <div className="structured-plan-diagnostics">
+                            {row.applyDiagnostics.map((diagnostic, diagnosticIndex) => (
+                              <div
+                                key={diagnosticIndex}
+                                className={`structured-plan-diagnostic structured-plan-diagnostic--${diagnostic.severity}`}
+                              >
+                                <span className="structured-plan-diagnostic-summary">
+                                  {diagnostic.summary}
+                                  {diagnostic.location ? (
+                                    <span className="structured-plan-diagnostic-location"> ({diagnostic.location})</span>
+                                  ) : null}
+                                </span>
+                                {diagnostic.detail ? (
+                                  <span className="structured-plan-diagnostic-detail">{diagnostic.detail}</span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {row.applyProvisionerOutput != null && row.applyProvisionerOutput.length > 0 ? (
+                          <div className="structured-plan-provisionerOutput">
+                            <button
+                              aria-expanded={expandedAttributeKeys.includes(`${row.key}-provisioner`)}
+                              className="structured-plan-hiddenCountToggle"
+                              onClick={() => toggleAttributesExpanded(`${row.key}-provisioner`)}
+                              type="button"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`structured-plan-chevron structured-plan-hiddenCountChevron${
+                                  expandedAttributeKeys.includes(`${row.key}-provisioner`) ? " structured-plan-chevron--expanded" : ""
+                                }`}
+                              >
+                                <RightOutlined />
+                              </span>
+                              <span>
+                                Provisioner output{row.applyCurrentProvisioner ? ` (${row.applyCurrentProvisioner})` : ""}
+                              </span>
+                            </button>
+                            {expandedAttributeKeys.includes(`${row.key}-provisioner`) ? (
+                              <pre className="structured-plan-provisionerOutputContent">
+                                {row.applyProvisionerOutput.join("\n")}
+                              </pre>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -1564,6 +1782,7 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                   <span className="structured-plan-outputName">{output.name}</span>
                   {renderValueToken(output.value, output.sensitive ? "sensitive" : "unchanged", {
                     sensitive: output.sensitive,
+                    quoteStrings: false,
                   })}
                   {!output.sensitive && typeof output.value === "string" ? (
                     <button

@@ -47,6 +47,7 @@ class PlanStructuredOutputServiceTest {
         job.setStepId("step-1");
         job.setTerraformVersion("1.11.5");
         job.setTofu(tofu);
+        job.setEnvironmentVariables(new HashMap<>());
 
         service.getPlanAsJson(job, new File("/tmp"));
 
@@ -65,6 +66,42 @@ class PlanStructuredOutputServiceTest {
     void readsPlanJsonWithTerraformBinaryForTerraformWorkspaces() throws Exception {
         assertFalse(captureShowPlanJsonData(false).isTofu(),
                 "Structured plan output must read the plan with the terraform binary for Terraform workspaces");
+    }
+
+    // Regression test: getPlanAsJson runs a separate `show -json <planfile>` invocation after
+    // the real plan already finished. That plan process gets its credentials (S3-backend auth,
+    // dynamic cloud credentials, etc.) via TerraformJob.environmentVariables, loaded earlier by
+    // TerraformExecutorServiceImpl.loadTempEnvironmentVariables - but getPlanAsJson built its own
+    // bare TerraformProcessData without ever forwarding that map, so the separate `show` call ran
+    // with none of them and failed against any backend/provider needing auth (surfaced to users
+    // as "Error: No valid credential sources found"), even though the main plan had just
+    // succeeded moments earlier using the same working directory.
+    @Test
+    void forwardsJobEnvironmentVariablesToTheShowCommand() throws Exception {
+        TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
+        Mockito.when(terraformClient.showPlanJson(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(WorkspaceSecurity.class),
+                new ObjectMapper(),
+                "http://terrakube-api",
+                terraformClient,
+                Mockito.mock(TerrakubeClient.class));
+
+        TerraformJob job = new TerraformJob();
+        job.setJobId("1");
+        job.setStepId("step-1");
+        job.setTerraformVersion("1.11.5");
+        HashMap<String, String> environmentVariables = new HashMap<>();
+        environmentVariables.put("AWS_ACCESS_KEY_ID", "backend-key");
+        job.setEnvironmentVariables(environmentVariables);
+
+        service.getPlanAsJson(job, new File("/tmp"));
+
+        ArgumentCaptor<TerraformProcessData> captor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        Mockito.verify(terraformClient).showPlanJson(captor.capture(), Mockito.any(), Mockito.any());
+        assertEquals(environmentVariables, captor.getValue().getTerraformEnvironmentVariables());
     }
 
     @Test
@@ -263,7 +300,8 @@ class PlanStructuredOutputServiceTest {
         Map<String, Object> updatedContext = subject().updateContext(
                 context,
                 "new-step",
-                List.of(Map.of("action", "replace")));
+                List.of(Map.of("action", "replace")),
+                List.of());
 
         assertEquals("value", updatedContext.get("custom"));
 
@@ -274,5 +312,95 @@ class PlanStructuredOutputServiceTest {
         Map<String, Object> terrakubeUi = (Map<String, Object>) updatedContext.get("terrakubeUI");
         assertTrue(terrakubeUi.containsKey("existing-step"));
         assertTrue(terrakubeUi.containsKey("new-step"));
+    }
+
+    @Test
+    void mergeShowJsonDiffAddsDiffFieldsToLiveStreamedEntryByAddress() throws Exception {
+        List<Map<String, Object>> liveChanges = new java.util.ArrayList<>();
+        Map<String, Object> liveEntry = new HashMap<>();
+        liveEntry.put("address", "aws_instance.foo");
+        liveEntry.put("action", "create");
+        liveEntry.put("status", "planned");
+        liveChanges.add(liveEntry);
+
+        String planJson = "{\"resource_changes\":[{\"address\":\"aws_instance.foo\",\"module_address\":null,\"type\":\"aws_instance\",\"name\":\"foo\",\"change\":{\"actions\":[\"create\"],\"before\":null,\"after\":{\"ami\":\"ami-1\"},\"after_unknown\":{},\"before_sensitive\":false,\"after_sensitive\":{}}}]}";
+
+        List<Map<String, Object>> merged = subject().mergeShowJsonDiff(liveChanges, planJson);
+
+        assertEquals(1, merged.size());
+        assertEquals("planned", merged.get(0).get("status"));
+        assertEquals("create", merged.get(0).get("action"));
+        assertEquals(Map.of("ami", "ami-1"), merged.get(0).get("after"));
+        assertEquals("aws_instance", merged.get(0).get("resourceType"));
+    }
+
+    // getPlanAsHumanText exists specifically to restore the classic multi-line diff that -json
+    // mode never puts in the live event stream (only terse one-line "planned_change" summaries) -
+    // it must call showPlan (the non-JSON renderer), not showPlanJson (already used for the
+    // structured panel's data).
+    @Test
+    void getPlanAsHumanTextRendersViaShowPlanNotShowPlanJson() throws Exception {
+        TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
+        Mockito.when(terraformClient.showPlan(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
+                .thenAnswer(invocation -> {
+                    // The real client invokes its Consumer<String> once per line, with no
+                    // embedded newline in each call (same as plan()/apply()'s JSON line
+                    // consumers) - simulate that here rather than handing the whole diff to a
+                    // single accept() call, which would hide a missing-line-separator bug.
+                    Consumer<String> out = invocation.getArgument(1);
+                    out.accept("  # aws_instance.foo will be created");
+                    out.accept("  + resource \"aws_instance\" \"foo\" {");
+                    out.accept("      + ami = \"ami-1\"");
+                    out.accept("    }");
+                    return CompletableFuture.completedFuture(true);
+                });
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(WorkspaceSecurity.class),
+                new ObjectMapper(),
+                "http://terrakube-api",
+                terraformClient,
+                Mockito.mock(TerrakubeClient.class));
+
+        TerraformJob job = new TerraformJob();
+        job.setJobId("1");
+        job.setStepId("step-1");
+        job.setTerraformVersion("1.11.5");
+        job.setEnvironmentVariables(new HashMap<>());
+
+        String humanText = service.getPlanAsHumanText(job, new File("/tmp"));
+
+        assertTrue(humanText.contains("will be created"));
+        assertTrue(humanText.contains("+ ami = \"ami-1\""));
+        // The regression this guards against: append() with no separator would collapse all
+        // four accept() calls into one run-on line with no boundary between "created" and the
+        // next line's "+ resource" - contains() alone wouldn't catch that, but a missing newline
+        // between these two specific fragments would.
+        assertTrue(humanText.contains("will be created\n  + resource"),
+                "Expected each showPlan line to be newline-separated, not concatenated together: " + humanText);
+        Mockito.verify(terraformClient).showPlan(Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(terraformClient, Mockito.never()).showPlanJson(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void getPlanAsHumanTextReturnsNullWhenShowFails() throws Exception {
+        TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
+        Mockito.when(terraformClient.showPlan(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(WorkspaceSecurity.class),
+                new ObjectMapper(),
+                "http://terrakube-api",
+                terraformClient,
+                Mockito.mock(TerrakubeClient.class));
+
+        TerraformJob job = new TerraformJob();
+        job.setJobId("1");
+        job.setStepId("step-1");
+        job.setTerraformVersion("1.11.5");
+        job.setEnvironmentVariables(new HashMap<>());
+
+        assertNull(service.getPlanAsHumanText(job, new File("/tmp")));
     }
 }
