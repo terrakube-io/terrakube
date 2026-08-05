@@ -1,8 +1,19 @@
 package io.terrakube.registry.configuration.authentication.dex;
 
-
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import io.jsonwebtoken.io.Decoders;
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.federated.Federated;
+import io.terrakube.client.model.federated.claim.FederatedClaim;
+import io.terrakube.client.model.response.ResponseWithInclude;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
@@ -12,17 +23,11 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
-import io.jsonwebtoken.io.Decoders;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.Setter;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import jakarta.servlet.http.HttpServletRequest;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @Builder
 @Getter
@@ -30,16 +35,72 @@ import java.util.Map;
 @Slf4j
 public class RegistryAuthenticationManagerResolver implements AuthenticationManagerResolver<HttpServletRequest> {
 
-    private static final String jwtPat ="Terrakube";
-    private static final String jwtInternal ="TerrakubeInternal";
+    private static final String jwtPat = "Terrakube";
+    private static final String jwtInternal = "TerrakubeInternal";
     private String internalSecret;
     private String issuerUri;
     private String patSecret;
+    private TerrakubeClient terrakubeClient;
+
+    @Builder.Default
+    private long federatedCacheExpireAfterWrite = 10;
+
+    @Builder.Default
+    private long federatedCacheMaximumSize = 1000;
+
+    @Builder.Default
+    private long providerManagerCacheExpireAfterWrite = 60;
+
+    @Builder.Default
+    private long providerManagerCacheMaximumSize = 100;
+
+    private Cache<String, Optional<FederatedConfig>> federatedCache;
+    private Cache<String, ProviderManager> providerManagerCache;
+
+    public Cache<String, Optional<FederatedConfig>> getFederatedCache() {
+        if (federatedCache == null) {
+            federatedCache = Caffeine.newBuilder()
+                    .expireAfterWrite(federatedCacheExpireAfterWrite, TimeUnit.MINUTES)
+                    .maximumSize(federatedCacheMaximumSize)
+                    .build();
+        }
+        return federatedCache;
+    }
+
+    public Cache<String, ProviderManager> getProviderManagerCache() {
+        if (providerManagerCache == null) {
+            providerManagerCache = Caffeine.newBuilder()
+                    .expireAfterWrite(providerManagerCacheExpireAfterWrite, TimeUnit.MINUTES)
+                    .maximumSize(providerManagerCacheMaximumSize)
+                    .build();
+        }
+        return providerManagerCache;
+    }
 
     @Override
     public AuthenticationManager resolve(HttpServletRequest request) {
         ProviderManager providerManager = null;
-        String tokenIssuer = getJwtIssuer(request);
+        Map<String, Object> payloadMap = getJwtPayload(request);
+        String tokenIssuer = extractClaimString(payloadMap, "iss");
+        String audience = extractClaimString(payloadMap, "aud");
+
+        if (!tokenIssuer.isEmpty() && !audience.isEmpty()
+                && !tokenIssuer.equals(jwtPat)
+                && !tokenIssuer.equals(jwtInternal)
+                && !tokenIssuer.equals(this.issuerUri)) {
+            String cacheKey = tokenIssuer + ":" + audience;
+            Optional<FederatedConfig> federatedOpt = getFederatedCache().get(cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
+            if (federatedOpt != null && federatedOpt.isPresent()) {
+                FederatedConfig config = federatedOpt.get();
+                if (validateClaims(payloadMap, config.getClaims())) {
+                    log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
+                    return getProviderManagerCache().get(config.getIssuerUrl(), url ->
+                            new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(url)))
+                    );
+                }
+            }
+        }
+
         switch (tokenIssuer) {
             case jwtInternal:
                 providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal)));
@@ -54,25 +115,102 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         return providerManager;
     }
 
-    private String getJwtIssuer(HttpServletRequest request) {
-        String token = request.getHeader("authorization").replace("Bearer ", "");
-        String[] chunks = token.split("\\.");
-        Base64.Decoder decoder = Base64.getUrlDecoder();
-        String payload = new String(decoder.decode(chunks[1]));
-        String issuer = "";
-        try {
-            Map<String,Object> result = new ObjectMapper().readValue(payload, HashMap.class);
-            issuer = result.get("iss").toString();
-        } catch (JsonProcessingException e) {
-            log.error(e.getMessage());
+    private Optional<FederatedConfig> fetchFederatedConfig(String issuer, String audience) {
+        if (terrakubeClient == null || issuer.isEmpty() || audience.isEmpty()) {
+            return Optional.empty();
         }
-        return issuer;
+        try {
+            ResponseWithInclude<List<Federated>, FederatedClaim> response =
+                    terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience);
+            if (response != null && response.getData() != null && !response.getData().isEmpty()) {
+                Federated federated = response.getData().get(0);
+                FederatedConfig config = new FederatedConfig();
+                config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
+                config.setAudience(federated.getAttributes().getAudience());
+                Map<String, String> claimsMap = new HashMap<>();
+                if (response.getIncluded() != null) {
+                    for (FederatedClaim claim : response.getIncluded()) {
+                        if (claim.getAttributes() != null && claim.getAttributes().getClaimKey() != null) {
+                            claimsMap.put(claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue());
+                        }
+                    }
+                }
+                config.setClaims(claimsMap);
+                return Optional.of(config);
+            }
+        } catch (Exception ex) {
+            log.error("Error fetching federated config from TerrakubeClient: {}", ex.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    private boolean validateClaims(Map<String, Object> payloadMap, Map<String, String> requiredClaims) {
+        if (requiredClaims == null || requiredClaims.isEmpty()) {
+            return true;
+        }
+        for (Map.Entry<String, String> entry : requiredClaims.entrySet()) {
+            Object tokenVal = payloadMap.get(entry.getKey());
+            if (tokenVal == null || !entry.getValue().equals(String.valueOf(tokenVal))) {
+                log.debug("Federated claim mismatch for key {}: expected {}, got {}", entry.getKey(), entry.getValue(), tokenVal);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Map<String, Object> getJwtPayload(HttpServletRequest request) {
+        if (request == null || request.getHeader("authorization") == null) {
+            return Collections.emptyMap();
+        }
+        String authHeader = request.getHeader("authorization");
+        if (!authHeader.startsWith("Bearer ")) {
+            return Collections.emptyMap();
+        }
+        String token = authHeader.replace("Bearer ", "");
+        String[] chunks = token.split("\\.");
+        if (chunks.length < 2) {
+            return Collections.emptyMap();
+        }
+        Base64.Decoder decoder = Base64.getUrlDecoder();
+        try {
+            String payload = new String(decoder.decode(chunks[1]));
+            return new ObjectMapper().readValue(payload, HashMap.class);
+        } catch (Exception e) {
+            log.error("Error parsing JWT payload: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    private String extractClaimString(Map<String, Object> payloadMap, String claim) {
+        if (payloadMap == null || !payloadMap.containsKey(claim)) {
+            return "";
+        }
+        Object val = payloadMap.get(claim);
+        if (val instanceof String) {
+            return (String) val;
+        } else if (val instanceof List) {
+            List<?> list = (List<?>) val;
+            if (!list.isEmpty()) {
+                return String.valueOf(list.get(0));
+            }
+        }
+        return "";
     }
 
     private JwtDecoder getJwtEncoder(String issuerType) {
         String tokenSecret = (issuerType.equals(jwtPat) ? patSecret : internalSecret);
         SecretKey jwtTokenKey = new SecretKeySpec(Decoders.BASE64URL.decode(tokenSecret), "HMACSHA256");
         return NimbusJwtDecoder.withSecretKey(jwtTokenKey).macAlgorithm(MacAlgorithm.HS256).build();
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class FederatedConfig {
+        private String issuerUrl;
+        private String audience;
+        private Map<String, String> claims;
     }
 
 }
