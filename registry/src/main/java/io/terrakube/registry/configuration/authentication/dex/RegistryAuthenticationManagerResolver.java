@@ -90,7 +90,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 && !tokenIssuer.equals(this.issuerUri)) {
             String cacheKey = tokenIssuer + ":" + audience;
             Optional<FederatedConfig> federatedOpt = getFederatedCache().get(cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
-            if (federatedOpt != null && federatedOpt.isPresent()) {
+            if (federatedOpt.isPresent()) {
                 FederatedConfig config = federatedOpt.get();
                 if (validateClaims(payloadMap, config.getClaims())) {
                     log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
