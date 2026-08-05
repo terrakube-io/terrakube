@@ -198,12 +198,42 @@ public class RepoWebhookService {
             }
         }
 
+        // "terrakube apply" needs the workspace's default template, autoApply=true, and a
+        // workspace lock (see WebhookService.handlePrCommentCommand) - none of which this
+        // generic path does. Without this guard it would fall through below and run the PR's
+        // regular (plan) template instead of applying, which is worse than a no-op. Shared/v2
+        // webhooks don't support apply-via-PR-comment yet.
+        if (webhookResult.isPrComment() && "apply".equals(webhookResult.getCommentCommand())) {
+            log.info("Ignoring 'terrakube apply' PR comment for workspace {}: apply via PR comment is not yet supported on the shared (v2) webhook",
+                    workspace.getName());
+            return;
+        }
+
         try {
+            // Release events have no PR-workflow concept; everything else (push, pull_request,
+            // and PR comment commands) is matched via findMatchingEvent so isPrWorkflowEnabled()/
+            // isPrApplyEnabled() are available below - without those, a PR-triggered job never
+            // gets prNumber set and PrCommentService.postPlanResult()/postApplyResult() silently
+            // no-op (they bail out immediately when job.getPrNumber() is null/0), so "Post Plan
+            // on PR" would never actually post a comment for a repo on the shared v2 webhook.
+            WebhookEvent matchedEvent = webhookResult.isRelease() ? null
+                    : WebhookEventMatcher.findMatchingEvent(webhookResult, workspace.getWebhook(),
+                            webhookEventRepository);
+
+            // Mirrors WebhookService.handlePrCommentCommand: a "terrakube plan" comment only
+            // starts a job when PR workflow is actually enabled on the matched event. In
+            // practice GitHub only sends issue_comment webhooks when some workspace on this repo
+            // has PR workflow on (see GitHubWebhookService.createOrUpdateRepoWebhook), but this
+            // keeps the two webhook paths consistent if that ever falls out of sync.
+            if (webhookResult.isPrComment() && !matchedEvent.isPrWorkflowEnabled()) {
+                log.info("Ignoring PR plan comment for workspace {}: PR workflow is not enabled", workspace.getName());
+                return;
+            }
+
             String templateId = webhookResult.isRelease()
                     ? WebhookEventMatcher.findTemplateIdRelease(webhookResult, workspace.getWebhook(),
                             webhookEventRepository)
-                    : WebhookEventMatcher.findTemplateId(webhookResult, workspace.getWebhook(),
-                            webhookEventRepository);
+                    : matchedEvent.getTemplateId();
 
             log.info("V2 webhook event {} for workspace {}, using template {}", webhookResult.getNormalizedEvent(),
                     workspace.getName(), templateId);
@@ -225,6 +255,10 @@ public class RepoWebhookService {
             job.setUpdatedDate(triggerDate);
             job.setVia(webhookResult.getVia());
             job.setCommitId(webhookResult.getCommit());
+            if (matchedEvent != null && matchedEvent.isPrWorkflowEnabled() && webhookResult.getPrNumber() != null) {
+                job.setPrNumber(webhookResult.getPrNumber().intValue());
+                job.setPrApplyEnabled(matchedEvent.isPrApplyEnabled());
+            }
             Job savedJob = jobRepository.save(job);
             if (!webhookResult.isRelease() && workspace.getVcs() != null) {
                 if (isGitLab(workspace)) {

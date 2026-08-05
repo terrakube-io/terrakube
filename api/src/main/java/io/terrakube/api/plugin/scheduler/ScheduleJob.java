@@ -31,6 +31,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
+import org.quartz.DisallowConcurrentExecution;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
@@ -48,6 +49,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
+// Prevents Quartz from running this same JobDetail concurrently. ScheduleJobService.createJobContext
+// registers one JobDetail (keyed by job id) but fires it twice: an immediate ad-hoc trigger plus a
+// 30s-interval recurring trigger starting at now+30s. Without this annotation, a slow first run
+// (init + plan/apply taking longer than 30s) lets the recurring trigger's first tick fire a second,
+// fully concurrent execute() for the same job before the first has committed anything - see
+// JobRepository.lockForUpdate for what that race does to step creation.
+@DisallowConcurrentExecution
 @AllArgsConstructor
 @Component
 @Getter

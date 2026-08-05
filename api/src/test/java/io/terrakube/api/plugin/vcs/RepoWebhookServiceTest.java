@@ -515,6 +515,71 @@ class RepoWebhookServiceTest {
         }
 
         @Test
+        void v2WebhookPullRequestWithPrWorkflowEnabledSetsPrNumberOnJob() throws Exception {
+            // Regression test: previously processWorkspaceWebhook only ever resolved a template
+            // id (WebhookEventMatcher.findTemplateId), so a PR-triggered job never got prNumber/
+            // prApplyEnabled set even with "Post Plan on PR" enabled. ScheduleJob.postPrCommentIfNeeded
+            // bails out immediately when job.getPrNumber() is null/0, so no PR comment was ever
+            // posted for a repo on the shared (v2) webhook - only the commit status check showed up.
+            String repoUrl = "https://github.com/owner/repo";
+            String secret = "pr-workflow-test-secret";
+            String payload = "{\"action\":\"opened\", \"pull_request\": {\"number\": 7, \"head\": {\"sha\": \"cafe123\"}}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Workspace ws = workspaceWithSource(repoUrl);
+            ws.setName("ws-pr-workflow");
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            ws.setWebhook(wh);
+
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch(".*");
+            event.setPath("**");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("plan-template");
+            event.setPrWorkflowEnabled(true);
+            event.setPrApplyEnabled(true);
+            wh.setEvents(List.of(event));
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of(
+                    "x-hub-signature-256", sig,
+                    "x-github-event", "pull_request");
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature-branch");
+            prResult.setCommit("cafe123");
+            prResult.setPrNumber(7);
+            prResult.setFileChanges(List.of("main.tf"));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(prResult);
+
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
+                Job j = inv.getArgument(0);
+                j.setId(200);
+                return j;
+            });
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            Job savedJob = jobCaptor.getValue();
+
+            assertThat(savedJob.getPrNumber()).isEqualTo(7);
+            assertThat(savedJob.isPrApplyEnabled()).isTrue();
+        }
+
+        @Test
         void v2WebhookReleaseScenario() throws Exception {
             String repoUrl = "https://github.com/owner/repo";
             String secret = "release-test-secret";
