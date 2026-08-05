@@ -9,6 +9,7 @@ import com.azure.identity.DefaultAzureCredentialBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.TransportConfigCallback;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -55,13 +56,24 @@ public class GitServiceImpl implements GitService {
             String correctTag = validateCorrectTag(tag, repository, vcsType, vcsConnectionType, accessToken, tempFolder, tagPrefix);
 
             log.info("Cloning {} using {}", repository, correctTag);
-            Git.cloneRepository()
+
+            CredentialsProvider credentialsProvider = setupCredentials(vcsType, vcsConnectionType, accessToken);
+            TransportConfigCallback transportConfigCallback = setupTransportConfigCallback(vcsType, accessToken, tempFolder);
+
+            CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(repository)
                     .setDirectory(gitCloneRepository)
-                    .setBranch("refs/tags/" + correctTag)
-                    .setCredentialsProvider(setupCredentials(vcsType, vcsConnectionType, accessToken))
-                    .setTransportConfigCallback(setupTransportConfigCallback(vcsType, accessToken, tempFolder))
-                    .call();
+                    .setBranch("refs/tags/" + correctTag);
+
+            if (credentialsProvider != null) {
+                cloneCommand.setCredentialsProvider(credentialsProvider);
+            }
+
+            if (transportConfigCallback != null) {
+                cloneCommand.setTransportConfigCallback(transportConfigCallback);
+            }
+
+            cloneCommand.call();
 
             if (folder != null && !folder.isEmpty()) {
                 gitRepositoryPath = userHomeDirectory.concat(
@@ -78,6 +90,8 @@ public class GitServiceImpl implements GitService {
 
     private CredentialsProvider setupCredentials(String vcsType, String vcsConnectionType, String accessToken) {
         CredentialsProvider credentialsProvider = null;
+        if (accessToken == null || accessToken.isEmpty())
+            return null;
         switch (vcsType) {
             case "GITHUB":
                 if (vcsConnectionType != null && vcsConnectionType.equals("OAUTH"))
@@ -93,11 +107,9 @@ public class GitServiceImpl implements GitService {
                 break;
             case "AZURE_DEVOPS":
                 credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", accessToken);
-                log.info(accessToken);
                 break;
             case "AZURE_SP_MI":
                 credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", getAzureDefaultToken());
-                log.info(accessToken);
                 break;
             default:
                 credentialsProvider = null;
@@ -144,7 +156,7 @@ public class GitServiceImpl implements GitService {
             if (accessToken == null || accessToken.getToken() == null) {
                 throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
             }
-            log.info("Azure Default Token: {}", accessToken.getToken());
+            log.debug("Azure Default Token: {}", accessToken.getToken());
             return accessToken.getToken();
         } catch (Exception ex) {
             log.error("Error getting Azure Default Token: {}", ex.getMessage());

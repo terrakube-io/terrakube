@@ -31,33 +31,35 @@ public class ModuleServiceImpl implements ModuleService {
     StorageService storageService;
     CommonSearchService commonSearchService;
 
-    public static final String SEARCH_ORGANIZATION_MODULE_VERSION="{ \n" +
-            "  organization(filter: \"name==%s\") {\n" +
-            "    edges {\n" +
-            "      node {\n" +
-            "        id\n" +
-            "        name\n" +
-            "        module(filter: \"name==%s;provider==%s\") {\n" +
-            "            edges{\n" +
-            "                node{\n" +
-            "                    id\n" +
-            "                    name\n" +
-            "                    provider\n" +
-            "                    version {\n" +
-            "                        edges{\n" +
-            "                            node{\n" +
-            "                                id\n" +
-            "                                version\n" +
-            "                            }\n" +
-            "                        }\n" +
-            "                    }\n" +
-            "                }\n" +
-            "            }\n" +
-            "        }\n" +
-            "      }\n" +
-            "    }\n" +
-            "  }\n" +
-            "}";
+    public static final String SEARCH_ORGANIZATION_MODULE_VERSION = """
+        {
+          organization(filter: "name==%s") {
+            edges {
+              node {
+                id
+                name
+                module(filter: "name==%s;provider==%s") {
+                  edges {
+                    node {
+                      id
+                      name
+                      provider
+                      version {
+                        edges {
+                          node {
+                            id
+                            version
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
 
     @Cacheable(cacheNames = {"getAvailableVersions"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override
@@ -146,6 +148,11 @@ public class ModuleServiceImpl implements ModuleService {
         if (token == null && vcs.getAttributes().getConnectionType().equals("STANDALONE")) {
             log.info("The VCS connection is on a standalone app, getting the GitHub App token");
             GitHubAppToken gitHubAppToken = getGitHubAppTokenInformation(vcs.getAttributes().getClientId(), repository_source);
+            if (gitHubAppToken == null || gitHubAppToken.getAttributes() == null) {
+                log.warn("No GitHub App token found for VCS client id {} and repository source {}",
+                        vcs.getAttributes().getClientId(), repository_source);
+                return null;
+            }
             token = gitHubAppToken.getAttributes().getToken();
         }
         return token;
