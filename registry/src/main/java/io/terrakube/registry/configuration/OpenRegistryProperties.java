@@ -17,4 +17,9 @@ public class OpenRegistryProperties {
     private String hostname;
     private String clientId;
     private String issuerUri;
+
+    private long federatedCacheExpireAfterWrite = 10;
+    private long federatedCacheMaximumSize = 1000;
+    private long providerManagerCacheExpireAfterWrite = 60;
+    private long providerManagerCacheMaximumSize = 100;
 }
