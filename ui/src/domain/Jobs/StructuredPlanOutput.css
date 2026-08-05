@@ -479,9 +479,23 @@
 }
 
 .structured-plan-diffGroupLabel {
+  align-items: baseline;
   color: #253041;
+  display: flex;
   font-size: 12px;
   font-weight: 600;
+  gap: 6px;
+}
+
+.structured-plan-jsonWrap {
+  color: #9199a6;
+  font-family: "SFMono-Regular", Consolas, Monaco, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.structured-plan-jsonWrapClose {
+  margin-left: 10px;
 }
 
 .structured-plan-diffGroupChildren {
@@ -1208,6 +1222,10 @@
   color: var(--tk-text-primary);
 }
 
+[data-theme="dark"] .structured-plan-jsonWrap {
+  color: var(--tk-text-tertiary);
+}
+
 [data-theme="dark"] .structured-plan-diffGroupChildren {
   border-left-color: var(--tk-border-primary);
 }
@@ -1342,16 +1360,43 @@
   padding: 12px;
 }
 
+.structured-plan-outputsToggle {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.structured-plan-outputsToggle:hover {
+  color: #1f2937;
+}
+
+.structured-plan-outputsToggle:focus-visible {
+  outline: none;
+}
+
 .structured-plan-outputsHeader {
   color: #253041;
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 8px;
+}
+
+.structured-plan-outputsCount {
+  color: #7a8492;
+  font-size: 11px;
+  margin-left: auto;
 }
 
 .structured-plan-outputsList {
   display: flex;
   flex-direction: column;
+  margin-top: 8px;
 }
 
 .structured-plan-outputRow {
@@ -1374,12 +1419,95 @@
   word-break: break-word;
 }
 
+.structured-plan-outputGroup {
+  border-bottom: 1px solid #eef1f6;
+  padding: 4px 0;
+}
+
+.structured-plan-outputsList > .structured-plan-outputGroup:last-child {
+  border-bottom: none;
+}
+
+.structured-plan-outputGroupToggle {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.structured-plan-outputGroupToggle:hover {
+  color: #1f2937;
+}
+
+.structured-plan-outputGroupToggle:focus-visible {
+  outline: none;
+}
+
+.structured-plan-outputGroup .structured-plan-diffGroupChildren {
+  margin-top: 6px;
+}
+
+.structured-plan-outputLeafRow {
+  align-items: baseline;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  padding: 3px 0;
+}
+
+.structured-plan-outputLeafLabel {
+  color: #253041;
+  font-family: "SFMono-Regular", Consolas, Monaco, monospace;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.structured-plan-outputLeafValue {
+  color: #1f2937;
+  font-family: "SFMono-Regular", Consolas, Monaco, monospace;
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 [data-theme="dark"] .structured-plan-outputs {
   border-top-color: var(--tk-border-primary);
 }
 
 [data-theme="dark"] .structured-plan-outputsHeader {
   color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputsToggle:hover {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputsCount {
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-outputGroup {
+  border-bottom-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputGroupToggle:hover {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputLeafLabel {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputLeafValue {
+  color: var(--tk-text-secondary);
 }
 
 [data-theme="dark"] .structured-plan-outputRow {

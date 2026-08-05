@@ -54,6 +54,10 @@ type DiffRow = {
   after?: unknown;
   children?: DiffRow[];
   hiddenCount?: number;
+  // True when this group's children came from parsing a JSON-encoded string value (e.g. an IAM
+  // policy document) rather than from a value that was already a nested object/array - drives the
+  // "jsonencode({ ... })" wrapper hint so it's clear the braces aren't part of the real schema.
+  jsonEncoded?: boolean;
 };
 
 type CollectionEntry = {
@@ -76,6 +80,9 @@ type BuildCollectionEntriesArgs = {
 type DiffResult = {
   rows: DiffRow[];
   hiddenCount: number;
+  // Propagated up so the caller that wraps these rows in a group row (see buildDiffRows) knows to
+  // tag that group as jsonEncoded, since the decoding happens one recursion level below the wrap.
+  wasJsonEncoded?: boolean;
 };
 
 type SummaryCounts = {
@@ -348,6 +355,30 @@ const isCollectionValue = (value: unknown) => {
   return isRecord(value);
 };
 
+// Providers frequently store structured data (IAM policies, S3 bucket policies, jsonencode()'d
+// attributes, ...) as an opaque JSON string rather than a native object/array, so the plan JSON
+// has no way to tell us it's structured. Sniff the string itself: only object/array-shaped JSON
+// counts, so a numeric or boolean string doesn't get pulled into a group for no reason.
+const tryParseJsonContainer = (value: string): Record<string, unknown> | unknown[] | undefined => {
+  const trimmed = value.trim();
+
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (Array.isArray(parsed) || isRecord(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Not actually JSON - leave it to render as a plain string.
+  }
+
+  return undefined;
+};
+
 const areValuesEqual = (left: unknown, right: unknown) => {
   if (left === right) {
     return true;
@@ -604,6 +635,24 @@ const buildDiffRows = (
     };
   }
 
+  // If this leaf is a JSON-encoded string on either side (and the other side, if present, is
+  // also JSON-shaped), decode both and fall through to the array/record handling below instead of
+  // the plain-string leaf path, so it gets the same recursive attribute-by-attribute diff a native
+  // nested object would - rather than one opaque, truncated string.
+  const jsonContainerBefore = typeof before === "string" ? tryParseJsonContainer(before) : undefined;
+  const jsonContainerAfter = typeof after === "string" ? tryParseJsonContainer(after) : undefined;
+  const isBeforeJsonCompatible = before === undefined || jsonContainerBefore !== undefined;
+  const isAfterJsonCompatible = after === undefined || jsonContainerAfter !== undefined;
+  const wasJsonEncoded =
+    (jsonContainerBefore !== undefined || jsonContainerAfter !== undefined) &&
+    isBeforeJsonCompatible &&
+    isAfterJsonCompatible;
+
+  if (wasJsonEncoded) {
+    before = jsonContainerBefore;
+    after = jsonContainerAfter;
+  }
+
   if (Array.isArray(before) || Array.isArray(after)) {
     const beforeArray = Array.isArray(before) ? before : [];
     const afterArray = Array.isArray(after) ? after : [];
@@ -676,6 +725,7 @@ const buildDiffRows = (
           kind: "group",
           children: childDiff.rows,
           hiddenCount: childDiff.hiddenCount,
+          jsonEncoded: childDiff.wasJsonEncoded,
         });
       });
     } else {
@@ -716,6 +766,7 @@ const buildDiffRows = (
           kind: "group",
           children: childDiff.rows,
           hiddenCount: childDiff.hiddenCount,
+          jsonEncoded: childDiff.wasJsonEncoded,
         });
       }
     }
@@ -723,10 +774,17 @@ const buildDiffRows = (
     return {
       rows,
       hiddenCount,
+      wasJsonEncoded,
     };
   }
 
-  const treatAsLeaf = isPrimitiveValue(before) || isPrimitiveValue(after);
+  // Not "either side is primitive" - undefined/null are primitive too, and a wholly-created or
+  // wholly-deleted resource has `before`/`after` outright undefined at the top level. Basing the
+  // leaf decision on that would collapse a brand-new object/array attribute straight to "N
+  // attributes" instead of recursing into it, which is exactly backwards for a create/delete. The
+  // recursion below already treats a missing side as `{}`/`[]`, so every key still shows up
+  // correctly marked added/removed.
+  const treatAsLeaf = !isCollectionValue(before) && !isCollectionValue(after);
   if (treatAsLeaf) {
     if (areValuesEqual(before, after)) {
       if (!includeUnchanged) {
@@ -817,12 +875,14 @@ const buildDiffRows = (
       kind: "group",
       children: childDiff.rows,
       hiddenCount: childDiff.hiddenCount,
+      jsonEncoded: childDiff.wasJsonEncoded,
     });
   });
 
   return {
     rows,
     hiddenCount,
+    wasJsonEncoded,
   };
 };
 
@@ -857,13 +917,17 @@ const renderDiffRows = (rows: DiffRow[], parentKey = "root"): ReactNode => {
     if (row.children?.length) {
       return (
         <div key={rowKey} className="structured-plan-diffGroup">
-          <div className="structured-plan-diffGroupLabel">{row.label}</div>
+          <div className="structured-plan-diffGroupLabel">
+            {row.label}
+            {row.jsonEncoded ? <span className="structured-plan-jsonWrap">jsonencode({"{"}</span> : null}
+          </div>
           <div className="structured-plan-diffGroupChildren">{renderDiffRows(row.children, rowKey)}</div>
           {row.hiddenCount ? (
             <div className="structured-plan-hiddenCount">
               {row.hiddenCount} unchanged attribute{getPluralSuffix(row.hiddenCount)} hidden
             </div>
           ) : null}
+          {row.jsonEncoded ? <div className="structured-plan-jsonWrap structured-plan-jsonWrapClose">{"}"})</div> : null}
         </div>
       );
     }
@@ -902,6 +966,81 @@ const renderDiffRows = (rows: DiffRow[], parentKey = "root"): ReactNode => {
       </div>
     );
   });
+};
+
+type OutputValueNode = {
+  key: string;
+  label: string;
+  value?: unknown;
+  children?: OutputValueNode[];
+  jsonEncoded?: boolean;
+};
+
+// Outputs have no before/after to diff - just a value to lay out - but they hit the same
+// truncated-single-line problem as resource attributes once that value is a nested object/array
+// or a JSON-encoded string, so this mirrors buildDiffRows' recursion (and its jsonencode()
+// detection) without the diff bookkeeping.
+const buildOutputValueNode = (value: unknown, label: string, key: string): OutputValueNode => {
+  if (typeof value === "string") {
+    const parsed = tryParseJsonContainer(value);
+    if (parsed !== undefined) {
+      return { ...buildOutputValueNode(parsed, label, key), jsonEncoded: true };
+    }
+  }
+
+  if (Array.isArray(value) && value.length > 0 && !(value.every(isPrimitiveValue) && JSON.stringify(value).length <= 48)) {
+    return {
+      key,
+      label,
+      children: value.map((item, index) =>
+        buildOutputValueNode(item, getCollectionItemLabel(undefined, item, index), `${key}-${index}`)
+      ),
+    };
+  }
+
+  if (isRecord(value) && Object.keys(value).length > 0) {
+    return {
+      key,
+      label,
+      children: Object.keys(value).map((childKey) =>
+        buildOutputValueNode(value[childKey], childKey, `${key}.${childKey}`)
+      ),
+    };
+  }
+
+  return { key, label, value };
+};
+
+// Renders the *contents* of an expanded named output - only the named output itself (see the
+// Outputs section below) gets a collapse toggle and the boxed/copyable leaf treatment. Everything
+// under it, however deeply nested, renders as a plain compact row: collapsing every array item and
+// object key individually would take several clicks just to read one policy document, and boxing
+// every single leaf in its own bordered/copy-button token is what made a decoded JSON value look
+// like a wall of input fields in the first place.
+const renderOutputValueNode = (node: OutputValueNode): ReactNode => {
+  if (node.children?.length) {
+    return (
+      <div className="structured-plan-diffGroup" key={node.key}>
+        <div className="structured-plan-diffGroupLabel">
+          {node.label}
+          {node.jsonEncoded ? <span className="structured-plan-jsonWrap">jsonencode({"{"}</span> : null}
+        </div>
+        <div className="structured-plan-diffGroupChildren">{node.children.map((child) => renderOutputValueNode(child))}</div>
+        {node.jsonEncoded ? <div className="structured-plan-jsonWrap structured-plan-jsonWrapClose">{"}"})</div> : null}
+      </div>
+    );
+  }
+
+  const preview = getValuePreview(node.value, false);
+
+  return (
+    <div className="structured-plan-outputLeafRow" key={node.key}>
+      <span className="structured-plan-outputLeafLabel">{node.label}</span>
+      <span className="structured-plan-outputLeafValue" title={preview}>
+        {preview}
+      </span>
+    </div>
+  );
 };
 
 const normalizeActionName = (value: string): ActionName => {
@@ -1180,6 +1319,14 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
   const [addressFilter, setAddressFilter] = useState("");
   const [operationFilters, setOperationFilters] = useState<Set<ActionName>>(new Set());
   const [isOperationFilterOpen, setIsOperationFilterOpen] = useState(false);
+  // Expanded by default, unlike each resource row - outputs are the thing users come here to
+  // read, so starting collapsed like a per-resource diff would just add an extra click for the
+  // common case.
+  const [areOutputsExpanded, setAreOutputsExpanded] = useState(true);
+  // Unlike the section itself, individual nested/object-valued outputs start collapsed - a plan
+  // with several jsonencode()'d or object outputs would otherwise dump every one of them open at
+  // once.
+  const [expandedOutputNames, setExpandedOutputNames] = useState<string[]>([]);
 
   const preparedRows = useMemo<PreparedChangeRow[]>(() => {
     return changes.flatMap((change, index) => {
@@ -1341,6 +1488,20 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
       }
 
       return [...currentKeys, rowKey];
+    });
+  };
+
+  const toggleOutputsExpanded = () => {
+    setAreOutputsExpanded((current) => !current);
+  };
+
+  const toggleOutputExpanded = (outputName: string) => {
+    setExpandedOutputNames((currentNames) => {
+      if (currentNames.includes(outputName)) {
+        return currentNames.filter((currentName) => currentName !== outputName);
+      }
+
+      return [...currentNames, outputName];
     });
   };
 
@@ -1775,29 +1936,90 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
 
         {applyMode && outputs?.length ? (
           <div className="structured-plan-outputs">
-            <div className="structured-plan-outputsHeader">Outputs</div>
-            <div className="structured-plan-outputsList">
-              {outputs.map((output) => (
-                <div className="structured-plan-outputRow" key={output.name}>
-                  <span className="structured-plan-outputName">{output.name}</span>
-                  {renderValueToken(output.value, output.sensitive ? "sensitive" : "unchanged", {
-                    sensitive: output.sensitive,
-                    quoteStrings: false,
-                  })}
-                  {!output.sensitive && typeof output.value === "string" ? (
-                    <button
-                      aria-label={`Copy value for ${output.name}`}
-                      className="structured-plan-copyButton"
-                      onClick={() => void handleCopyValue(String(output.value))}
-                      title="Copy value"
-                      type="button"
-                    >
-                      <CopyOutlined />
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+            <button
+              aria-controls="structured-plan-outputsPanel"
+              aria-expanded={areOutputsExpanded}
+              className="structured-plan-outputsToggle"
+              onClick={toggleOutputsExpanded}
+              type="button"
+            >
+              <span
+                className={`structured-plan-chevron${areOutputsExpanded ? " structured-plan-chevron--expanded" : ""}`}
+              >
+                <RightOutlined />
+              </span>
+              <span className="structured-plan-outputsHeader">Outputs</span>
+              <span className="structured-plan-outputsCount">{outputs.length}</span>
+            </button>
+            {areOutputsExpanded ? (
+              <div className="structured-plan-outputsList" id="structured-plan-outputsPanel">
+                {outputs.map((output) => {
+                  if (output.sensitive) {
+                    return (
+                      <div className="structured-plan-outputRow" key={output.name}>
+                        <span className="structured-plan-outputName">{output.name}</span>
+                        {renderValueToken(output.value, "sensitive", { sensitive: true, quoteStrings: false })}
+                      </div>
+                    );
+                  }
+
+                  const node = buildOutputValueNode(output.value, output.name, output.name);
+
+                  if (!node.children?.length) {
+                    return (
+                      <div className="structured-plan-outputRow" key={output.name}>
+                        <span className="structured-plan-outputName">{output.name}</span>
+                        {renderValueToken(node.value, "unchanged", { quoteStrings: false })}
+                        {typeof node.value === "string" ? (
+                          <button
+                            aria-label={`Copy value for ${output.name}`}
+                            className="structured-plan-copyButton"
+                            onClick={() => void handleCopyValue(String(node.value))}
+                            title="Copy value"
+                            type="button"
+                          >
+                            <CopyOutlined />
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  }
+
+                  const isOutputExpanded = expandedOutputNames.includes(output.name);
+                  const outputPanelId = `structured-plan-output-${output.name}`;
+
+                  return (
+                    <div className="structured-plan-outputGroup" key={output.name}>
+                      <button
+                        aria-controls={outputPanelId}
+                        aria-expanded={isOutputExpanded}
+                        className="structured-plan-outputGroupToggle"
+                        onClick={() => toggleOutputExpanded(output.name)}
+                        type="button"
+                      >
+                        <span
+                          className={`structured-plan-chevron${isOutputExpanded ? " structured-plan-chevron--expanded" : ""}`}
+                        >
+                          <RightOutlined />
+                        </span>
+                        <span className="structured-plan-outputName">{output.name}</span>
+                        {node.jsonEncoded ? <span className="structured-plan-jsonWrap">jsonencode({"{"}</span> : null}
+                        {!isOutputExpanded ? (
+                          <span className="structured-plan-outputsCount">
+                            {node.children.length} attribute{getPluralSuffix(node.children.length)}
+                          </span>
+                        ) : null}
+                      </button>
+                      {isOutputExpanded ? (
+                        <div className="structured-plan-diffGroupChildren" id={outputPanelId}>
+                          {node.children.map((child) => renderOutputValueNode(child))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

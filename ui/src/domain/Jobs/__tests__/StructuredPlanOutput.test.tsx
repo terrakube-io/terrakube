@@ -59,6 +59,58 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText('"t3.medium"')).toBeInTheDocument();
   });
 
+  it("expands a newly created resource's attributes individually instead of collapsing to 'N attributes'", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "local_file.example",
+            action: "create",
+            actions: ["create"],
+            after: {
+              filename: "example.json",
+              content: "hello",
+            },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /local_file\.example/i }));
+
+    expect(screen.getByText("filename")).toBeInTheDocument();
+    expect(screen.getByText('"example.json"')).toBeInTheDocument();
+    expect(screen.getByText("content")).toBeInTheDocument();
+    expect(screen.getByText('"hello"')).toBeInTheDocument();
+    expect(screen.queryByText("2 attributes")).not.toBeInTheDocument();
+  });
+
+  it("expands a deleted resource's attributes individually instead of collapsing to 'N attributes'", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "local_file.example",
+            action: "delete",
+            actions: ["delete"],
+            before: {
+              filename: "example.json",
+              content: "hello",
+            },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /local_file\.example/i }));
+
+    expect(screen.getByText("filename")).toBeInTheDocument();
+    expect(screen.getByText('"example.json"')).toBeInTheDocument();
+    expect(screen.getByText("content")).toBeInTheDocument();
+    expect(screen.getByText('"hello"')).toBeInTheDocument();
+    expect(screen.queryByText("2 attributes")).not.toBeInTheDocument();
+  });
+
   it("expands to reveal unchanged attributes on demand and collapses again", () => {
     render(
       <StructuredPlanOutput
@@ -518,6 +570,73 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getAllByText(/unchanged attribute/i).length).toBeGreaterThan(0);
   });
 
+  it("expands a JSON-encoded string attribute (e.g. an IAM policy document) into a nested diff", () => {
+    const beforePolicy = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{ Action: "s3:GetObject", Effect: "Allow" }],
+    });
+    const afterPolicy = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{ Action: "s3:ListBucket", Effect: "Allow" }],
+    });
+
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: 'aws_s3_bucket_policy.this["origin"]',
+            action: "update",
+            actions: ["update"],
+            before: {
+              bucket: "example",
+              policy: beforePolicy,
+            },
+            after: {
+              bucket: "example",
+              policy: afterPolicy,
+            },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_s3_bucket_policy/i }));
+
+    expect(screen.getByText("policy")).toBeInTheDocument();
+    expect(screen.getByText("jsonencode({")).toBeInTheDocument();
+    expect(screen.getByText("Action")).toBeInTheDocument();
+    expect(screen.getByText('"s3:GetObject"')).toBeInTheDocument();
+    expect(screen.getByText('"s3:ListBucket"')).toBeInTheDocument();
+    // The raw JSON blob should never be dumped as a single opaque token now that it's decoded.
+    expect(screen.queryByText(new RegExp(beforePolicy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).not.toBeInTheDocument();
+  });
+
+  it("leaves a plain string that merely starts with a brace alone when it isn't valid JSON", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "null_resource.example",
+            action: "update",
+            actions: ["update"],
+            before: {
+              note: "{not valid json",
+            },
+            after: {
+              note: "{still not valid json",
+            },
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /null_resource\.example/i }));
+
+    expect(screen.getByText('"{not valid json"')).toBeInTheDocument();
+    expect(screen.getByText('"{still not valid json"')).toBeInTheDocument();
+    expect(screen.queryByText("jsonencode({")).not.toBeInTheDocument();
+  });
+
   it("shows an import's attributes expanded by default instead of a no-changes empty state", () => {
     render(
       <StructuredPlanOutput
@@ -574,6 +693,82 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("sad-otter")).toBeInTheDocument();
     expect(screen.getByText("random_password_result")).toBeInTheDocument();
     expect(screen.getByText("sensitive value")).toBeInTheDocument();
+  });
+
+  it("collapses and re-expands the whole Outputs section, expanded by default", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+        ]}
+        outputs={[{ name: "random_value", value: "sad-otter", sensitive: false }]}
+      />
+    );
+
+    expect(screen.getByText("random_value")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /outputs/i })).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /outputs/i }));
+
+    expect(screen.queryByText("random_value")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /outputs/i })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: /outputs/i }));
+
+    expect(screen.getByText("random_value")).toBeInTheDocument();
+  });
+
+  it("collapses a nested object output behind a labeled toggle instead of dumping 'N attributes' inline", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+        ]}
+        outputs={[
+          {
+            name: "app_cluster_config",
+            value: { bucketName: "example-app-artifacts" },
+            sensitive: false,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("app_cluster_config")).toBeInTheDocument();
+    expect(screen.getByText("1 attribute")).toBeInTheDocument();
+    expect(screen.queryByText("bucketName")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /app_cluster_config/i }));
+
+    expect(screen.getByText("bucketName")).toBeInTheDocument();
+    expect(screen.getByText("example-app-artifacts")).toBeInTheDocument();
+    expect(screen.queryByText("1 attribute")).not.toBeInTheDocument();
+  });
+
+  it("expands a JSON-encoded string output the same way as a resource attribute, once toggled open", () => {
+    const policy = JSON.stringify({ Version: "2012-10-17", Statement: [{ Effect: "Allow" }] });
+
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+        ]}
+        outputs={[{ name: "backup_role_policy", value: policy, sensitive: false }]}
+      />
+    );
+
+    expect(screen.getByText("backup_role_policy")).toBeInTheDocument();
+    expect(screen.getByText("jsonencode({")).toBeInTheDocument();
+    expect(screen.queryByText("Effect")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /backup_role_policy/i }));
+
+    expect(screen.getByText("Effect")).toBeInTheDocument();
+    expect(screen.getByText("Allow")).toBeInTheDocument();
+    expect(screen.queryByText(policy)).not.toBeInTheDocument();
   });
 
   it("shows the full output value untruncated even when long, with the same text available on hover", () => {
