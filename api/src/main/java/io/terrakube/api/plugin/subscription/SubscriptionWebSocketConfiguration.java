@@ -14,6 +14,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 @Configuration
 public class SubscriptionWebSocketConfiguration {
 
@@ -37,7 +39,7 @@ public class SubscriptionWebSocketConfiguration {
     private static final class LazyIssuerJwtDecoder implements JwtDecoder {
 
         private final String issuerUri;
-        private volatile JwtDecoder delegate;
+        private final AtomicReference<JwtDecoder> delegate = new AtomicReference<>();
 
         private LazyIssuerJwtDecoder(String issuerUri) {
             this.issuerUri = issuerUri;
@@ -45,13 +47,13 @@ public class SubscriptionWebSocketConfiguration {
 
         @Override
         public Jwt decode(String token) throws JwtException {
-            JwtDecoder resolved = delegate;
+            JwtDecoder resolved = delegate.get();
             if (resolved == null) {
                 synchronized (this) {
-                    resolved = delegate;
+                    resolved = delegate.get();
                     if (resolved == null) {
                         resolved = JwtDecoders.fromIssuerLocation(issuerUri);
-                        delegate = resolved;
+                        delegate.set(resolved);
                     }
                 }
             }
