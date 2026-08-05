@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.vcs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -234,17 +235,46 @@ class RepoWebhookServiceTest {
 
             when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
                     .thenReturn(List.of(ws1, ws2));
-            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any()))
+            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean()))
                     .thenReturn("12345");
 
             subject.createOrUpdateSharedWebhook(rw);
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<WebhookEventType>> captor = ArgumentCaptor.forClass(Set.class);
-            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture());
+            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture(), eq(false));
             assertThat(captor.getValue()).containsExactlyInAnyOrder(WebhookEventType.PUSH, WebhookEventType.PULL_REQUEST);
             assertThat(rw.getRemoteHookId()).isEqualTo("12345");
             verify(repoWebhookRepository).save(rw);
+        }
+
+        @Test
+        void passesHasPrWorkflowTrueWhenAnyEventHasPrWorkflowEnabled() {
+            RepoWebhook rw = repoWebhookWith("https://github.com/owner/repo", "secret");
+
+            Workspace ws1 = workspaceWithSource("https://github.com/owner/repo");
+            Webhook wh1 = new Webhook();
+            WebhookEvent pushEvent = new WebhookEvent();
+            pushEvent.setEvent(WebhookEventType.PUSH);
+            wh1.setEvents(List.of(pushEvent));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = workspaceWithSource("https://github.com/owner/repo");
+            Webhook wh2 = new Webhook();
+            WebhookEvent prEvent = new WebhookEvent();
+            prEvent.setEvent(WebhookEventType.PULL_REQUEST);
+            prEvent.setPrWorkflowEnabled(true);
+            wh2.setEvents(List.of(prEvent));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
+                    .thenReturn(List.of(ws1, ws2));
+            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean()))
+                    .thenReturn("12345");
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), any(), eq(true));
         }
 
         @Test
@@ -261,7 +291,7 @@ class RepoWebhookServiceTest {
 
             subject.createOrUpdateSharedWebhook(rw);
 
-            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any(), anyBoolean());
         }
     }
 
@@ -292,13 +322,13 @@ class RepoWebhookServiceTest {
 
             when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
                     .thenReturn(List.of(ws));
-            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any())).thenReturn("12345");
+            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean())).thenReturn("12345");
 
             subject.cleanupIfOrphan(rw);
 
             verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
             verify(repoWebhookRepository, never()).delete(any());
-            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), any());
+            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean());
         }
     }
 
@@ -999,17 +1029,17 @@ class RepoWebhookServiceTest {
 
             when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
                     .thenReturn(List.of(ws1, ws2));
-            when(gitLabWebhookService.createOrUpdateRepoWebhook(eq(rw), any()))
+            when(gitLabWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean()))
                     .thenReturn("gl-999");
 
             subject.createOrUpdateSharedWebhook(rw);
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<WebhookEventType>> captor = ArgumentCaptor.forClass(Set.class);
-            verify(gitLabWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture());
+            verify(gitLabWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture(), eq(false));
             assertThat(captor.getValue()).containsExactlyInAnyOrder(WebhookEventType.PUSH, WebhookEventType.PULL_REQUEST);
             assertThat(rw.getRemoteHookId()).isEqualTo("gl-999");
-            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any(), anyBoolean());
             verify(repoWebhookRepository).save(rw);
         }
 

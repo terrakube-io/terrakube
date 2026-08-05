@@ -950,7 +950,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * (across every migrated workspace sharing this repository) decide which GitLab event flags
      * are enabled.
      */
-    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
+            boolean hasPrWorkflow) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         Vcs vcs = repoWebhook.getVcs();
         String token = vcs.getAccessToken();
@@ -960,7 +961,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
         boolean pushEvents = eventTypes.contains(WebhookEventType.PUSH);
         boolean mergeRequestsEvents = eventTypes.contains(WebhookEventType.PULL_REQUEST);
         boolean releasesEvents = eventTypes.contains(WebhookEventType.RELEASE);
-        boolean noteEvents = eventTypes.contains(WebhookEventType.PR_COMMENT);
+        // WebhookEventType.PR_COMMENT is never actually stored on a WebhookEvent row, so eventTypes
+        // never contains it - hasPrWorkflow is the real signal for note events.
+        boolean noteEvents = hasPrWorkflow;
 
         String body = "{\"url\":\"" + webhookUrl
                 + "\",\"push_events\":" + pushEvents

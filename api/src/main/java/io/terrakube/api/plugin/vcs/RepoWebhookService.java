@@ -95,10 +95,12 @@ public class RepoWebhookService {
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
 
         Set<WebhookEventType> eventTypes = new HashSet<>();
+        boolean hasPrWorkflow = false;
         for (Workspace ws : workspaces) {
             if (ws.getWebhook() != null && ws.getWebhook().getEvents() != null) {
                 for (WebhookEvent event : ws.getWebhook().getEvents()) {
                     eventTypes.add(event.getEvent());
+                    hasPrWorkflow = hasPrWorkflow || event.isPrWorkflowEnabled();
                 }
             }
         }
@@ -108,9 +110,10 @@ public class RepoWebhookService {
             return;
         }
 
+        // hasPrWorkflow isn't derivable from eventTypes - PR comment events aren't a trigger type.
         String remoteHookId = isGitLab(repoWebhook)
-                ? gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes)
-                : gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+                ? gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow)
+                : gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow);
         repoWebhook.setRemoteHookId(remoteHookId);
         repoWebhookRepository.save(repoWebhook);
     }

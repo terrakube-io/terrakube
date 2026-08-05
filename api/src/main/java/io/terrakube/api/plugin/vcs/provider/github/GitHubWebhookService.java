@@ -494,7 +494,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return getPrFileChanges(vcs, ownerAndRepo, prFilesUrl);
     }
 
-    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
+            boolean hasPrWorkflow) {
         String id = repoWebhook.getRemoteHookId();
         String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
@@ -502,6 +503,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String events = eventTypes.stream()
                 .map(e -> "\"" + e.name().toLowerCase() + "\"")
                 .collect(Collectors.joining(","));
+
+        // Mirrors createOrUpdateWebhook's issue_comment subscription for PR workflow.
+        if (hasPrWorkflow && !events.contains("issue_comment")) {
+            events += ",\"issue_comment\"";
+        }
 
         String body;
         String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
