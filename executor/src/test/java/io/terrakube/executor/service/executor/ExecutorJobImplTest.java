@@ -141,4 +141,28 @@ class ExecutorJobImplTest {
         inOrder.verify(jobExecutionWatchdog).markFree();
         verifyNoMoreInteractions(terraformExecutor);
     }
+
+    @Test
+    void marksJobFailedInsteadOfHangingWhenTerraformExecutorThrowsUnexpectedly() throws Exception {
+        // Regression test: an unexpected exception from deep inside the terraform executor (e.g.
+        // the terraform/tofu binary download failing) used to propagate out of this @Async method
+        // uncaught - Spring's SimpleAsyncUncaughtExceptionHandler just logs it, and the job was
+        // left stuck "running" forever with nothing to retry it.
+        TerraformJob job = createJob("terraformPlan");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        when(terraformExecutor.plan(any(), any(), anyBoolean()))
+                .thenThrow(new RuntimeException("406 Not Acceptable from GET https://releases.hashicorp.com/terraform/index.json"));
+
+        subject(eventPublisher).createJob(job);
+
+        assertEquals(2, publishedEvents.size());
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, stateAt(0));
+        assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(1));
+
+        InOrder inOrder = inOrder(jobExecutionWatchdog, updateJobStatus);
+        inOrder.verify(jobExecutionWatchdog).markBusy();
+        inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(), any(), any(), any());
+        inOrder.verify(jobExecutionWatchdog).markFree();
+    }
 }
