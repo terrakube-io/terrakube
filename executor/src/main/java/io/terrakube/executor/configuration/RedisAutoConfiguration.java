@@ -58,6 +58,7 @@ public class RedisAutoConfiguration {
     @Bean
     JedisConnectionFactory jedisConnectionFactory(RedisProperties redisProperties, SSLSocketFactory sslSocketFactory) {
         JedisClientConfiguration.JedisClientConfigurationBuilder clientConfigBuilder = JedisClientConfiguration.builder();
+        clientConfigBuilder.usePooling();
 
         if (redisProperties.isSsl()) {
             log.info("Redis connection with SSL configuration");
