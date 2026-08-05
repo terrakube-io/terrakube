@@ -1,6 +1,7 @@
 package io.terrakube.registry;
 
 import io.restassured.RestAssured;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,8 @@ class OpenRegistryApplicationTests {
 
 	@Test
 	void initLoad() {
+		Assertions.assertThat(wireMockServer).isNotNull();
+		Assertions.assertThat(wireMockServer.isRunning()).isTrue();
 	}
 
 }
