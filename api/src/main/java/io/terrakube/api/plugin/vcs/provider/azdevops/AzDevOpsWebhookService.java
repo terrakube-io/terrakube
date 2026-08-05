@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -28,6 +29,7 @@ import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventType;
@@ -833,5 +835,276 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             this.project = project;
             this.repository = repository;
         }
+    }
+
+    // ======================== Shared Webhook (v2) Methods ========================
+
+    /**
+     * Parses an Azure DevOps webhook payload without requiring a workspace (used by
+     * the shared v2 webhook flow). File change fetching is deferred to per-workspace
+     * processing since it requires VCS credentials.
+     */
+    public WebhookResult parseAzDevOpsPayload(String jsonPayload, Map<String, String> headers) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
+        result.setValid(true);
+        result.setFileChanges(new ArrayList<>());
+        result.setRawPayload(jsonPayload);
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            String eventType = rootNode.path("eventType").asText();
+            log.info("Azure DevOps v2 event type: {}", eventType);
+
+            JsonNode resource = rootNode.get(FIELD_RESOURCE);
+            if (resource == null || resource.isNull()) {
+                log.error(
+                        "Azure DevOps v2 webhook for event {} has resource=null (resourceVersion={}); recreate the service hook subscription",
+                        eventType, rootNode.path(FIELD_RESOURCE_VERSION).asText(null));
+                result.setValid(false);
+                return result;
+            }
+
+            switch (eventType) {
+                case EVENT_PUSH:
+                    return parsePushPayload(rootNode, result);
+                case EVENT_PR_CREATED:
+                case EVENT_PR_UPDATED:
+                    return parsePullRequestPayload(rootNode, result);
+                case EVENT_PR_COMMENT:
+                    return parsePullRequestCommentPayload(rootNode, result);
+                default:
+                    log.error("Unsupported Azure DevOps event: {}", eventType);
+                    result.setValid(false);
+                    return result;
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps v2 webhook payload", e);
+            result.setValid(false);
+            return result;
+        }
+    }
+
+    private WebhookResult parsePushPayload(JsonNode rootNode, WebhookResult result) {
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+        JsonNode refUpdate = resource.path("refUpdates").path(0);
+        String refName = refUpdate.path("name").asText();
+
+        if (refName.startsWith(REF_TAGS_PREFIX)) {
+            result.setEvent("release");
+            result.setRelease(true);
+            result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+        } else {
+            result.setEvent("push");
+            result.setBranch(stripRefPrefix(refName));
+        }
+
+        result.setCommit(refUpdate.path("newObjectId").asText());
+        result.setCreatedBy(resolveUser(resource.path("pushedBy")));
+        // File changes are NOT fetched here — they require workspace-scoped VCS
+        // credentials and are resolved later via fetchPushFileChanges().
+        return result;
+    }
+
+    private WebhookResult parsePullRequestPayload(JsonNode rootNode, WebhookResult result) {
+        result.setEvent("pull_request");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        int prNumber = resource.path("pullRequestId").asInt();
+        result.setPrNumber(prNumber);
+        result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+        result.setCreatedBy(resolveUser(resource.path("createdBy")));
+        // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
+        return result;
+    }
+
+    private WebhookResult parsePullRequestCommentPayload(JsonNode rootNode, WebhookResult result) {
+        result.setEvent("issue_comment");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        String commentBody = resource.path("comment").path("content").asText().trim();
+        String command = parseTerrakubeCommand(commentBody);
+        if (command == null) {
+            result.setValid(false);
+            return result;
+        }
+
+        JsonNode pullRequest = resource.path("pullRequest");
+        int prNumber = pullRequest.path("pullRequestId").asInt();
+
+        result.setPrComment(true);
+        result.setCommentBody(commentBody);
+        result.setCommentCommand(command);
+        result.setPrNumber(prNumber);
+        result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
+        result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+        // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
+        return result;
+    }
+
+    /**
+     * Creates or updates shared Azure DevOps service hook subscriptions for a
+     * {@link RepoWebhook}. Maps aggregated {@link WebhookEventType}s to Azure
+     * DevOps event types and creates one subscription per event type, storing
+     * their IDs comma-separated in {@link RepoWebhook#getRemoteHookId()}.
+     */
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+        String remoteHookId = repoWebhook.getRemoteHookId();
+        AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, repoWebhook.getRepositoryUrl());
+            return remoteHookId;
+        }
+
+        // Use a seed workspace's VCS connection for API calls. The VCS is stored
+        // on the RepoWebhook itself (set when it was first created).
+        Vcs vcs = repoWebhook.getVcs();
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            log.error("Unable to resolve Azure DevOps repository id for {}", repoWebhook.getRepositoryUrl());
+            return remoteHookId;
+        }
+        String repositoryId = repositoryAndProject[0];
+        String projectId = repositoryAndProject[1];
+
+        // Recreate subscriptions on update to honour event configuration changes.
+        if (remoteHookId != null && !remoteHookId.isEmpty()) {
+            deleteRepoWebhookSubscriptions(vcs, repo, remoteHookId);
+        }
+
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String secret = repoWebhook.getWebhookSecret();
+
+        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes);
+
+        List<String> subscriptionIds = new ArrayList<>();
+        for (String azureEventType : azureEventTypes) {
+            String subscriptionId = createSubscription(vcs, repo, azureEventType, repositoryId,
+                    projectId, webhookUrl, secret);
+            if (subscriptionId != null && !subscriptionId.isEmpty()) {
+                subscriptionIds.add(subscriptionId);
+            }
+        }
+
+        if (subscriptionIds.isEmpty()) {
+            log.error("No Azure DevOps subscriptions were created for repo webhook {}", repoWebhook.getId());
+            return "";
+        }
+
+        log.info("Azure DevOps shared service hooks created/updated for repo webhook {} with ids {}",
+                repoWebhook.getId(), subscriptionIds);
+        return String.join(",", subscriptionIds);
+    }
+
+    /**
+     * Deletes all Azure DevOps service hook subscriptions for an orphaned shared
+     * {@link RepoWebhook}.
+     */
+    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+        if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
+            log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
+            return;
+        }
+        AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
+        if (repo == null) {
+            log.warn("Unable to parse Azure DevOps repository from {}, skipping deletion",
+                    repoWebhook.getRepositoryUrl());
+            return;
+        }
+        deleteRepoWebhookSubscriptions(repoWebhook.getVcs(), repo, repoWebhook.getRemoteHookId());
+    }
+
+    private void deleteRepoWebhookSubscriptions(Vcs vcs, AzureRepo repo, String commaSeparatedIds) {
+        for (String subscriptionId : commaSeparatedIds.split(",")) {
+            subscriptionId = subscriptionId.trim();
+            if (subscriptionId.isEmpty()) {
+                continue;
+            }
+            String apiUrl = String.format("%s/_apis/hooks/subscriptions/%s?api-version=%s",
+                    repo.orgBaseUrl, subscriptionId, HOOKS_API_VERSION);
+            ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.DELETE);
+            if (response != null && response.getStatusCode().is2xxSuccessful()) {
+                log.info("Azure DevOps subscription {} deleted successfully", subscriptionId);
+            } else {
+                log.warn("Failed to delete Azure DevOps subscription {}, message {}", subscriptionId,
+                        response != null ? response.getBody() : NO_RESPONSE);
+            }
+        }
+    }
+
+    /**
+     * Fetches the files changed by a push event from the Azure DevOps API. Called
+     * per-workspace during v2 webhook fanout since API calls require workspace-scoped
+     * VCS credentials.
+     */
+    public List<String> fetchPushFileChanges(Vcs vcs, String source, String rawPayload) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
+            return new ArrayList<>();
+        }
+
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return new ArrayList<>();
+        }
+        String repositoryId = repositoryAndProject[0];
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(rawPayload);
+            JsonNode resource = rootNode.path(FIELD_RESOURCE);
+            JsonNode refUpdate = resource.path("refUpdates").path(0);
+            return getPushFileChanges(vcs, repo, repositoryId, resource, refUpdate);
+        } catch (Exception e) {
+            log.error("Error extracting push file changes from raw payload", e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Fetches the files changed by a pull request from the Azure DevOps API. Called
+     * per-workspace during v2 webhook fanout.
+     */
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
+            return new ArrayList<>();
+        }
+
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return new ArrayList<>();
+        }
+        return getPullRequestChanges(vcs, repo, repositoryAndProject[0], prNumber);
+    }
+
+    /**
+     * Resolves the set of Azure DevOps event type strings from aggregated
+     * {@link WebhookEventType}s (used by the shared v2 webhook flow).
+     */
+    private Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes) {
+        Set<String> azureEventTypes = new LinkedHashSet<>();
+        for (WebhookEventType eventType : eventTypes) {
+            switch (eventType) {
+                case PUSH:
+                case RELEASE:
+                    azureEventTypes.add(EVENT_PUSH);
+                    break;
+                case PULL_REQUEST:
+                    azureEventTypes.add(EVENT_PR_CREATED);
+                    azureEventTypes.add(EVENT_PR_UPDATED);
+                    break;
+                case PR_COMMENT:
+                    azureEventTypes.add(EVENT_PR_COMMENT);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return azureEventTypes;
     }
 }
