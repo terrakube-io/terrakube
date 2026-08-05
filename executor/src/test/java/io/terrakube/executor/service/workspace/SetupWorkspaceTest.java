@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Job;
@@ -26,6 +27,8 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.eclipse.jgit.api.errors.TransportException;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -194,6 +197,13 @@ public class SetupWorkspaceTest {
                 .call();
     }
 
+    private static List<String> refNames(Git git, String prefix) throws IOException {
+        return git.getRepository().getRefDatabase().getRefsByPrefix(prefix).stream()
+                .map(Ref::getName)
+                .sorted()
+                .toList();
+    }
+
     private static class RejectingShaFetchSetupWorkspace extends SetupWorkspaceImpl {
         boolean unshallowRepositoryCalled;
 
@@ -285,6 +295,58 @@ public class SetupWorkspaceTest {
             Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
             try (Git workspaceGit = Git.open(workspaceDir)) {
                 Assertions.assertEquals(branchTip.getName(), workspaceGit.getRepository().resolve("HEAD").getName());
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void fetchesOnlyTheRequestedBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            // The tag sits on the unrelated branch so a narrowed fetch cannot reach it:
+            // AUTO_FOLLOW would still pull a tag pointing at the requested branch's tip.
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.tag().setName("v1.0.0").call();
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                        refNames(workspaceGit, Constants.R_REMOTES));
+                Assertions.assertEquals(List.of(), refNames(workspaceGit, Constants.R_TAGS));
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void checksOutWhenBranchFieldNamesATag() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit tagged = commitFile(sourceGit, "main.tf", "tagged");
+            sourceGit.tag().setName("v1.0.0").call();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+
+            TerraformJob job = localGitJob(sourceRepository, "v1.0.0");
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(tagged.getName(),
+                        workspaceGit.getRepository().resolve("HEAD").getName());
+                Assertions.assertEquals(List.of(Constants.R_TAGS + "v1.0.0"),
+                        refNames(workspaceGit, Constants.R_TAGS));
+                Assertions.assertEquals(List.of(), refNames(workspaceGit, Constants.R_REMOTES));
             }
         } finally {
             FileUtils.deleteDirectory(sourceRepository);

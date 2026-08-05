@@ -10,6 +10,7 @@ import java.security.PublicKey;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -28,10 +29,12 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.TransportCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.CredentialsProvider;
@@ -163,6 +166,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
     private void downloadWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
+        String branchRef = resolveBranchRef(terraformJob);
         if (terraformJob.getVcsType().startsWith("SSH")) {
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
@@ -179,7 +183,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setCloneSubmodules(true);
 
             cloneCommand.setDepth(1);
-            cloneCommand.setBranchesToClone(List.of(Constants.R_HEADS + terraformJob.getBranch()));
+            cloneCommand.setBranchesToClone(List.of(branchRef));
             cloneCommand.call();
         } else {
             CloneCommand cloneCommand = Git.cloneRepository()
@@ -191,7 +195,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     .setCloneSubmodules(true);
 
             cloneCommand.setDepth(1);
-            cloneCommand.setBranchesToClone(List.of(Constants.R_HEADS + terraformJob.getBranch()));
+            cloneCommand.setBranchesToClone(List.of(branchRef));
             cloneCommand.call();
         }
 
@@ -204,6 +208,58 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
         log.info("Git clone: {} Branch: {} Folder {}", terraformJob.getSource(), terraformJob.getBranch(),
                 gitCloneFolder.getPath());
+    }
+
+    /**
+     * The branch field also accepts a tag name, so the namespace has to be resolved before the
+     * fetch can be restricted to a single ref.
+     */
+    private String resolveBranchRef(TerraformJob terraformJob) throws IOException {
+        String headRef = Constants.R_HEADS + terraformJob.getBranch();
+        String tagRef = Constants.R_TAGS + terraformJob.getBranch();
+
+        // Key material has to land outside the clone folder: CloneCommand refuses a destination
+        // that is not empty.
+        File sshFolder = Files.createTempDirectory("terrakube-ls-remote").toFile();
+        SshdSessionFactory sshSessionFactory = sshSessionFactory(sshFolder, terraformJob);
+        try {
+            Map<String, Ref> remoteRefs = configureTransport(
+                    Git.lsRemoteRepository().setRemote(terraformJob.getSource()), sshSessionFactory, terraformJob)
+                    .setHeads(true)
+                    .setTags(true)
+                    .callAsMap();
+            return !remoteRefs.containsKey(headRef) && remoteRefs.containsKey(tagRef) ? tagRef : headRef;
+        } catch (GitAPIException e) {
+            // Narrowing is an optimisation, so a failed probe defers to the clone, which reports
+            // transport and credential problems in the terms callers already expect.
+            log.warn("Unable to list refs for {}: {}", terraformJob.getSource(), e.getMessage());
+            return headRef;
+        } finally {
+            if (sshSessionFactory != null) {
+                sshSessionFactory.close();
+            }
+            FileUtils.deleteDirectory(sshFolder);
+        }
+    }
+
+    private SshdSessionFactory sshSessionFactory(File sshFolder, TerraformJob terraformJob) throws IOException {
+        return terraformJob.getVcsType().startsWith("SSH")
+                ? getSshdSessionFactory(sshFolder, terraformJob.getAccessToken())
+                : null;
+    }
+
+    private <C extends TransportCommand<C, ?>> C configureTransport(C command,
+            SshdSessionFactory sshSessionFactory, TerraformJob terraformJob) {
+        if (sshSessionFactory != null) {
+            return command.setTransportConfigCallback(
+                    transport -> ((SshTransport) transport).setSshSessionFactory(sshSessionFactory));
+        }
+        CredentialsProvider credentialsProvider = setupCredentials(terraformJob.getVcsType(),
+                terraformJob.getConnectionType(), terraformJob.getAccessToken());
+        if (credentialsProvider != null) {
+            command.setCredentialsProvider(credentialsProvider);
+        }
+        return command;
     }
 
     private void checkoutCommitId(File gitCloneFolder, TerraformJob terraformJob) throws GitAPIException, IOException {
@@ -261,23 +317,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     private FetchCommand configureFetchCommand(FetchCommand fetchCommand, File gitCloneFolder,
             TerraformJob terraformJob) throws IOException {
         fetchCommand.setRemote("origin");
-        if (terraformJob.getVcsType().startsWith("SSH")) {
-            fetchCommand.setTransportConfigCallback(transport -> {
-                try {
-                    ((SshTransport) transport).setSshSessionFactory(
-                            getSshdSessionFactory(gitCloneFolder, terraformJob.getAccessToken()));
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        } else {
-            CredentialsProvider credentialsProvider = setupCredentials(terraformJob.getVcsType(),
-                    terraformJob.getConnectionType(), terraformJob.getAccessToken());
-            if (credentialsProvider != null) {
-                fetchCommand.setCredentialsProvider(credentialsProvider);
-            }
-        }
-        return fetchCommand;
+        return configureTransport(fetchCommand, sshSessionFactory(gitCloneFolder, terraformJob), terraformJob);
     }
 
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
