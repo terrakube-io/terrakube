@@ -17,6 +17,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
@@ -42,7 +44,7 @@ public class DexWebSecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/.well-known/**").permitAll()
@@ -57,6 +59,11 @@ public class DexWebSecurityAdapter {
                             .issuerUri(issuerUri)
                             .patSecret(patJwtSecret)
                             .internalSecret(internalJwtSecret)
+                            .terrakubeClient(terrakubeClient)
+                            .federatedCacheExpireAfterWrite(openRegistryProperties.getFederatedCacheExpireAfterWrite())
+                            .federatedCacheMaximumSize(openRegistryProperties.getFederatedCacheMaximumSize())
+                            .providerManagerCacheExpireAfterWrite(openRegistryProperties.getProviderManagerCacheExpireAfterWrite())
+                            .providerManagerCacheMaximumSize(openRegistryProperties.getProviderManagerCacheMaximumSize())
                             .build();
                     oauth2.authenticationManagerResolver(authenticationManagerResolver);
                 });
