@@ -422,11 +422,7 @@ public class SetupWorkspaceTest {
                     sourceGit.getRepository(), generateRsaKeyPair());
             int port = server.start();
             try {
-                TerraformJob job = baseGitJob();
-                job.setVcsType("SSH~id_rsa");
-                job.setSource("ssh://git@localhost:" + port + "/terrakube-source");
-                job.setBranch(requestedBranch);
-                job.setAccessToken(privateKeyPem(clientKey));
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
 
                 File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
 
@@ -446,6 +442,85 @@ public class SetupWorkspaceTest {
         } finally {
             FileUtils.deleteDirectory(sourceRepository);
         }
+    }
+
+    @Test
+    public void fetchesAMissingCommitOverSsh() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
+                job.setCommitId(unrelatedCommit.getName());
+
+                UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+                File workspaceDir = setup.prepareWorkspace(job);
+
+                Assertions.assertFalse(setup.unshallowRepositoryCalled);
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(unrelatedCommit.getName(),
+                            workspaceGit.getRepository().resolve("HEAD").getName());
+                }
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void unshallowsOverSshWhenTheShaFetchIsRejected() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit plannedCommit = commitFile(sourceGit, "main.tf", "planned");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+            commitFile(sourceGit, "main.tf", "advanced");
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
+                job.setCommitId(plannedCommit.getName());
+
+                RejectingShaFetchSetupWorkspace setup = new RejectingShaFetchSetupWorkspace();
+                File workspaceDir = setup.prepareWorkspace(job);
+
+                Assertions.assertTrue(setup.unshallowRepositoryCalled);
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(plannedCommit.getName(),
+                            workspaceGit.getRepository().resolve("HEAD").getName());
+                }
+                Assertions.assertEquals("planned", FileUtils.readFileToString(
+                        FileUtils.getFile(workspaceDir, "main.tf"), StandardCharsets.UTF_8));
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    private TerraformJob sshJob(int port, String branch, KeyPair clientKey) throws IOException {
+        TerraformJob job = baseGitJob();
+        job.setVcsType("SSH~id_rsa");
+        job.setSource("ssh://git@localhost:" + port + "/terrakube-source");
+        job.setBranch(branch);
+        job.setAccessToken(privateKeyPem(clientKey));
+        return job;
     }
 
     private static KeyPair generateRsaKeyPair() throws Exception {

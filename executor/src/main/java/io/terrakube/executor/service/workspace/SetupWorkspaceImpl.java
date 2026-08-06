@@ -311,24 +311,27 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     void fetchCommitById(Git git, File gitCloneFolder, TerraformJob terraformJob, String commitId)
             throws GitAPIException, IOException {
         log.info("Fetching missing commit id {} with depth 1", commitId);
-        configureFetchCommand(git.fetch(), gitCloneFolder, terraformJob)
-                .setRefSpecs(new RefSpec(commitId))
-                .setDepth(1)
-                .call();
+        try (SshdSessionFactory sshSessionFactory = sshSessionFactory(gitCloneFolder, terraformJob)) {
+            configureFetchCommand(git.fetch(), sshSessionFactory, terraformJob)
+                    .setRefSpecs(new RefSpec(commitId))
+                    .setDepth(1)
+                    .call();
+        }
     }
 
     void unshallowRepository(Git git, File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
-        configureFetchCommand(git.fetch(), gitCloneFolder, terraformJob)
-                .setUnshallow(true)
-                .call();
+        try (SshdSessionFactory sshSessionFactory = sshSessionFactory(gitCloneFolder, terraformJob)) {
+            configureFetchCommand(git.fetch(), sshSessionFactory, terraformJob)
+                    .setUnshallow(true)
+                    .call();
+        }
     }
 
-    private FetchCommand configureFetchCommand(FetchCommand fetchCommand, File gitCloneFolder,
-            TerraformJob terraformJob) throws IOException {
+    private FetchCommand configureFetchCommand(FetchCommand fetchCommand,
+            SshdSessionFactory sshSessionFactory, TerraformJob terraformJob) {
         fetchCommand.setRemote("origin");
-        return configureTransport(fetchCommand, sshSessionFactory(gitCloneFolder, terraformJob),
-                credentialsProvider(terraformJob));
+        return configureTransport(fetchCommand, sshSessionFactory, credentialsProvider(terraformJob));
     }
 
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
