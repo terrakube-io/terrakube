@@ -4,8 +4,11 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.lang.reflect.Proxy;
 import java.net.URI;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,11 +25,13 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.tar.TarEntry;
 import org.apache.tools.tar.TarOutputStream;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.eclipse.jgit.api.errors.TransportException;
+import org.eclipse.jgit.junit.ssh.SshTestGitServer;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -399,6 +404,63 @@ public class SetupWorkspaceTest {
         } finally {
             FileUtils.deleteDirectory(sourceRepository);
         }
+    }
+
+    @Test
+    public void clonesOverSshAndLeavesTheKeyInTheWorkspace() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "over-ssh");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = baseGitJob();
+                job.setVcsType("SSH~id_rsa");
+                job.setSource("ssh://git@localhost:" + port + "/terrakube-source");
+                job.setBranch(requestedBranch);
+                job.setAccessToken(privateKeyPem(clientKey));
+
+                File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+                // TerraformExecutorServiceImpl.getSshFile reads the key back out of the
+                // workspace, so the clone has to be what puts it there.
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".ssh", "id_rsa").exists());
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                            refNames(workspaceGit, Constants.R_REMOTES));
+                }
+                Assertions.assertEquals("over-ssh", FileUtils.readFileToString(
+                        FileUtils.getFile(workspaceDir, "main.tf"), StandardCharsets.UTF_8));
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    private static KeyPair generateRsaKeyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    /** PKCS#1, since that is the format the executor keys its file naming off. */
+    private static String privateKeyPem(KeyPair keyPair) throws IOException {
+        StringWriter pem = new StringWriter();
+        try (JcaPEMWriter writer = new JcaPEMWriter(pem)) {
+            writer.writeObject(keyPair.getPrivate());
+        }
+        return pem.toString();
     }
 
     @Test
