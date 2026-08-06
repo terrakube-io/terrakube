@@ -2,6 +2,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   ExclamationCircleOutlined,
+  FolderOutlined,
   LockOutlined,
   PlayCircleOutlined,
   ProfileOutlined,
@@ -18,6 +19,7 @@ import {
   Button,
   Col,
   Divider,
+  Empty,
   Layout,
   List,
   message,
@@ -38,7 +40,7 @@ import {
 
 import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { usePolling } from "../../hooks";
+import { useJobStatusSubscription, usePolling } from "../../hooks";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
@@ -82,11 +84,31 @@ const WorkspaceSettings = lazy(() =>
 const { Paragraph } = Typography;
 
 const { Content } = Layout;
-const { TabPane } = Tabs;
+
+const WORKSPACE_SECTION_LABELS: Record<string, string> = {
+  "1": "Overview",
+  "2": "Runs",
+  "3": "States",
+  "4": "Variables",
+  "5": "Schedules",
+  "6": "Settings",
+};
+
+const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
+  general: "General",
+  locking: "Locking",
+  sshkey: "SSH Key",
+  webhook: "Webhook",
+  "state-shared": "State Shared",
+  "team-access": "Team Access",
+  advanced: "Destruction and Deletion",
+};
 
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
+  setWorkspaceManageState: React.Dispatch<React.SetStateAction<boolean>>;
   selectedTab?: string;
+  settingsSection?: string;
 };
 
 type Params = {
@@ -95,7 +117,12 @@ type Params = {
   orgid: string;
 };
 
-export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) => {
+export const WorkspaceDetails = ({
+  setOrganizationName,
+  setWorkspaceManageState,
+  selectedTab,
+  settingsSection,
+}: Props) => {
   const navigate = useNavigate();
   const { id, runid, orgid } = useParams<Params>();
   if (orgid !== null && orgid !== undefined && orgid !== "") {
@@ -126,7 +153,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
   const [jobVisible, setJobVisible] = useState(false);
   const [organizationNameLocal, setOrganizationNameLocal] = useState<string>();
   const [workspaceName, setWorkspaceName] = useState("...");
-  const [activeKey, setActiveKey] = useState(selectedTab !== null ? selectedTab : "1");
+  const [activeKey, setActiveKey] = useState(selectedTab ?? "1");
   const [templates, setTemplates] = useState([]);
   const [lastRun, setLastRun] = useState("");
   const [executionMode, setExecutionMode] = useState("...");
@@ -223,12 +250,6 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
       key: "module",
     },
   ];
-  const handleStatesClick = (key: string) => {
-    switchKey(key);
-  };
-  const callback = (key: string) => {
-    switchKey(key);
-  };
 
   const loadOrgTemplates = () => {
     axiosInstance
@@ -315,6 +336,26 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     // Polling is now handled by usePolling hook below
   }, [id]);
 
+  useEffect(() => {
+    setWorkspaceManageState(manageState);
+  }, [manageState, setWorkspaceManageState]);
+
+  useEffect(() => {
+    setActiveKey(selectedTab ?? "1");
+  }, [selectedTab]);
+
+  // Keep the Runs view in sync with the URL: viewing /runs/:runid shows that job's
+  // details, but navigating back to the bare /runs list (e.g. via the sidebar) must
+  // reset jobVisible, otherwise it stays stuck showing the last-viewed job forever.
+  useEffect(() => {
+    if (runid) {
+      setJobId(runid);
+      setJobVisible(true);
+    } else {
+      setJobVisible(false);
+    }
+  }, [runid]);
+
   // Polling for workspace updates
   usePolling(
     () => {
@@ -323,6 +364,14 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
     },
     { interval: 10000, enabled: Boolean(id), immediate: false }
   );
+
+  // Pushes an immediate refresh on real job status changes; the poll above stays as a fallback for a
+  // dropped WebSocket connection.
+  useJobStatusSubscription({
+    workspaceId: id ?? "",
+    enabled: Boolean(id),
+    onEvent: () => loadWorkspace(false, false, false),
+  });
 
   const changeJob = (id: string) => {
     setJobId(id);
@@ -474,20 +523,275 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
       });
   };
 
+  const renderSection = (workspace: Workspace) => {
+    switch (activeKey) {
+      case "1":
+        return (
+          <Row>
+            <Col span={19} style={{ paddingRight: "20px" }}>
+              {workspace.attributes.source === "empty" &&
+              workspace.attributes.branch === "remote-content" &&
+              (workspace.relationships?.history?.data?.length || 0) < 1 ? (
+                <CLIDriven organizationName={organizationNameLocal} workspaceName={workspaceName} />
+              ) : (
+                <div>
+                  <Typography.Title level={3} style={{ margin: 0 }}>
+                    Latest Run
+                  </Typography.Title>
+                  <div style={{ marginRight: "150px", borderWidth: "1px" }}>
+                    <List
+                      itemLayout="horizontal"
+                      style={{
+                        border: "1px solid #c2c5cb",
+                        padding: "24px",
+                      }}
+                      locale={{
+                        emptyText: (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description={
+                              manageWorkspace
+                                ? "No runs yet. Use the New run button above to trigger your first plan."
+                                : "No runs yet."
+                            }
+                          />
+                        ),
+                      }}
+                      dataSource={
+                        jobs.length > 0
+                          ? jobs
+                              .sort((a: any, b: any) => a.id - b.id)
+                              .reverse()
+                              .slice(0, 1)
+                          : []
+                      }
+                      renderItem={(item) => (
+                        <List.Item>
+                          <List.Item.Meta
+                            style={{ margin: "0px", padding: "0px" }}
+                            avatar={<Avatar shape="square" icon={<UserOutlined />} />}
+                            description={
+                              <div>
+                                <Row>
+                                  <Col span={20}>
+                                    <Typography.Title
+                                      level={4}
+                                      className="ant-list-item-meta-title"
+                                      style={{ margin: 0 }}
+                                    >
+                                      <a onClick={() => handleClick(item.id)}>{item.title}</a>{" "}
+                                    </Typography.Title>
+                                    <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
+                                    <b>{item.via || "UI"}</b>{" "}
+                                    {item.commitId !== "000000000" ? (
+                                      <>
+                                        <FiGitCommit /> {item.commitId?.substring(0, 6)}{" "}
+                                      </>
+                                    ) : (
+                                      ""
+                                    )}
+                                  </Col>
+                                  <Col>
+                                    {
+                                      <div className="textLeft">
+                                        <Tag
+                                          icon={
+                                            item.status == "completed" ? (
+                                              <CheckCircleOutlined />
+                                            ) : item.status == "running" ? (
+                                              <SyncOutlined spin />
+                                            ) : item.status === "waitingApproval" ? (
+                                              <ExclamationCircleOutlined />
+                                            ) : item.status === "cancelled" ? (
+                                              <StopOutlined />
+                                            ) : item.status === "failed" ? (
+                                              <StopOutlined />
+                                            ) : item.status === "notExecuted" ? (
+                                              <CheckCircleOutlined />
+                                            ) : (
+                                              <ClockCircleOutlined />
+                                            )
+                                          }
+                                          color={item.statusColor}
+                                        >
+                                          {item.status}
+                                        </Tag>{" "}
+                                      </div>
+                                    }
+                                  </Col>
+                                </Row>
+                                <br />
+                                <br />
+                                <Row>
+                                  <Col span={20}></Col>
+                                  <Col>
+                                    <Button onClick={() => handleClick(item.id)}>See details</Button>
+                                  </Col>
+                                </Row>
+                              </div>
+                            }
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  </div>
+                  <Tabs
+                    type="card"
+                    style={{ marginTop: "30px" }}
+                    items={[
+                      {
+                        label: `Resources (${resources.length})`,
+                        key: "1",
+                        children: <Table dataSource={resources} columns={resourceColumns} />,
+                      },
+                      {
+                        label: `Outputs (${outputs.length})`,
+                        key: "2",
+                        children: <Table dataSource={outputs} columns={outputColumns} />,
+                      },
+                    ]}
+                  />
+
+                  <ResourceDrawer resource={resource} workspace={workspace} setOpen={setOpen} open={open} />
+                </div>
+              )}
+            </Col>
+            <Col span={5}>
+              <Space direction="vertical">
+                <br />
+                <span>
+                  {workspace.attributes.branch !== "remote-content" &&
+                  isValidUrl(fixSshURL(workspace.attributes.source)) ? (
+                    <>
+                      {" "}
+                      {renderVCSLogo(vcsProvider)}{" "}
+                      <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
+                        {new URL(fixSshURL(workspace.attributes.source))?.pathname?.replace(".git", "")?.substring(1)}
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <IconContext.Provider value={{ size: "1.4em" }}>
+                        <BiTerminal />
+                      </IconContext.Provider>
+                      &nbsp;&nbsp;cli/api driven workflow
+                    </>
+                  )}
+                </span>
+                <span>
+                  <ThunderboltOutlined /> Execution Mode: {executionMode}{" "}
+                </span>
+                {workspace.attributes.folder && (
+                  <span>
+                    <FolderOutlined /> Working Directory: {workspace.attributes.folder}{" "}
+                  </span>
+                )}
+                <Divider />
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  Project
+                </Typography.Title>
+                {projectName && projectId ? (
+                  <Link to={`/organizations/${organizationId}/projects/${projectId}`}>{projectName}</Link>
+                ) : (
+                  <Typography.Text type="secondary">No project</Typography.Text>
+                )}
+                <Divider />
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  Tags
+                </Typography.Title>
+                <Tags organizationId={organizationId} workspaceId={id!} manageWorkspace={manageWorkspace} />
+              </Space>
+            </Col>
+          </Row>
+        );
+      case "2":
+        return jobVisible ? (
+          <Suspense fallback={<LoadingFallback />}>
+            <DetailsJob jobId={jobId!} />
+          </Suspense>
+        ) : (
+          <RunList jobs={jobs} onRunClick={handleClick} />
+        );
+      case "3":
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <States
+              history={history}
+              setStateDetailsVisible={setStateDetailsVisible}
+              stateDetailsVisible={stateDetailsVisible}
+              workspace={workspace}
+              onRollback={loadWorkspace}
+              manageState={manageState}
+            />
+          </Suspense>
+        );
+      case "4":
+        return (
+          <Variables
+            vars={variables}
+            env={envVariables}
+            manageWorkspace={manageWorkspace}
+            collectionVars={collectionVariables}
+            collectionEnvVars={collectionEnvVariables}
+            globalVariables={globalVariables}
+            globalEnvVariables={globalEnvVariables}
+            reload={() => loadWorkspace(false)}
+          />
+        );
+      case "5":
+        return templates ? (
+          <Schedules schedules={schedule} manageWorkspace={manageWorkspace} reload={() => loadWorkspace(false)} />
+        ) : (
+          <p>Loading...</p>
+        );
+      case "6":
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <WorkspaceSettings
+              workspace={workspace}
+              vcsProvider={vcsProvider}
+              orgTemplates={orgTemplates}
+              manageWorkspace={manageWorkspace}
+              onWorkspaceUpdate={() => loadWorkspace(false)}
+              activeSection={settingsSection || "general"}
+            />
+          </Suspense>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <Content style={{ padding: "0 50px" }}>
       <Breadcrumb
         style={{ margin: "16px 0" }}
         items={[
           {
-            title: organizationNameLocal,
+            title: <Link to={`/organizations/${organizationId}/workspaces`}>{organizationNameLocal}</Link>,
           },
           {
             title: <Link to={`/organizations/${organizationId}/workspaces`}>Workspaces</Link>,
           },
           {
-            title: workspaceName,
+            title: <Link to={`/organizations/${organizationId}/workspaces/${id}`}>{workspaceName}</Link>,
           },
+          ...(activeKey === "6" && settingsSection
+            ? [
+                {
+                  title: (
+                    <Link to={`/organizations/${organizationId}/workspaces/${id}/settings/general`}>Settings</Link>
+                  ),
+                },
+                {
+                  title: WORKSPACE_SETTINGS_SECTION_LABELS[settingsSection] ?? "General",
+                },
+              ]
+            : [
+                {
+                  title: WORKSPACE_SECTION_LABELS[activeKey ?? "1"] ?? "Overview",
+                },
+              ]),
         ]}
       />
 
@@ -508,7 +812,69 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
           ) : (
             <div className="orgWrapper">
               <div className="variableActions">
-                <h2>{workspace.attributes.name}</h2>
+                <Typography.Title level={1} style={{ margin: 0 }}>
+                  {workspace.attributes.name}
+                </Typography.Title>
+                <Space direction="horizontal">
+                  {actions &&
+                    actions
+                      .reduce((acc: ActionWithSettings[], action: ActionWithSettings) => {
+                        if (!action.attributes.displayCriteria) {
+                          acc.push(action);
+                          return acc;
+                        }
+
+                        let displayCriteria;
+                        try {
+                          displayCriteria = JSON.parse(action.attributes.displayCriteria);
+                        } catch (error) {
+                          console.error("Error parsing displayCriteria JSON:", error);
+                          return acc;
+                        }
+
+                        for (const criteria of displayCriteria) {
+                          const settings = evaluateCriteria(criteria, {
+                            workspace: workspace,
+                            state: contextState,
+                            resources: resources,
+                            apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                            settings: action.settings,
+                          });
+                          if (settings) {
+                            action.settings = settings; // Attach settings to the action
+                            acc.push(action);
+                            break;
+                          }
+                        }
+
+                        return acc;
+                      }, [])
+                      .filter((action) => action?.attributes.type === "Workspace/Action")
+                      .map((action, index) => (
+                        <Suspense key={index} fallback={<LoadingFallback />}>
+                          <ActionLoader
+                            action={action?.attributes.action}
+                            context={{
+                              workspace: workspace,
+                              state: contextState,
+                              resources: resources,
+                              apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                              settings: action.settings,
+                            }}
+                          />
+                        </Suspense>
+                      ))}
+                  <Button
+                    type="default"
+                    htmlType="button"
+                    onClick={() => handleLockButton(workspace.attributes.locked)}
+                    icon={workspace.attributes.locked ? <UnlockOutlined /> : <LockOutlined />}
+                    disabled={!manageWorkspace}
+                  >
+                    {workspace.attributes.locked ? "Unlock" : "Lock"}
+                  </Button>
+                  <CreateJob changeJob={changeJob} planJob={planJob} />
+                </Space>
               </div>
               <Space className="workspace-details" direction="vertical">
                 <Paragraph style={{ margin: "0px" }} copyable={{ text: id, tooltips: false }}>
@@ -570,286 +936,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }: Props) =>
                 </Space>
               </Space>
 
-              <Tabs
-                activeKey={activeKey}
-                defaultActiveKey={selectedTab}
-                onTabClick={handleStatesClick}
-                tabBarExtraContent={
-                  <>
-                    <Space direction="horizontal">
-                      {actions &&
-                        actions
-                          .reduce((acc: ActionWithSettings[], action: ActionWithSettings) => {
-                            if (!action.attributes.displayCriteria) {
-                              acc.push(action);
-                              return acc;
-                            }
-
-                            let displayCriteria;
-                            try {
-                              displayCriteria = JSON.parse(action.attributes.displayCriteria);
-                            } catch (error) {
-                              console.error("Error parsing displayCriteria JSON:", error);
-                              return acc;
-                            }
-
-                            for (const criteria of displayCriteria) {
-                              const settings = evaluateCriteria(criteria, {
-                                workspace: workspace,
-                                state: contextState,
-                                resources: resources,
-                                apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                                settings: action.settings,
-                              });
-                              if (settings) {
-                                action.settings = settings; // Attach settings to the action
-                                acc.push(action);
-                                break;
-                              }
-                            }
-
-                            return acc;
-                          }, [])
-                          .filter((action) => action?.attributes.type === "Workspace/Action")
-                          .map((action, index) => (
-                            <Suspense key={index} fallback={<LoadingFallback />}>
-                              <ActionLoader
-                                action={action?.attributes.action}
-                                context={{
-                                  workspace: workspace,
-                                  state: contextState,
-                                  resources: resources,
-                                  apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                                  settings: action.settings,
-                                }}
-                              />
-                            </Suspense>
-                          ))}
-                      <Button
-                        type="default"
-                        htmlType="button"
-                        onClick={() => handleLockButton(workspace.attributes.locked)}
-                        icon={workspace.attributes.locked ? <UnlockOutlined /> : <LockOutlined />}
-                        disabled={!manageWorkspace}
-                      >
-                        {workspace.attributes.locked ? "Unlock" : "Lock"}
-                      </Button>
-                      <CreateJob changeJob={changeJob} planJob={planJob} />
-                    </Space>
-                  </>
-                }
-                onChange={callback}
-              >
-                <TabPane tab="Overview" key="1">
-                  <Row>
-                    <Col span={19} style={{ paddingRight: "20px" }}>
-                      {workspace.attributes.source === "empty" &&
-                      workspace.attributes.branch === "remote-content" &&
-                      (workspace.relationships?.history?.data?.length || 0) < 1 ? (
-                        <CLIDriven organizationName={organizationNameLocal} workspaceName={workspaceName} />
-                      ) : (
-                        <div>
-                          <h3>Latest Run</h3>
-                          <div style={{ marginRight: "150px", borderWidth: "1px" }}>
-                            <List
-                              itemLayout="horizontal"
-                              style={{
-                                border: "1px solid #c2c5cb",
-                                padding: "24px",
-                              }}
-                              dataSource={
-                                jobs.length > 0
-                                  ? jobs
-                                      .sort((a: any, b: any) => a.id - b.id)
-                                      .reverse()
-                                      .slice(0, 1)
-                                  : []
-                              }
-                              renderItem={(item) => (
-                                <List.Item>
-                                  <List.Item.Meta
-                                    style={{ margin: "0px", padding: "0px" }}
-                                    avatar={<Avatar shape="square" icon={<UserOutlined />} />}
-                                    description={
-                                      <div>
-                                        <Row>
-                                          <Col span={20}>
-                                            <h4 className="ant-list-item-meta-title">
-                                              <a onClick={() => handleClick(item.id)}>{item.title}</a>{" "}
-                                            </h4>
-                                            <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
-                                            <b>{item.via || "UI"}</b>{" "}
-                                            {item.commitId !== "000000000" ? (
-                                              <>
-                                                <FiGitCommit /> {item.commitId?.substring(0, 6)}{" "}
-                                              </>
-                                            ) : (
-                                              ""
-                                            )}
-                                          </Col>
-                                          <Col>
-                                            {
-                                              <div className="textLeft">
-                                                <Tag
-                                                  icon={
-                                                    item.status == "completed" ? (
-                                                      <CheckCircleOutlined />
-                                                    ) : item.status == "running" ? (
-                                                      <SyncOutlined spin />
-                                                    ) : item.status === "waitingApproval" ? (
-                                                      <ExclamationCircleOutlined />
-                                                    ) : item.status === "cancelled" ? (
-                                                      <StopOutlined />
-                                                    ) : item.status === "failed" ? (
-                                                      <StopOutlined />
-                                                    ) : item.status === "notExecuted" ? (
-                                                      <CheckCircleOutlined />
-                                                    ) : (
-                                                      <ClockCircleOutlined />
-                                                    )
-                                                  }
-                                                  color={item.statusColor}
-                                                >
-                                                  {item.status}
-                                                </Tag>{" "}
-                                              </div>
-                                            }
-                                          </Col>
-                                        </Row>
-                                        <br />
-                                        <br />
-                                        <Row>
-                                          <Col span={20}></Col>
-                                          <Col>
-                                            <Button onClick={() => handleClick(item.id)}>See details</Button>
-                                          </Col>
-                                        </Row>
-                                      </div>
-                                    }
-                                  />
-                                </List.Item>
-                              )}
-                            />
-                          </div>
-                          <Tabs
-                            type="card"
-                            style={{ marginTop: "30px" }}
-                            items={[
-                              {
-                                label: `Resources (${resources.length})`,
-                                key: "1",
-                                children: <Table dataSource={resources} columns={resourceColumns} />,
-                              },
-                              {
-                                label: `Outputs (${outputs.length})`,
-                                key: "2",
-                                children: <Table dataSource={outputs} columns={outputColumns} />,
-                              },
-                            ]}
-                          />
-
-                          <ResourceDrawer resource={resource} workspace={workspace} setOpen={setOpen} open={open} />
-                        </div>
-                      )}
-                    </Col>
-                    <Col span={5}>
-                      <Space direction="vertical">
-                        <br />
-                        <span>
-                          {workspace.attributes.branch !== "remote-content" &&
-                          isValidUrl(fixSshURL(workspace.attributes.source)) ? (
-                            <>
-                              {" "}
-                              {renderVCSLogo(vcsProvider)}{" "}
-                              <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
-                                {new URL(fixSshURL(workspace.attributes.source))?.pathname
-                                  ?.replace(".git", "")
-                                  ?.substring(1)}
-                              </a>
-                            </>
-                          ) : (
-                            <>
-                              <IconContext.Provider value={{ size: "1.4em" }}>
-                                <BiTerminal />
-                              </IconContext.Provider>
-                              &nbsp;&nbsp;cli/api driven workflow
-                            </>
-                          )}
-                        </span>
-                        <span>
-                          <ThunderboltOutlined /> Execution Mode: {executionMode}{" "}
-                        </span>
-                        <Divider />
-                        <h4>Project</h4>
-                        {projectName && projectId ? (
-                          <Link to={`/organizations/${organizationId}/projects/${projectId}`}>{projectName}</Link>
-                        ) : (
-                          <Typography.Text type="secondary">No project</Typography.Text>
-                        )}
-                        <Divider />
-                        <h4>Tags</h4>
-                        <Tags organizationId={organizationId} workspaceId={id!} manageWorkspace={manageWorkspace} />
-                      </Space>
-                    </Col>
-                  </Row>
-                </TabPane>
-
-                <TabPane tab="Runs" key="2">
-                  {jobVisible ? (
-                    <Suspense fallback={<LoadingFallback />}>
-                      <DetailsJob jobId={jobId!} />
-                    </Suspense>
-                  ) : (
-                    <RunList jobs={jobs} onRunClick={handleClick} />
-                  )}
-                </TabPane>
-                <TabPane tab="States" key="3" disabled={!manageState}>
-                  <Suspense fallback={<LoadingFallback />}>
-                    <States
-                      history={history}
-                      setStateDetailsVisible={setStateDetailsVisible}
-                      stateDetailsVisible={stateDetailsVisible}
-                      workspace={workspace}
-                      onRollback={loadWorkspace}
-                      manageState={manageState}
-                    />
-                  </Suspense>
-                </TabPane>
-                <TabPane tab="Variables" key="4">
-                  <Variables
-                    vars={variables}
-                    env={envVariables}
-                    manageWorkspace={manageWorkspace}
-                    collectionVars={collectionVariables}
-                    collectionEnvVars={collectionEnvVariables}
-                    globalVariables={globalVariables}
-                    globalEnvVariables={globalEnvVariables}
-                    reload={() => loadWorkspace(false)}
-                  />
-                </TabPane>
-                <TabPane tab="Schedules" key="5">
-                  {templates ? (
-                    <Schedules
-                      schedules={schedule}
-                      manageWorkspace={manageWorkspace}
-                      reload={() => loadWorkspace(false)}
-                    />
-                  ) : (
-                    <p>Loading...</p>
-                  )}
-                </TabPane>
-                <TabPane tab="Settings" key="6">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <WorkspaceSettings
-                      workspace={workspace}
-                      vcsProvider={vcsProvider}
-                      orgTemplates={orgTemplates}
-                      manageWorkspace={manageWorkspace}
-                      onWorkspaceUpdate={() => loadWorkspace(false)}
-                    />
-                  </Suspense>
-                </TabPane>
-              </Tabs>
+              {renderSection(workspace)}
             </div>
           )}
         </div>

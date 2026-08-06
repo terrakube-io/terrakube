@@ -39,6 +39,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GitHubWebhookService extends WebhookServiceBase {
 
+    private static final String PATH_COMMENT = "comment";
+
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
 
@@ -55,7 +57,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Vcs vcs) {
-        return handleWebhook(jsonPayload, headers, token, "x-hub-signature-256", JobVia.Github.name(),
+        return handleWebhook(jsonPayload, headers, token, "x-hub-signature-256", JobVia.GITHUB.getValue(),
                 (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs));
     }
 
@@ -151,15 +153,15 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 JsonNode issueNode = rootNode.path("issue");
                 // Only process comments on pull requests
                 if (issueNode.has("pull_request")) {
-                    String commentBody = rootNode.path("comment").path("body").asText().trim();
+                    String commentBody = rootNode.path(PATH_COMMENT).path("body").asText().trim();
                     String command = parseTerrakubeCommand(commentBody);
                     if (command != null) {
                         result.setPrComment(true);
                         result.setCommentBody(commentBody);
                         result.setCommentCommand(command);
-                        result.setCommentId(rootNode.path("comment").path("id").asText());
+                        result.setCommentId(rootNode.path(PATH_COMMENT).path("id").asText());
                         result.setPrNumber(issueNode.path("number").asInt());
-                        result.setCreatedBy(rootNode.path("comment").path("user").path("login").asText());
+                        result.setCreatedBy(rootNode.path(PATH_COMMENT).path("user").path("login").asText());
 
                         // Fetch PR details to get head SHA and branch
                         String prUrl = issueNode.path("pull_request").path("url").asText();
@@ -201,7 +203,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus) {
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
@@ -210,27 +212,24 @@ public class GitHubWebhookService extends WebhookServiceBase {
         GithubCommitStatus commitStatus = GithubCommitStatus.pending;
         String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
                 + workspace.getName();
-        String commitStatusDescription = "Your task is in Terrakube queue.";
 
         // Determine the commit status based on jobStatus
         switch (jobStatus) {
             case completed:
                 commitStatus = GithubCommitStatus.success;
-                commitStatusDescription = "Your task has been completed successfully.";
                 break;
             case failed:
             case rejected:
             case cancelled:
                 commitStatus = GithubCommitStatus.failure;
-                commitStatusDescription = "Your task has failed.";
                 break;
             case unknown:
                 commitStatus = GithubCommitStatus.error;
-                commitStatusDescription = "Your task ran into errors.";
                 break;
             default:
                 break;
         }
+        String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
 
         // API URL for commit status
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos) + "/statuses/"
@@ -286,6 +285,12 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } catch (Exception e) {
             log.error("Error occurred while checking PRs for commit {}: {}", job.getCommitId(), e.getMessage());
         }
+    }
+
+    // GitHub's commit-status description has a hard 140-character API limit.
+    public static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
+        String description = WebhookServiceBase.buildCommitStatusDescription(jobStatus, runSummary);
+        return description.length() > 140 ? description.substring(0, 140) : description;
     }
 
     private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {
@@ -475,7 +480,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers, Vcs vcs) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
-        result.setVia(JobVia.Github.name());
+        result.setVia(JobVia.GITHUB.getValue());
         result.setValid(true);
         return handleEvent(jsonPayload, result, headers, vcs);
     }

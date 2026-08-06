@@ -1,8 +1,11 @@
 import React from "react";
-import { BankOutlined, DownOutlined, CheckOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { Button, Dropdown } from "antd";
+import { BankOutlined, DownOutlined, CheckOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Input } from "antd";
 import { FlatOrganization } from "@/domain/types";
 import "./OrganizationSelector.css";
+
+// Below this count, a search box just adds clutter for no benefit.
+const SEARCH_THRESHOLD = 8;
 
 let initialOnOrgChange: ((orgId: string) => void) | null = null;
 
@@ -18,6 +21,8 @@ export interface OrganizationSelectorProps {
   onOrgChange: (orgId: string) => void;
   /** Callback when user clicks "Manage Organizations" */
   onManageOrgs: () => void;
+  /** Which side the dropdown opens toward. Defaults to "bottom". Use "top" when the button sits near the bottom of the viewport (e.g. pinned to a sidebar footer). */
+  placement?: "top" | "bottom";
 }
 
 /**
@@ -45,8 +50,10 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
   organizations,
   onOrgChange,
   onManageOrgs,
+  placement = "bottom",
 }) => {
   const [open, setOpen] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState("");
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   const selectedOrgId = React.useMemo(
@@ -71,6 +78,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
       const target = event.target as Node;
       if (!containerRef.current?.contains(target)) {
         setOpen(false);
+        setSearchTerm("");
       }
     };
 
@@ -86,12 +94,18 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
     }
     onOrgChange(orgId);
     setOpen(false);
+    setSearchTerm("");
   };
 
   const handleManageOrganizationsClick = () => {
     onManageOrgs();
     setOpen(false);
+    setSearchTerm("");
   };
+
+  const visibleOrganizations = organizations
+    .filter((org) => shouldShowCurrentOrgOption || org.id !== selectedOrgId)
+    .filter((org) => org.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="org-selector-container" ref={containerRef}>
@@ -107,27 +121,43 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
         </Button>
       </Dropdown>
       {open && (
-        <div className="org-selector-dropdown">
-          {organizations
-            .filter((org) => shouldShowCurrentOrgOption || org.id !== selectedOrgId)
-            .map((org) => (
-              <div
-                key={org.id}
-                className={org.id === selectedOrgId ? "org-selector-item selected" : "org-selector-item"}
-                onClick={() => handleOrganizationClick(org.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    handleOrganizationClick(org.id);
-                  }
-                }}
-              >
-                <span className="org-selector-item-name">{org.name}</span>
-                {org.id === selectedOrgId && <CheckOutlined className="org-selector-check" />}
-              </div>
-            ))}
+        <div className={`org-selector-dropdown${placement === "top" ? " org-selector-dropdown--top" : ""}`}>
+          {organizations.length > SEARCH_THRESHOLD && (
+            <Input
+              className="org-selector-search"
+              placeholder="Search organizations..."
+              prefix={<SearchOutlined />}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              allowClear
+              autoFocus
+            />
+          )}
+          <div className="org-selector-list">
+            {visibleOrganizations.length === 0 ? (
+              <div className="org-selector-empty">No organizations match your search.</div>
+            ) : (
+              visibleOrganizations.map((org) => (
+                <div
+                  key={org.id}
+                  className={org.id === selectedOrgId ? "org-selector-item selected" : "org-selector-item"}
+                  onClick={() => handleOrganizationClick(org.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleOrganizationClick(org.id);
+                    }
+                  }}
+                >
+                  <span className="org-selector-item-name">{org.name}</span>
+                  {org.id === selectedOrgId && <CheckOutlined className="org-selector-check" />}
+                </div>
+              ))
+            )}
+          </div>
           <div
             className="org-selector-manage-link"
             onClick={handleManageOrganizationsClick}

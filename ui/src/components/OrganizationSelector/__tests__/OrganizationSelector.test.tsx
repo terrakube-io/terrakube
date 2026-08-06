@@ -162,4 +162,24 @@ describe("OrganizationSelector", () => {
       // This test may need adjustment based on actual implementation
     });
   });
+
+  describe("Placement", () => {
+    it("opens the dropdown upward when placement is 'top'", () => {
+      render(<OrganizationSelector {...defaultProps} placement="top" />);
+      const button = screen.getByRole("button", { name: /Acme Corp/i });
+
+      fireEvent.click(button);
+
+      expect(document.querySelector(".org-selector-dropdown--top")).toBeInTheDocument();
+    });
+
+    it("opens the dropdown downward by default", () => {
+      render(<OrganizationSelector {...defaultProps} />);
+      const button = screen.getByRole("button", { name: /Acme Corp/i });
+
+      fireEvent.click(button);
+
+      expect(document.querySelector(".org-selector-dropdown--top")).not.toBeInTheDocument();
+    });
+  });
 });

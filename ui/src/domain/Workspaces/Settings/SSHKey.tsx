@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import axiosInstance from "../../../config/axiosConfig";
 import { SshKey, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const { Text } = Typography;
 
@@ -67,7 +68,9 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
 
   return (
     <div className="generalSettings">
-      <h1>SSH Key</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        SSH Key
+      </Typography.Title>
       <Text type="secondary">
         Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
         not used for cloning the workspace VCS repository or for provisioner connections.
@@ -77,39 +80,41 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
       </p>
 
       <Spin spinning={waiting}>
-        <Form
-          onFinish={onFinish}
-          requiredMark={false}
-          initialValues={{
-            moduleSshKey: workspace.attributes?.moduleSshKey || "",
-          }}
-          layout="vertical"
-        >
-          <Form.Item name="moduleSshKey" label="SSH key" style={{ marginTop: 16 }}>
-            <Select
-              defaultValue={workspace.attributes?.moduleSshKey || ""}
-              placeholder="(No SSH key)"
-              disabled={!manageWorkspace}
-            >
-              <Option key="" value="">
-                (No SSH key)
-              </Option>
-              {sshKeys.map(function (sshKey) {
-                return (
-                  <Option key={sshKey?.id} value={sshKey?.id}>
-                    {sshKey?.attributes?.name}
-                  </Option>
-                );
-              })}
-            </Select>
-          </Form.Item>
+        <SettingsSection>
+          <Form
+            onFinish={onFinish}
+            requiredMark={false}
+            initialValues={{
+              moduleSshKey: workspace.attributes?.moduleSshKey || "",
+            }}
+            layout="vertical"
+          >
+            <Form.Item name="moduleSshKey" label="SSH key" style={{ marginTop: 16 }}>
+              <Select
+                defaultValue={workspace.attributes?.moduleSshKey || ""}
+                placeholder="(No SSH key)"
+                disabled={!manageWorkspace}
+              >
+                <Option key="" value="">
+                  (No SSH key)
+                </Option>
+                {sshKeys.map(function (sshKey) {
+                  return (
+                    <Option key={sshKey?.id} value={sshKey?.id}>
+                      {sshKey?.attributes?.name}
+                    </Option>
+                  );
+                })}
+              </Select>
+            </Form.Item>
 
-          <Form.Item>
-            <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
-              Update SSH key
-            </Button>
-          </Form.Item>
-        </Form>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
+                Update SSH key
+              </Button>
+            </Form.Item>
+          </Form>
+        </SettingsSection>
       </Spin>
     </div>
   );

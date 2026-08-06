@@ -32,6 +32,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.repository.WebhookEventRepository;
@@ -54,6 +55,7 @@ class RepoWebhookServiceTest {
     WorkspaceRepository workspaceRepository;
     WebhookEventRepository webhookEventRepository;
     GitHubWebhookService gitHubWebhookService;
+    GitLabWebhookService gitLabWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
 
@@ -65,6 +67,7 @@ class RepoWebhookServiceTest {
         workspaceRepository = mock(WorkspaceRepository.class);
         webhookEventRepository = mock(WebhookEventRepository.class);
         gitHubWebhookService = mock(GitHubWebhookService.class);
+        gitLabWebhookService = mock(GitLabWebhookService.class);
         jobRepository = mock(JobRepository.class);
         scheduleJobService = mock(ScheduleJobService.class);
 
@@ -73,6 +76,7 @@ class RepoWebhookServiceTest {
                 workspaceRepository,
                 webhookEventRepository,
                 gitHubWebhookService,
+                gitLabWebhookService,
                 jobRepository,
                 scheduleJobService);
     }
@@ -94,6 +98,20 @@ class RepoWebhookServiceTest {
         rw.setRepositoryUrl(url);
         rw.setWebhookSecret(secret);
         rw.setVcs(new Vcs());
+        return rw;
+    }
+
+    private Workspace gitlabWorkspaceWithSource(String source) {
+        Workspace ws = workspaceWithSource(source);
+        ws.getVcs().setVcsType(VcsType.GITLAB);
+        return ws;
+    }
+
+    private RepoWebhook gitlabRepoWebhookWith(String url, String secret) {
+        RepoWebhook rw = repoWebhookWith(url, secret);
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITLAB);
+        rw.setVcs(vcs);
         return rw;
     }
 
@@ -124,7 +142,7 @@ class RepoWebhookServiceTest {
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
             assertThat(result).isSameAs(existing);
-            verify(repoWebhookRepository, never()).save(any());
+            verify(repoWebhookRepository, never()).saveAndFlush(any());
         }
 
         @Test
@@ -132,23 +150,34 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
             assertThat(result.getRepositoryUrl()).isEqualTo("https://github.com/owner/repo");
             assertThat(result.getWebhookSecret()).isNotNull().hasSize(36); // UUID format
-            verify(repoWebhookRepository).save(any(RepoWebhook.class));
+            verify(repoWebhookRepository).saveAndFlush(any(RepoWebhook.class));
         }
 
         @Test
-        void handlesRaceConditionOnConcurrentInsert() {
+        void recoversWhenConcurrentInsertLosesTheRace() {
+            // This is a defense-in-depth fallback: the primary safety
+            // mechanism is that callers only ever reach this method from
+            // within RepoWebhookSyncJob, which Quartz guarantees runs at
+            // most once per repository URL at a time (see
+            // RepoWebhookSyncScheduler). If getOrCreateRepoWebhook is ever
+            // called outside that serialized path and loses a genuine race
+            // on the repository_url unique constraint, it should still
+            // recover by re-querying rather than propagating the raw DB
+            // exception. saveAndFlush (rather than save) is what makes the
+            // constraint violation surface here at all, instead of being
+            // silently queued until an unrelated later commit.
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             RepoWebhook existing = repoWebhookWith("https://github.com/owner/repo", "secret");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty())
                     .thenReturn(Optional.of(existing));
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class)))
                     .thenThrow(new DataIntegrityViolationException("Duplicate"));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
@@ -161,7 +190,7 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://github.com/owner/repo");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class)))
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class)))
                     .thenThrow(new DataIntegrityViolationException("Duplicate"));
 
             assertThatThrownBy(() -> subject.getOrCreateRepoWebhook(ws))
@@ -174,7 +203,7 @@ class RepoWebhookServiceTest {
             Workspace ws = workspaceWithSource("https://GitHub.com/Owner/Repo.git");
             when(repoWebhookRepository.findByRepositoryUrl("https://github.com/owner/repo"))
                     .thenReturn(Optional.empty());
-            when(repoWebhookRepository.save(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(repoWebhookRepository.saveAndFlush(any(RepoWebhook.class))).thenAnswer(inv -> inv.getArgument(0));
 
             RepoWebhook result = subject.getOrCreateRepoWebhook(ws);
 
@@ -879,6 +908,258 @@ class RepoWebhookServiceTest {
 
             assertThatThrownBy(() -> subject.processV2Webhook(rw.getId().toString(), payload, headers))
                     .isInstanceOf(SecurityException.class);
+        }
+    }
+
+    @Nested
+    class GitLabRepoWebhook {
+
+        @Test
+        void createOrUpdateSharedWebhookDispatchesToGitLab() {
+            RepoWebhook rw = gitlabRepoWebhookWith("https://gitlab.com/owner/repo", "secret");
+
+            Workspace ws1 = gitlabWorkspaceWithSource("https://gitlab.com/owner/repo");
+            Webhook wh1 = new Webhook();
+            WebhookEvent pushEvent = new WebhookEvent();
+            pushEvent.setEvent(WebhookEventType.PUSH);
+            wh1.setEvents(List.of(pushEvent));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = gitlabWorkspaceWithSource("https://gitlab.com/owner/repo");
+            Webhook wh2 = new Webhook();
+            WebhookEvent mrEvent = new WebhookEvent();
+            mrEvent.setEvent(WebhookEventType.PULL_REQUEST);
+            wh2.setEvents(List.of(mrEvent));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
+                    .thenReturn(List.of(ws1, ws2));
+            when(gitLabWebhookService.createOrUpdateRepoWebhook(eq(rw), any()))
+                    .thenReturn("gl-999");
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<WebhookEventType>> captor = ArgumentCaptor.forClass(Set.class);
+            verify(gitLabWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture());
+            assertThat(captor.getValue()).containsExactlyInAnyOrder(WebhookEventType.PUSH, WebhookEventType.PULL_REQUEST);
+            assertThat(rw.getRemoteHookId()).isEqualTo("gl-999");
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(repoWebhookRepository).save(rw);
+        }
+
+        @Test
+        void cleanupDeletesGitLabRepoWebhookWhenOrphan() {
+            RepoWebhook rw = gitlabRepoWebhookWith("https://gitlab.com/owner/repo", "secret");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(rw.getRepositoryUrl()))
+                    .thenReturn(Collections.emptyList());
+
+            subject.cleanupIfOrphan(rw);
+
+            verify(gitLabWebhookService).deleteRepoWebhook(rw);
+            verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
+            verify(repoWebhookRepository).delete(rw);
+        }
+
+        @Test
+        void processV2WebhookGitLabPushFansOutAndVerifiesToken() {
+            String repoUrl = "https://gitlab.com/owner/repo";
+            String secret = "gitlab-token-secret";
+            String payload = "{\"object_kind\":\"push\"}";
+            RepoWebhook rw = gitlabRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-gitlab-token", secret);
+
+            WebhookResult pushResult = new WebhookResult();
+            pushResult.setEvent("push");
+            pushResult.setValid(true);
+            pushResult.setBranch("main");
+            pushResult.setCommit("abc123");
+            pushResult.setFileChanges(List.of("main.tf"));
+            when(gitLabWebhookService.parseGitLabPayload(eq(payload), any())).thenReturn(pushResult);
+
+            Workspace ws = gitlabWorkspaceWithSource(repoUrl);
+            ws.setName("gl-ws");
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PUSH);
+            event.setBranch("main");
+            event.setPath("*");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("gl-template");
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PUSH))
+                    .thenReturn(List.of(event));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            assertThat(jobCaptor.getValue().getTemplateReference()).isEqualTo("gl-template");
+            // GitLab parser used, not GitHub, and commit status sent via GitLab
+            verify(gitHubWebhookService, never()).parseGitHubPayload(any(), any());
+            verify(gitLabWebhookService).sendCommitStatus(any(Job.class), any(), any());
+            verify(gitHubWebhookService, never()).sendCommitStatus(any(), any(), any());
+        }
+
+        @Test
+        void processV2WebhookGitLabMergeRequestFetchesFileChanges() {
+            String repoUrl = "https://gitlab.com/owner/repo";
+            String secret = "mr-token-secret";
+            String payload = "{\"object_kind\":\"merge_request\"}";
+            RepoWebhook rw = gitlabRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-gitlab-token", secret);
+
+            WebhookResult mrResult = new WebhookResult();
+            mrResult.setEvent("merge_request");
+            mrResult.setValid(true);
+            mrResult.setBranch("feature-branch");
+            mrResult.setCommit("def456");
+            mrResult.setPrNumber(42);
+            // GitLab stores the MR iid marker in prFilesUrl (mirrors GitHub's PR files URL)
+            mrResult.setPrFilesUrl("42");
+            when(gitLabWebhookService.parseGitLabPayload(eq(payload), any())).thenReturn(mrResult);
+            when(gitLabWebhookService.fetchPrFileChanges(any(), eq(repoUrl), eq("42")))
+                    .thenReturn(List.of("variables.tf"));
+
+            Workspace ws = gitlabWorkspaceWithSource(repoUrl);
+            ws.setName("gl-mr-ws");
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch("feature-branch");
+            event.setPath("*.tf");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("gl-mr-template");
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            verify(gitLabWebhookService).fetchPrFileChanges(any(), eq(repoUrl), eq("42"));
+            verify(gitHubWebhookService, never()).fetchPrFileChanges(any(), any(), any());
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            assertThat(jobCaptor.getValue().getTemplateReference()).isEqualTo("gl-mr-template");
+            assertThat(jobCaptor.getValue().getCommitId()).isEqualTo("def456");
+            assertThat(jobCaptor.getValue().getOverrideBranch()).isEqualTo("feature-branch");
+        }
+
+        @Test
+        void processV2WebhookGitLabReleaseCreatesJobs() {
+            String repoUrl = "https://gitlab.com/owner/repo";
+            String secret = "release-token-secret";
+            String payload = "{\"object_kind\":\"release\"}";
+            RepoWebhook rw = gitlabRepoWebhookWith(repoUrl, secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-gitlab-token", secret);
+
+            WebhookResult releaseResult = new WebhookResult();
+            releaseResult.setEvent("release");
+            releaseResult.setValid(true);
+            releaseResult.setBranch("v1.0.0");
+            releaseResult.setCommit("tag-sha-123");
+            releaseResult.setRelease(true);
+            when(gitLabWebhookService.parseGitLabPayload(eq(payload), any())).thenReturn(releaseResult);
+
+            Workspace ws = gitlabWorkspaceWithSource(repoUrl);
+            ws.setName("gl-release-ws");
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.RELEASE);
+            event.setBranch("v1.*");
+            event.setTemplateId("gl-release-template");
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.RELEASE))
+                    .thenReturn(List.of(event));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processV2Webhook(rw.getId().toString(), payload, headers);
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobCaptor.capture());
+            assertThat(jobCaptor.getValue().getTemplateReference()).isEqualTo("gl-release-template");
+            assertThat(jobCaptor.getValue().getOverrideBranch()).isEqualTo("refs/tags/v1.0.0");
+            // Releases don't send a commit status
+            verify(gitLabWebhookService, never()).sendCommitStatus(any(), any(), any());
+        }
+
+        @Test
+        void processV2WebhookGitLabRejectsWrongToken() {
+            String secret = "correct-token";
+            RepoWebhook rw = gitlabRepoWebhookWith("https://gitlab.com/owner/repo", secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            Map<String, String> headers = Map.of("x-gitlab-token", "wrong-token");
+
+            assertThatThrownBy(() -> subject.processV2Webhook(rw.getId().toString(), "{}", headers))
+                    .isInstanceOf(SecurityException.class)
+                    .hasMessageContaining("GitLab token verification failed");
+
+            verify(jobRepository, never()).save(any());
+        }
+
+        @Test
+        void processV2WebhookGitLabRejectsMissingToken() {
+            RepoWebhook rw = gitlabRepoWebhookWith("https://gitlab.com/owner/repo", "secret");
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+
+            assertThatThrownBy(() -> subject.processV2Webhook(rw.getId().toString(), "{}", Map.of()))
+                    .isInstanceOf(SecurityException.class);
+
+            verify(jobRepository, never()).save(any());
+        }
+
+        @Test
+        void v2WebhookMigrationRemovalScenarioGitLab() {
+            String repoUrl = "https://gitlab.com/owner/repo";
+
+            Workspace workspace = gitlabWorkspaceWithSource(repoUrl);
+            workspace.setName("gl-workspace-v1");
+
+            Webhook webhook = new Webhook();
+            webhook.setWorkspace(workspace);
+            webhook.setMigratedV2(true);
+            webhook.setRemoteHookId("old-gl-v1-hook-id");
+            workspace.setWebhook(webhook);
+
+            RepoWebhook repoWebhook = gitlabRepoWebhookWith(repoUrl, "new-secret");
+            when(repoWebhookRepository.findByRepositoryUrl(anyString())).thenReturn(Optional.of(repoWebhook));
+
+            // This mirrors the logic in WebhookManageHook for a migrated GitLab webhook
+            if (webhook.isMigratedV2() && workspace.getVcs() != null
+                    && workspace.getVcs().getVcsType() == VcsType.GITLAB) {
+                subject.getOrCreateRepoWebhook(workspace);
+                subject.createOrUpdateSharedWebhook(repoWebhook);
+
+                if (webhook.getRemoteHookId() != null && !webhook.getRemoteHookId().isEmpty()) {
+                    gitLabWebhookService.deleteWebhook(workspace, webhook.getRemoteHookId());
+                    webhook.setRemoteHookId(null);
+                }
+            }
+
+            verify(gitLabWebhookService).deleteWebhook(workspace, "old-gl-v1-hook-id");
+            verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
+            assertThat(webhook.getRemoteHookId()).isNull();
         }
     }
 }

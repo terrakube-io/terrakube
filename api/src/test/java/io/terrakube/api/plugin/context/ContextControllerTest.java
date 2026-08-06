@@ -179,4 +179,66 @@ class ContextControllerTest {
         assertFalse(response.getBody().contains("\"value\":\"0\""));
         verify(storageTypeService).saveContext(Mockito.eq(1), Mockito.argThat(savedContext -> !savedContext.contains("\"value\":\"0\"")));
     }
+
+    @Test
+    void redactsSensitiveValuesFromApplyStructuredOutput() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+
+        ResponseEntity<String> response = controller.saveContext(1, """
+                {
+                  "applyStructuredOutput": {
+                    "step-1": [
+                      {
+                        "address": "aws_instance.example",
+                        "before": {"password": "old-secret"},
+                        "beforeSensitive": {"password": true},
+                        "after": {"password": "new-secret"},
+                        "afterSensitive": {"password": true},
+                        "status": "applied"
+                      }
+                    ]
+                  }
+                }
+                """);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertFalse(response.getBody().contains("old-secret"));
+        assertFalse(response.getBody().contains("new-secret"));
+        assertTrue(response.getBody().contains("\"status\":\"applied\""));
+    }
+
+    @Test
+    void redactsSensitiveValuesFromTerraformOutputs() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+
+        ResponseEntity<String> response = controller.saveContext(1, """
+                {
+                  "terraformOutputs": {
+                    "step-1": [
+                      {"name": "random_value", "value": "sad-otter", "sensitive": false},
+                      {"name": "random_password_result", "value": "top-secret", "sensitive": true}
+                    ]
+                  }
+                }
+                """);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertFalse(response.getBody().contains("top-secret"));
+        assertTrue(response.getBody().contains("\"value\":\"sad-otter\""));
+        assertTrue(response.getBody().contains("\"name\":\"random_password_result\""));
+    }
 }

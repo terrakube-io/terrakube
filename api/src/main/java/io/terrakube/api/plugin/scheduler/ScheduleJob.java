@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.scheduler;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
@@ -34,12 +35,15 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
 import org.quartz.SchedulerException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
@@ -55,6 +59,17 @@ public class ScheduleJob implements org.quartz.Job {
 
     public static final String JOB_ID = "jobId";
     private final GitLabWebhookService gitLabWebhookService;
+
+    // A job in pending/approved status can be picked up by two overlapping Quartz firings: the
+    // long-lived 30s job-context trigger (ScheduleJobService.createJobContext) and a one-shot
+    // trigger fired on any Job update (JobManageHook -> createJobContextNow). Neither Job nor
+    // Workspace is version-locked, and dispatch only writes the job's status *after* a successful
+    // send, so without this lock two overlapping firings could both pass the status check and both
+    // dispatch the same job to two different executors. TTL comfortably covers
+    // PersistentExecutorService's connect+response timeout (10s + 60s) so an orphaned lock (e.g. a
+    // pod crash mid-dispatch) self-heals well before the next 30s retry would otherwise need it.
+    private static final String DISPATCH_LOCK_PREFIX = "job-dispatch-lock:";
+    private static final Duration DISPATCH_LOCK_TTL = Duration.ofSeconds(90);
 
     JobRepository jobRepository;
 
@@ -156,12 +171,10 @@ public class ScheduleJob implements org.quartz.Job {
                          throw new AssertionError(String.format("Expected pending job %d to have plan changes", jobId));
                     }
                     log.info("Executing pending job {}", jobId);
-                    executePendingJob(job);
-                    deschedule = true;
+                    deschedule = executePendingJob(job);
                     break;
                 case approved:
-                    executeApprovedJobs(job);
-                    deschedule = true;
+                    deschedule = executeApprovedJobs(job);
                     break;
                 case running:
                     log.info("Job {} running", job.getId());
@@ -198,11 +211,15 @@ public class ScheduleJob implements org.quartz.Job {
     private void deleteOldJobs(Job job) {
         AtomicInteger keepHistory = new AtomicInteger();
         keepHistory.set(0);
+        AtomicBoolean softDelete = new AtomicBoolean(false);
 
         Optional<List<Globalvar>> globalsList = Optional.ofNullable(globalVarRepository.findByOrganization(job.getOrganization()));
         globalsList.ifPresent(variableList -> variableList.forEach(variable -> {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
+            }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
             }
         }));
 
@@ -211,10 +228,13 @@ public class ScheduleJob implements org.quartz.Job {
             if (variable.getKey().equals("KEEP_JOB_HISTORY") && variable.getCategory() == Category.ENV) {
                 keepHistory.set(Integer.parseInt(variable.getValue()));
             }
+            if (variable.getKey().equals("KEEP_JOB_HISTORY_SOFT_DELETE") && variable.getCategory() == Category.ENV) {
+                softDelete.set(Boolean.parseBoolean(variable.getValue()));
+            }
         }));
 
         if (keepHistory.get() > 0) {
-            log.info("Keeping history of {} jobs", keepHistory);
+            log.info("Keeping history of {} jobs (softDelete={})", keepHistory, softDelete.get());
             Optional<List<Job>> previousJobs = jobRepository.findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
                     job.getWorkspace(),
                     Arrays.asList(JobStatus.failed, JobStatus.completed, JobStatus.rejected, JobStatus.cancelled, JobStatus.noChanges),
@@ -224,9 +244,15 @@ public class ScheduleJob implements org.quartz.Job {
                 for (int i = 0; i < previousJobs.get().size(); i++) {
                     if (i >= keepHistory.get()) {
                         Job previousJob = previousJobs.get().get(i);
-                        log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
-                        stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
-                        jobRepository.delete(previousJob);
+                        if (softDelete.get()) {
+                            log.info("Soft deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            previousJob.setDeleted(true);
+                            jobRepository.save(previousJob);
+                        } else {
+                            log.info("Deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
+                            stepRepository.deleteAll(stepRepository.findByJobId(previousJob.getId()));
+                            jobRepository.delete(previousJob);
+                        }
                     }
                 }
             }
@@ -242,10 +268,13 @@ public class ScheduleJob implements org.quartz.Job {
         workspaceRepository.save(job.getWorkspace());
     }
 
-    private void executePendingJob(Job job) {
+    // Returns whether the job's Quartz trigger should be descheduled. False keeps it alive so
+    // the existing 30s retrigger (JOB_CONTEXT_INTERVAL) retries once an executor is free, instead
+    // of failing the job just because the whole pool was busy at this particular attempt.
+    private boolean executePendingJob(Job job) {
         job = tclService.initJobConfiguration(job);
         if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
-            return;
+            return true;
         }
 
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
@@ -259,12 +288,21 @@ public class ScheduleJob implements org.quartz.Job {
                 case terraformApply:
                 case terraformDestroy:
                 case customScripts:
+                    if (!acquireDispatchLock(job)) {
+                        log.warn("Job {} Step {} is already being dispatched by another scheduler run, will retry", job.getId(), stepId);
+                        return false;
+                    }
                     try {
                         executorService.execute(job, stepId, flow.get());
                         job.setStatus(JobStatus.queue);
                         jobRepository.save(job);
+                    } catch (ExecutorUnavailableException e) {
+                        log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+                        return false;
                     } catch (ExecutionException e) {
                         errorJobAtStep(job, stepId, e);
+                    } finally {
+                        releaseDispatchLock(job);
                     }
                     break;
                 case approval:
@@ -275,7 +313,7 @@ public class ScheduleJob implements org.quartz.Job {
                         log.info("Waiting Approval for Job {} Step Id {}", job.getId(), stepId);
                     } else {
                         log.info("Auto Approving is enabled for Job {} Step Id {}", job.getId(), stepId);
-                        executeApprovedJobs(job);
+                        return executeApprovedJobs(job);
                     }
                     break;
                 case disableWorkspace:
@@ -323,6 +361,7 @@ public class ScheduleJob implements org.quartz.Job {
             completeJob(job);
             deleteOldJobs(job);
         }
+        return true;
     }
 
     private boolean setupScheduler(Job job, Flow flow) {
@@ -368,6 +407,29 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Update Job {} to completed", job.getId());
     }
 
+    // Fails closed: if Redis itself is unreachable, treat it the same as losing the lock race
+    // rather than dispatching unprotected. A duplicate terraform apply is worse than a job
+    // waiting out a Redis blip for its next 30s retry.
+    private boolean acquireDispatchLock(Job job) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(DISPATCH_LOCK_PREFIX + job.getId(), "1", DISPATCH_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (DataAccessException e) {
+            log.warn("Could not reach Redis to acquire dispatch lock for Job {}, will retry: {}", job.getId(), e.getMessage());
+            return false;
+        }
+    }
+
+    private void releaseDispatchLock(Job job) {
+        try {
+            redisTemplate.delete(DISPATCH_LOCK_PREFIX + job.getId());
+        } catch (DataAccessException e) {
+            // The lock's TTL (DISPATCH_LOCK_TTL) self-heals this; nothing else to do here.
+            log.warn("Could not reach Redis to release dispatch lock for Job {}: {}", job.getId(), e.getMessage());
+        }
+    }
+
     private void errorJobAtStep(Job job, String stepId, Throwable e) {
         String logMessage = String.format(
             "Error when sending context to executor marking job %s as failed, step count %s",
@@ -401,10 +463,11 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
-    private void executeApprovedJobs(Job job) {
+    // Returns whether the job's Quartz trigger should be descheduled; see executePendingJob.
+    private boolean executeApprovedJobs(Job job) {
         job = tclService.initJobConfiguration(job);
         if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
-            return;
+            return true;
         }
         Optional<Flow> flow = Optional.ofNullable(tclService.getNextFlow(job));
         if (flow.isPresent()) {
@@ -412,14 +475,24 @@ public class ScheduleJob implements org.quartz.Job {
             String stepId = tclService.getCurrentStepId(job);
             job.setApprovalTeam("");
             jobRepository.save(job);
+            if (!acquireDispatchLock(job)) {
+                log.warn("Job {} Step {} is already being dispatched by another scheduler run, will retry", job.getId(), stepId);
+                return false;
+            }
             try {
                 executorService.execute(job, stepId, flow.get());
                 job.setStatus(JobStatus.queue);
                 jobRepository.save(job);
+            } catch (ExecutorUnavailableException e) {
+                log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+                return false;
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
+            } finally {
+                releaseDispatchLock(job);
             }
         }
+        return true;
     }
 
     // Fire-and-forget: the job must stay rejected, so unlike the pending/approved paths the
@@ -432,6 +505,13 @@ public class ScheduleJob implements org.quartz.Job {
                     && FlowType.approval.name().equals(flow.getType())
                     && flow.getOnReject() != null
                     && !flow.getOnReject().isEmpty()) {
+                // Same dispatch lock as pending/approved: rejected can also fire twice
+                // (JobManageHook one-shot + job context trigger). No retry on a lost race
+                // since the hook is fire-and-forget; the lock TTL self-heals.
+                if (!acquireDispatchLock(job)) {
+                    log.warn("Job {} onReject commands already dispatched by another scheduler run, skipping", job.getId());
+                    return;
+                }
                 String stepId = tclService.getCurrentStepId(job);
                 flow.setCommands(flow.getOnReject());
                 log.info("Executing onReject commands for job {} step {}", job.getId(), stepId);
@@ -512,24 +592,32 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
-    private void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
-        if (job.getVia().equals(JobVia.UI.name()) || job.getVia().equals(JobVia.CLI.name()) || job.getVia().equals(JobVia.Schedule.name())) {
+    void updateJobStatusOnVcs(Job job, JobStatus jobStatus) {
+        if (job.getVia().equals(JobVia.UI.getValue()) || job.getVia().equals(JobVia.CLI.getValue()) || job.getVia().equals(JobVia.SCHEDULE.getValue())) {
             return;
         }
 
-        switch (job.getWorkspace().getVcs().getVcsType()) {
-            case GITHUB:
-                gitHubWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case GITLAB:
-                gitLabWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            case AZURE_DEVOPS:
-            case AZURE_SP_MI:
-                azDevOpsWebhookService.sendCommitStatus(job, jobStatus);
-                break;
-            default:
-                break;
+        // Notifying the VCS is a side effect of the job, not part of it: a VCS-side failure
+        // (expired token, provider outage, rate limit, missing commit) must never abort the
+        // job itself, since callers here include the job-completion path.
+        try {
+            String runSummary = prCommentService.extractRunSummary(job).orElse(null);
+            switch (job.getWorkspace().getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.sendCommitStatus(job, jobStatus, runSummary);
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.sendCommitStatus(job, jobStatus, runSummary);
+                    break;
+                case AZURE_DEVOPS:
+                case AZURE_SP_MI:
+                    azDevOpsWebhookService.sendCommitStatus(job, jobStatus, runSummary);
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("Failed to update VCS commit status for job {}: {}", job.getId(), e.getMessage());
         }
     }
 

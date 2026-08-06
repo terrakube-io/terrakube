@@ -79,10 +79,12 @@ class VcsRepositoryDiscoveryFacadeTest {
 
     @Test
     void throwsForVcsTypesWithNoDiscoveryProvider() {
-        assertThatThrownBy(() -> subject.listGroups(vcs(VcsType.PUBLIC)))
+        Vcs publicVcs = vcs(VcsType.PUBLIC);
+        assertThatThrownBy(() -> subject.listGroups(publicVcs))
                 .isInstanceOf(VcsDiscoveryNotSupportedException.class);
 
-        assertThatThrownBy(() -> subject.listGroups(vcs(VcsType.AZURE_SP_MI)))
+        Vcs azureSpMiVcs = vcs(VcsType.AZURE_SP_MI);
+        assertThatThrownBy(() -> subject.listGroups(azureSpMiVcs))
                 .isInstanceOf(VcsDiscoveryNotSupportedException.class);
     }
 }

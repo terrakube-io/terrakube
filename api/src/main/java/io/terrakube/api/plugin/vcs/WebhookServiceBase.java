@@ -12,6 +12,8 @@ import java.util.Map;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import io.terrakube.api.rs.job.JobStatus;
+
 import org.apache.commons.lang3.function.TriFunction;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -114,6 +116,30 @@ public class WebhookServiceBase {
         if (lower.equals("terrakube plan") || lower.startsWith("terrakube plan ")) return "plan";
         if (lower.equals("terrakube apply") || lower.startsWith("terrakube apply ")) return "apply";
         return null;
+    }
+
+    public static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
+        String description;
+        switch (jobStatus) {
+            case completed:
+                description = "Your task has been completed successfully.";
+                break;
+            case failed:
+            case rejected:
+            case cancelled:
+                description = "Your task has failed.";
+                break;
+            case unknown:
+                description = "Your task ran into errors.";
+                break;
+            default:
+                description = "Your task is in Terrakube queue.";
+                break;
+        }
+        if (runSummary != null && !runSummary.isBlank()) {
+            description = description + " " + runSummary;
+        }
+        return description;
     }
 
     protected String escapeJsonString(String input) {

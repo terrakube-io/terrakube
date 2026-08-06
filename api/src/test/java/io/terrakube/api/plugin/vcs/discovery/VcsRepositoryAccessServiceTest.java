@@ -9,7 +9,6 @@ import io.terrakube.api.rs.vcs.Vcs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -38,10 +37,7 @@ class VcsRepositoryAccessServiceTest {
         vcsRepository = mock(VcsRepository.class);
         rbacService = mock(RbacService.class);
 
-        subject = new VcsRepositoryAccessService();
-        ReflectionTestUtils.setField(subject, "teamRepository", teamRepository);
-        ReflectionTestUtils.setField(subject, "vcsRepository", vcsRepository);
-        ReflectionTestUtils.setField(subject, "rbacService", rbacService);
+        subject = new VcsRepositoryAccessService(teamRepository, vcsRepository, rbacService);
     }
 
     private JwtAuthenticationToken authWithClaims(Map<String, Object> claims) {

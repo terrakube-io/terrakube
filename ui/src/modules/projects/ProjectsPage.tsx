@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal, Table, message } from "antd";
+import { Button, Empty, Flex, Form, Input, Modal, Table, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -119,12 +119,26 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         </Button>
       }
     >
-      <Table
-        dataSource={projects}
-        columns={columns}
-        rowKey="id"
-        pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
-      />
+      {!loading && projects.length === 0 ? (
+        <Flex justify="center">
+          <Empty
+            className="page-wrapper-no-content"
+            style={{ textAlign: "center" }}
+            description="You have not created any projects yet. Projects let you group related workspaces together."
+          >
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!permissions.manageWorkspace}>
+              Create a new project
+            </Button>
+          </Empty>
+        </Flex>
+      ) : (
+        <Table
+          dataSource={projects}
+          columns={columns}
+          rowKey="id"
+          pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
+        />
+      )}
       <Modal
         title="New project"
         open={modalOpen}

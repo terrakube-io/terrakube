@@ -8,10 +8,12 @@
 
 .page-wrapper-inner-fluid {
   width: 90%;
+  max-width: 1600px;
   margin: auto;
 }
 .page-wrapper-inner-contained {
-  width: 50%;
+  width: 90%;
+  max-width: 1600px;
 }
 
 .page-wrapper-inner {

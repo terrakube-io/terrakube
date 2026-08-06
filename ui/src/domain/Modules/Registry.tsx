@@ -10,11 +10,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ModuleList } from "./ModuleList";
+import ModuleTable from "./components/ModuleTable";
 import { ProviderList } from "../Providers/ProviderList";
+import ProviderTable from "../Providers/components/ProviderTable";
 import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { FlatModule, FlatProvider } from "../types";
 import { ErrorInformation } from "@/modules/api/types";
+import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
 import type { MenuProps } from "antd";
 
 type Params = {
@@ -89,6 +93,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const [providers, setProviders] = useState<FlatProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
+  const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
 
   // Track which data has been loaded to avoid re-fetching
   const modulesLoaded = useRef(false);
@@ -195,7 +200,12 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           Modules
         </span>
       ),
-      children: <ModuleList modules={modules} searchFilter={searchFilter} />,
+      children:
+        listViewMode === "compact" ? (
+          <ModuleTable modules={modules} searchFilter={searchFilter} />
+        ) : (
+          <ModuleList modules={modules} searchFilter={searchFilter} />
+        ),
     },
     {
       key: "providers",
@@ -205,7 +215,12 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           Providers
         </span>
       ),
-      children: <ProviderList providers={providers} searchFilter={searchFilter} />,
+      children:
+        listViewMode === "compact" ? (
+          <ProviderTable providers={providers} searchFilter={searchFilter} />
+        ) : (
+          <ProviderList providers={providers} searchFilter={searchFilter} />
+        ),
     },
   ];
 
@@ -225,6 +240,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
       contentClassName="registry-centered"
       actions={
         <Space>
+          <ListViewToggle value={listViewMode} onChange={setListViewMode} />
           <Button type="default" icon={<SearchOutlined />} onClick={handleSearchPublicRegistry}>
             Search public registry
           </Button>

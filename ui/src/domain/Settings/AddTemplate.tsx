@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { TemplateAttributes } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 const { Step } = Steps;
 const { Meta } = Card;
@@ -162,7 +163,9 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
   };
   return (
     <div>
-      <h1>Create a new Template</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Create a new Template
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           Templates allow you to define a custom flow so you can run any tool before or after terraform
@@ -175,91 +178,103 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
         <Step title="Configure Settings" />
       </Steps>
       {current == 0 && (
-        <Space className="chooseType" direction="vertical">
-          <h3>Choose your template</h3>
-          <List
-            grid={{ gutter: 20, column: 3 }}
-            dataSource={templates}
-            renderItem={(item) => (
-              <List.Item>
-                <Card
-                  hoverable
-                  onClick={() => handleClick(item)}
-                  style={{ width: 300, height: 300 }}
-                  cover={
-                    <img
-                      style={{
-                        padding: "10px",
-                        height: 120,
-                        backgroundColor: token.colorBgContainer,
-                      }}
-                      alt="example"
-                      src={item.image}
+        <SettingsSection maxWidth="100%">
+          <Space className="chooseType" direction="vertical">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Choose your template
+            </Typography.Title>
+            <List
+              grid={{ gutter: 20, column: 3 }}
+              dataSource={templates}
+              renderItem={(item) => (
+                <List.Item>
+                  <Card
+                    hoverable
+                    onClick={() => handleClick(item)}
+                    style={{ width: 300, height: 300 }}
+                    cover={
+                      <img
+                        style={{
+                          padding: "10px",
+                          height: 120,
+                          backgroundColor: token.colorBgContainer,
+                        }}
+                        alt="example"
+                        src={item.image}
+                      />
+                    }
+                  >
+                    <Meta
+                      title={item.name}
+                      description={<div style={{ height: "90px", overflow: "hidden" }}>{item.description}</div>}
                     />
-                  }
-                >
-                  <Meta
-                    title={item.name}
-                    description={<div style={{ height: "90px", overflow: "hidden" }}>{item.description}</div>}
-                  />
-                </Card>
-              </List.Item>
-            )}
-          />
-        </Space>
+                  </Card>
+                </List.Item>
+              )}
+            />
+          </Space>
+        </SettingsSection>
       )}
       {current == 1 && (
-        <Space className="chooseType" direction="vertical">
-          <h3>Set up template</h3>
-          <p className="paragraph">
-            For additional information about templates and custom flows in Terrakube, please read our{" "}
-            <Button
-              className="link"
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/templates"
-              type="link"
-            >
-              documentation&nbsp; <HiOutlineExternalLink />.
+        <SettingsSection>
+          <Space className="chooseType" direction="vertical">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Set up template
+            </Typography.Title>
+            <p className="paragraph">
+              For additional information about templates and custom flows in Terrakube, please read our{" "}
+              <Button
+                className="link"
+                target="_blank"
+                href="https://docs.terrakube.io/user-guide/organizations/templates"
+                type="link"
+              >
+                documentation&nbsp; <HiOutlineExternalLink />.
+              </Button>
+            </p>
+            <br />
+            <div className="editor">
+              <Editor
+                height="40vh"
+                onMount={handleEditorDidMount}
+                onValidate={handleEditorValidation}
+                defaultLanguage="yaml"
+                defaultValue={tcl}
+                theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
+                options={monacoOptions}
+              />
+            </div>
+            <br />
+            <Button style={{ float: "right" }} type="primary" onClick={handleContinue} htmlType="button">
+              Continue
             </Button>
-          </p>
-          <br />
-          <div className="editor">
-            <Editor
-              height="40vh"
-              onMount={handleEditorDidMount}
-              onValidate={handleEditorValidation}
-              defaultLanguage="yaml"
-              defaultValue={tcl}
-              theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-              options={monacoOptions}
-            />
-          </div>
-          <br />
-          <Button style={{ float: "right" }} type="primary" onClick={handleContinue} htmlType="button">
-            Continue
-          </Button>
-        </Space>
+          </Space>
+        </SettingsSection>
       )}
       {current == 2 && (
-        <Space className="chooseType" direction="vertical">
-          <h3>Configure settings</h3>
-          <Form onFinish={onFinish} validateMessages={validateMessages} name="create-vcs" layout="vertical">
-            <Form.Item
-              name="name"
-              label="Name"
-              extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item name="description" label="Description">
-              <Input.TextArea />
-            </Form.Item>
-            <Button type="primary" htmlType="submit">
-              Create Template
-            </Button>
-          </Form>
-        </Space>
+        <SettingsSection>
+          <Space className="chooseType" direction="vertical">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Configure settings
+            </Typography.Title>
+            <Form onFinish={onFinish} validateMessages={validateMessages} name="create-vcs" layout="vertical">
+              <Form.Item
+                name="name"
+                label="Name"
+                extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item name="description" label="Description">
+                <Input.TextArea />
+              </Form.Item>
+              <Button type="primary" htmlType="submit">
+                Create Template
+              </Button>
+            </Form>
+          </Space>
+        </SettingsSection>
       )}
     </div>
   );

@@ -19,11 +19,19 @@ import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling } from "../../hooks";
 import { Job, JobStep } from "../types";
-import { TerminalOutput } from "./TerminalOutput";
+import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { StructuredPlanOutput } from "./StructuredPlanOutput";
-import { StructuredPlanOutputByStep, normalizeStructuredPlanOutput, normalizeUITemplates } from "./structuredPlan";
+import {
+  StructuredApplyOutputByStep,
+  StructuredOutputsByStep,
+  StructuredPlanOutputByStep,
+  normalizeStructuredApplyOutput,
+  normalizeStructuredOutputs,
+  normalizeStructuredPlanOutput,
+  normalizeUITemplates,
+} from "./structuredPlan";
 
 type Props = {
   jobId: string;
@@ -51,6 +59,8 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [uiType, setUIType] = useState("structured");
   const [uiTemplates, setUITemplates] = useState<Record<string, string>>({});
   const [planStructuredOutput, setPlanStructuredOutput] = useState<StructuredPlanOutputByStep>({});
+  const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
+  const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
@@ -174,7 +184,43 @@ export const DetailsJob = ({ jobId }: Props) => {
   };
 
   const renderConsoleOutput = (item: JobStep) => {
-    return <TerminalOutput outputLog={item.outputLog} stepName={item.name} isRunning={item.status === "running"} />;
+    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
+  };
+
+  const getStepStructuredData = (item: JobStep) => {
+    const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
+    const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
+    const structuredApplyChanges = applyStructuredOutput[item.id] || applyStructuredOutput[String(item.stepNumber)];
+    const stepOutputs = terraformOutputs[item.id] || terraformOutputs[String(item.stepNumber)];
+    const hasStructuredView = Boolean(template) || Boolean(structuredChanges) || Boolean(structuredApplyChanges);
+
+    return { template, structuredChanges, structuredApplyChanges, stepOutputs, hasStructuredView };
+  };
+
+  const renderStepExtra = (item: JobStep) => {
+    const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
+      return null;
+    }
+
+    if (!getStepStructuredData(item).hasStructuredView) {
+      return null;
+    }
+
+    return (
+      <Radio.Group
+        onChange={(event) => {
+          event.stopPropagation();
+          onChange(event);
+        }}
+        onClick={(event) => event.stopPropagation()}
+        value={uiType}
+        size="small"
+      >
+        <Radio.Button value="structured">Structured</Radio.Button>
+        <Radio.Button value="console">Console</Radio.Button>
+      </Radio.Group>
+    );
   };
 
   const renderStepContent = (item: JobStep) => {
@@ -184,57 +230,28 @@ export const DetailsJob = ({ jobId }: Props) => {
       return renderConsoleOutput(item);
     }
 
-    const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
-    const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
-    const hasStructuredView = Boolean(template) || Boolean(structuredChanges);
+    const { template, structuredChanges, structuredApplyChanges, stepOutputs, hasStructuredView } =
+      getStepStructuredData(item);
 
-    if (!hasStructuredView) {
+    if (!hasStructuredView || uiType !== "structured") {
       return renderConsoleOutput(item);
     }
 
-    if (uiType !== "structured") {
+    if (structuredApplyChanges) {
       return (
-        <>
-          <div
-            style={{
-              textAlign: "right",
-              padding: "5px",
-            }}
-          >
-            <Radio.Group onChange={onChange} value={uiType} size="small">
-              <Radio.Button value="structured">Structured</Radio.Button>
-              <Radio.Button value="console">Console</Radio.Button>
-            </Radio.Group>
-          </div>
-          {renderConsoleOutput(item)}
-        </>
+        <StructuredPlanOutput changes={structuredApplyChanges} outputLog={item.outputLog} applyMode outputs={stepOutputs} />
       );
     }
 
-    let structuredContent = renderConsoleOutput(item);
-
     if (structuredChanges) {
-      structuredContent = <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} />;
-    } else if (template) {
-      structuredContent = <div>{parse(template)}</div>;
+      return <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} />;
     }
 
-    return (
-      <>
-        <div
-          style={{
-            textAlign: "right",
-            padding: "5px",
-          }}
-        >
-          <Radio.Group onChange={onChange} value={uiType} size="small">
-            <Radio.Button value="structured">Structured</Radio.Button>
-            <Radio.Button value="console">Console</Radio.Button>
-          </Radio.Group>
-        </div>
-        {structuredContent}
-      </>
-    );
+    if (template) {
+      return <div>{parse(template)}</div>;
+    }
+
+    return renderConsoleOutput(item);
   };
 
   const renderStepLabel = (item: JobStep) => {
@@ -378,6 +395,8 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
+              : stepItem.attributes.status === "running"
+              ? ""
               : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
         }))
       );
@@ -447,6 +466,8 @@ export const DetailsJob = ({ jobId }: Props) => {
       }
       setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
       setPlanStructuredOutput(normalizeStructuredPlanOutput(response?.data?.planStructuredOutput));
+      setApplyStructuredOutput(normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput));
+      setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
     } catch (error) {
       if (isAbortError(error)) return;
     }
@@ -627,6 +648,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                     {
                       key: "2",
                       label: stepLabel,
+                      extra: renderStepExtra(item),
                       children: renderStepContent(item),
                     },
                   ]}

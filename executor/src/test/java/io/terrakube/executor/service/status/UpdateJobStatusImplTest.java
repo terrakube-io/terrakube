@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Assertions;
@@ -62,16 +63,24 @@ public class UpdateJobStatusImplTest {
         return terraformJob;
     }
 
-    private void stubJobWithStatus(String status) {
+    private Job stubJobWithStatus(String status) {
+        return stubJobWithStatus(status, 1);
+    }
+
+    private Job stubJobWithStatus(String status, int stepCount) {
         Resource organization = new Resource();
         organization.setId("ze-org");
         OrganizationData organizationData = new OrganizationData();
         organizationData.setData(organization);
 
-        Resource stepResource = new Resource();
-        stepResource.setId("ze-step");
+        List<Resource> steps = new ArrayList<>();
+        for (int i = 0; i < stepCount; i++) {
+            Resource stepResource = new Resource();
+            stepResource.setId("ze-step-" + i);
+            steps.add(stepResource);
+        }
         StepData stepData = new StepData();
-        stepData.setData(List.of(stepResource));
+        stepData.setData(steps);
 
         Relationships relationships = new Relationships();
         relationships.setOrganization(organizationData);
@@ -88,6 +97,7 @@ public class UpdateJobStatusImplTest {
         ResponseWithInclude<Job, Step> response = new ResponseWithInclude<>();
         response.setData(job);
         doReturn(response).when(terrakubeClient).getJobById("ze-org", "4711");
+        return job;
     }
 
     @Test
@@ -147,5 +157,32 @@ public class UpdateJobStatusImplTest {
 
         verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
         verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
+    public void planWithChangesAndNoFurtherSteps_marksJobCompleted() {
+        // A plan-only template has exactly one step. When that plan finds changes
+        // (exitCode 2) there is nothing left in the template to run, so the job
+        // should be marked completed rather than left pending forever.
+        Job job = stubJobWithStatus("queue", 1);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+
+        Assertions.assertEquals("completed", job.getAttributes().getStatus());
+        Assertions.assertEquals(true, job.getAttributes().isPlanChanges());
+    }
+
+    @Test
+    public void planWithChangesAndFurtherSteps_marksJobPending() {
+        // A "Plan and Apply" template has two steps. A plan finding changes should
+        // still wait "pending" for the apply step that follows it.
+        Job job = stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+
+        Assertions.assertEquals("pending", job.getAttributes().getStatus());
+        Assertions.assertEquals(true, job.getAttributes().isPlanChanges());
     }
 }

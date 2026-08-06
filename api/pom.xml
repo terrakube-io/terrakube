@@ -22,14 +22,14 @@
         <msal4j.version>1.25.1</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
         <wiremock.version>4.2.2</wiremock.version>
-        <jgit.version>7.7.0.202606012155-r</jgit.version>
+        <jgit.version>7.7.1.202607240634-r</jgit.version>
         <bouncy.castle>1.85</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
         <postgresql.version>42.7.13</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.48.4</aws-sdk.version>
-        <gcp-libraries-bom.version>26.85.1</gcp-libraries-bom.version>
+        <aws-sdk.version>2.50.2</aws-sdk.version>
+        <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>7.5.3</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
@@ -110,6 +110,14 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-graphql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
@@ -129,6 +137,10 @@
             <artifactId>jedis</artifactId>
             <version>${jedis.version}</version>
             <type>jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
         </dependency>
         <dependency>
             <groupId>com.yahoo.elide</groupId>
@@ -163,6 +175,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

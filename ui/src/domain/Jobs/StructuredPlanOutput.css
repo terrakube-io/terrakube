@@ -3,10 +3,7 @@
 }
 
 .structured-plan-shell {
-  background: #ffffff;
-  border: 1px solid #d8dde6;
-  border-radius: 8px;
-  overflow: hidden;
+  color: #1f2937;
 }
 
 .structured-plan-summaryArea {
@@ -48,7 +45,7 @@
 }
 
 .structured-plan-summarySegment--import {
-  background: #6d28d9;
+  background: #0284c7;
 }
 
 .structured-plan-summarySymbol {
@@ -303,9 +300,9 @@
 }
 
 .structured-plan-actionIcon--import {
-  background: #f3eeff;
-  border-color: #d4b8ff;
-  color: #6d28d9;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
 }
 
 .structured-plan-providerBadge {
@@ -326,6 +323,10 @@
 
 .structured-plan-providerBadgeIcon {
   font-size: 11px;
+}
+
+.structured-plan-providerBadgeIcon--generic {
+  color: #8a96a8;
 }
 
 .structured-plan-address {
@@ -432,15 +433,15 @@
 }
 
 .structured-plan-actionPill--import {
-  background: #f3eeff;
-  border-color: #d4b8ff;
-  color: #6d28d9;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
 }
 
 .structured-plan-metaPill--import {
-  background: #f3eeff;
-  border-color: #d4b8ff;
-  color: #6d28d9;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
   font-weight: 600;
 }
 
@@ -463,13 +464,12 @@
 .structured-plan-diffList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .structured-plan-diffGroup {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .structured-plan-diffGroupLabel {
@@ -482,7 +482,6 @@
   border-left: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   margin-left: 10px;
   padding-left: 10px;
 }
@@ -494,38 +493,16 @@
 
 .structured-plan-diffRow {
   align-items: flex-start;
-  background: #fcfdff;
-  border: 1px solid #edf1f6;
-  border-radius: 6px;
+  border-bottom: 1px solid #eef1f6;
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
-  padding: 8px 10px;
+  padding: 6px 0;
 }
 
-.structured-plan-diffRow--added {
-  background: #f5fcf7;
-  border-color: #d5efdd;
-}
-
-.structured-plan-diffRow--removed {
-  background: #fff6f5;
-  border-color: #f2d7d4;
-}
-
-.structured-plan-diffRow--changed {
-  background: #f7faff;
-  border-color: #dae6ff;
-}
-
-.structured-plan-diffRow--unknown {
-  background: #fffaf0;
-  border-color: #f5dfb2;
-}
-
-.structured-plan-diffRow--sensitive {
-  background: #faf5ff;
-  border-color: #e3d3ff;
+.structured-plan-diffList > .structured-plan-diffRow:last-child,
+.structured-plan-diffGroupChildren > .structured-plan-diffRow:last-child {
+  border-bottom: none;
 }
 
 .structured-plan-diffLabel {
@@ -573,6 +550,9 @@
 .structured-plan-diffMarker--sensitive {
   background: #ebdcff;
   color: #6b21a8;
+  /* The "*" glyph sits high in its em-box in most fonts, so flex-centering
+     alone leaves it looking off-center relative to the other markers. */
+  padding-top: 2px;
 }
 
 .structured-plan-diffValue {
@@ -644,6 +624,199 @@
   padding: 16px 12px;
 }
 
+.structured-plan-noAttributeChanges {
+  color: #7a8492;
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+[data-theme="dark"] .structured-plan-noAttributeChanges {
+  color: var(--tk-text-tertiary);
+}
+
+.structured-plan-hiddenCountToggle {
+  align-items: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #2563eb;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  padding: 4px 8px;
+}
+
+.structured-plan-hiddenCountToggle:hover,
+.structured-plan-hiddenCountToggle:focus-visible {
+  background: #eef4ff;
+  border-color: #dae6ff;
+  outline: none;
+}
+
+.structured-plan-hiddenCountChevron {
+  font-size: 10px;
+}
+
+[data-theme="dark"] .structured-plan-hiddenCountToggle {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-hiddenCountToggle:hover,
+[data-theme="dark"] .structured-plan-hiddenCountToggle:focus-visible {
+  background: rgba(56, 139, 253, 0.12);
+  border-color: rgba(56, 139, 253, 0.35);
+}
+
+.structured-plan-diffMarker--unchanged {
+  background: #eef1f5;
+  color: #6b7280;
+}
+
+.structured-plan-valueToken--unchanged {
+  border-color: #e5e7eb;
+  color: #4b5563;
+}
+
+[data-theme="dark"] .structured-plan-diffMarker--unchanged {
+  background: rgba(139, 148, 158, 0.2);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-valueToken--unchanged {
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-tertiary);
+}
+
+.structured-plan-actionFilter {
+  position: relative;
+}
+
+.structured-plan-actionFilterButton {
+  border: 1px solid #cfd6df;
+}
+
+.structured-plan-actionFilterPanel {
+  background: #ffffff;
+  border: 1px solid #cfd6df;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 0;
+  padding: 10px 12px;
+  position: absolute;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  z-index: 10;
+}
+
+[data-theme="dark"] .structured-plan-actionFilterPanel {
+  background: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.structured-plan-applyStatus {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  text-transform: capitalize;
+}
+
+.structured-plan-applyStatus--pending {
+  background: #f1f3f5;
+  color: #6b7280;
+}
+
+.structured-plan-applyStatus--applying {
+  background: #dde8ff;
+  color: #2563eb;
+}
+
+.structured-plan-applyStatus--applied {
+  background: #dff4e5;
+  color: #147d37;
+}
+
+.structured-plan-applyStatus--errored {
+  background: #f9e0de;
+  color: #cf3d38;
+}
+
+.structured-plan-applyStatus--destroyed {
+  background: #fff2f1;
+  color: #cf3d38;
+}
+
+.structured-plan-applyStatus--replaced {
+  background: #f4f5f7;
+  color: #55606e;
+}
+
+.structured-plan-applyStatus--imported {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--pending {
+  background: rgba(139, 148, 158, 0.2);
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--applying {
+  background: rgba(56, 139, 253, 0.2);
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--applied {
+  background: rgba(46, 160, 67, 0.2);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--errored {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--destroyed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--replaced {
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-applyStatus--imported {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+.structured-plan-noChanges {
+  align-items: center;
+  color: #147d37;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 32px 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.structured-plan-noChangesIcon {
+  font-size: 20px;
+}
+
+[data-theme="dark"] .structured-plan-noChanges {
+  color: #3fb950;
+}
+
 @media (max-width: 960px) {
   .structured-plan-toolbar {
     align-items: stretch;
@@ -679,8 +852,6 @@
    ========================================================================== */
 
 [data-theme="dark"] .structured-plan-shell {
-  background: var(--tk-bg-container);
-  border-color: var(--tk-border-primary);
   color: var(--tk-text-primary);
 }
 
@@ -805,15 +976,19 @@
 }
 
 [data-theme="dark"] .structured-plan-actionIcon--import {
-  background: rgba(163, 113, 247, 0.15);
-  border-color: rgba(163, 113, 247, 0.3);
-  color: #d2a8ff;
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
 }
 
 [data-theme="dark"] .structured-plan-providerBadge {
   background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
   color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .structured-plan-providerBadgeIcon--generic {
+  color: var(--tk-text-tertiary);
 }
 
 [data-theme="dark"] .structured-plan-address {
@@ -856,33 +1031,7 @@
 
 /* Diff rows — dark mode */
 [data-theme="dark"] .structured-plan-diffRow {
-  background: var(--tk-bg-elevated);
-  border-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .structured-plan-diffRow--added {
-  background: rgba(46, 160, 67, 0.08);
-  border-color: rgba(46, 160, 67, 0.25);
-}
-
-[data-theme="dark"] .structured-plan-diffRow--removed {
-  background: rgba(248, 81, 73, 0.08);
-  border-color: rgba(248, 81, 73, 0.25);
-}
-
-[data-theme="dark"] .structured-plan-diffRow--changed {
-  background: rgba(56, 139, 253, 0.08);
-  border-color: rgba(56, 139, 253, 0.25);
-}
-
-[data-theme="dark"] .structured-plan-diffRow--unknown {
-  background: rgba(210, 153, 34, 0.08);
-  border-color: rgba(210, 153, 34, 0.25);
-}
-
-[data-theme="dark"] .structured-plan-diffRow--sensitive {
-  background: rgba(163, 113, 247, 0.08);
-  border-color: rgba(163, 113, 247, 0.25);
+  border-bottom-color: var(--tk-border-primary);
 }
 
 [data-theme="dark"] .structured-plan-diffLabel {
@@ -984,19 +1133,72 @@
 }
 
 [data-theme="dark"] .structured-plan-actionPill--import {
-  background: rgba(163, 113, 247, 0.15);
-  border-color: rgba(163, 113, 247, 0.3);
-  color: #d2a8ff;
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
 }
 
 [data-theme="dark"] .structured-plan-metaPill--import {
-  background: rgba(163, 113, 247, 0.15);
-  border-color: rgba(163, 113, 247, 0.3);
-  color: #d2a8ff;
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
 }
 
 [data-theme="dark"] .structured-plan-metaPill {
   background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
   color: var(--tk-text-secondary);
+}
+
+.structured-plan-outputs {
+  border-top: 1px solid #e7ebf0;
+  padding: 12px;
+}
+
+.structured-plan-outputsHeader {
+  color: #253041;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.structured-plan-outputsList {
+  display: flex;
+  flex-direction: column;
+}
+
+.structured-plan-outputRow {
+  align-items: center;
+  border-bottom: 1px solid #eef1f6;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
+  padding: 6px 0;
+}
+
+.structured-plan-outputsList > .structured-plan-outputRow:last-child {
+  border-bottom: none;
+}
+
+.structured-plan-outputName {
+  color: #253041;
+  font-family: "SFMono-Regular", Consolas, Monaco, monospace;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+[data-theme="dark"] .structured-plan-outputs {
+  border-top-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputsHeader {
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputRow {
+  border-bottom-color: var(--tk-border-primary);
+}
+
+[data-theme="dark"] .structured-plan-outputName {
+  color: var(--tk-text-primary);
 }

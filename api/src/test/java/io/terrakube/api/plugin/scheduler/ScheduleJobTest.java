@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.scheduler;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -32,6 +34,7 @@ import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
@@ -62,6 +65,9 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 @ExtendWith(MockitoExtension.class)
 public class ScheduleJobTest {
@@ -82,6 +88,8 @@ public class ScheduleJobTest {
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
+    RedisTemplate<String, Object> redisTemplate;
+    ValueOperations<String, Object> valueOperations;
 
     UUID stepId = UUID.randomUUID();
 
@@ -105,6 +113,13 @@ public class ScheduleJobTest {
                 WorkspaceVariableValidationService.class,
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
+
+        redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
+        valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
+        lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
+        lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
     }
 
     private ScheduleJob subject() {
@@ -119,7 +134,7 @@ public class ScheduleJobTest {
                 workspaceRepository,
                 softDeleteService,
                 scheduleJobService,
-                null,
+                redisTemplate,
                 gitHubWebhookService,
                 null,
                 prCommentService,
@@ -164,11 +179,11 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assertions.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
     }
 
@@ -180,7 +195,7 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doThrow(new RuntimeException("Boom!")).when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doThrow(new RuntimeException("Boom!")).when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assertions.assertTrue(subject().runExecution(job));
 
@@ -212,6 +227,8 @@ public class ScheduleJobTest {
 
         verify(executorService, times(1)).execute(any(), any(), any());
         verify(jobRepository, times(1)).save(job);
+        verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
+        verify(redisTemplate, times(1)).delete(anyString());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
@@ -239,16 +256,108 @@ public class ScheduleJobTest {
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
         verify(jobRepository, times(1)).save(job);
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void pendingJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, times(0)).save(any());
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSkipsDispatchWhenAlreadyBeingDispatched() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // Simulate a concurrent Quartz firing (the main 30s trigger racing a status-change
+        // one-shot trigger) already holding the dispatch lock for this job.
+        doReturn(false).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSkipsDispatchWhenRedisIsUnreachable() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // A Redis outage must fail closed (skip dispatch, retry later) rather than dispatch
+        // unprotected - a duplicate terraform apply is worse than a delayed one.
+        doThrow(new RedisConnectionFailureException("connection refused"))
+                .when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
     @Test
@@ -437,11 +546,11 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
@@ -469,14 +578,14 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
 
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
         verify(jobRepository, times(1)).save(job);
         verify(workspaceRepository, times(2)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.completed, job.getStatus());
     }
 
@@ -531,15 +640,45 @@ public class ScheduleJobTest {
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         // TODO Could be true with no extra scheduling, because we know we are done
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void approvedJobRetriesWhenExecutorUnavailable() throws Exception {
+        Job job = job(JobStatus.approved);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        // No free executor should leave the job in place for the next Quartz retry
+        // (JOB_CONTEXT_INTERVAL), not fail it outright.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+        Assertions.assertEquals(JobStatus.approved, job.getStatus());
     }
 
      @Test
@@ -572,7 +711,7 @@ public class ScheduleJobTest {
                          anyList(),
                          anyInt());
          doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
          doNothing().when(jobRepository).delete(any());
           // Passed directly to other mock, so list does not matter
          doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
@@ -614,7 +753,7 @@ public class ScheduleJobTest {
                         anyList(),
                         anyInt());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(jobRepository).delete(any());
         // Passed directly to other mock, so list does not matter
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
@@ -624,6 +763,67 @@ public class ScheduleJobTest {
 
         verify(jobRepository, times(1)).delete(any()); // Ensure we do not delete anything else
         verify(jobRepository, times(1)).delete(prev2);
+    }
+
+    @Test
+    public void completedJobWithHistorySoftDelete() {
+        Job job = job(JobStatus.completed);
+        Job prev1 = job(JobStatus.completed);
+        prev1.setId(4710);
+        Job prev2 = job(JobStatus.completed);
+        prev2.setId(4709);
+
+        Globalvar keepHistory = new Globalvar();
+        keepHistory.setKey("KEEP_JOB_HISTORY");
+        keepHistory.setCategory(Category.ENV);
+        keepHistory.setValue("1");
+
+        Globalvar softDelete = new Globalvar();
+        softDelete.setKey("KEEP_JOB_HISTORY_SOFT_DELETE");
+        softDelete.setCategory(Category.ENV);
+        softDelete.setValue("true");
+
+        doReturn(List.of(keepHistory, softDelete)).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(Optional.of(List.of(prev1, prev2)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusInAndIdLessThanOrderByIdDesc(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        // prev2 should be soft deleted (flagged), never hard deleted
+        verify(jobRepository, never()).delete(any());
+        verify(jobRepository, times(1)).save(prev2);
+        Assertions.assertTrue(prev2.isDeleted());
+        Assertions.assertFalse(prev1.isDeleted());
+    }
+
+    @Test
+    public void completedJobIncludesRunSummaryInCommitStatus() {
+        Job job = job(JobStatus.completed);
+        doReturn(Optional.of("Plan: 2 to add, 0 to change, 1 to destroy."))
+                .when(prCommentService).extractRunSummary(job);
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        subject().updateJobStatusOnVcs(job, JobStatus.completed);
+
+        verify(gitLabWebhookService, times(1))
+                .sendCommitStatus(job, JobStatus.completed, "Plan: 2 to add, 0 to change, 1 to destroy.");
     }
 
     @Test
@@ -643,12 +843,12 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
     }
 
@@ -670,11 +870,11 @@ public class ScheduleJobTest {
         doReturn(null).when(stepRepository).save(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
 
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
     }
 
@@ -899,7 +1099,7 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(prCommentService).postApplyResult(any());
         doNothing().when(prCommentService).acknowledgeCompletion(any());
 
@@ -933,7 +1133,7 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
         doNothing().when(prCommentService).postPlanResult(any());
         doNothing().when(prCommentService).acknowledgeCompletion(any());
 
@@ -956,7 +1156,7 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
-        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
     }
 
     private Flow approvalFlowWithOnReject() {
@@ -991,7 +1191,7 @@ public class ScheduleJobTest {
         Assertions.assertEquals(flow.getOnReject(), flowCaptor.getValue().getCommands());
         Assertions.assertEquals(JobStatus.rejected, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
     }
 
     @Test
@@ -1023,6 +1223,6 @@ public class ScheduleJobTest {
 
         Assertions.assertEquals(JobStatus.rejected, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
     }
 }

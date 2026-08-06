@@ -60,7 +60,7 @@ public class ScheduleJobTrigger implements org.quartz.Job {
             job.setStatus(JobStatus.pending);
             job.setCreatedBy("serviceAccount");
             job.setUpdatedBy("serviceAccount");
-            job.setVia(JobVia.Schedule.name());
+            job.setVia(JobVia.SCHEDULE.getValue());
             Date triggerDate = new Date(System.currentTimeMillis());
             job.setCreatedDate(triggerDate);
             job.setUpdatedDate(triggerDate);

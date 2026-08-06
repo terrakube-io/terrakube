@@ -30,6 +30,8 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
 
     private static final int PAGE_SIZE = 50;
     private static final String PERSONAL_ACCOUNT_GROUP = "@me";
+    private static final String PATH_LOGIN = "login";
+    private static final String PARAM_PER_PAGE = "per_page";
 
     private final GitHubTokenService gitHubTokenService;
     private final ObjectMapper objectMapper;
@@ -64,13 +66,13 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
 
         JsonNode me = callApi(vcs.getApiUrl() + "/user", vcs.getAccessToken()).orElse(null);
         if (me != null) {
-            groups.add(VcsGroupSummary.builder().id(PERSONAL_ACCOUNT_GROUP).name(me.path("login").asText() + " (personal)").build());
+            groups.add(VcsGroupSummary.builder().id(PERSONAL_ACCOUNT_GROUP).name(me.path(PATH_LOGIN).asText() + " (personal)").build());
         }
 
         JsonNode orgs = callApi(vcs.getApiUrl() + "/user/orgs?per_page=100", vcs.getAccessToken()).orElse(null);
         if (orgs != null) {
             for (JsonNode org : orgs) {
-                String login = org.path("login").asText();
+                String login = org.path(PATH_LOGIN).asText();
                 groups.add(VcsGroupSummary.builder().id(login).name(login).build());
             }
         }
@@ -85,7 +87,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
             String query = search + " in:name" + (scopedGroup != null ? " user:" + scopedGroup : "");
             url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/search/repositories")
                     .queryParam("q", query)
-                    .queryParam("per_page", PAGE_SIZE)
+                    .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
             JsonNode response = callApi(url, vcs.getAccessToken()).orElse(null);
@@ -103,12 +105,12 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         if (PERSONAL_ACCOUNT_GROUP.equals(group)) {
             url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/user/repos")
                     .queryParam("affiliation", "owner")
-                    .queryParam("per_page", PAGE_SIZE)
+                    .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
         } else {
             url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/orgs/" + group + "/repos")
-                    .queryParam("per_page", PAGE_SIZE)
+                    .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
         }
@@ -135,7 +137,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
             for (JsonNode installation : response) {
                 groups.add(VcsGroupSummary.builder()
                         .id(installation.path("id").asText())
-                        .name(installation.path("account").path("login").asText())
+                        .name(installation.path("account").path(PATH_LOGIN).asText())
                         .build());
             }
         }
@@ -145,7 +147,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
     private VcsRepositoryPage listAppRepositories(Vcs vcs, String installationId, String search, int page) {
         String jws = generateAppJwt(vcs);
         JsonNode installation = callAppApi(vcs.getApiUrl() + "/app/installations/" + installationId, jws).orElse(null);
-        String owner = installation != null ? installation.path("account").path("login").asText() : "";
+        String owner = installation != null ? installation.path("account").path(PATH_LOGIN).asText() : "";
 
         String installationToken;
         try {
@@ -157,7 +159,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
 
         if (search == null || search.isBlank()) {
             String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/installation/repositories")
-                    .queryParam("per_page", PAGE_SIZE)
+                    .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
             JsonNode response = callApi(url, installationToken).orElse(null);
@@ -176,7 +178,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         // filter here; hasMore reflects whether that provider page was full, so repeatedly clicking
         // "Load more" keeps scanning forward until the whole installation has been covered.
         String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/installation/repositories")
-                .queryParam("per_page", PAGE_SIZE)
+                .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                 .queryParam("page", page)
                 .toUriString();
         JsonNode response = callApi(url, installationToken).orElse(null);
@@ -207,7 +209,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         return VcsRepositorySummary.builder()
                 .name(repo.path("name").asText())
                 .fullName(repo.path("full_name").asText())
-                .group(repo.path("owner").path("login").asText())
+                .group(repo.path("owner").path(PATH_LOGIN).asText())
                 .url(repo.path("clone_url").asText(repo.path("html_url").asText() + ".git"))
                 .privateRepo(repo.path("private").asBoolean())
                 .defaultBranch(repo.path("default_branch").asText(null))
