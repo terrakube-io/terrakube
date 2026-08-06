@@ -62,23 +62,21 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     @Override
     public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
-            updateStepStatus(successful, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
-            if(!isJobCancelledOrRejected(terraformJob))
+            String currentJobStatus = getCurrentJobStatus(terraformJob);
+            // A rejected run keeps showing its approval step as failed: onReject command
+            // output is still saved, but its success must not repaint the step as completed.
+            boolean rejected = currentJobStatus.equals("rejected");
+            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
+            if (rejected || currentJobStatus.equals("cancelled"))
+                log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
+            else
                 updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId);
         }
     }
 
-    private boolean isJobCancelledOrRejected(TerraformJob terraformJob){
-        Job job = terrakubeClient.getJobById(terraformJob.getOrganizationId(), terraformJob.getJobId()).getData();
-        String status = job.getAttributes().getStatus();
-        if(status.equals("cancelled") || status.equals("rejected")) {
-            log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), status);
-            return true;
-        }
-        else {
-            log.info("Job {} is still active", terraformJob.getJobId());
-            return false;
-        }
+    private String getCurrentJobStatus(TerraformJob terraformJob) {
+        return terrakubeClient.getJobById(terraformJob.getOrganizationId(), terraformJob.getJobId())
+                .getData().getAttributes().getStatus();
     }
 
     private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {

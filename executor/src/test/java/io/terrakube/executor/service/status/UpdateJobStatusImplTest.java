@@ -10,9 +10,11 @@ import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.terrakube.client.TerrakubeClient;
@@ -24,6 +26,7 @@ import io.terrakube.client.model.organization.job.OrganizationData;
 import io.terrakube.client.model.organization.job.Relationships;
 import io.terrakube.client.model.organization.job.StepData;
 import io.terrakube.client.model.organization.job.step.Step;
+import io.terrakube.client.model.organization.job.step.StepRequest;
 import io.terrakube.client.model.response.ResponseWithInclude;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
@@ -88,24 +91,28 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
-    public void setCompletedStatusOnRejectedJobUpdatesStepButNotJob() {
+    public void setCompletedStatusOnRejectedJobMarksStepFailedAndSkipsJob() {
         stubJobWithStatus("rejected");
         doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
 
         subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "0000000");
 
-        verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
+        ArgumentCaptor<StepRequest> stepCaptor = ArgumentCaptor.forClass(StepRequest.class);
+        verify(terrakubeClient, times(1)).updateStep(stepCaptor.capture(), anyString(), anyString(), anyString());
+        Assertions.assertEquals("failed", stepCaptor.getValue().getData().getAttributes().getStatus());
         verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
     }
 
     @Test
-    public void setCompletedStatusOnCancelledJobUpdatesStepButNotJob() {
+    public void setCompletedStatusOnCancelledJobKeepsStepResultAndSkipsJob() {
         stubJobWithStatus("cancelled");
         doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
 
         subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "0000000");
 
-        verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
+        ArgumentCaptor<StepRequest> stepCaptor = ArgumentCaptor.forClass(StepRequest.class);
+        verify(terrakubeClient, times(1)).updateStep(stepCaptor.capture(), anyString(), anyString(), anyString());
+        Assertions.assertEquals("completed", stepCaptor.getValue().getData().getAttributes().getStatus());
         verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
     }
 
