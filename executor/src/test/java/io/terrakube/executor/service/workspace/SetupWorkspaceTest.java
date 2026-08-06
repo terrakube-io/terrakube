@@ -482,6 +482,15 @@ public class SetupWorkspaceTest {
     }
 
     @Test
+    public void reportsFailureWhenTheBranchDoesNotExist() throws Exception {
+        TerraformJob job = successfulGitJob();
+        job.setBranch("does-not-exist");
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+        Assertions.assertEquals(TransportException.class, e.getCause().getClass());
+    }
+
+    @Test
     public void reportsFailureOnBadRepository() throws Exception {
         TerraformJob job = successfulGitJob();
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
