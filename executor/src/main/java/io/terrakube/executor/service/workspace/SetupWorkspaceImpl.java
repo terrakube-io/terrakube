@@ -166,8 +166,11 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
     private void downloadWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
-        String branchRef = resolveBranchRef(terraformJob);
-        if (terraformJob.getVcsType().startsWith("SSH")) {
+        // Resolved once and shared with the ref probe: for AZURE_SP_MI this acquires a token
+        // over the network, and nothing caches it between calls.
+        CredentialsProvider credentialsProvider = credentialsProvider(terraformJob);
+        String branchRef = resolveBranchRef(terraformJob, credentialsProvider);
+        if (isSsh(terraformJob)) {
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
                     .setDirectory(gitCloneFolder)
@@ -189,8 +192,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
                     .setDirectory(gitCloneFolder)
-                    .setCredentialsProvider(setupCredentials(terraformJob.getVcsType(),
-                            terraformJob.getConnectionType(), terraformJob.getAccessToken()))
+                    .setCredentialsProvider(credentialsProvider)
                     .setBranch(terraformJob.getBranch())
                     .setCloneSubmodules(true);
 
@@ -214,7 +216,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
      * The branch field also accepts a tag name, so the namespace has to be resolved before the
      * fetch can be restricted to a single ref.
      */
-    private String resolveBranchRef(TerraformJob terraformJob) throws IOException {
+    private String resolveBranchRef(TerraformJob terraformJob, CredentialsProvider credentialsProvider)
+            throws IOException {
         String headRef = Constants.R_HEADS + terraformJob.getBranch();
         String tagRef = Constants.R_TAGS + terraformJob.getBranch();
 
@@ -224,7 +227,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         SshdSessionFactory sshSessionFactory = sshSessionFactory(sshFolder, terraformJob);
         try {
             Map<String, Ref> remoteRefs = configureTransport(
-                    Git.lsRemoteRepository().setRemote(terraformJob.getSource()), sshSessionFactory, terraformJob)
+                    Git.lsRemoteRepository().setRemote(terraformJob.getSource()), sshSessionFactory,
+                    credentialsProvider)
                     .setHeads(true)
                     .setTags(true)
                     .callAsMap();
@@ -242,20 +246,26 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         }
     }
 
+    private static boolean isSsh(TerraformJob terraformJob) {
+        return terraformJob.getVcsType().startsWith("SSH");
+    }
+
     private SshdSessionFactory sshSessionFactory(File sshFolder, TerraformJob terraformJob) throws IOException {
-        return terraformJob.getVcsType().startsWith("SSH")
-                ? getSshdSessionFactory(sshFolder, terraformJob.getAccessToken())
-                : null;
+        return isSsh(terraformJob) ? getSshdSessionFactory(sshFolder, terraformJob.getAccessToken()) : null;
+    }
+
+    private CredentialsProvider credentialsProvider(TerraformJob terraformJob) {
+        return isSsh(terraformJob) ? null
+                : setupCredentials(terraformJob.getVcsType(), terraformJob.getConnectionType(),
+                        terraformJob.getAccessToken());
     }
 
     private <C extends TransportCommand<C, ?>> C configureTransport(C command,
-            SshdSessionFactory sshSessionFactory, TerraformJob terraformJob) {
+            SshdSessionFactory sshSessionFactory, CredentialsProvider credentialsProvider) {
         if (sshSessionFactory != null) {
             return command.setTransportConfigCallback(
                     transport -> ((SshTransport) transport).setSshSessionFactory(sshSessionFactory));
         }
-        CredentialsProvider credentialsProvider = setupCredentials(terraformJob.getVcsType(),
-                terraformJob.getConnectionType(), terraformJob.getAccessToken());
         if (credentialsProvider != null) {
             command.setCredentialsProvider(credentialsProvider);
         }
@@ -317,7 +327,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     private FetchCommand configureFetchCommand(FetchCommand fetchCommand, File gitCloneFolder,
             TerraformJob terraformJob) throws IOException {
         fetchCommand.setRemote("origin");
-        return configureTransport(fetchCommand, sshSessionFactory(gitCloneFolder, terraformJob), terraformJob);
+        return configureTransport(fetchCommand, sshSessionFactory(gitCloneFolder, terraformJob),
+                credentialsProvider(terraformJob));
     }
 
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
