@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import graphql.Assert;
@@ -35,6 +36,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
@@ -1139,5 +1141,88 @@ public class ScheduleJobTest {
 
         verify(prCommentService, times(1)).postPlanResult(job);
         verify(prCommentService, never()).postApplyResult(any());
+    }
+
+    private void stubRejectedTeardown(Job job) {
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+    }
+
+    private Flow approvalFlowWithOnReject() {
+        Command onRejectCommand = new Command();
+        onRejectCommand.setRuntime("BASH");
+        onRejectCommand.setPriority(100);
+        onRejectCommand.setAfter(true);
+        onRejectCommand.setScript("echo rejected");
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.approval.name());
+        flow.setStep(150);
+        flow.setTeam("TERRAKUBE_ADMIN");
+        flow.setOnReject(List.of(onRejectCommand));
+        return flow;
+    }
+
+    @Test
+    public void rejectedJobExecutesOnRejectCommands() throws Exception {
+        Job job = job(JobStatus.rejected);
+        Flow flow = approvalFlowWithOnReject();
+
+        stubRejectedTeardown(job);
+        doReturn(flow).when(tclService).getNextFlow(job);
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(job);
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        ArgumentCaptor<Flow> flowCaptor = ArgumentCaptor.forClass(Flow.class);
+        verify(executorService, times(1)).execute(any(), any(), flowCaptor.capture());
+        Assertions.assertEquals(flow.getOnReject(), flowCaptor.getValue().getCommands());
+        Assertions.assertEquals(JobStatus.rejected, job.getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
+    }
+
+    @Test
+    public void rejectedJobWithoutOnRejectDoesNotCallExecutor() throws Exception {
+        Job job = job(JobStatus.rejected);
+        Flow flow = approvalFlowWithOnReject();
+        flow.setOnReject(null);
+
+        stubRejectedTeardown(job);
+        doReturn(flow).when(tclService).getNextFlow(job);
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        verify(executorService, never()).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.rejected, job.getStatus());
+    }
+
+    @Test
+    public void rejectedJobTeardownSurvivesOnRejectDispatchFailure() throws Exception {
+        Job job = job(JobStatus.rejected);
+        Flow flow = approvalFlowWithOnReject();
+
+        stubRejectedTeardown(job);
+        doReturn(flow).when(tclService).getNextFlow(job);
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(job);
+        doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.rejected, job.getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
     }
 }
