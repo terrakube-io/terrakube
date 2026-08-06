@@ -146,7 +146,7 @@ class TerraformExecutorServiceImplTest {
         subject.apply(terraformJob, tempDir.toFile());
 
         verify(applyStructuredOutputService, Mockito.atLeastOnce()).publishApplyProgress(
-                eq("org"), eq("42"), eq("1"), eq(List.of(seededChange)));
+                eq("org"), eq("42"), eq("1"), eq(List.of(seededChange)), any());
     }
 
     @Test
@@ -155,6 +155,14 @@ class TerraformExecutorServiceImplTest {
 
         assertTrue(jsonApplyClient.isJsonOutput());
         assertTrue(jsonApplyClient.isRedirectErrorStream());
+    }
+
+    @Test
+    void jsonPlanClientMergesErrorStream() {
+        TerraformClient jsonPlanClient = subject().buildJsonEnabledPlanClient();
+
+        assertTrue(jsonPlanClient.isJsonOutput());
+        assertTrue(jsonPlanClient.isRedirectErrorStream());
     }
 
     @Test
@@ -177,6 +185,32 @@ class TerraformExecutorServiceImplTest {
 
         assertTrue(result.isSuccessfulExecution());
         verify(terraformClient).apply(any(TerraformProcessData.class), any(Consumer.class), any());
-        verify(applyStructuredOutputService, never()).publishApplyProgress(anyString(), anyString(), anyString(), any());
+        verify(applyStructuredOutputService, never()).publishApplyProgress(anyString(), anyString(), anyString(), any(), any());
+    }
+
+    // Regression test for a real bug: a fast plan (all json lines emitted well within the 2s
+    // progress-flush throttle) that then fails never got a single live structured-output push,
+    // live or final - unlike apply's runJsonApply, plan() had no unconditional "flush once more"
+    // call after the client returned. That left stale/empty progress data (or nothing at all) in
+    // the context, which the UI rendered as a false-positive "no changes needed" instead of
+    // surfacing the failure.
+    @Test
+    void planPublishesFinalStructuredUpdateEvenWhenPlanFails() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(1));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(planStructuredOutputService, Mockito.atLeastOnce()).publishPlanProgress(
+                eq("org"), eq("42"), eq("1"), any(), any());
+        verify(logsService, Mockito.atLeastOnce()).sendStructuredUpdate(eq(42), eq("1"), anyString());
     }
 }
