@@ -43,6 +43,16 @@ public class LogsServiceRedis implements ProcessLogs {
         redisTemplate.opsForStream().add(jobId.toString(), streamData);
     }
 
+    @Override
+    public void sendStructuredUpdate(Integer jobId, String stepId, String structuredJson) {
+        Map<String, String> streamData = new LinkedHashMap();
+        streamData.put("jobId", String.valueOf(jobId));
+        streamData.put("stepId", stepId);
+        streamData.put("output", structuredJson);
+
+        redisTemplate.opsForStream().add(jobId + "-context", streamData);
+    }
+
     public void deleteLogs(String jobId) {
         redisTemplate.delete(jobId);
     }

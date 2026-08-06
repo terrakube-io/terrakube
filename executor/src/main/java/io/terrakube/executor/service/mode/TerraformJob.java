@@ -6,6 +6,7 @@ import lombok.ToString;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @ToString
 @Getter
@@ -38,5 +39,7 @@ public class TerraformJob {
     private String agentUrl;
     private HashMap<String, String> environmentVariables;
     private HashMap<String, String> variables;
+    private List<Map<String, Object>> liveChanges;
+    private List<Map<String, Object>> jobDiagnostics;
 
 }

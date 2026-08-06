@@ -3,6 +3,8 @@ package io.terrakube.api.repository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -44,4 +46,19 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
+
+    /**
+     * Row-locks the job for the rest of the caller's transaction. Two overlapping Quartz
+     * firings for the same job (the ad-hoc trigger fired by ScheduleJobService.createJobContext
+     * racing the first tick of its own 30s recurring trigger, or a createJobContextNow one-shot
+     * racing an in-flight run - see the concurrency note on ScheduleJob) can otherwise both reach
+     * TclService.initJobConfiguration before either has committed its step inserts, so both
+     * observe "no steps yet" and both create the template's steps - each duplicate is later
+     * dispatched and genuinely executed on its own scheduling cycle. Taking this lock first
+     * forces a second overlapping transaction to block until the first commits, so it then sees
+     * the already-created steps and skips creating its own.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from job j where j.id = :jobId")
+    Job lockForUpdate(@Param("jobId") int jobId);
 }

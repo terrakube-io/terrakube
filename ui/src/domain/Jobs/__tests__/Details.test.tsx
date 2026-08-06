@@ -19,7 +19,64 @@ jest.mock("../../../config/axiosConfig", () => ({
   axiosClient: { get: (...args: unknown[]) => getMock(...args) },
 }));
 
+const useStructuredOutputStreamMock = jest.fn();
+
+jest.mock("../../../hooks", () => ({
+  ...jest.requireActual("../../../hooks"),
+  useStructuredOutputStream: (...args: unknown[]) => useStructuredOutputStreamMock(...args),
+}));
+
 describe("DetailsJob apply structured output", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("uses the live structured-output stream while the job is running, not just the poll", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+
+      return Promise.resolve({
+        data: {
+          data: {
+            id: "1",
+            attributes: { status: "running" },
+          },
+          included: [
+            {
+              id: "step-2",
+              type: "step",
+              attributes: { name: "Apply", status: "running", stepNumber: "2" },
+            },
+          ],
+        },
+      });
+    });
+
+    useStructuredOutputStreamMock.mockReturnValue({
+      phase: "apply",
+      changes: {
+        "step-2": [
+          {
+            address: "aws_instance.live",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-live" },
+            status: "applying",
+          },
+        ],
+      },
+      jobDiagnostics: {},
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /aws_instance\.live/i })).toBeInTheDocument();
+    });
+  });
+
   it("renders the structured component for an apply step when applyStructuredOutput is present", async () => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/context/v1/")) {

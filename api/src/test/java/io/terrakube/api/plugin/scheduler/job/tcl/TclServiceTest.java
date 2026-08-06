@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.job.tcl;
 
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.terrakube.api.helpers.FailUnkownMethod;
@@ -266,5 +269,54 @@ public class TclServiceTest {
         Assertions.assertEquals(100, command.getPriority());
         Assertions.assertTrue(command.isAfter());
         Assertions.assertEquals("echo rejected", command.getScript());
+    }
+
+    @Test
+    public void initJobConfiguration_locksJobBeforeCreatingSteps_soAConcurrentCallSeesThemAlreadyCreated() {
+        String yaml = """
+            flow:
+              - type: terraformPlan
+                name: Plan
+                step: 100
+            """;
+        UUID templateId = UUID.randomUUID();
+        Template template = templateWithTcl(encodeYaml(yaml));
+
+        Job job = new Job();
+        job.setId(42);
+        job.setTemplateReference(templateId.toString());
+
+        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(job).when(jobRepository).lockForUpdate(42);
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(42);
+        doReturn(job).when(jobRepository).getReferenceById(42);
+        doReturn(job).when(jobRepository).save(job);
+        doAnswer(invocation -> invocation.getArgument(0)).when(stepRepository).save(org.mockito.ArgumentMatchers.any(Step.class));
+
+        subject().initJobConfiguration(job);
+
+        // The lock must be acquired before the "does this job already have steps" check -
+        // otherwise two overlapping callers (see JobRepository.lockForUpdate) can both observe
+        // an empty step list and both create the template's steps, duplicating every step.
+        InOrder order = Mockito.inOrder(jobRepository, stepRepository);
+        order.verify(jobRepository).lockForUpdate(42);
+        order.verify(stepRepository).findByJobId(42);
+        order.verify(stepRepository).save(org.mockito.ArgumentMatchers.any(Step.class));
+    }
+
+    @Test
+    public void initJobConfiguration_skipsStepCreation_whenStepsAlreadyExist() {
+        Job job = new Job();
+        job.setId(42);
+        job.setTemplateReference(UUID.randomUUID().toString());
+
+        doReturn(job).when(jobRepository).lockForUpdate(42);
+        doReturn(Collections.singletonList(new Step())).when(stepRepository).findByJobId(42);
+
+        Job result = subject().initJobConfiguration(job);
+
+        Assertions.assertSame(job, result);
+        Mockito.verify(stepRepository, Mockito.never()).save(org.mockito.ArgumentMatchers.any(Step.class));
+        Mockito.verify(templateRepository, Mockito.never()).getReferenceById(org.mockito.ArgumentMatchers.any(UUID.class));
     }
 }

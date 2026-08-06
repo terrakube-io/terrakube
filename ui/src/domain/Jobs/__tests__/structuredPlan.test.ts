@@ -1,6 +1,7 @@
 import {
   getPlanChangeActionColor,
   getPlanChangeActionLabel,
+  normalizeJobDiagnostics,
   normalizeStructuredApplyOutput,
   normalizeStructuredOutputs,
   normalizeStructuredPlanOutput,
@@ -38,6 +39,23 @@ describe("structuredPlan helpers", () => {
 
     expect(output["step-1"][0].action).toBe("import");
     expect(output["step-1"][0].importing).toEqual({ id: "AbcXyz1234567890" });
+  });
+
+  it("carries status and diagnostics through for a plan-phase row seeded by a live push", () => {
+    const output = normalizeStructuredPlanOutput({
+      "step-1": [
+        {
+          address: "module.this.module.inner.aws_secretsmanager_secret.test",
+          status: "errored",
+          diagnostics: [{ severity: "error", summary: "No valid credential sources found" }],
+        },
+      ],
+    });
+
+    expect(output["step-1"][0].status).toBe("errored");
+    expect(output["step-1"][0].diagnostics).toEqual([
+      { severity: "error", summary: "No valid credential sources found" },
+    ]);
   });
 
   it("filters malformed structured plan entries and keeps sensitive metadata", () => {
@@ -135,5 +153,78 @@ describe("structuredPlan helpers", () => {
       expect(normalizeStructuredOutputs(null)).toEqual({});
       expect(normalizeStructuredOutputs(undefined)).toEqual({});
     });
+  });
+
+  it("normalizes a diagnostics array with mixed severities on an apply change", () => {
+    const result = normalizeStructuredApplyOutput({
+      "step-1": [
+        {
+          address: "aws_instance.foo",
+          action: "create",
+          actions: ["create"],
+          status: "errored",
+          diagnostics: [
+            { severity: "warning", summary: "deprecated argument" },
+            { severity: "error", summary: "apply failed", detail: "boom" },
+          ],
+        },
+      ],
+    });
+
+    expect(result["step-1"][0].diagnostics).toEqual([
+      { severity: "warning", summary: "deprecated argument" },
+      { severity: "error", summary: "apply failed", detail: "boom" },
+    ]);
+  });
+
+  it("normalizes elapsedSeconds, currentProvisioner, provisionerOutput, and driftAction", () => {
+    const result = normalizeStructuredApplyOutput({
+      "step-1": [
+        {
+          address: "aws_cloudfront_distribution.this",
+          action: "create",
+          actions: ["create"],
+          status: "applying",
+          elapsedSeconds: 90,
+          currentProvisioner: "local-exec",
+          provisionerOutput: ["hello"],
+          driftAction: "update",
+        },
+      ],
+    });
+
+    const change = result["step-1"][0];
+    expect(change.elapsedSeconds).toBe(90);
+    expect(change.currentProvisioner).toBe("local-exec");
+    expect(change.provisionerOutput).toEqual(["hello"]);
+    expect(change.driftAction).toBe("update");
+  });
+
+  it("accepts every documented ChangeStatus value and falls back to pending for unknown ones", () => {
+    const knownStatuses = [
+      "pending", "planned", "refreshing", "reading", "applying", "provisioning", "applied",
+      "importing", "moving", "errored",
+      "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
+    ];
+
+    knownStatuses.forEach((status) => {
+      const result = normalizeStructuredApplyOutput({
+        "step-1": [{ address: "a", action: "create", actions: ["create"], status }],
+      });
+      expect(result["step-1"][0].status).toBe(status);
+    });
+
+    const unknown = normalizeStructuredApplyOutput({
+      "step-1": [{ address: "a", action: "create", actions: ["create"], status: "some-future-status" }],
+    });
+    expect(unknown["step-1"][0].status).toBe("pending");
+  });
+
+  it("normalizes job-level diagnostics keyed by step", () => {
+    const result = normalizeJobDiagnostics({
+      "step-1": [{ severity: "warning", summary: "argument is deprecated" }],
+    });
+
+    expect(result["step-1"]).toEqual([{ severity: "warning", summary: "argument is deprecated" }]);
   });
 });

@@ -35,6 +35,7 @@ public class PlanStructuredOutputService {
 
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
+    private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
@@ -58,16 +59,18 @@ public class PlanStructuredOutputService {
         this.terrakubeClient = terrakubeClient;
     }
 
-    public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir) {
+    public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
         try {
             String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
             if (planJson == null || planJson.isBlank()) {
                 return;
             }
 
-            List<Map<String, Object>> changes = buildChangesFromPlanJson(planJson);
+            List<Map<String, Object>> changes = liveChanges != null && !liveChanges.isEmpty()
+                    ? mergeShowJsonDiff(liveChanges, planJson)
+                    : buildChangesFromPlanJson(planJson);
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
-            Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes);
+            Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
             saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
@@ -76,6 +79,38 @@ public class PlanStructuredOutputService {
             log.warn("Unable to publish structured plan output for job {} step {}", terraformJob.getJobId(),
                     terraformJob.getStepId(), e);
         }
+    }
+
+    void publishPlanProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = updateContext(context, stepId, liveChanges, jobDiagnostics);
+            saveContext(organizationId, jobId, updatedContext);
+        } catch (Exception e) {
+            log.warn("Unable to publish live plan progress for job {} step {}", jobId, stepId, e);
+        }
+    }
+
+    List<Map<String, Object>> mergeShowJsonDiff(List<Map<String, Object>> liveChanges, String planJson) throws IOException {
+        List<Map<String, Object>> diffChangesByAddress = buildChangesFromPlanJson(planJson);
+        Map<Object, Map<String, Object>> diffByAddress = new HashMap<>();
+        for (Map<String, Object> diffChange : diffChangesByAddress) {
+            diffByAddress.put(diffChange.get("address"), diffChange);
+        }
+
+        for (Map<String, Object> liveChange : liveChanges) {
+            Map<String, Object> diffChange = diffByAddress.remove(liveChange.get("address"));
+            if (diffChange != null) {
+                liveChange.putAll(diffChange);
+            }
+        }
+
+        // Anything show-json found that the live stream never saw a planned_change for (shouldn't
+        // normally happen, but a defensive fallback beats silently dropping a resource) gets
+        // appended as a new entry.
+        liveChanges.addAll(diffByAddress.values());
+
+        return liveChanges;
     }
 
     String getPlanAsJson(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
@@ -88,12 +123,51 @@ public class PlanStructuredOutputService {
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
                 .tofu(terraformJob.isTofu())
+                // Without this, `show -json` runs with none of the credentials (backend auth,
+                // dynamic cloud credentials) the main plan process was given via
+                // TerraformExecutorServiceImpl.loadTempEnvironmentVariables, and fails against
+                // any backend/provider that needs them even though the plan itself just
+                // succeeded in the same working directory.
+                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
                 .build();
 
         boolean success = terraformClient.showPlanJson(terraformProcessData, (Consumer<String>) planOutput::append, (Consumer<String>) planErrorOutput::append).get();
 
         if (!success) {
             log.warn("Unable to get plan json for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
+            return null;
+        }
+
+        return planOutput.toString();
+    }
+
+    // -json mode never puts the classic attribute-level diff anywhere in the live event stream
+    // (only terse one-line "planned_change" summaries) - that diff has only ever existed in
+    // Terraform's human-text renderer. Rendering it here, post-hoc from the already-computed
+    // plan file, keeps the live JSON stream (structured panel, diagnostics, ephemeral resources,
+    // etc.) while restoring the full diff for the console/raw-log/PR-comment consumers that
+    // depend on it - PrCommentService.fetchStepOutputText in particular reads this same step's
+    // console output expecting exactly this content.
+    String getPlanAsHumanText(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+        TextStringBuilder planOutput = new TextStringBuilder();
+        TextStringBuilder planErrorOutput = new TextStringBuilder();
+
+        TerraformProcessData terraformProcessData = TerraformProcessData
+                .builder()
+                .terraformVersion(terraformJob.getTerraformVersion())
+                .workingDirectory(terraformWorkingDir)
+                .detailExitCode(true)
+                .tofu(terraformJob.isTofu())
+                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
+                .build();
+
+        // appendln (not append): showPlan's Consumer<String> is invoked once per line, same as
+        // plan()/apply()'s JSON line consumers - append with no separator would concatenate every
+        // line together with nothing between them, producing one unreadable run-on line.
+        boolean success = terraformClient.showPlan(terraformProcessData, (Consumer<String>) planOutput::appendln, (Consumer<String>) planErrorOutput::appendln).get();
+
+        if (!success) {
+            log.warn("Unable to render human-readable plan for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
             return null;
         }
 
@@ -155,7 +229,7 @@ public class PlanStructuredOutputService {
         return result;
     }
 
-    Map<String, Object> updateContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes) {
+    Map<String, Object> updateContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         Map<String, Object> updatedContext = new HashMap<>(context);
 
         Map<String, Object> planStructuredOutput = toMap(updatedContext.get(CONTEXT_PLAN_KEY));
@@ -165,6 +239,10 @@ public class PlanStructuredOutputService {
         Map<String, Object> terrakubeUi = toMap(updatedContext.get(CONTEXT_UI_KEY));
         terrakubeUi.put(stepId, STRUCTURED_PLAN_MARKER);
         updatedContext.put(CONTEXT_UI_KEY, terrakubeUi);
+
+        Map<String, Object> jobDiagnosticsByStep = toMap(updatedContext.get(CONTEXT_JOB_DIAGNOSTICS_KEY));
+        jobDiagnosticsByStep.put(stepId, jobDiagnostics);
+        updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
 
         return updatedContext;
     }

@@ -25,6 +25,7 @@ public class ApplyStructuredOutputService {
 
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_APPLY_KEY = "applyStructuredOutput";
+    private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
 
@@ -74,7 +75,16 @@ public class ApplyStructuredOutputService {
             }
 
             Map<String, Object> seededChange = new HashMap<>((Map<String, Object>) change);
-            seededChange.put("status", "pending");
+            // Ephemeral resources have no apply-time lifecycle to reset here when they're never
+            // referenced elsewhere in the config: confirmed against a real run that apply -json
+            // emits no ephemeral_op/action event for them at all in that case, since their whole
+            // open/close lifecycle already happened during planning and apply has nothing that
+            // needs the value. Resetting to "pending" would leave the row stuck showing a status
+            // apply itself never updates again, even though the job completed successfully -
+            // instead keep whatever status it already carried over from the plan.
+            if (!"ephemeral".equals(seededChange.get("action"))) {
+                seededChange.put("status", "pending");
+            }
             seeded.add(seededChange);
         }
 
@@ -82,7 +92,7 @@ public class ApplyStructuredOutputService {
     }
 
     @SuppressWarnings("unchecked")
-    Map<String, Object> updateApplyContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes) {
+    Map<String, Object> updateApplyContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         Map<String, Object> updatedContext = new HashMap<>(context);
 
         Map<String, Object> applyStructuredOutput = updatedContext.get(CONTEXT_APPLY_KEY) instanceof Map<?, ?> existing
@@ -91,13 +101,19 @@ public class ApplyStructuredOutputService {
         applyStructuredOutput.put(stepId, changes);
         updatedContext.put(CONTEXT_APPLY_KEY, applyStructuredOutput);
 
+        Map<String, Object> jobDiagnosticsByStep = updatedContext.get(CONTEXT_JOB_DIAGNOSTICS_KEY) instanceof Map<?, ?> existingDiagnostics
+                ? new HashMap<>((Map<String, Object>) existingDiagnostics)
+                : new HashMap<>();
+        jobDiagnosticsByStep.put(stepId, jobDiagnostics);
+        updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
+
         return updatedContext;
     }
 
-    void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes) {
+    void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         try {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes);
+            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
             saveContext(organizationId, jobId, updatedContext);
         } catch (Exception e) {
             log.warn("Unable to publish apply structured output for job {} step {}", jobId, stepId, e);

@@ -93,19 +93,34 @@ public final class WebhookEventMatcher {
         return sb.toString();
     }
 
-    public static String findTemplateId(WebhookResult result, Webhook webhook,
+    /**
+     * Resolves the WebhookEvent row (template + PR-workflow settings) matching this result, not
+     * just its template id - callers that create a Job need isPrWorkflowEnabled()/isPrApplyEnabled()
+     * too, so a PR-triggered job gets prNumber wired up and a PR comment actually gets posted.
+     * A PR comment command ("terrakube plan"/"terrakube apply") is matched against the same
+     * PULL_REQUEST rows configured in the webhook UI - there's no separate UI configuration for
+     * commenting, it reuses the PR trigger's branch/path/template settings.
+     */
+    public static WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook,
             WebhookEventRepository webhookEventRepository) {
+        WebhookEventType eventType = result.isPrComment()
+                ? WebhookEventType.PULL_REQUEST
+                : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
+
         return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook,
-                        WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase()))
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "No valid template found for the configured webhook event " + result.getEvent()
-                                + " normalized " + result.getNormalizedEvent()))
-                .getTemplateId();
+                                + " normalized " + result.getNormalizedEvent()));
+    }
+
+    public static String findTemplateId(WebhookResult result, Webhook webhook,
+            WebhookEventRepository webhookEventRepository) {
+        return findMatchingEvent(result, webhook, webhookEventRepository).getTemplateId();
     }
 
     public static String findTemplateIdRelease(WebhookResult result, Webhook webhook,

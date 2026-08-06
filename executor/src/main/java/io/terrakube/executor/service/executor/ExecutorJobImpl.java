@@ -54,7 +54,19 @@ public class ExecutorJobImpl implements ExecutorJob {
                 updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Failed to prepare work dir\n", e.getMessage(), null, "");
                 return;
             }
-            executeJob(terraformJob, terraformWorkingDir);
+            try {
+                executeJob(terraformJob, terraformWorkingDir);
+            } catch (Exception e) {
+                // executeJob has no throws clause of its own, so anything reaching here is an
+                // unexpected failure (e.g. the terraform/tofu binary download erroring out) deep
+                // inside the terraform executor - without this catch it propagates out of this
+                // @Async method uncaught, Spring's SimpleAsyncUncaughtExceptionHandler just logs
+                // it, and the job is left stuck in "running" forever with no failure status and
+                // nothing to retry.
+                log.error("Unexpected error executing job for Organization {} Workspace {}: {}",
+                        terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), e.getMessage(), e);
+                updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Unexpected error executing job\n", e.getMessage(), null, "");
+            }
         } finally {
             try {
                 if (terraformWorkingDir != null) {
