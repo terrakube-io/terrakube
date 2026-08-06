@@ -204,6 +204,22 @@ public class SetupWorkspaceTest {
                 .toList();
     }
 
+    private static class UnshallowRecordingSetupWorkspace extends SetupWorkspaceImpl {
+        boolean unshallowRepositoryCalled;
+
+        UnshallowRecordingSetupWorkspace() {
+            super(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
+                    "https://terrakube-api.example.com", terrakubeClient(null));
+        }
+
+        @Override
+        void unshallowRepository(Git git, File gitCloneFolder, TerraformJob terraformJob)
+                throws GitAPIException, IOException {
+            unshallowRepositoryCalled = true;
+            super.unshallowRepository(git, gitCloneFolder, terraformJob);
+        }
+    }
+
     private static class RejectingShaFetchSetupWorkspace extends SetupWorkspaceImpl {
         boolean unshallowRepositoryCalled;
 
@@ -347,6 +363,38 @@ public class SetupWorkspaceTest {
                 Assertions.assertEquals(List.of(Constants.R_TAGS + "v1.0.0"),
                         refNames(workspaceGit, Constants.R_TAGS));
                 Assertions.assertEquals(List.of(), refNames(workspaceGit, Constants.R_REMOTES));
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void checksOutARecordedCommitThatLivesOnAnotherBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            job.setCommitId(unrelatedCommit.getName());
+
+            UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            // The commit is an advertised ref tip, so the narrowed clone can fetch it by sha
+            // rather than falling back to pulling the whole history.
+            Assertions.assertFalse(setup.unshallowRepositoryCalled);
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(unrelatedCommit.getName(),
+                        workspaceGit.getRepository().resolve("HEAD").getName());
+                Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                        refNames(workspaceGit, Constants.R_REMOTES));
             }
         } finally {
             FileUtils.deleteDirectory(sourceRepository);
