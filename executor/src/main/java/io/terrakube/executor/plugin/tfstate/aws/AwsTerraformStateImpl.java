@@ -113,6 +113,15 @@ public class AwsTerraformStateImpl implements TerraformState {
               log.warn("No including backend information");
             }
 
+            // Native S3 locking (conditional writes) is available from Terraform 1.10
+            // and OpenTofu 1.10. Without it the generated backend takes no lock at all,
+            // so a job and anything else writing the same state can overwrite each other.
+            // Skipped when a custom endpoint is set: S3 compatible services do not all
+            // support the conditional write this relies on.
+            if(endpoint == null && version.compareTo(new ComparableVersion("1.10.0")) >= 0){
+                awsBackendHcl.appendln("    use_lockfile = true");
+            }
+
             if(endpoint != null){
                 if(version.compareTo(new ComparableVersion("1.6.0")) < 0){
                     awsBackendHcl.appendln("    endpoint  = \"" + endpoint + "\"");
