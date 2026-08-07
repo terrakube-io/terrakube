@@ -1,7 +1,7 @@
 package io.terrakube.api.plugin.security.groups.dex;
 
 import com.yahoo.elide.core.security.User;
-import io.terrakube.api.repository.FederatedRepository;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.AllArgsConstructor;
@@ -34,7 +34,7 @@ public class DexGroupServiceImpl implements GroupService {
 
     ProjectAccessRepository projectAccessRepository;
 
-    FederatedRepository federatedRepository;
+    FederatedLookupService federatedLookupService;
 
     private static final String REDIS_ORG_LIMITED = "org_%s_%s";
 
@@ -76,7 +76,7 @@ public class DexGroupServiceImpl implements GroupService {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
         String issuer = principal.getTokenAttributes().get("iss").toString();
         String audience = principal.getTokenAttributes().get("aud").toString();
-        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
             return FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
         }
@@ -88,7 +88,7 @@ public class DexGroupServiceImpl implements GroupService {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
         String issuer = principal.getTokenAttributes().get("iss").toString();
         String audience = principal.getTokenAttributes().get("aud").toString();
-        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated != null) {
             return federated.getName().equals(group) && FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
         }
