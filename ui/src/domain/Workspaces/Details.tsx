@@ -907,7 +907,7 @@ export const WorkspaceDetails = ({
                     <Typography.Text>
                       {getIaCNameById(workspace.attributes?.iacType)}{" "}
                       <a onClick={handleClickSettings} className="workspace-button">
-                        v{workspace.attributes.terraformVersion}
+                        {workspace.attributes.terraformVersion}
                       </a>
                     </Typography.Text>
                   </Space>

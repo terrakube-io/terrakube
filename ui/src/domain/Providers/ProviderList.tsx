@@ -2,6 +2,7 @@ import { CloudOutlined, LinkOutlined } from "@ant-design/icons";
 import { Card, Empty, List, Space, Typography } from "antd";
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "./types";
 import "../Modules/Module.css";
 
@@ -110,7 +111,9 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
               >
                 <Space size={16}>
                   {item.latestVersion && (
-                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>v{item.latestVersion}</Typography.Text>
+                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+                      {formatVersion(item.latestVersion)}
+                    </Typography.Text>
                   )}
                 </Space>
                 <Space size={6}>
