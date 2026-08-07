@@ -19,6 +19,7 @@ import java.util.UUID;
 @CreatePermission(expression = "user is a super service")
 @UpdatePermission(expression = "user is a super service")
 @DeletePermission(expression = "user is a super service")
+@Paginate(defaultPageSize = 100, maxPageSize = 1000)
 @Getter
 @Setter
 @Entity(name = "history")
