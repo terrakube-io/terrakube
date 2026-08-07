@@ -1,5 +1,6 @@
 import { Table, Typography } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
+import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "../types";
 
 type Params = {
@@ -44,7 +45,7 @@ export default function ProviderTable({ providers, searchFilter }: Props) {
       dataIndex: "latestVersion",
       key: "latestVersion",
       width: 160,
-      render: (version: string | undefined) => (version ? `v${version}` : "—"),
+      render: (version: string | undefined) => (version ? formatVersion(version) : "—"),
     },
   ];
 
