@@ -414,15 +414,13 @@ export const WorkspaceDetails = ({
   };
 
   const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    let url = `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,reference`;
-    if (_loadWebhook) url += ",webhook";
     axiosInstance
       .get(`organization/${organizationId}/template`)
       .then((template) => {
         setTemplates(template.data.data);
         axiosInstance
           .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
+            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project&fields[organization]=name`
           )
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();

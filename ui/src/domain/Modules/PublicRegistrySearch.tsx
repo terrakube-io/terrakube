@@ -154,7 +154,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         setExistingProviders(providerNames);
 
         // Fetch existing modules
-        const modulesResponse = await axiosInstance.get(`organization/${orgid}?include=module`);
+        const modulesResponse = await axiosInstance.get(
+          `organization/${orgid}?include=module&fields[organization]=name`
+        );
         const moduleNames = new Set<string>();
         if (modulesResponse.data.included) {
           modulesResponse.data.included

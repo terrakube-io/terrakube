@@ -49,7 +49,7 @@ export const ModuleList = ({ setOrganizationName, organizationName }: Props) => 
   useEffect(() => {
     setLoading(true);
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid!);
-    axiosInstance.get(`organization/${orgid}?include=module`).then((response) => {
+    axiosInstance.get(`organization/${orgid}?include=module&fields[organization]=name`).then((response) => {
       if (response.data.included) {
         setupOrganizationIncludes(response.data.included, setModules, setFilteredModules);
       }

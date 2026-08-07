@@ -111,7 +111,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   useEffect(() => {
     setLoading(true);
     axiosInstance
-      .get(`organization/${orgid}`)
+      .get(`organization/${orgid}?fields[organization]=name,description,executionMode,icon`)
       .then((response) => {
         setOrganization(response.data.data);
         const iconField = response.data.data.attributes.icon;

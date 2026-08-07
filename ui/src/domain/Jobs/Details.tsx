@@ -432,9 +432,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
-        signal,
-      });
+      const response = await axiosInstance.get(
+        `organization/${organizationId}/job/${jobId}?include=step,workspace&fields[workspace]=source,branch`,
+        { signal }
+      );
       if (requestId !== jobRequestRef.current) {
         return;
       }
