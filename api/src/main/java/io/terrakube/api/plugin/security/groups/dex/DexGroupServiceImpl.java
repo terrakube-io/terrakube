@@ -56,10 +56,13 @@ public class DexGroupServiceImpl implements GroupService {
         boolean isMember = principal.getTokenAttributes().get("iss").equals("TerrakubeInternal")? true: false;
         boolean isFederated = isFederatedAccount(user);
         if(!isMember) {
+            // Federated tokens are issued by an external provider and usually carry no
+            // "groups" claim, so this check cannot live inside the loop below.
+            if (isFederated && isFederatedMember(user, group))
+                isMember = true;
+
             for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
                 if (groupName.equals(group))
-                    isMember = true;
-                if (isFederated && isFederatedMember(user, group))
                     isMember = true;
             }
             log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
