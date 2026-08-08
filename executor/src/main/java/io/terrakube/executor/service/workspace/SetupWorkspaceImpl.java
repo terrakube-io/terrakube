@@ -169,7 +169,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         // Resolved once and shared with the ref probe: for AZURE_SP_MI this acquires a token
         // over the network, and nothing caches it between calls.
         CredentialsProvider credentialsProvider = credentialsProvider(terraformJob);
-        String branchRef = resolveBranchRef(terraformJob, credentialsProvider);
+        String branchRef = resolveBranchRef(gitCloneFolder, terraformJob, credentialsProvider);
         if (isSsh(terraformJob)) {
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(terraformJob.getSource())
@@ -216,14 +216,15 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
      * The branch field also accepts a tag name, so the namespace has to be resolved before the
      * fetch can be restricted to a single ref.
      */
-    private String resolveBranchRef(TerraformJob terraformJob, CredentialsProvider credentialsProvider)
+    private String resolveBranchRef(File gitClonefolder, TerraformJob terraformJob, CredentialsProvider credentialsProvider)
             throws IOException {
         String headRef = Constants.R_HEADS + terraformJob.getBranch();
         String tagRef = Constants.R_TAGS + terraformJob.getBranch();
 
-        // Key material has to land outside the clone folder: CloneCommand refuses a destination
-        // that is not empty.
-        File sshFolder = Files.createTempDirectory("terrakube-ls-remote").toFile();
+        // Key material lands inside the clone folder so it is cleaned up at the end of the job
+        // by ExecutorJobImpl.  The finally block below deletes the folder before the clone starts,
+        // so CloneCommand still sees an empty destination (SonarQube java:S5443).
+        File sshFolder = Files.createTempDirectory(gitClonefolder.toPath(), "terrakube-ls-remote").toFile();
         SshdSessionFactory sshSessionFactory = sshSessionFactory(sshFolder, terraformJob);
         try {
             Map<String, Ref> remoteRefs = configureTransport(
