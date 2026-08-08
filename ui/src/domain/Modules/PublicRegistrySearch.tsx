@@ -16,7 +16,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
 import { ProviderModel } from "../Providers/types";
-import { ModuleModel } from "../types";
+import { ModuleModel, Organization, sparseFields } from "../types";
+
+/** The registry search reads no organization attributes; the fieldset is here to suppress its relationship fanout. */
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name");
 import axiosInstance, { axiosRegistry } from "../../config/axiosConfig";
 
 const { Search } = Input;
@@ -154,9 +157,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         setExistingProviders(providerNames);
 
         // Fetch existing modules
-        const modulesResponse = await axiosInstance.get(
-          `organization/${orgid}?include=module&fields[organization]=name`
-        );
+        const modulesResponse = await axiosInstance.get(`organization/${orgid}?include=module&${ORGANIZATION_FIELDS}`);
         const moduleNames = new Set<string>();
         if (modulesResponse.data.included) {
           modulesResponse.data.included

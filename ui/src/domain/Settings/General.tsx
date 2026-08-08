@@ -14,7 +14,7 @@ import {
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
-import { Organization, Sparse } from "../types";
+import { Organization, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -22,8 +22,8 @@ import "./Settings.css";
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
 
-/** Mirrors fields[organization]=name,description,executionMode,icon on the settings request. */
-type SparseOrganization = Sparse<Organization, "name" | "description" | "executionMode" | "icon">;
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name", "description", "executionMode", "icon");
+type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type GeneralSettingsForm = {
   name: string;
@@ -114,7 +114,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   useEffect(() => {
     setLoading(true);
     axiosInstance
-      .get(`organization/${orgid}?fields[organization]=name,description,executionMode,icon`)
+      .get(`organization/${orgid}?${ORGANIZATION_FIELDS}`)
       .then((response) => {
         setOrganization(response.data.data);
         const iconField = response.data.data.attributes.icon;

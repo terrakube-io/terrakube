@@ -60,7 +60,8 @@ import {
   IncludedItem,
   Organization,
   Resource,
-  Sparse,
+  sparseFields,
+  SparseOf,
   VcsType,
   Workspace,
 } from "../types.js";
@@ -105,8 +106,8 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   advanced: "Destruction and Deletion",
 };
 
-/** Mirrors fields[organization]=name on the workspace request. */
-type SparseOrganization = Sparse<Organization, "name">;
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name");
+type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
@@ -424,7 +425,7 @@ export const WorkspaceDetails = ({
         setTemplates(template.data.data);
         axiosInstance
           .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project&fields[organization]=name`
+            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project&${ORGANIZATION_FIELDS}`
           )
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();

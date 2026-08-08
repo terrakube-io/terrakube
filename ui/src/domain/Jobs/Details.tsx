@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
-import { IncludedItem, Job, JobStep, Sparse, Workspace } from "../types";
+import { IncludedItem, Job, JobStep, sparseFields, SparseOf, Workspace } from "../types";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
@@ -39,8 +39,8 @@ type Props = {
   jobId: string;
 };
 
-/** Mirrors fields[workspace]=source,branch on the job request. */
-type SparseWorkspace = Sparse<Workspace, "source" | "branch">;
+const WORKSPACE_FIELDS = sparseFields<Workspace>("workspace")("source", "branch");
+type SparseWorkspace = SparseOf<typeof WORKSPACE_FIELDS>;
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
@@ -436,7 +436,7 @@ export const DetailsJob = ({ jobId }: Props) => {
 
     try {
       const response = await axiosInstance.get(
-        `organization/${organizationId}/job/${jobId}?include=step,workspace&fields[workspace]=source,branch`,
+        `organization/${organizationId}/job/${jobId}?include=step,workspace&${WORKSPACE_FIELDS}`,
         { signal }
       );
       if (requestId !== jobRequestRef.current) {
