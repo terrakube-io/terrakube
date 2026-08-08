@@ -216,7 +216,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
      * The branch field also accepts a tag name, so the namespace has to be resolved before the
      * fetch can be restricted to a single ref.
      */
-    private String resolveBranchRef(File parentDir, TerraformJob terraformJob, CredentialsProvider credentialsProvider)
+    private String resolveBranchRef(File gitClonefolder, TerraformJob terraformJob, CredentialsProvider credentialsProvider)
             throws IOException {
         String headRef = Constants.R_HEADS + terraformJob.getBranch();
         String tagRef = Constants.R_TAGS + terraformJob.getBranch();
@@ -224,7 +224,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         // Key material lands inside the clone folder so it is cleaned up at the end of the job
         // by ExecutorJobImpl.  The finally block below deletes the folder before the clone starts,
         // so CloneCommand still sees an empty destination (SonarQube java:S5443).
-        File sshFolder = Files.createTempDirectory(parentDir.toPath(), "terrakube-ls-remote").toFile();
+        File sshFolder = Files.createTempDirectory(gitClonefolder.toPath(), "terrakube-ls-remote").toFile();
         SshdSessionFactory sshSessionFactory = sshSessionFactory(sshFolder, terraformJob);
         try {
             Map<String, Ref> remoteRefs = configureTransport(
