@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 public class TerraformJsonController {
 
     private static final String TERRAFORM_REDIS_KEY = "terraformReleasesResponse";
+    private static final String TERRAFORM_STALE_REDIS_KEY = "terraformReleasesResponseStale";
     private TerraformJsonProperties terraformJsonProperties;
     private DownloadReleasesService downloadReleasesService;
     RedisTemplate redisTemplate;
@@ -34,19 +35,18 @@ public class TerraformJsonController {
     public ResponseEntity<String> createToken() throws IOException {
 
         String terraformIndex = "";
-        if (terraformJsonProperties.getReleasesUrl() != null && !terraformJsonProperties.getReleasesUrl().isEmpty()) {
-            log.info("Using terraform releases URL {}", terraformJsonProperties.getReleasesUrl());
-            terraformIndex = terraformJsonProperties.getReleasesUrl();
-        } else {
-            log.warn("Using terraform releases URL https://releases.hashicorp.com/terraform/index.json");
-            terraformIndex = "https://releases.hashicorp.com/terraform/index.json";
-        }
-
-        if(redisTemplate.hasKey(TERRAFORM_REDIS_KEY)) {
+        if (redisTemplate.hasKey(TERRAFORM_REDIS_KEY)) {
             log.info("Getting terraform releases from redis....");
             String terraformRedis = (String) redisTemplate.opsForValue().get(TERRAFORM_REDIS_KEY);
             return new ResponseEntity<>(terraformRedis, HttpStatus.OK);
         } else {
+            if (terraformJsonProperties.getReleasesUrl() != null && !terraformJsonProperties.getReleasesUrl().isEmpty()) {
+                log.info("Using terraform releases URL {}", terraformJsonProperties.getReleasesUrl());
+                terraformIndex = terraformJsonProperties.getReleasesUrl();
+            } else {
+                log.warn("Using terraform releases URL https://releases.hashicorp.com/terraform/index.json");
+                terraformIndex = "https://releases.hashicorp.com/terraform/index.json";
+            }
 
             try {
                 Path path = Paths.get(FileUtils.getTempDirectory().getAbsolutePath(), UUID.randomUUID().toString());
@@ -63,15 +63,19 @@ public class TerraformJsonController {
                 log.warn("Saving terraform releases to redis...");
                 redisTemplate.opsForValue().set(TERRAFORM_REDIS_KEY, terraformIndex);
                 redisTemplate.expire(TERRAFORM_REDIS_KEY, terraformJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
-
+                redisTemplate.opsForValue().set(TERRAFORM_STALE_REDIS_KEY, terraformIndex);
                 return new ResponseEntity<>(terraformIndex, HttpStatus.OK);
             } catch (Exception e) {
-                log.error(e.getMessage());
-                return new ResponseEntity<>(terraformIndex, HttpStatus.INTERNAL_SERVER_ERROR);
+                log.error("Failed to fetch Terraform releases endpoint: {}", e.getMessage());
+                String staleData = (String) redisTemplate.opsForValue().get(TERRAFORM_STALE_REDIS_KEY);
+                if (staleData != null && !staleData.isEmpty()) {
+                    log.warn("Terraform releases endpoint unavailable - serving stale cached Terraform releases");
+                    return new ResponseEntity<>(staleData, HttpStatus.OK);
+                }
+                log.error("Terraform releases endpoint unavailable and no stale cache available - returning 503");
+                return new ResponseEntity<>("{\"error\":\"Terraform releases temporarily unavailable\"}", HttpStatus.SERVICE_UNAVAILABLE);
             }
         }
-
-
     }
 }
 
