@@ -61,6 +61,8 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean includeBackendKeys;
 
+    private boolean useLockfile;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -113,13 +115,16 @@ public class AwsTerraformStateImpl implements TerraformState {
               log.warn("No including backend information");
             }
 
-            // Native S3 locking (conditional writes) is available from Terraform 1.10
-            // and OpenTofu 1.10. Without it the generated backend takes no lock at all,
-            // so a job and anything else writing the same state can overwrite each other.
-            // Skipped when a custom endpoint is set: S3 compatible services do not all
-            // support the conditional write this relies on.
-            if(endpoint == null && version.compareTo(new ComparableVersion("1.10.0")) >= 0){
-                awsBackendHcl.appendln("    use_lockfile = true");
+            // Native S3 locking, off by default. Turning it on makes concurrent runs on
+            // the same state wait for each other, which is why it is not the default:
+            // plan only jobs are allowed to run in parallel on purpose.
+            // Worth enabling when something outside Terrakube writes the same state.
+            if(useLockfile) {
+                if(version.compareTo(new ComparableVersion("1.10.0")) >= 0){
+                    awsBackendHcl.appendln("    use_lockfile = true");
+                } else {
+                    log.warn("use_lockfile is enabled but ignored, it requires terraform or tofu 1.10 and this job runs {}", version);
+                }
             }
 
             if(endpoint != null){
