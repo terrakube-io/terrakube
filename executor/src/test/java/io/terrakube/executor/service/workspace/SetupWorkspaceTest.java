@@ -4,13 +4,17 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.lang.reflect.Proxy;
 import java.net.URI;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Job;
@@ -21,11 +25,15 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.tar.TarEntry;
 import org.apache.tools.tar.TarOutputStream;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.eclipse.jgit.api.errors.TransportException;
+import org.eclipse.jgit.junit.ssh.SshTestGitServer;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -194,6 +202,29 @@ public class SetupWorkspaceTest {
                 .call();
     }
 
+    private static List<String> refNames(Git git, String prefix) throws IOException {
+        return git.getRepository().getRefDatabase().getRefsByPrefix(prefix).stream()
+                .map(Ref::getName)
+                .sorted()
+                .toList();
+    }
+
+    private static class UnshallowRecordingSetupWorkspace extends SetupWorkspaceImpl {
+        boolean unshallowRepositoryCalled;
+
+        UnshallowRecordingSetupWorkspace() {
+            super(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
+                    "https://terrakube-api.example.com", terrakubeClient(null));
+        }
+
+        @Override
+        void unshallowRepository(Git git, File gitCloneFolder, TerraformJob terraformJob)
+                throws GitAPIException, IOException {
+            unshallowRepositoryCalled = true;
+            super.unshallowRepository(git, gitCloneFolder, terraformJob);
+        }
+    }
+
     private static class RejectingShaFetchSetupWorkspace extends SetupWorkspaceImpl {
         boolean unshallowRepositoryCalled;
 
@@ -292,6 +323,222 @@ public class SetupWorkspaceTest {
     }
 
     @Test
+    public void fetchesOnlyTheRequestedBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            // The tag sits on the unrelated branch so a narrowed fetch cannot reach it:
+            // AUTO_FOLLOW would still pull a tag pointing at the requested branch's tip.
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.tag().setName("v1.0.0").call();
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                        refNames(workspaceGit, Constants.R_REMOTES));
+                Assertions.assertEquals(List.of(), refNames(workspaceGit, Constants.R_TAGS));
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void checksOutWhenBranchFieldNamesATag() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit tagged = commitFile(sourceGit, "main.tf", "tagged");
+            sourceGit.tag().setName("v1.0.0").call();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+
+            TerraformJob job = localGitJob(sourceRepository, "v1.0.0");
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(tagged.getName(),
+                        workspaceGit.getRepository().resolve("HEAD").getName());
+                Assertions.assertEquals(List.of(Constants.R_TAGS + "v1.0.0"),
+                        refNames(workspaceGit, Constants.R_TAGS));
+                Assertions.assertEquals(List.of(), refNames(workspaceGit, Constants.R_REMOTES));
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void checksOutARecordedCommitThatLivesOnAnotherBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            job.setCommitId(unrelatedCommit.getName());
+
+            UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            // The commit is an advertised ref tip, so the narrowed clone can fetch it by sha
+            // rather than falling back to pulling the whole history.
+            Assertions.assertFalse(setup.unshallowRepositoryCalled);
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(unrelatedCommit.getName(),
+                        workspaceGit.getRepository().resolve("HEAD").getName());
+                Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                        refNames(workspaceGit, Constants.R_REMOTES));
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void clonesOverSshAndLeavesTheKeyInTheWorkspace() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "over-ssh");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
+
+                File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+                // TerraformExecutorServiceImpl.getSshFile reads the key back out of the
+                // workspace, so the clone has to be what puts it there.
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".ssh", "id_rsa").exists());
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(List.of(Constants.R_REMOTES + "origin/" + requestedBranch),
+                            refNames(workspaceGit, Constants.R_REMOTES));
+                }
+                Assertions.assertEquals("over-ssh", FileUtils.readFileToString(
+                        FileUtils.getFile(workspaceDir, "main.tf"), StandardCharsets.UTF_8));
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void fetchesAMissingCommitOverSsh() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
+                job.setCommitId(unrelatedCommit.getName());
+
+                UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+                File workspaceDir = setup.prepareWorkspace(job);
+
+                Assertions.assertFalse(setup.unshallowRepositoryCalled);
+                Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(unrelatedCommit.getName(),
+                            workspaceGit.getRepository().resolve("HEAD").getName());
+                }
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void unshallowsOverSshWhenTheShaFetchIsRejected() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        KeyPair clientKey = generateRsaKeyPair();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit plannedCommit = commitFile(sourceGit, "main.tf", "planned");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+            commitFile(sourceGit, "main.tf", "advanced");
+
+            SshTestGitServer server = new SshTestGitServer("git", clientKey.getPublic(),
+                    sourceGit.getRepository(), generateRsaKeyPair());
+            int port = server.start();
+            try {
+                TerraformJob job = sshJob(port, requestedBranch, clientKey);
+                job.setCommitId(plannedCommit.getName());
+
+                RejectingShaFetchSetupWorkspace setup = new RejectingShaFetchSetupWorkspace();
+                File workspaceDir = setup.prepareWorkspace(job);
+
+                Assertions.assertTrue(setup.unshallowRepositoryCalled);
+                try (Git workspaceGit = Git.open(workspaceDir)) {
+                    Assertions.assertEquals(plannedCommit.getName(),
+                            workspaceGit.getRepository().resolve("HEAD").getName());
+                }
+                Assertions.assertEquals("planned", FileUtils.readFileToString(
+                        FileUtils.getFile(workspaceDir, "main.tf"), StandardCharsets.UTF_8));
+            } finally {
+                server.stop();
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    private TerraformJob sshJob(int port, String branch, KeyPair clientKey) throws IOException {
+        TerraformJob job = baseGitJob();
+        job.setVcsType("SSH~id_rsa");
+        job.setSource("ssh://git@localhost:" + port + "/terrakube-source");
+        job.setBranch(branch);
+        job.setAccessToken(privateKeyPem(clientKey));
+        return job;
+    }
+
+    private static KeyPair generateRsaKeyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    /** PKCS#1, since that is the format the executor keys its file naming off. */
+    private static String privateKeyPem(KeyPair keyPair) throws IOException {
+        StringWriter pem = new StringWriter();
+        try (JcaPEMWriter writer = new JcaPEMWriter(pem)) {
+            writer.writeObject(keyPair.getPrivate());
+        }
+        return pem.toString();
+    }
+
+    @Test
     public void injectsCommitHashInfo() throws Exception {
         TerraformJob job = successfulGitJob();
         SetupWorkspace setup = standardSetupWorkspaceImpl(job);
@@ -307,6 +554,15 @@ public class SetupWorkspaceTest {
         job.setCommitId("nonsense");
         WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
         Assertions.assertEquals(RefNotFoundException.class, e.getCause().getClass());
+    }
+
+    @Test
+    public void reportsFailureWhenTheBranchDoesNotExist() throws Exception {
+        TerraformJob job = successfulGitJob();
+        job.setBranch("does-not-exist");
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+        Assertions.assertEquals(TransportException.class, e.getCause().getClass());
     }
 
     @Test
