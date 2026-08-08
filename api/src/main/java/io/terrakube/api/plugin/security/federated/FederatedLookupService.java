@@ -7,9 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
-import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Resolves the federated provider for a token issuer/audience pair, memoized for the life of the
@@ -43,23 +42,30 @@ public class FederatedLookupService {
             return federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience);
         }
 
-        return requestCache(attributes).computeIfAbsent(
-                new FederatedKey(issuerUrl, audience),
-                key -> federatedRepository.findByIssuerUrlAndAudience(key.issuerUrl(), key.audience()));
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<FederatedKey, Optional<Federated>> requestCache(RequestAttributes attributes) {
-        Map<FederatedKey, Optional<Federated>> cache =
-                (Map<FederatedKey, Optional<Federated>>) attributes.getAttribute(CACHE_ATTRIBUTE,
-                        RequestAttributes.SCOPE_REQUEST);
-        if (cache == null) {
-            cache = new ConcurrentHashMap<>();
-            attributes.setAttribute(CACHE_ATTRIBUTE, cache, RequestAttributes.SCOPE_REQUEST);
+        String slot = CACHE_ATTRIBUTE + '#' + issuerUrl + '#' + audience;
+        Memo memo = (Memo) attributes.getAttribute(slot, RequestAttributes.SCOPE_REQUEST);
+        if (memo != null && memo.answers(issuerUrl, audience)) {
+            return memo.result();
         }
-        return cache;
+
+        Optional<Federated> result = federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience);
+        attributes.setAttribute(slot, new Memo(issuerUrl, audience, result), RequestAttributes.SCOPE_REQUEST);
+        return result;
     }
 
-    private record FederatedKey(String issuerUrl, String audience) {
+    /**
+     * One immutable entry per attribute slot rather than a lazily created container.
+     * {@link RequestAttributes} exposes no atomic get-or-create, so a shared container would have to
+     * be published with a get-then-set that can drop an entry under concurrency. Independent slots
+     * cannot: a racing writer only rewrites its own key with an equal value.
+     *
+     * <p>The pair is stored next to the result and re-checked on read, so two pairs that flatten to
+     * the same slot name re-query instead of borrowing each other's answer.
+     */
+    private record Memo(String issuerUrl, String audience, Optional<Federated> result) {
+
+        boolean answers(String issuerUrl, String audience) {
+            return Objects.equals(this.issuerUrl, issuerUrl) && Objects.equals(this.audience, audience);
+        }
     }
 }

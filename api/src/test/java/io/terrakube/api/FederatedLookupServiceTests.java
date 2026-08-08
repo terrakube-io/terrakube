@@ -95,6 +95,26 @@ class FederatedLookupServiceTests {
         assertTrue(service.findByIssuerUrlAndAudience(ISSUER, "other-audience").isEmpty());
     }
 
+    /**
+     * The memo derives its request attribute name by joining issuer and audience, so pairs like
+     * ("a", "b#c") and ("a#b", "c") flatten to the same name. The stored pair must be re-checked on
+     * read, or one would be served the other's provider.
+     */
+    @Test
+    void pairsThatFlattenToTheSameSlotDoNotShareAnAnswer() {
+        FederatedRepository repository = mock(FederatedRepository.class);
+        when(repository.findByIssuerUrlAndAudience("a", "b#c"))
+                .thenReturn(Optional.of(federated(GROUP, Map.of())));
+        when(repository.findByIssuerUrlAndAudience("a#b", "c")).thenReturn(Optional.empty());
+        FederatedLookupService service = new FederatedLookupService(repository);
+
+        bindRequest();
+
+        assertTrue(service.findByIssuerUrlAndAudience("a", "b#c").isPresent());
+        assertTrue(service.findByIssuerUrlAndAudience("a#b", "c").isEmpty(),
+                "a colliding slot name must not hand back the other pair's provider");
+    }
+
     @Test
     void resolvesWithoutARequestContext() {
         FederatedRepository repository = mock(FederatedRepository.class);
