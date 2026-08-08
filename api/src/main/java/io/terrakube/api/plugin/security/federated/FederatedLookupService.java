@@ -1,13 +1,12 @@
 package io.terrakube.api.plugin.security.federated;
 
+import io.terrakube.api.plugin.security.request.RequestScopedMemo;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.web.context.request.RequestAttributes;
-import org.springframework.web.context.request.RequestContextHolder;
 
-import java.util.Objects;
+import java.util.Arrays;
 import java.util.Optional;
 
 /**
@@ -37,35 +36,7 @@ public class FederatedLookupService {
      * let one user's result stand in for another's.
      */
     public Optional<Federated> findByIssuerUrlAndAudience(String issuerUrl, String audience) {
-        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
-        if (attributes == null) {
-            return federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience);
-        }
-
-        String slot = CACHE_ATTRIBUTE + '#' + issuerUrl + '#' + audience;
-        Memo memo = (Memo) attributes.getAttribute(slot, RequestAttributes.SCOPE_REQUEST);
-        if (memo != null && memo.answers(issuerUrl, audience)) {
-            return memo.result();
-        }
-
-        Optional<Federated> result = federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience);
-        attributes.setAttribute(slot, new Memo(issuerUrl, audience, result), RequestAttributes.SCOPE_REQUEST);
-        return result;
-    }
-
-    /**
-     * One immutable entry per attribute slot rather than a lazily created container.
-     * {@link RequestAttributes} exposes no atomic get-or-create, so a shared container would have to
-     * be published with a get-then-set that can drop an entry under concurrency. Independent slots
-     * cannot: a racing writer only rewrites its own key with an equal value.
-     *
-     * <p>The pair is stored next to the result and re-checked on read, so two pairs that flatten to
-     * the same slot name re-query instead of borrowing each other's answer.
-     */
-    private record Memo(String issuerUrl, String audience, Optional<Federated> result) {
-
-        boolean answers(String issuerUrl, String audience) {
-            return Objects.equals(this.issuerUrl, issuerUrl) && Objects.equals(this.audience, audience);
-        }
+        return RequestScopedMemo.memoize(CACHE_ATTRIBUTE, Arrays.asList(issuerUrl, audience),
+                () -> federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience));
     }
 }
