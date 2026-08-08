@@ -1,6 +1,7 @@
 package io.terrakube.api;
 
 import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
@@ -53,7 +54,8 @@ class DexGroupServiceTests {
     void tokenWithGroupsClaimIsStillMember() {
         FederatedRepository federatedRepository = mock(FederatedRepository.class);
         when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
-        DexGroupServiceImpl groupService = new DexGroupServiceImpl(null, null, null, federatedRepository);
+        DexGroupServiceImpl groupService =
+                new DexGroupServiceImpl(null, null, null, new FederatedLookupService(federatedRepository));
 
         User user = userWith(Map.of(
                 "iss", "https://dex.example.com",
@@ -67,7 +69,7 @@ class DexGroupServiceTests {
     private DexGroupServiceImpl groupServiceWith(Federated federated) {
         FederatedRepository federatedRepository = mock(FederatedRepository.class);
         when(federatedRepository.findByIssuerUrlAndAudience(ISSUER, AUDIENCE)).thenReturn(Optional.of(federated));
-        return new DexGroupServiceImpl(null, null, null, federatedRepository);
+        return new DexGroupServiceImpl(null, null, null, new FederatedLookupService(federatedRepository));
     }
 
     private Federated federated(String name, Map<String, String> claims) {

@@ -60,6 +60,8 @@ import {
   IncludedItem,
   Organization,
   Resource,
+  sparseFields,
+  SparseOf,
   VcsType,
   Workspace,
 } from "../types.js";
@@ -103,6 +105,9 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   "team-access": "Team Access",
   advanced: "Destruction and Deletion",
 };
+
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name");
+type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
@@ -414,15 +419,13 @@ export const WorkspaceDetails = ({
   };
 
   const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    let url = `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,reference`;
-    if (_loadWebhook) url += ",webhook";
     axiosInstance
       .get(`organization/${organizationId}/template`)
       .then((template) => {
         setTemplates(template.data.data);
         axiosInstance
           .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
+            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project&${ORGANIZATION_FIELDS}`
           )
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();
@@ -455,8 +458,8 @@ export const WorkspaceDetails = ({
               );
             }
 
-            const organization: Organization | undefined = response.data.included?.find(
-              (item: IncludedItem<Organization>) => item.type === "organization"
+            const organization: SparseOrganization | undefined = response.data.included?.find(
+              (item: IncludedItem<SparseOrganization>) => item.type === "organization"
             );
             if (organization) {
               const organizationName = organization.attributes.name;

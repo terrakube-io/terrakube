@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
-import { Job, JobStep } from "../types";
+import { IncludedItem, Job, JobStep, sparseFields, SparseOf, Workspace } from "../types";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
@@ -38,6 +38,9 @@ import {
 type Props = {
   jobId: string;
 };
+
+const WORKSPACE_FIELDS = sparseFields<Workspace>("workspace")("source", "branch");
+type SparseWorkspace = SparseOf<typeof WORKSPACE_FIELDS>;
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
@@ -432,9 +435,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
-        signal,
-      });
+      const response = await axiosInstance.get(
+        `organization/${organizationId}/job/${jobId}?include=step,workspace&${WORKSPACE_FIELDS}`,
+        { signal }
+      );
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -443,7 +447,9 @@ export const DetailsJob = ({ jobId }: Props) => {
 
       const included = response.data.included ?? [];
       const stepEntries = included.filter((item: any) => item.type === "step");
-      const workspaceEntry = included.find((item: any) => item.type === "workspace");
+      const workspaceEntry: SparseWorkspace | undefined = included.find(
+        (item: IncludedItem<SparseWorkspace>) => item.type === "workspace"
+      );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
       const stepsPromise = Promise.all(
