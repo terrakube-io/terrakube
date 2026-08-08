@@ -60,6 +60,7 @@ import {
   IncludedItem,
   Organization,
   Resource,
+  Sparse,
   VcsType,
   Workspace,
 } from "../types.js";
@@ -103,6 +104,9 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   "team-access": "Team Access",
   advanced: "Destruction and Deletion",
 };
+
+/** Mirrors fields[organization]=name on the workspace request. */
+type SparseOrganization = Sparse<Organization, "name">;
 
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
@@ -453,8 +457,8 @@ export const WorkspaceDetails = ({
               );
             }
 
-            const organization: Organization | undefined = response.data.included?.find(
-              (item: IncludedItem<Organization>) => item.type === "organization"
+            const organization: SparseOrganization | undefined = response.data.included?.find(
+              (item: IncludedItem<SparseOrganization>) => item.type === "organization"
             );
             if (organization) {
               const organizationName = organization.attributes.name;

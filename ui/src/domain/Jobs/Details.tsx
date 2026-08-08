@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
-import { Job, JobStep } from "../types";
+import { IncludedItem, Job, JobStep, Sparse, Workspace } from "../types";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
@@ -38,6 +38,9 @@ import {
 type Props = {
   jobId: string;
 };
+
+/** Mirrors fields[workspace]=source,branch on the job request. */
+type SparseWorkspace = Sparse<Workspace, "source" | "branch">;
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
@@ -444,7 +447,9 @@ export const DetailsJob = ({ jobId }: Props) => {
 
       const included = response.data.included ?? [];
       const stepEntries = included.filter((item: any) => item.type === "step");
-      const workspaceEntry = included.find((item: any) => item.type === "workspace");
+      const workspaceEntry: SparseWorkspace | undefined = included.find(
+        (item: IncludedItem<SparseWorkspace>) => item.type === "workspace"
+      );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
       const stepsPromise = Promise.all(

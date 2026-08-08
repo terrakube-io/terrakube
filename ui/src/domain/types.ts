@@ -20,6 +20,20 @@ export type AttributeWrapped<T> = {
   attributes: T;
 };
 
+/**
+ * A resource narrowed to the attributes a `fields[type]=...` query parameter asked for.
+ *
+ * Naming any field for a type also suppresses that resource's `relationships` block, so both are
+ * removed here. Keep the type argument in step with the query string — nothing verifies that a
+ * request actually asked for the fields its response is typed as carrying.
+ */
+export type Sparse<T extends { attributes: object }, K extends keyof T["attributes"]> = Omit<
+  T,
+  "attributes" | "relationships"
+> & {
+  attributes: Pick<T["attributes"], K>;
+};
+
 // Organization
 export type Organization = {
   id: string;
