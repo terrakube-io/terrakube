@@ -21,6 +21,7 @@ import org.quartz.listeners.JobListenerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -52,6 +53,11 @@ class RepoWebhookSyncCoalescingIntegrationTest {
 
     @MockitoBean
     private RedisTemplate<String, Object> redisTemplate;
+
+    // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
+    // container to connect to Redis on context startup - there's no Redis available here.
+    @MockitoBean
+    private RedisMessageListenerContainer redisMessageListenerContainer;
 
     @Container
     private static final PostgreSQLContainer<?> postgreSQLContainer = new PostgreSQLContainer<>("postgres:16-alpine")
