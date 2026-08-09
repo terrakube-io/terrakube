@@ -17,6 +17,7 @@ import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
+
 import axiosInstance, { axiosRegistry } from "../../config/axiosConfig";
 
 const { Search } = Input;
@@ -153,7 +154,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         );
         setExistingProviders(providerNames);
 
-        // Fetch existing modules
         const modulesResponse = await axiosInstance.get(`organization/${orgid}?include=module`);
         const moduleNames = new Set<string>();
         if (modulesResponse.data.included) {

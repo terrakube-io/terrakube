@@ -20,6 +20,47 @@ export type AttributeWrapped<T> = {
   attributes: T;
 };
 
+/**
+ * A resource narrowed to the attributes a `fields[type]=...` query parameter asked for.
+ *
+ * Naming any field for a type also suppresses that resource's `relationships` block, so both are
+ * removed here. Prefer deriving this through {@link sparseFields} rather than writing it directly,
+ * so the shape cannot disagree with the request that produced it.
+ */
+export type Sparse<T extends { attributes: object }, K extends keyof T["attributes"]> = Omit<
+  T,
+  "attributes" | "relationships"
+> & {
+  attributes: Pick<T["attributes"], K>;
+};
+
+declare const RESOURCE: unique symbol;
+
+/** A `fields[type]=...` query fragment that carries the resource shape it produces. */
+export type FieldSet<R> = string & { readonly [RESOURCE]: R };
+
+/** The resource shape a {@link FieldSet} yields. */
+export type SparseOf<F> = F extends FieldSet<infer R> ? R : never;
+
+type AttributeName<T extends { attributes: object }> = keyof T["attributes"] & string;
+
+/**
+ * Builds a `fields[type]=...` fragment and the response shape it produces from one field list, so
+ * the two cannot drift. Interpolates into a URL as an ordinary string.
+ *
+ *     const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name");
+ *     type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
+ *     axiosInstance.get(`organization/${id}?${ORGANIZATION_FIELDS}`);
+ *
+ * Field names are checked against the resource, so a typo fails to compile rather than reaching the
+ * server and quietly returning a resource without it. Applied in two calls because TypeScript
+ * cannot infer the field list while the resource type is given explicitly.
+ */
+export function sparseFields<T extends { attributes: object }>(type: string) {
+  return <const K extends readonly AttributeName<T>[]>(...fields: K): FieldSet<Sparse<T, K[number]>> =>
+    `fields[${type}]=${fields.join(",")}` as FieldSet<Sparse<T, K[number]>>;
+}
+
 // Organization
 export type Organization = {
   id: string;

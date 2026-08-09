@@ -104,6 +104,7 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   advanced: "Destruction and Deletion",
 };
 
+
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
   setWorkspaceManageState: React.Dispatch<React.SetStateAction<boolean>>;
@@ -414,8 +415,6 @@ export const WorkspaceDetails = ({
   };
 
   const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    let url = `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,reference`;
-    if (_loadWebhook) url += ",webhook";
     axiosInstance
       .get(`organization/${organizationId}/template`)
       .then((template) => {

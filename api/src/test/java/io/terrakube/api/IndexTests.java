@@ -63,4 +63,32 @@ public class IndexTests extends ServerApplicationTests {
                 .assertThat()
                 .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
     }
+
+    @Test
+    void terraformIndexReturnsStaleCacheWhenEndpointFails() {
+        when(redisTemplate.hasKey("terraformReleasesResponse")).thenReturn(false);
+        when(valueOperations.get("terraformReleasesResponseStale")).thenReturn("{\"stale\": true}");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/terraform/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void terraformIndexReturnsServiceUnavailableWhenEndpointFailsAndNoCacheExists() {
+        when(redisTemplate.hasKey("terraformReleasesResponse")).thenReturn(false);
+        when(valueOperations.get(anyString())).thenReturn(null);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/terraform/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
+    }
 }
