@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Indexes supporting JobRepository's FIFO dispatch-ordering queries (isJobNextInDispatchOrder,
+         findNextDispatchableJobId): idx_job_status_id for the status+id filter, idx_job_workspace_id_id
+         for the per-workspace blocking subquery (the existing idx_job_workspace_id doesn't cover id). -->
+
+    <changeSet id="2-33-0-idx-job-status-id" author="jake">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_job_status_id" tableName="job"/></not>
+        </preConditions>
+        <createIndex tableName="job" indexName="idx_job_status_id">
+            <column name="status"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-33-0-idx-job-workspace-id-id" author="jake">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_job_workspace_id_id" tableName="job"/></not>
+        </preConditions>
+        <createIndex tableName="job" indexName="idx_job_workspace_id_id">
+            <column name="workspace_id"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
