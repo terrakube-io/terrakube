@@ -18,7 +18,7 @@
 		<azure.version>6.4.0</azure.version>
 		<msal4j.version>1.25.1</msal4j.version>
 		<commons-text.version>1.15.0</commons-text.version>
-		<terraform-spring-boot-starter.version>1.4.1</terraform-spring-boot-starter.version>
+		<terraform-spring-boot-starter.version>1.5.0</terraform-spring-boot-starter.version>
 		<terrakube-client-starter.version>1.6.0</terrakube-client-starter.version>
 		<commons-io.version>2.22.0</commons-io.version>
 		<commons-codec>1.22.1</commons-codec>
@@ -139,6 +139,12 @@
 			<groupId>org.eclipse.jgit</groupId>
 			<artifactId>org.eclipse.jgit.ssh.apache</artifactId>
 			<version>${jgit.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.jgit</groupId>
+			<artifactId>org.eclipse.jgit.junit.ssh</artifactId>
+			<version>${jgit.version}</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.groovy</groupId>

@@ -80,6 +80,45 @@ class AwsTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFile_NoLockfileByDefault(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertFalse(content.contains("use_lockfile"), "Locking is opt in, parallel plan only jobs keep working");
+    }
+
+    @Test
+    void testGetBackendStateFile_UsesLockfileWhenEnabled(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setUseLockfile(true);
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.10.0");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("use_lockfile = true"), "Native S3 locking is available from 1.10.0");
+    }
+
+    @Test
+    void testGetBackendStateFile_NoLockfileBefore110(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setUseLockfile(true);
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.9.8");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertFalse(content.contains("use_lockfile"), "use_lockfile is not a valid argument before 1.10.0");
+    }
+
+    @Test
+    void testGetBackendStateFile_UsesLockfileWithCustomEndpoint(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setUseLockfile(true);
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("use_lockfile = true"), "Enabling it is an explicit choice, the endpoint does not override it");
+    }
+
+    @Test
     void testGetBackendStateFile_PessimisticConstraintWithEndpoint(@TempDir Path tempDir) throws IOException {
         awsTerraformState.setEndpoint("http://minio:9000");
 

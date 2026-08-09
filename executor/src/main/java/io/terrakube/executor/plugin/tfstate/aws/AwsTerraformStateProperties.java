@@ -21,4 +21,5 @@ public class AwsTerraformStateProperties {
     private String endpoint;
     private boolean includeBackendKeys;
     private boolean enableRoleAuthentication;
+    private boolean useLockfile;
 }

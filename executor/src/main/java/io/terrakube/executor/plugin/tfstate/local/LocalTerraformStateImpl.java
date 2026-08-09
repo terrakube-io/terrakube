@@ -38,6 +38,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_PLAN_DIRECTORY_JSON = "/.terraform-spring-boot/local/state/%s/%s/state/%s.json";
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
+    private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
 
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
@@ -194,5 +195,54 @@ public class LocalTerraformStateImpl implements TerraformState {
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
 
+    }
+
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        log.info("Saving {} binary to local storage: {}", product, binaryPath);
+        try {
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            FileUtils.copyFile(binaryFile, targetFile);
+            log.info("Successfully cached {} binary version {} in local storage", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in local storage: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        log.info("Attempting to restore {} binary from local storage: {}", product, binaryPath);
+        try {
+            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            if (!sourceFile.exists()) {
+                log.info("{} binary version {} not found in local storage cache", product, version);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            FileUtils.copyFile(sourceFile, targetFile);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from local storage", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from local storage: {}", product, version, e.getMessage());
+            return false;
+        }
     }
 }

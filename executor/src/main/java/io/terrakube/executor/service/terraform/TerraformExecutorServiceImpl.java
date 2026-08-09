@@ -10,6 +10,7 @@ import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.terraform.TerraformClient;
+import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -650,6 +651,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDirectory, executorTempDirectory);
         terraformProcessData.setTerraformEnvironmentVariables(terraformProcessData.getTerraformEnvironmentVariables());
         terraformProcessData.setTerraformVariables(new HashMap<>());
+
+        // Binary cache: try to restore from cloud storage before init triggers a download.
+        boolean binaryWasAlreadyCached = ensureBinaryCached(terraformJob);
+
         boolean initSuccessful;
 
         if (terraformJob.isShowHeader()) {
@@ -671,9 +676,83 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
         }
 
+        // Binary cache: if the binary was freshly downloaded (not previously in storage),
+        // upload it to storage so the next pod can restore it.
+        if (initSuccessful && !binaryWasAlreadyCached) {
+            saveBinaryToCache(terraformJob);
+        }
+
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         Thread.sleep(5000);
         return initSuccessful;
+    }
+
+    /**
+     * Ensure the terraform/tofu binary is available locally, restoring it from
+     * cloud storage if possible. This avoids downloading from HashiCorp/GitHub
+     * when a fresh executor pod starts.
+     *
+     * @return true if the binary was already cached (locally or in storage),
+     *         false if it needs to be downloaded by the library and then cached.
+     */
+    private boolean ensureBinaryCached(TerraformJob terraformJob) {
+        try {
+            TerraformDownloader downloader = terraformClient.createTerraformDownloader();
+            boolean tofu = terraformJob.isTofu();
+            String resolvedVersion = tofu
+                    ? downloader.resolveTofuVersion(terraformJob.getTerraformVersion())
+                    : downloader.resolveTerraformVersion(terraformJob.getTerraformVersion());
+
+            String binaryPath = downloader.getTerraformBinaryPath(resolvedVersion, tofu);
+            File binaryFile = new File(binaryPath);
+
+            // 1. Binary already exists locally (e.g. previous job with same version on this pod)
+            if (binaryFile.exists()) {
+                log.info("Binary already exists locally at {}, skipping cache check", binaryPath);
+                return true;
+            }
+
+            // 2. Try restoring from cloud storage
+            log.info("Binary not found locally, attempting to restore from cloud storage for version {}", resolvedVersion);
+            boolean restored = terraformState.downloadTerraformBinary(resolvedVersion, tofu, binaryFile);
+            if (restored) {
+                log.info("Successfully restored binary from cloud storage to {}", binaryPath);
+                return true;
+            }
+
+            // 3. Not in storage either — let the library download it, then we'll cache it after init
+            log.info("Binary not found in cloud storage, will be downloaded by terraform client library");
+            return false;
+        } catch (Exception e) {
+            log.warn("Binary cache check failed, falling back to normal download: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save the terraform/tofu binary to cloud storage after it was freshly
+     * downloaded by the library.
+     */
+    private void saveBinaryToCache(TerraformJob terraformJob) {
+        try {
+            TerraformDownloader downloader = terraformClient.createTerraformDownloader();
+            boolean tofu = terraformJob.isTofu();
+            String resolvedVersion = tofu
+                    ? downloader.resolveTofuVersion(terraformJob.getTerraformVersion())
+                    : downloader.resolveTerraformVersion(terraformJob.getTerraformVersion());
+
+            String binaryPath = downloader.getTerraformBinaryPath(resolvedVersion, tofu);
+            File binaryFile = new File(binaryPath);
+
+            if (binaryFile.exists()) {
+                log.info("Caching binary to cloud storage: {} version {}", tofu ? "tofu" : "terraform", resolvedVersion);
+                terraformState.saveTerraformBinary(resolvedVersion, tofu, binaryFile);
+            } else {
+                log.warn("Binary file not found at {} after init, cannot cache to storage", binaryPath);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to cache binary to cloud storage: {}", e.getMessage());
+        }
     }
 
     private HashMap<String, String> getWorkspaceParameters(HashMap<String, String> parameters) {
