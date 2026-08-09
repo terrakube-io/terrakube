@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.globalvar.Globalvar;
 
 import java.net.URLDecoder;
+import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -26,13 +28,20 @@ import java.util.regex.Pattern;
 @Service
 public class ProxyService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate = buildRestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WorkspaceRepository workspaceRepository;
     private final VariableRepository variableRepository;
     private final GlobalVarRepository globalVarRepository;
 
     public static final Map<String, String> VARS = new HashMap<>();
+
+    private static RestTemplate buildRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(Duration.ofSeconds(30));
+        return new RestTemplate(factory);
+    }
 
     public ProxyService(WorkspaceRepository workspaceRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository) {
         this.workspaceRepository = workspaceRepository;
