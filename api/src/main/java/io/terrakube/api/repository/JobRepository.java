@@ -16,6 +16,10 @@ import java.util.Optional;
 
 public interface JobRepository extends JpaRepository<Job, Integer> {
 
+    // Terminal statuses that don't block a later job - shared by the FIFO dispatch-ordering
+    // queries below, mirrors the list ScheduleJob.runExecution already uses in Java.
+    String TERMINAL_JOB_STATUSES = "'failed','completed','rejected','cancelled','noChanges'";
+
     List<Job> findAllByOrganizationAndStatusNotInOrderByIdAsc(Organization organization, List<JobStatus> status);
     List<Job> findAllByStatusInOrderByIdAsc(List<JobStatus> status);
     List<Job> findAllByOrganizationNameAndStatusInOrderByIdAsc(String organizationName, List<JobStatus> status);
@@ -61,4 +65,41 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select j from job j where j.id = :jobId")
     Job lockForUpdate(@Param("jobId") int jobId);
+
+    /**
+     * True if no earlier pending/approved job exists with a smaller id - i.e. candidateJobId is
+     * the oldest job currently eligible for the shared executor pool. Does not re-check
+     * candidateJobId's own per-workspace blocking; ScheduleJob already does that before calling
+     * this.
+     */
+    @Query(value = "SELECT NOT EXISTS (" +
+            "  SELECT 1 FROM job earlier" +
+            "  WHERE earlier.id < :candidateJobId" +
+            "    AND earlier.status IN ('pending', 'approved')" +
+            "    AND earlier.deleted = false" +
+            "    AND NOT EXISTS (" +
+            "      SELECT 1 FROM job blocker" +
+            "      WHERE blocker.workspace_id = earlier.workspace_id" +
+            "        AND blocker.id < earlier.id" +
+            "        AND blocker.deleted = false" +
+            "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "    )" +
+            ")", nativeQuery = true)
+    boolean isJobNextInDispatchOrder(@Param("candidateJobId") int candidateJobId);
+
+    /**
+     * The oldest pending/approved, workspace-unblocked job id waiting for the shared executor
+     * pool, or null if none. Used to wake the next job immediately instead of waiting up to 30s.
+     */
+    @Query(value = "SELECT MIN(j.id) FROM job j" +
+            " WHERE j.status IN ('pending', 'approved')" +
+            "   AND j.deleted = false" +
+            "   AND NOT EXISTS (" +
+            "     SELECT 1 FROM job earlier" +
+            "     WHERE earlier.workspace_id = j.workspace_id" +
+            "       AND earlier.id < j.id" +
+            "       AND earlier.deleted = false" +
+            "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "   )", nativeQuery = true)
+    Integer findNextDispatchableJobId();
 }

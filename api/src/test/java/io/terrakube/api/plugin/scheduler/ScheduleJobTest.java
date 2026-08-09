@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -26,7 +27,14 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.quartz.JobDataMap;
+import org.quartz.JobDetail;
+import org.quartz.JobExecutionContext;
+import org.quartz.Scheduler;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import graphql.Assert;
 import io.terrakube.api.helpers.FailUnkownMethod;
@@ -88,6 +96,7 @@ public class ScheduleJobTest {
     WorkspaceVariableValidationService workspaceVariableValidationService;
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
+    PlatformTransactionManager transactionManager;
 
     UUID stepId = UUID.randomUUID();
 
@@ -115,9 +124,19 @@ public class ScheduleJobTest {
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
         valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
+        // Only execute() (the production entry point) uses this, to wrap doRunExecution in a real
+        // transaction - these tests all go through runExecution directly (see subject()'s javadoc
+        // reference in ScheduleJob), which has no persistence context to commit, so it's never called.
+        transactionManager = mock(PlatformTransactionManager.class,
+                new FailUnkownMethod<PlatformTransactionManager>());
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
+
+        // Default to "next in line, no one to wake" so non-FIFO tests behave as before; the
+        // ordering tests below override these.
+        lenient().doReturn(true).when(jobRepository).isJobNextInDispatchOrder(anyInt());
+        lenient().doReturn(null).when(jobRepository).findNextDispatchableJobId();
     }
 
     private ScheduleJob subject() {
@@ -138,7 +157,8 @@ public class ScheduleJobTest {
                 prCommentService,
                 globalVarRepository,
                 variableRepository,
-                workspaceVariableValidationService);
+                workspaceVariableValidationService,
+                transactionManager);
     }
 
     private Job job(JobStatus status) {
@@ -298,7 +318,7 @@ public class ScheduleJobTest {
     }
 
     @Test
-    public void pendingJobSkipsDispatchWhenAlreadyBeingDispatched() throws Exception {
+    public void pendingJobDefersWithoutCallingExecutorWhenNotNextInDispatchOrder() throws Exception {
         Job job = job(JobStatus.pending);
         job.setPlanChanges(true);
 
@@ -316,43 +336,86 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        // Simulate a concurrent Quartz firing (the main 30s trigger racing a status-change
-        // one-shot trigger) already holding the dispatch lock for this job.
+        doReturn(false).when(jobRepository).isJobNextInDispatchOrder(job.getId());
+
+        // An older job elsewhere is still waiting for the pool - this job must not even attempt
+        // dispatch, so an older job never loses a race to a newer one.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(executorService, times(0)).execute(any(), any(), any());
+        verify(jobRepository, times(0)).save(any());
+        verify(stepRepository, times(0)).save(any());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void successfulPendingJobDispatchWakesTheNextDispatchableJobImmediately() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        Job nextJob = job(JobStatus.pending);
+        nextJob.setId(job.getId() + 1);
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+        doReturn(nextJob.getId()).when(jobRepository).findNextDispatchableJobId();
+        doReturn(nextJob).when(jobRepository).getReferenceById(nextJob.getId());
+        doNothing().when(scheduleJobService).createJobContextNow(nextJob);
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        verify(scheduleJobService, times(1)).createJobContextNow(nextJob);
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
+    }
+
+    @Test
+    public void jobIsSkippedWhenAnotherWorkerAlreadyHoldsItsExecutionLock() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        // Simulate an overlapping Quartz firing for this same job id (e.g. the 30s recurring
+        // trigger racing a wake-up one-shot) already holding the execution lock. Nothing about
+        // the job's flow is stubbed beyond this, since runExecution must bail out before touching
+        // tclService/jobRepository/executorService at all - not just before dispatch.
         doReturn(false).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
 
         Assert.assertFalse(subject().runExecution(job));
 
+        verify(tclService, times(0)).initJobConfiguration(any());
         verify(executorService, times(0)).execute(any(), any(), any());
         verify(jobRepository, times(0)).save(any());
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
     @Test
-    public void pendingJobSkipsDispatchWhenRedisIsUnreachable() throws Exception {
+    public void jobIsSkippedWhenRedisIsUnreachable() throws Exception {
         Job job = job(JobStatus.pending);
         job.setPlanChanges(true);
 
-        Flow flow = new Flow();
-        flow.setType(FlowType.terraformPlan.name());
-
-        doReturn(false).when(tclService).isTemplatePlanOnly(any());
-        doReturn(Optional.of(Collections.emptyList()))
-                .when(jobRepository)
-                .findByWorkspaceAndStatusNotInAndIdLessThan(
-                        any(Workspace.class),
-                        anyList(),
-                        anyInt());
-        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
-        doReturn(flow).when(tclService).getNextFlow(any());
-        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
-        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        // A Redis outage must fail closed (skip dispatch, retry later) rather than dispatch
-        // unprotected - a duplicate terraform apply is worse than a delayed one.
+        // A Redis outage must fail closed (skip this run, retry later) rather than run
+        // unprotected - a duplicate/overlapping run is worse than a delayed one.
         doThrow(new RedisConnectionFailureException("connection refused"))
                 .when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
 
         Assert.assertFalse(subject().runExecution(job));
 
+        verify(tclService, times(0)).initJobConfiguration(any());
         verify(executorService, times(0)).execute(any(), any(), any());
         verify(jobRepository, times(0)).save(any());
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
@@ -848,6 +911,55 @@ public class ScheduleJobTest {
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.notExecuted, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void executeCommitsTheTransactionBeforeReleasingTheExecutionLock() throws Exception {
+        // Reproduces a race a live run exposed: two overlapping firings for the same job both
+        // read it as "pending" and both ran completeJob(). Root cause was the execution lock
+        // releasing (inside execute()) before the surrounding @Transactional commit (which only
+        // happened once execute() itself returned) - a second firing could acquire the freed lock
+        // and read pre-commit (stale) state. Proves the fix: lock release now waits for the
+        // explicit TransactionTemplate commit to actually finish first.
+        Job job = job(JobStatus.completed);
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+        doReturn(job).when(jobRepository).getReferenceById(job.getId());
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
+
+        TransactionStatus transactionStatus = mock(TransactionStatus.class, new FailUnkownMethod<TransactionStatus>());
+        doReturn(transactionStatus).when(transactionManager).getTransaction(any());
+        doNothing().when(transactionManager).commit(transactionStatus);
+        lenient().doNothing().when(transactionManager).rollback(transactionStatus);
+
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put(ScheduleJob.JOB_ID, job.getId());
+        jobDataMap.put("isTriggerFromStatusChange", "false");
+        JobDetail jobDetail = mock(JobDetail.class, new FailUnkownMethod<JobDetail>());
+        doReturn(jobDataMap).when(jobDetail).getJobDataMap();
+        Scheduler quartzScheduler = mock(Scheduler.class, new FailUnkownMethod<Scheduler>());
+        doReturn(true).when(quartzScheduler).deleteJob(any());
+        JobExecutionContext jobExecutionContext = mock(JobExecutionContext.class, new FailUnkownMethod<JobExecutionContext>());
+        doReturn(jobDetail).when(jobExecutionContext).getJobDetail();
+        doReturn(quartzScheduler).when(jobExecutionContext).getScheduler();
+        doReturn("InstanceId").when(jobExecutionContext).getFireInstanceId();
+
+        InOrder inOrder = inOrder(valueOperations, transactionManager, redisTemplate);
+
+        subject().execute(jobExecutionContext);
+
+        inOrder.verify(valueOperations).setIfAbsent(any(), any(), any(Duration.class)); // lock acquired
+        inOrder.verify(transactionManager).getTransaction(any());                        // tx begins
+        inOrder.verify(transactionManager).commit(transactionStatus);                    // tx commits
+        inOrder.verify(redisTemplate).delete("job-execution-lock:" + job.getId());       // lock released last
     }
 
     @Test

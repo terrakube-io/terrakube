@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
@@ -45,6 +46,10 @@ class JobTests extends ServerApplicationTests {
     public void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        // ScheduleJob.runExecution now takes this lock around every job run, not just dispatch -
+        // an unstubbed mock defaults to null/false, which would fail-closed and block every job
+        // in this class from ever progressing.
+        when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
         wireMockServer.resetAll();
 
         workspace = new Workspace();

@@ -17,6 +17,7 @@ import io.terrakube.api.helpers.FailUnkownMethod;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +27,11 @@ import org.springframework.web.reactive.function.client.WebClient.RequestBodySpe
 import org.springframework.web.reactive.function.client.WebClient.RequestBodyUriSpec;
 import org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec;
 import org.springframework.web.reactive.function.client.WebClient.ResponseSpec;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
@@ -149,6 +152,17 @@ public class PersistentExecutorServiceTest {
         doReturn(response()).when(responseEntity).getBody();
 
         assertThrows(ExecutionException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+
+        verify(requestHeadersSpec, times(1)).retrieve();
+    }
+
+    @Test
+    public void busyExecutorResponseBecomesExecutorUnavailableException() {
+        WebClientResponseException busy = WebClientResponseException.create(
+                503, "Service Unavailable", HttpHeaders.EMPTY, new byte[0], null);
+        doReturn(Mono.error(busy)).when(responseSpec).toEntity(ExecutorContext.class);
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
 
         verify(requestHeadersSpec, times(1)).retrieve();
     }
