@@ -284,4 +284,68 @@ public class AwsTerraformStateImpl implements TerraformState {
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
     }
 
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Saving {} binary to S3: {}", product, blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
+            log.info("Successfully cached {} binary version {} in S3", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
+        try {
+            // Check if the object exists first
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+            s3client.headObject(headRequest);
+
+            // Object exists, download it
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
+                    ResponseTransformer.toBytes());
+            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from S3", product, version);
+            return true;
+        } catch (NoSuchKeyException e) {
+            log.info("{} binary version {} not found in S3 cache", product, version);
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
 }
+
