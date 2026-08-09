@@ -61,6 +61,8 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean includeBackendKeys;
 
+    private boolean useLockfile;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -111,6 +113,18 @@ public class AwsTerraformStateImpl implements TerraformState {
                 awsBackendHcl.appendln("    secret_key = \"" + secretKey + "\"");
             } else {
               log.warn("No including backend information");
+            }
+
+            // Native S3 locking, off by default. Turning it on makes concurrent runs on
+            // the same state wait for each other, which is why it is not the default:
+            // plan only jobs are allowed to run in parallel on purpose.
+            // Worth enabling when something outside Terrakube writes the same state.
+            if(useLockfile) {
+                if(version.compareTo(new ComparableVersion("1.10.0")) >= 0){
+                    awsBackendHcl.appendln("    use_lockfile = true");
+                } else {
+                    log.warn("use_lockfile is enabled but ignored, it requires terraform or tofu 1.10 and this job runs {}", version);
+                }
             }
 
             if(endpoint != null){
