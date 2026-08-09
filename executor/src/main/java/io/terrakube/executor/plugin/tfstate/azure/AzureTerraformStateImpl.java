@@ -44,6 +44,7 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
+    private static final String CONTAINER_BINARY_NAME = "tfbinary";
     private String resourceGroupName;
     private String storageAccountName;
     private String storageContainerName;
@@ -203,5 +204,61 @@ public class AzureTerraformStateImpl implements TerraformState {
         blobClient.upload(BinaryData.fromString(utf8EncodedString));
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobName = product + "/" + version + "/" + product;
+        log.info("Saving {} binary to Azure Blob: {}", product, blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            blobClient.uploadFromFile(binaryFile.getAbsolutePath(), true);
+            log.info("Successfully cached {} binary version {} in Azure Blob", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in Azure Blob: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobName = product + "/" + version + "/" + product;
+        log.info("Attempting to restore {} binary from Azure Blob: {}", product, blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                log.info("{} binary container does not exist in Azure Blob, no cache available", product);
+                return false;
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            if (!blobClient.exists()) {
+                log.info("{} binary version {} not found in Azure Blob cache", product, version);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from Azure Blob", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from Azure Blob: {}", product, version, e.getMessage());
+            return false;
+        }
     }
 }
