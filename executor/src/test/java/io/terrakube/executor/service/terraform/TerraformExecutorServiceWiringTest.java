@@ -4,9 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.executor.configuration.ArtifactProperties;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.configuration.StructuredOutputProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.artifact.ArtifactGlobMatcher;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactPatternResolver;
+import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.service.executor.ExecutorCapacityGate;
 import io.terrakube.executor.service.executor.ExecutorJobImpl;
 import io.terrakube.executor.service.executor.JobExecutionWatchdog;
@@ -19,6 +24,7 @@ import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
 import io.terrakube.executor.service.workspace.SetupWorkspaceImpl;
+import io.terrakube.executor.service.workspace.TarGzArchiver;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.terraform.TerraformClient;
 import org.junit.jupiter.api.Test;
@@ -57,6 +63,10 @@ class TerraformExecutorServiceWiringTest {
         @Bean JobExecutionWatchdog jobExecutionWatchdog() { return Mockito.mock(JobExecutionWatchdog.class); }
         @Bean ExecutorCapacityGate executorCapacityGate() { return Mockito.mock(ExecutorCapacityGate.class); }
         @Bean ApplicationEventPublisher applicationEventPublisher() { return Mockito.mock(ApplicationEventPublisher.class); }
+        @Bean ArtifactProperties artifactProperties() { return new ArtifactProperties(); }
+        @Bean TarGzArchiver tarGzArchiver() { return new TarGzArchiver(); }
+        @Bean ArtifactPatternResolver artifactPatternResolver() { return new ArtifactPatternResolver(); }
+        @Bean ArtifactGlobMatcher artifactGlobMatcher() { return new ArtifactGlobMatcher(); }
     }
 
     @Test
@@ -72,6 +82,8 @@ class TerraformExecutorServiceWiringTest {
                 .withBean(TerraformExecutorServiceImpl.class)
                 .withBean(SetupWorkspaceImpl.class)
                 .withBean(ExecutorJobImpl.class)
+                .withBean(ArtifactPackagingService.class)
+                .withBean(ArtifactRestoreService.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(TerraformExecutorServiceImpl.class);
@@ -80,6 +92,11 @@ class TerraformExecutorServiceWiringTest {
 
                     TerraformExecutorServiceImpl executorService = context.getBean(TerraformExecutorServiceImpl.class);
                     assertThat(executorService.opaExecutorService).isNotNull();
+                    // plan artifacts are only in effect if both services were injected
+                    assertThat(org.springframework.test.util.ReflectionTestUtils.getField(executorService, "artifactPackagingService"))
+                            .isSameAs(context.getBean(ArtifactPackagingService.class));
+                    assertThat(org.springframework.test.util.ReflectionTestUtils.getField(executorService, "artifactRestoreService"))
+                            .isSameAs(context.getBean(ArtifactRestoreService.class));
                 });
     }
 

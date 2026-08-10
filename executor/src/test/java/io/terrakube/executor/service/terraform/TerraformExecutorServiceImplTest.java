@@ -9,6 +9,9 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.configuration.StructuredOutputProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -1612,5 +1615,351 @@ class TerraformExecutorServiceImplTest {
         verify(applyStructuredOutputService).publishFinalApplySynchronous(
                 eq(terraformJob.getOrganizationId()), eq(terraformJob.getJobId()), eq(terraformJob.getStepId()),
                 anyLong(), any(), any());
+    }
+
+    // ----- plan artifacts (the files a plan step hands to its apply step)
+
+    private final ArtifactPackagingService artifactPackagingService = Mockito.mock(ArtifactPackagingService.class);
+    private final ArtifactRestoreService artifactRestoreService = Mockito.mock(ArtifactRestoreService.class);
+
+    private TerraformExecutorServiceImpl artifactSubject(int planExitCode, boolean destroy) throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        subject.setArtifactServices(artifactPackagingService, artifactRestoreService);
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        if (destroy) {
+            when(jsonPlanClient.planDestroyDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                    .thenReturn(CompletableFuture.completedFuture(planExitCode));
+        } else {
+            when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                    .thenReturn(CompletableFuture.completedFuture(planExitCode));
+        }
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        return subject;
+    }
+
+    private TerraformJob artifactJob(boolean multiStep) {
+        TerraformJob terraformJob = createJob();
+        terraformJob.setArtifactPatterns(List.of("build/**"));
+        terraformJob.setMultiStepJob(multiStep);
+        return terraformJob;
+    }
+
+    private ArtifactPackagingService.Result packaged() {
+        return new ArtifactPackagingService.Result(ArtifactPackagingService.Status.PACKAGED, List.of("build/**"),
+                new File("bundle.tar.gz"), "deadbeef", 2048, 3, List.of(), List.of("build/a.zip", "build/b.zip", "build/c.zip"));
+    }
+
+    @Test
+    void aPlanWithChangesPackagesStoresAndRecordsTheArtifactsForTheApplyStep() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class))).thenReturn(packaged());
+        when(terraformState.saveArtifacts(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
+                .thenReturn("https://bucket/plan-artifacts/org/workspace/42/1/plan-artifacts.tar.gz");
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals("https://bucket/plan-artifacts/org/workspace/42/1/plan-artifacts.tar.gz", terraformJob.getArtifactsUrl());
+        assertEquals("deadbeef", terraformJob.getArtifactsChecksum());
+        // the audit trail: how many files, how big, which checksum, which files
+        assertTrue(result.getOutputLog().contains("Saved 3 plan artifact file(s)"));
+        verify(terraformState).saveTerraformPlan(any(), any(), any(), any(), any());
+        assertTrue(result.getOutputLog().contains("sha256 deadbeef"));
+        assertTrue(result.getOutputLog().contains("build/a.zip, build/b.zip, build/c.zip"));
+    }
+
+    @Test
+    void aLongListOfSavedFilesIsShortenedInTheOutput() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            names.add("build/f" + i);
+        }
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactPackagingService.Result(ArtifactPackagingService.Status.PACKAGED, List.of("build/**"),
+                        new File("b.tar.gz"), "deadbeef", 10, 14, List.of(), names));
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class))).thenReturn("location");
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.getOutputLog().contains("build/f9 and 4 more"));
+        assertFalse(result.getOutputLog().contains("build/f10"));
+    }
+
+    @Test
+    void theBundleIsBuiltOutsideTheCloneAndRemovedAfterwards() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        List<File> bundles = new ArrayList<>();
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class))).thenAnswer(invocation -> {
+            File clone = invocation.getArgument(1);
+            File bundle = invocation.getArgument(2);
+            bundles.add(bundle);
+            assertFalse(bundle.toPath().toAbsolutePath().startsWith(clone.toPath().toAbsolutePath()), "bundle must not sit inside the clone");
+            Files.writeString(bundle.toPath(), "x");
+            return packaged();
+        });
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class))).thenReturn("location");
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(1, bundles.size());
+        assertFalse(bundles.get(0).exists(), "the temporary bundle is deleted once stored");
+    }
+
+    @Test
+    void aPlanWithNoChangesDoesNotPackageArtifacts() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(0, false);
+
+        ExecutorJobResult result = subject.plan(artifactJob(true), tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(artifactPackagingService, never()).packageArtifacts(any(), any(), any());
+    }
+
+    @Test
+    void aDestroyPlanDoesNotPackageArtifactsEvenWithChanges() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, true);
+
+        subject.plan(artifactJob(true), tempDir.toFile(), true);
+
+        verify(artifactPackagingService, never()).packageArtifacts(any(), any(), any());
+    }
+
+    @Test
+    void aPlanThatIsTheOnlyStepDoesNotPackageArtifacts() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+
+        subject.plan(artifactJob(false), tempDir.toFile(), false);
+
+        verify(artifactPackagingService, never()).packageArtifacts(any(), any(), any());
+    }
+
+    @Test
+    void aPlanWithoutArtifactPatternsDoesNotPackageAnything() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setMultiStepJob(true);
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(artifactPackagingService, never()).packageArtifacts(any(), any(), any());
+        verify(terraformState, never()).saveArtifacts(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aPlanWhoseArtifactsCannotBeStoredFailsRatherThanLeavingAnApplyThatCannotRun() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class))).thenReturn(packaged());
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class)))
+                .thenThrow(new TerraformStateUnavailableException("aws artifacts-write failed after 3 attempts", new RuntimeException("503")));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("could not save the plan artifacts"));
+        assertEquals(null, terraformJob.getArtifactsUrl());
+        // the plan can never be applied, so its file is not uploaded either
+        verify(terraformState, never()).saveTerraformPlan(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aPlanFailsWhenTheStorageBackendCannotStoreArtifactsAtAll() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class))).thenReturn(packaged());
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class))).thenReturn(null);
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("cannot store plan artifacts"));
+    }
+
+    @Test
+    void aPlanWhoseArtifactsExceedTheLimitsFailsWithTheReasonInTheOutput() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenThrow(new IOException("Plan artifacts are larger than the limit of 10 bytes (io.terrakube.executor.artifacts.max-bytes)."));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("max-bytes"));
+        verify(terraformState, never()).saveArtifacts(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aBadArtifactPatternFailsThePlanWithAClearMessage() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenThrow(new IllegalArgumentException("Artifact pattern \"/etc/**\" must be relative to the working directory"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("/etc/**"));
+    }
+
+    @Test
+    void optionalPatternsThatMatchNothingWarnButDoNotFailThePlan() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactPackagingService.Result(ArtifactPackagingService.Status.NO_FILES_MATCHED,
+                        List.of("optional:build/**"), null, null, 0, 0, List.of(), List.of()));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("matched no files"));
+        verify(terraformState, never()).saveArtifacts(any(), any(), any(), any(), any());
+        assertEquals(null, terraformJob.getArtifactsUrl());
+    }
+
+    @Test
+    void matchedSymbolicLinksAreReportedInThePlanOutput() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactPackagingService.Result(ArtifactPackagingService.Status.PACKAGED, List.of("build/**"),
+                        new File("b.tar.gz"), "deadbeef", 10, 1, List.of("build/link.zip"), List.of("build/a.zip")));
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class))).thenReturn("location");
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.getOutputLog().contains("build/link.zip"));
+    }
+
+    private void stubArtifactApplyCollaborators() throws Exception {
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.output(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(true));
+    }
+
+    private TerraformExecutorServiceImpl applySubject(boolean applySucceeds) throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        subject.setArtifactServices(artifactPackagingService, artifactRestoreService);
+        stubArtifactApplyCollaborators();
+        TerraformClient jsonApplyClient = mock(TerraformClient.class);
+        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(applySucceeds));
+        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
+        return subject;
+    }
+
+    @Test
+    void anApplyRestoresThePlansArtifactsBeforeInitAndDeletesThemAfterASuccessfulApply() throws Exception {
+        TerraformExecutorServiceImpl subject = applySubject(true);
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactRestoreService.Result(true, 3, "deadbeef"));
+
+        ExecutorJobResult result = subject.apply(createJob(), tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("Restored 3 plan artifact file(s) before apply (sha256 deadbeef)"));
+        InOrder order = Mockito.inOrder(artifactRestoreService, terraformClient, terraformState);
+        order.verify(artifactRestoreService).restore(any(TerraformJob.class), any(File.class), any(File.class));
+        order.verify(terraformClient).init(any(TerraformProcessData.class), any(Consumer.class), any());
+        order.verify(terraformState).deleteArtifacts("org", "workspace", "42");
+    }
+
+    @Test
+    void aFailedApplyKeepsTheArtifactsSoTheStepCanBeDispatchedAgain() throws Exception {
+        TerraformExecutorServiceImpl subject = applySubject(false);
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactRestoreService.Result(true, 3, "deadbeef"));
+
+        ExecutorJobResult result = subject.apply(createJob(), tempDir.toFile());
+
+        assertFalse(result.isSuccessfulExecution());
+        verify(terraformState, never()).deleteArtifacts(any(), any(), any());
+    }
+
+    @Test
+    void anApplyWithNothingToRestoreRunsAsBeforeAndDeletesNothing() throws Exception {
+        TerraformExecutorServiceImpl subject = applySubject(true);
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenReturn(ArtifactRestoreService.Result.NOTHING);
+
+        ExecutorJobResult result = subject.apply(createJob(), tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(terraformClient).init(any(TerraformProcessData.class), any(Consumer.class), any());
+        verify(terraformState, never()).deleteArtifacts(any(), any(), any());
+    }
+
+    @Test
+    void anApplyWhoseArtifactsFailVerificationFailsBeforeAnythingElseRuns() throws Exception {
+        TerraformExecutorServiceImpl subject = applySubject(true);
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenThrow(new ArtifactVerificationException("Plan artifacts checksum mismatch"));
+
+        ExecutorJobResult result = subject.apply(createJob(), tempDir.toFile());
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(result.getOutputErrorLog().contains("Plan artifacts could not be restored"));
+        assertTrue(result.getOutputErrorLog().contains("checksum mismatch"));
+        verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
+        verify(terraformState, never()).deleteArtifacts(any(), any(), any());
+    }
+
+    private double artifactCount(String outcome) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry.find("terrakube.executor.artifacts").tag("outcome", outcome).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    @Test
+    void savedArtifactsAreCountedAndTheirCompressedSizeRecorded() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class))).thenReturn(packaged());
+        when(terraformState.saveArtifacts(anyString(), anyString(), anyString(), anyString(), any(File.class))).thenReturn("location");
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(1, artifactCount("saved"));
+        io.micrometer.core.instrument.DistributionSummary bytes = meterRegistry.find("terrakube.executor.artifacts.bytes").tag("outcome", "saved").summary();
+        assertEquals(2048, bytes.totalAmount());
+    }
+
+    @Test
+    void aFailureToSaveArtifactsIsCountedSeparately() throws Exception {
+        TerraformExecutorServiceImpl subject = artifactSubject(2, false);
+        TerraformJob terraformJob = artifactJob(true);
+        when(artifactPackagingService.packageArtifacts(eq(terraformJob), any(File.class), any(File.class)))
+                .thenThrow(new IOException("larger than the limit"));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(1, artifactCount("save_failed"));
+        assertEquals(0, artifactCount("saved"));
+    }
+
+    @Test
+    void restoresAndRestoreFailuresAreCounted() throws Exception {
+        TerraformExecutorServiceImpl subject = applySubject(true);
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenReturn(new ArtifactRestoreService.Result(true, 3, "deadbeef"));
+        subject.apply(createJob(), tempDir.toFile());
+        assertEquals(1, artifactCount("restored"));
+
+        when(artifactRestoreService.restore(any(TerraformJob.class), any(File.class), any(File.class)))
+                .thenThrow(new ArtifactVerificationException("checksum mismatch"));
+        subject.apply(createJob(), tempDir.toFile());
+        assertEquals(1, artifactCount("restore_failed"));
     }
 }

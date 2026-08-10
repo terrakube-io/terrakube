@@ -55,6 +55,13 @@ public class TerraformJob {
     private List<PolicyContext> policyList;
     private List<PolicyExemptionContext> policyExemptionList;
     private Long deliveryRevision;
+    // Globs of the files a plan step hands to its apply step (empty when the feature is off), and
+    // whether the job has a later step that could use them.
+    private List<String> artifactPatterns;
+    private boolean multiStepJob;
+    // Set by the plan step once it stored the bundle: where, and its sha256. Recorded on the job.
+    private String artifactsUrl;
+    private String artifactsChecksum;
 
 }
 

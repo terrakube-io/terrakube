@@ -210,6 +210,14 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
         String moduleFolderPath = String.format("%s/%s", organizationId, workspaceId);
         deleteFolderFromContainer(CONTAINER_NAME_STATE, moduleFolderPath);
+        // Plan artifacts live in the same container under their own prefix. The trailing slash keeps
+        // one workspace's prefix from matching another whose id starts the same way.
+        deleteFolderFromContainer(CONTAINER_NAME_STATE, String.format("plan-artifacts/%s/%s/", organizationId, workspaceId));
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        deleteFolderFromContainer(CONTAINER_NAME_STATE, String.format("plan-artifacts/%s/%s/%d/", organizationId, workspaceId, jobId));
     }
 
     @Override

@@ -223,6 +223,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
+        FileUtils.deleteQuietly(artifactsDirectory(organizationId, workspaceId, null));
         try {
             String statePath = String.format("%s/.terraform-spring-boot/local/state/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, workspaceId);
             log.warn("Delete workspace state folder: {}", statePath);
@@ -234,6 +235,16 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         } catch (IOException e) {
             log.error(e.getMessage());
         }
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        FileUtils.deleteQuietly(artifactsDirectory(organizationId, workspaceId, jobId));
+    }
+
+    private File artifactsDirectory(String organizationId, String workspaceId, Integer jobId) {
+        String path = String.format("%s/.terraform-spring-boot/local/plan-artifacts/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, workspaceId);
+        return new File(jobId == null ? path : path + "/" + jobId);
     }
 
     @Override

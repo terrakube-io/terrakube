@@ -213,6 +213,12 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
         String outputPath = String.format("tfstate/%s/%s/", organizationId, workspaceId);
         deleteFolderFromBucket(outputPath);
+        deleteFolderFromBucket(String.format("plan-artifacts/%s/%s/", organizationId, workspaceId));
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        deleteFolderFromBucket(String.format("plan-artifacts/%s/%s/%d/", organizationId, workspaceId, jobId));
     }
 
     @Override

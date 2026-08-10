@@ -27,6 +27,9 @@ import java.util.List;
 public class AwsStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    // Written by the executor (ArtifactStorageKeys): plan-artifacts/<organization>/<workspace>/<job>/<step>/...
+    private static final String ARTIFACTS_WORKSPACE_FOLDER = "plan-artifacts/%s/%s/";
+    private static final String ARTIFACTS_JOB_FOLDER = "plan-artifacts/%s/%s/%d/";
     private static final String BUCKET_LOCATION_OUTPUT = "tfoutput/%s/%s/%s.tfoutput";
     private static final String BUCKET_STATE_LOCATION = "tfstate/%s/%s/%s/%s/" + TERRAFORM_PLAN_FILE;
 
@@ -227,6 +230,39 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
         String workspaceStateFolder = String.format("tfstate/%s/%s/", organizationId, workspaceId);
         deleteFolderFromBucket(workspaceStateFolder);
+        deleteAllUnder(String.format(ARTIFACTS_WORKSPACE_FOLDER, organizationId, workspaceId));
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        deleteAllUnder(String.format(ARTIFACTS_JOB_FOLDER, organizationId, workspaceId, jobId));
+    }
+
+    // Every page, unlike deleteFolderFromBucket: a workspace can have far more than 1000 jobs' bundles.
+    private void deleteAllUnder(String prefix) {
+        String continuationToken = null;
+        do {
+            ListObjectsV2Request.Builder request = ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix);
+            if (continuationToken != null) {
+                request.continuationToken(continuationToken);
+            }
+            ListObjectsV2Response page = s3client.listObjectsV2(request.build());
+            if (!page.contents().isEmpty()) {
+                // One request per page (at most 1000 keys, the DeleteObjects limit) instead of one per object.
+                List<ObjectIdentifier> keys = page.contents().stream()
+                        .map(object -> ObjectIdentifier.builder().key(object.key()).build())
+                        .toList();
+                DeleteObjectsResponse deleted = s3client.deleteObjects(DeleteObjectsRequest.builder()
+                        .bucket(bucketName).delete(Delete.builder().objects(keys).quiet(true).build()).build());
+                if (deleted.hasErrors() && !deleted.errors().isEmpty()) {
+                    S3Error first = deleted.errors().get(0);
+                    throw new IllegalStateException("Could not delete " + deleted.errors().size() + " plan artifact(s) under "
+                            + prefix + ", first " + first.key() + ": " + first.code() + " " + first.message());
+                }
+                log.info("Deleted {} plan artifact(s) under {}", keys.size(), prefix);
+            }
+            continuationToken = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+        } while (continuationToken != null);
     }
 
     @Override

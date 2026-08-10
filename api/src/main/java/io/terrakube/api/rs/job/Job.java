@@ -7,6 +7,7 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
+import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
 import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.step.Step;
@@ -58,6 +59,7 @@ public class Job extends GenericAuditFields {
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobApprovalHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobNotificationHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobNotificationHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobArtifactsCleanupHook.class)
     @Enumerated(EnumType.STRING)
     private JobStatus status = JobStatus.pending;
 
@@ -87,6 +89,19 @@ public class Job extends GenericAuditFields {
 
     @Column(name = "terraform_plan")
     private String terraformPlan;
+
+    // Where the executor stored the files a plan step produced for its apply step, and their
+    // sha256. Written by the executor only: the apply step reads the location from here, so a user
+    // who could set it could point an apply at another job's bundle.
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
+    @Column(name = "terraform_plan_artifacts")
+    private String terraformPlanArtifacts;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
+    @Column(name = "terraform_plan_artifacts_checksum")
+    private String terraformPlanArtifactsChecksum;
 
     @CreatePermission(expression = "user is a super service")
     @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")

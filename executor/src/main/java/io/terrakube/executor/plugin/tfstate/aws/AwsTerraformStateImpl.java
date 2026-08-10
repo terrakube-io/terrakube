@@ -11,15 +11,19 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import org.apache.maven.artifact.versioning.ComparableVersion;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.mode.TerraformJob;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -33,6 +37,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -235,6 +240,68 @@ public class AwsTerraformStateImpl implements TerraformState {
                     }
                 });
         return planExists.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
+        String blobKey = ArtifactStorageKeys.key(organizationId, workspaceId, jobId, stepId);
+        log.info("terraformArtifactsFile: {}", blobKey);
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+        // Streamed from the file (not read into memory) and written over any earlier attempt, so a
+        // retry after a lost response is harmless.
+        storageRetryMetrics.withRetry("aws", "artifacts-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromFile(bundle)));
+
+        GetUrlRequest getUrlRequest = GetUrlRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+        return s3client.utilities().getUrl(getUrlRequest).toExternalForm();
+    }
+
+    @Override
+    public String downloadArtifacts(String organizationId, String workspaceId, String jobId, File target)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String location = attributes.getTerraformPlanArtifacts();
+        if (location == null || location.isBlank()) {
+            return null;
+        }
+        String objectKey = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+
+        log.info("Downloading plan artifacts from bucket {} key {}", bucketName, objectKey);
+        GetObjectRequest objectRequest = GetObjectRequest.builder().bucket(bucketName).key(objectKey).build();
+        try {
+            storageRetryMetrics.withRetry("aws", "artifacts-read", () -> {
+                // toFile refuses an existing file, which a retry would otherwise leave behind half written
+                Files.deleteIfExists(target.toPath());
+                return s3client.getObject(objectRequest, ResponseTransformer.toFile(target.toPath()));
+            });
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof NoSuchKeyException) {
+                throw new ArtifactVerificationException("The plan artifacts bundle " + objectKey + " is missing from the bucket");
+            }
+            throw e;
+        }
+        return attributes.getTerraformPlanArtifactsChecksum() == null ? "" : attributes.getTerraformPlanArtifactsChecksum();
+    }
+
+    @Override
+    public void deleteArtifacts(String organizationId, String workspaceId, String jobId) {
+        try {
+            String location = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifacts();
+            if (location == null || location.isBlank()) {
+                return;
+            }
+            String objectKey = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+            s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(objectKey).build());
+        } catch (RuntimeException e) {
+            // The bucket's lifecycle rule for plan-artifacts/ is the backstop.
+            log.warn("Could not delete the plan artifacts of job {}: {}", jobId, e.getMessage());
+        }
     }
 
     @Override

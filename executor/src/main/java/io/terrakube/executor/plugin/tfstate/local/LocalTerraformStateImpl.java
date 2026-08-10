@@ -21,9 +21,12 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -44,6 +47,9 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_PLAN_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/%s/%s/" + TERRAFORM_PLAN_FILE;
     private static final String LOCAL_PLAN_DIRECTORY_JSON = "/.terraform-spring-boot/local/state/%s/%s/state/%s.json";
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
+    // Everything under <home>/.terraform-spring-boot/local/ is local to this process unless that path is a
+    // volume shared by every executor, so plan artifacts only reach an apply on another pod through one.
+    private static final String LOCAL_ARTIFACTS_ROOT = "/.terraform-spring-boot/local/";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
@@ -167,6 +173,57 @@ public class LocalTerraformStateImpl implements TerraformState {
                     planExists.set(true);
                 });
         return planExists.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
+        File stored = localArtifactFile(ArtifactStorageKeys.key(organizationId, workspaceId, jobId, stepId));
+        storageRetryMetrics.withRetry("local", "artifacts-write", () -> {
+            FileUtils.copyFile(bundle, stored);
+            return null;
+        });
+        log.info("Local artifacts bundle saved to {}", stored.getAbsolutePath());
+        return stored.getAbsolutePath();
+    }
+
+    @Override
+    public String downloadArtifacts(String organizationId, String workspaceId, String jobId, File target)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String location = attributes.getTerraformPlanArtifacts();
+        if (location == null || location.isBlank()) {
+            return null;
+        }
+        // Rebuilt from this job's own ids, so the recorded path cannot point at another file.
+        File stored = localArtifactFile(ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId));
+        if (!stored.isFile()) {
+            throw new ArtifactVerificationException("The plan artifacts bundle " + stored.getAbsolutePath()
+                    + " does not exist on this executor. Local storage only works across executors when "
+                    + "~/.terraform-spring-boot/local is a volume they all share");
+        }
+        storageRetryMetrics.withRetry("local", "artifacts-read", () -> {
+            FileUtils.copyFile(stored, target);
+            return null;
+        });
+        return attributes.getTerraformPlanArtifactsChecksum() == null ? "" : attributes.getTerraformPlanArtifactsChecksum();
+    }
+
+    @Override
+    public void deleteArtifacts(String organizationId, String workspaceId, String jobId) {
+        try {
+            String location = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifacts();
+            if (location == null || location.isBlank()) {
+                return;
+            }
+            FileUtils.deleteQuietly(localArtifactFile(ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId)));
+        } catch (RuntimeException e) {
+            log.warn("Could not delete the plan artifacts of job {}: {}", jobId, e.getMessage());
+        }
+    }
+
+    private File localArtifactFile(String storageKey) {
+        return new File(FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem(LOCAL_ARTIFACTS_ROOT + storageKey)));
     }
 
     @Override
