@@ -11,12 +11,16 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import org.apache.maven.artifact.versioning.ComparableVersion;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -44,6 +48,10 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String BACKEND_FILE_NAME = "aws_backend_override.tf";
+    // Deliberately a separate top-level prefix from "tfstate/" (where the plan file and state
+    // live) rather than nested alongside them, so a bucket lifecycle rule can expire artifacts
+    // - which can be far larger than a plan file - without touching plan/state history.
+    private static final String ARTIFACTS_PREFIX = "plan-artifacts/";
 
     @NonNull
     private S3Client s3client;
@@ -71,6 +79,9 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     @NonNull
     TerraformStatePathService terraformStatePathService;
+
+    @NonNull
+    ArtifactVerifier artifactVerifier;
 
     // Matches X-Range wildcards: * or major.wildcard (e.g. 1.x, 1.*, 1.X).
     // Bare x/X are intentionally excluded: TerraformDownloader rejects them as invalid.
@@ -212,6 +223,53 @@ public class AwsTerraformStateImpl implements TerraformState {
                     }
                 });
         return planExists.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String blobKey = ARTIFACTS_PREFIX + organizationId + "/" + workspaceId + "/" + jobId + "/" + stepId + "/" + ArtifactPackagingService.ARTIFACTS_FILE_NAME;
+        log.info("terraformArtifactsFile: {}", blobKey);
+
+        File artifactsTarGz = new File(workingDirectory.getAbsolutePath() + "/" + ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        if (artifactsTarGz.exists()) {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(artifactsTarGz));
+
+            GetUrlRequest getUrlRequest = GetUrlRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            return s3client.utilities().getUrl(getUrlRequest).toExternalForm();
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean downloadArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String artifactsUrl = attributes.getTerraformPlanArtifacts();
+        if (artifactsUrl == null || artifactsUrl.isBlank()) {
+            return false;
+        }
+
+        byte[] artifactBytes;
+        try {
+            log.info("Downloading plan artifacts from {}", artifactsUrl);
+            String objectKey = ARTIFACTS_PREFIX + new URL(artifactsUrl).getPath().split("/" + ARTIFACTS_PREFIX)[1];
+            artifactBytes = downloadObjectFromBucket(bucketName, objectKey);
+        } catch (IOException e) {
+            throw new ArtifactVerificationException("Failed to download plan artifacts bundle from " + artifactsUrl + ": " + e.getMessage());
+        }
+
+        artifactVerifier.verifyAndExtract(artifactBytes, attributes.getTerraformPlanArtifactsChecksum(), workingDirectory);
+        return true;
     }
 
     @Override

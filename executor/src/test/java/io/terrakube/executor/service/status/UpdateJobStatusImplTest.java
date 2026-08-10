@@ -103,4 +103,19 @@ class UpdateJobStatusImplTest {
         assertEquals("pending", job.getAttributes().getStatus());
         assertEquals(true, job.getAttributes().isPlanChanges());
     }
+
+    @Test
+    void completedStatusPersistsArtifactsUrlAndChecksum() {
+        Job job = jobWithSteps(2);
+        UpdateJobStatusImpl service = newService(job);
+
+        TerraformJob terraformJob = terraformJob();
+        terraformJob.setArtifactsUrl("https://example.com/plan-artifacts.tar.gz");
+        terraformJob.setArtifactsChecksum("deadbeef");
+
+        service.setCompletedStatus(true, false, 0, terraformJob, "output", "", "", "commit-1");
+
+        assertEquals("https://example.com/plan-artifacts.tar.gz", job.getAttributes().getTerraformPlanArtifacts());
+        assertEquals("deadbeef", job.getAttributes().getTerraformPlanArtifactsChecksum());
+    }
 }

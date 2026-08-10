@@ -60,7 +60,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             updateStepStatus(successful, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
             if(!isJobCancelled(terraformJob))
-                updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId);
+                updateJobStatus(successful, isPlan, exitCode, terraformJob, jobOutput, jobErrorOutput, jobPlan, commitId);
         }
     }
 
@@ -76,7 +76,10 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         }
     }
 
-    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
+    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
+        String organizationId = terraformJob.getOrganizationId();
+        String jobId = terraformJob.getJobId();
+        String stepId = terraformJob.getStepId();
         Job job = terrakubeClient.getJobById(organizationId, jobId).getData();
         String status = "";
         boolean planChanges = true;
@@ -116,6 +119,8 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput() + " Step " + stepId + " completed\n"
         );
         job.getAttributes().setTerraformPlan(jobPlan);
+        job.getAttributes().setTerraformPlanArtifacts(terraformJob.getArtifactsUrl());
+        job.getAttributes().setTerraformPlanArtifactsChecksum(terraformJob.getArtifactsChecksum());
         job.getAttributes().setCommitId(commitId);
 
         JobRequest jobRequest = new JobRequest();

@@ -19,6 +19,7 @@ public class Flow {
     private int step;
     List<Command> commands;
     List<Command> onFailure;
+    List<String> artifacts;
 
     List<ScheduleTemplate> templates;
 

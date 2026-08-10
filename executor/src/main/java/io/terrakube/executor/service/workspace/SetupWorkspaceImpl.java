@@ -21,9 +21,6 @@ import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.identity.DefaultAzureCredential;
 import com.azure.identity.DefaultAzureCredentialBuilder;
 import io.terrakube.client.TerrakubeClient;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.jgit.api.CloneCommand;
@@ -70,16 +67,19 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     TerraformExecutor terraformExecutor;
     String apiUrl;
     TerrakubeClient terrakubeClient;
+    TarGzArchiver tarGzArchiver;
 
     public SetupWorkspaceImpl(WorkspaceSecurity workspaceSecurity,
                               @Value("${io.terrakube.client.enableSecurity}") boolean enableRegistrySecurity,
                               TerraformExecutor terraformExecutor,
-                              @Value("${io.terrakube.api.url}") String apiUrl, TerrakubeClient terrakubeClient) {
+                              @Value("${io.terrakube.api.url}") String apiUrl, TerrakubeClient terrakubeClient,
+                              TarGzArchiver tarGzArchiver) {
         this.workspaceSecurity = workspaceSecurity;
         this.enableRegistrySecurity = enableRegistrySecurity;
         this.terraformExecutor = terraformExecutor;
         this.apiUrl = apiUrl;
         this.terrakubeClient = terrakubeClient;
+        this.tarGzArchiver = tarGzArchiver;
     }
 
     @Override
@@ -357,52 +357,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     }
 
     public void extractTarGZ(InputStream in, String destinationFilePath) throws IOException {
-        GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(in);
-        try (TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
-            TarArchiveEntry entry;
-
-            while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    File f = new File(String.format("%s/%s", destinationFilePath, entry.getName()));
-                    log.debug("Creating folder: {}", f.getCanonicalPath());
-                    String canonicalDestinationPath = f.getCanonicalPath();
-
-                    if (!canonicalDestinationPath.startsWith(destinationFilePath)) {
-                        throw new IOException("Entry is outside of the target directory");
-                    }
-
-                    boolean created = f.mkdir();
-                    if (!created) {
-                        log.info("Unable to create directory '{}', during extraction of archive contents.\n",
-                                f.getAbsolutePath());
-                    }
-                } else {
-                    int count;
-                    byte data[] = new byte[2048];
-                    File f = new File(String.format("%s/%s", destinationFilePath, entry.getName()));
-                    String canonicalDestinationPath = f.getCanonicalPath();
-
-                    if (!canonicalDestinationPath.startsWith(destinationFilePath)) {
-                        throw new IOException("Entry is outside of the target directory");
-                    }
-                    if (!f.exists()) {
-                        f.getParentFile().mkdirs();
-                        if (f.createNewFile()) {
-                            log.debug("File created: {}", f.getCanonicalPath());
-                        }
-                    }
-                    FileOutputStream fos = new FileOutputStream(f.getCanonicalPath(), false);
-                    log.info("Adding file {} to workspace context", destinationFilePath + "/" + entry.getName());
-                    try (BufferedOutputStream dest = new BufferedOutputStream(fos, 2048)) {
-                        while ((count = tarIn.read(data, 0, 2048)) != -1) {
-                            dest.write(data, 0, count);
-                        }
-                    }
-                }
-            }
-
-            log.info("Untar completed successfully!");
-        }
+        tarGzArchiver.extract(in, destinationFilePath);
     }
 
     private void getCommitId(File gitCloneFolder, String commitId) throws GitAPIException, IOException {

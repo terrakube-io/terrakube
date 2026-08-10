@@ -143,6 +143,8 @@ public class ExecutorService {
 
         executorContext.setCommandList(flow.getCommands());
         executorContext.setOnFailureList(flow.getOnFailure());
+        executorContext.setArtifactPatterns(flow.getArtifacts());
+        executorContext.setMultiStepJob(job.getStep() != null && job.getStep().size() > 1);
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
         executorContext.setTerraformVersion(job.getWorkspace().getTerraformVersion());

@@ -2,9 +2,13 @@ package io.terrakube.executor.plugin.tfstate.local;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.workspace.TarGzArchiver;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +42,7 @@ class LocalTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .artifactVerifier(new ArtifactVerifier(new TarGzArchiver()))
                 .build();
     }
 
@@ -111,6 +116,52 @@ class LocalTerraformStateImplTest {
         
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    @Test
+    void saveArtifactsCopiesTarGzAndReturnsPath(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        File archive = new File(workingDirectory, ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        FileUtils.writeStringToFile(archive, "tar-gz-bytes", Charset.defaultCharset());
+
+        String result = localTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertNotNull(result);
+        assertTrue(new File(result).exists());
+
+        // Cleanup
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    @Test
+    void saveArtifactsReturnsNullWhenNoBundleProduced(@TempDir Path tempDir) {
+        String result = localTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", tempDir.toFile());
+
+        assertNull(result);
+    }
+
+    @Test
+    void downloadArtifactsReturnsFalseWhenNoneDeclared(@TempDir Path tempDir) {
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn(null);
+
+        boolean result = localTerraformState.downloadArtifacts("org1", "ws1", "job1", "step1", tempDir.toFile());
+
+        assertFalse(result);
+    }
+
+    @Test
+    void downloadArtifactsThrowsOnChecksumMismatch(@TempDir Path sourceDir, @TempDir Path targetDir) throws IOException {
+        File bundle = new File(sourceDir.toFile(), "plan-artifacts.tar.gz");
+        FileUtils.writeStringToFile(bundle, "tar-gz-bytes", Charset.defaultCharset());
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn(bundle.getAbsolutePath());
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifactsChecksum())
+                .thenReturn("mismatched-checksum");
+
+        assertThrows(ArtifactVerificationException.class,
+                () -> localTerraformState.downloadArtifacts("org1", "ws1", "job1", "step1", targetDir.toFile()));
     }
 
     @Test

@@ -17,6 +17,7 @@ import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Base64;
@@ -49,7 +50,7 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService) {
+    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, ArtifactVerifier artifactVerifier) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -71,6 +72,7 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStatePathService(terraformStatePathService)
+                            .artifactVerifier(artifactVerifier)
                             .build();
                     break;
                 case AwsTerraformStateImpl:
@@ -117,6 +119,7 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
+                            .artifactVerifier(artifactVerifier)
                             .build();
                     break;
                 case GcpTerraformStateImpl:
@@ -139,6 +142,7 @@ public class TerraformStateAutoConfiguration {
                                 .bucketName(gcpTerraformStateProperties.getBucketName())
                                 .credentials(gcpTerraformStateProperties.getCredentials())
                                 .terrakubeClient(terrakubeClient)
+                                .artifactVerifier(artifactVerifier)
                                 .build();
                     } catch (IOException e) {
                         log.error(e.getMessage());
@@ -149,12 +153,14 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
+                            .artifactVerifier(artifactVerifier)
                             .build();
             }
         else
             terraformState = LocalTerraformStateImpl.builder()
                     .terrakubeClient(terrakubeClient)
                     .terraformStatePathService(terraformStatePathService)
+                    .artifactVerifier(artifactVerifier)
                     .build();
         return terraformState;
     }
