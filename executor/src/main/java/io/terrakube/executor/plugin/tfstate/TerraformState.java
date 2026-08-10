@@ -12,6 +12,11 @@ public interface TerraformState {
 
     boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 
+    String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
+
+    boolean downloadArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory)
+            throws ArtifactVerificationException;
+
     void saveStateJson(TerraformJob terraformJob, String applyJSON, String rawState);
 
     String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError);

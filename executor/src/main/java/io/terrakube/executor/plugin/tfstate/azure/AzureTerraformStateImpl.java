@@ -17,16 +17,22 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.time.OffsetDateTime;
@@ -45,6 +51,10 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
+    // A separate container from "tfstate" (not just a blob-name prefix within it), mirroring how
+    // "tfoutput" is already its own container - so a lifecycle policy can expire artifacts, which
+    // can be far larger than a plan file, without touching plan/state history.
+    private static final String CONTAINER_ARTIFACTS_NAME = "plan-artifacts";
     private String resourceGroupName;
     private String storageAccountName;
     private String storageContainerName;
@@ -60,6 +70,9 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     @NonNull
     TerraformStatePathService terraformStatePathService;
+
+    @NonNull
+    ArtifactVerifier artifactVerifier;
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -111,6 +124,60 @@ public class AzureTerraformStateImpl implements TerraformState {
         } else {
             return null;
         }
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_ARTIFACTS_NAME);
+        if (!blobContainerClient.exists()) {
+            blobContainerClient.create();
+        }
+        String blobName = organizationId + "/" + workspaceId + "/" + jobId + "/" + stepId + "/" + ArtifactPackagingService.ARTIFACTS_FILE_NAME;
+        log.info("terraformArtifactsFile: {}", blobName);
+        BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+
+        File artifactsTarGz = new File(workingDirectory.getAbsolutePath() + "/" + ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        if (artifactsTarGz.exists()) {
+            blobClient.uploadFromFile(artifactsTarGz.getAbsolutePath());
+            return blobClient.getBlobUrl();
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean downloadArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String artifactsUrl = attributes.getTerraformPlanArtifacts();
+        if (artifactsUrl == null || artifactsUrl.isBlank()) {
+            return false;
+        }
+
+        byte[] artifactBytes;
+        try {
+            log.info("Downloading plan artifacts from {}", artifactsUrl);
+            URL blobURL = new URL(artifactsUrl);
+            String blobName = blobURL.getPath().replace("/" + CONTAINER_ARTIFACTS_NAME + "/", "").replace("%2F", "/");
+
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_ARTIFACTS_NAME);
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+
+            BlobSasPermission blobSasPermission = new BlobSasPermission().setReadPermission(true);
+            BlobServiceSasSignatureValues builder = new BlobServiceSasSignatureValues(OffsetDateTime.now().plusMinutes(5), blobSasPermission)
+                    .setProtocol(SasProtocol.HTTPS_ONLY);
+
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            try (InputStream in = new URL(String.format("%s?%s", blobClient.getBlobUrl(), blobClient.generateSas(builder))).openStream()) {
+                in.transferTo(buffer);
+            }
+            artifactBytes = buffer.toByteArray();
+        } catch (IOException e) {
+            throw new ArtifactVerificationException("Failed to download plan artifacts bundle from " + artifactsUrl + ": " + e.getMessage());
+        }
+
+        artifactVerifier.verifyAndExtract(artifactBytes, attributes.getTerraformPlanArtifactsChecksum(), workingDirectory);
+        return true;
     }
 
     @Override

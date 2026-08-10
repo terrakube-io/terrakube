@@ -41,5 +41,9 @@ public class TerraformJob {
     private HashMap<String, String> variables;
     private List<Map<String, Object>> liveChanges;
     private List<Map<String, Object>> jobDiagnostics;
+    private List<String> artifactPatterns;
+    private String artifactsUrl;
+    private String artifactsChecksum;
+    private boolean multiStepJob;
 
 }

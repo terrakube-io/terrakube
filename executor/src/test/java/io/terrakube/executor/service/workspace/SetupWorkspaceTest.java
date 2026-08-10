@@ -117,7 +117,7 @@ public class SetupWorkspaceTest {
     private SetupWorkspace standardSetupWorkspaceImpl(TerraformJob job) {
         String overrideSource = job != null && "remote-content".equals(job.getBranch()) ? job.getSource() : null;
         return new SetupWorkspaceImpl(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
-                "https://terrakube-api.example.com", terrakubeClient(overrideSource));
+                "https://terrakube-api.example.com", terrakubeClient(overrideSource), new TarGzArchiver());
     }
 
     private static TerrakubeClient terrakubeClient(String overrideSource) {
@@ -214,7 +214,7 @@ public class SetupWorkspaceTest {
 
         UnshallowRecordingSetupWorkspace() {
             super(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
-                    "https://terrakube-api.example.com", terrakubeClient(null));
+                    "https://terrakube-api.example.com", terrakubeClient(null), new TarGzArchiver());
         }
 
         @Override
@@ -230,7 +230,7 @@ public class SetupWorkspaceTest {
 
         RejectingShaFetchSetupWorkspace() {
             super(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
-                    "https://terrakube-api.example.com", terrakubeClient(null));
+                    "https://terrakube-api.example.com", terrakubeClient(null), new TarGzArchiver());
         }
 
         @Override

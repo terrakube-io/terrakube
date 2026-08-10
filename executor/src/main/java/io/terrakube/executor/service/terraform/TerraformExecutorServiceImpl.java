@@ -3,7 +3,9 @@ package io.terrakube.executor.service.terraform;
 import com.diogonunes.jcolor.AnsiFormat;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -60,8 +62,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ApplyStructuredOutputService applyStructuredOutputService;
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
+    ArtifactPackagingService artifactPackagingService;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, ArtifactPackagingService artifactPackagingService, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -71,6 +74,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.applyStructuredOutputService = applyStructuredOutputService;
         this.terraformOutputsService = terraformOutputsService;
         this.objectMapper = objectMapper;
+        this.artifactPackagingService = artifactPackagingService;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
     }
@@ -252,6 +256,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     : "");
             if (executionPlan) {
                 planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                if (!isDestroy && exitCode == 2 && terraformJob.isMultiStepJob()) {
+                    // Only exitCode 2 (changes found) on a non-destroy plan can ever be followed by
+                    // an apply step - exitCode 0 (no changes) completes the job immediately, and
+                    // destroy plans are executed by destroy() below, which never reads artifacts back.
+                    // multiStepJob (this job has more than one step, mirroring the same check
+                    // UpdateJobStatusImpl makes to decide "pending" vs "completed") rules out
+                    // single-step plan-only templates, which have no apply step to ever consume a
+                    // packaged bundle. Packaging in any of these cases would upload a bundle nothing
+                    // ever downloads.
+                    packageAndSaveArtifacts(terraformJob, terraformWorkingDir);
+                }
             }
             result.setPlan(true);
             result.setExitCode(exitCode);
@@ -260,6 +275,25 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setExitCode(1);
         }
         return result;
+    }
+
+    private void packageAndSaveArtifacts(TerraformJob terraformJob, File terraformWorkingDir) {
+        try {
+            artifactPackagingService.packageArtifacts(terraformJob, terraformWorkingDir).ifPresent(checksum -> {
+                String artifactsUrl = terraformState.saveArtifacts(terraformJob.getOrganizationId(),
+                        terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir);
+                if (artifactsUrl == null) {
+                    log.error("Plan artifacts were packaged for job {} step {} but upload failed",
+                            terraformJob.getJobId(), terraformJob.getStepId());
+                    return;
+                }
+                terraformJob.setArtifactsUrl(artifactsUrl);
+                terraformJob.setArtifactsChecksum(checksum);
+            });
+        } catch (IOException e) {
+            log.error("Failed to package plan artifacts for job {} step {}: {}",
+                    terraformJob.getJobId(), terraformJob.getStepId(), e.getMessage());
+        }
     }
 
     @Override
@@ -271,6 +305,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TextStringBuilder terraformErrorOutput = new TextStringBuilder();
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
+
+            try {
+                terraformState.downloadArtifacts(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(),
+                        terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir);
+            } catch (ArtifactVerificationException e) {
+                log.error("Plan artifacts verification failed for job {} step {}: {}",
+                        terraformJob.getJobId(), terraformJob.getStepId(), e.getMessage());
+                return generateJobResult(false, "", "Plan artifacts verification failed: " + e.getMessage());
+            }
+
             Consumer<String> applyOutput = LogsConsumer.builder()
                     .jobId(Integer.valueOf(terraformJob.getJobId()))
                     .lineNumber(new AtomicInteger(0))

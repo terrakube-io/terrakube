@@ -12,16 +12,22 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +43,10 @@ public class GcpTerraformStateImpl implements TerraformState {
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String GCP_CREDENTIALS_FILE = "GCP_CREDENTIALS_FILE.json";
     private static final String BACKEND_FILE_NAME = "gcp_backend_override.tf";
+    // A separate top-level prefix from "tfstate/" (where the plan file and state live), so an
+    // Object Lifecycle Management rule can expire artifacts - which can be far larger than a plan
+    // file - without touching plan/state history.
+    private static final String ARTIFACTS_PREFIX = "plan-artifacts/";
 
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
@@ -54,6 +64,8 @@ public class GcpTerraformStateImpl implements TerraformState {
     TerraformStatePathService terraformStatePathService;
 
     @NonNull TerrakubeClient terrakubeClient;
+
+    @NonNull ArtifactVerifier artifactVerifier;
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -143,6 +155,56 @@ public class GcpTerraformStateImpl implements TerraformState {
                     }
                 });
         return planGcExist.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String blobKey = String.format(ARTIFACTS_PREFIX + "%s/%s/%s/%s/%s", organizationId, workspaceId, jobId, stepId, ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        log.info("terraformGcpArtifactsFile: {}", blobKey);
+
+        File artifactsTarGz = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), ArtifactPackagingService.ARTIFACTS_FILE_NAME));
+        if (artifactsTarGz.exists()) {
+            try {
+                BlobId blobId = BlobId.of(bucketName, blobKey);
+                BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+                storage.create(blobInfo, FileUtils.readFileToByteArray(artifactsTarGz));
+                return String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
+            } catch (IOException e) {
+                log.error(e.getMessage());
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean downloadArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String artifactsUrl = attributes.getTerraformPlanArtifacts();
+        if (artifactsUrl == null || artifactsUrl.isBlank()) {
+            return false;
+        }
+
+        byte[] artifactBytes;
+        try {
+            log.info("Downloading plan artifacts from {}", artifactsUrl);
+            String bucketNamePath = String.format("/%s/", bucketName);
+            BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, new URL(artifactsUrl).getPath().replace(bucketNamePath, ""))).build();
+            URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
+
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            try (InputStream in = signedUrl.openStream()) {
+                in.transferTo(buffer);
+            }
+            artifactBytes = buffer.toByteArray();
+        } catch (IOException e) {
+            throw new ArtifactVerificationException("Failed to download plan artifacts bundle from " + artifactsUrl + ": " + e.getMessage());
+        }
+
+        artifactVerifier.verifyAndExtract(artifactBytes, attributes.getTerraformPlanArtifactsChecksum(), workingDirectory);
+        return true;
     }
 
     @Override

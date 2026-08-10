@@ -4,7 +4,10 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.workspace.TarGzArchiver;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -56,6 +60,7 @@ class AwsTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .artifactVerifier(new ArtifactVerifier(new TarGzArchiver()))
                 .includeBackendKeys(false)
                 .build();
     }
@@ -253,6 +258,57 @@ class AwsTerraformStateImplTest {
         assertTrue(result);
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
         assertTrue(downloadedPlan.exists());
+    }
+
+    @Test
+    void testSaveArtifacts(@TempDir Path tempDir) throws MalformedURLException, IOException {
+        File workingDirectory = tempDir.toFile();
+        File archive = new File(workingDirectory, ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        FileUtils.writeStringToFile(archive, "tar-gz-bytes", Charset.defaultCharset());
+
+        S3Utilities s3Utilities = mock(S3Utilities.class);
+        when(s3Client.utilities()).thenReturn(s3Utilities);
+        when(s3Utilities.getUrl(any(GetUrlRequest.class))).thenReturn(new URL("https://s3.amazonaws.com/test-bucket/artifacts"));
+
+        String url = awsTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertEquals("https://s3.amazonaws.com/test-bucket/artifacts", url);
+        verify(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    void testDownloadArtifactsSucceedsOnMatchingChecksum(@TempDir Path targetDir) throws Exception {
+        File sourceDir = Files.createTempDirectory("artifact-source").toFile();
+        File sourceFile = new File(sourceDir, "build/output.zip");
+        FileUtils.writeStringToFile(sourceFile, "zip-bytes", Charset.defaultCharset());
+        File tarGz = new File(sourceDir, "plan-artifacts.tar.gz");
+        new TarGzArchiver().create(tarGz, sourceDir, java.util.List.of(sourceFile));
+        byte[] bundleBytes = FileUtils.readFileToByteArray(tarGz);
+        String checksum = org.apache.commons.codec.digest.DigestUtils.sha256Hex(bundleBytes);
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn("https://s3.amazonaws.com/test-bucket/plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz");
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifactsChecksum())
+                .thenReturn(checksum);
+
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn(bundleBytes);
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+
+        boolean result = awsTerraformState.downloadArtifacts("org1", "ws1", "job1", "step1", targetDir.toFile());
+
+        assertTrue(result);
+        assertTrue(new File(targetDir.toFile(), "build/output.zip").exists());
+    }
+
+    @Test
+    void testDownloadArtifactsReturnsFalseWhenNoneDeclared(@TempDir Path targetDir) {
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn(null);
+
+        boolean result = awsTerraformState.downloadArtifacts("org1", "ws1", "job1", "step1", targetDir.toFile());
+
+        assertFalse(result);
     }
 
     @Test

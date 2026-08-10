@@ -17,12 +17,16 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
 
 @Slf4j
@@ -36,6 +40,10 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/" + TERRAFORM_STATE_FILE;
     private static final String LOCAL_PLAN_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/%s/%s/" + TERRAFORM_PLAN_FILE;
     private static final String LOCAL_PLAN_DIRECTORY_JSON = "/.terraform-spring-boot/local/state/%s/%s/state/%s.json";
+    // A separate top-level directory from ".../local/state/" (where the plan file lives), so a
+    // simple cron/tmpwatch cleanup can expire artifacts - which can be far larger than a plan
+    // file - without touching plan/state history.
+    private static final String LOCAL_ARTIFACTS_DIRECTORY = "/.terraform-spring-boot/local/plan-artifacts/%s/%s/%s/%s/" + ArtifactPackagingService.ARTIFACTS_FILE_NAME;
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
@@ -48,6 +56,9 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @NonNull
     TerraformStatePathService terraformStatePathService;
+
+    @NonNull
+    ArtifactVerifier artifactVerifier;
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -129,6 +140,53 @@ public class LocalTerraformStateImpl implements TerraformState {
                     }
                 });
         return planExists.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId,
+                                 File workingDirectory) {
+
+        String artifactsFilePath = String.format(LOCAL_ARTIFACTS_DIRECTORY, organizationId, workspaceId, jobId, stepId);
+
+        String stepArtifactsPath = FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem(
+                        artifactsFilePath));
+
+        File artifactsTarGz = new File(String.join(File.separator,
+                Stream.of(workingDirectory.getAbsolutePath(), ArtifactPackagingService.ARTIFACTS_FILE_NAME).toArray(String[]::new)));
+
+        if (artifactsTarGz.exists()) {
+            try {
+                FileUtils.copyFile(artifactsTarGz, new File(stepArtifactsPath));
+            } catch (IOException e) {
+                log.error(e.getMessage());
+                return null;
+            }
+            log.info("Local artifacts bundle saved to {}", stepArtifactsPath);
+            return stepArtifactsPath;
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean downloadArtifacts(String organizationId, String workspaceId, String jobId, String stepId,
+                                      File workingDirectory) throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String artifactsPath = attributes.getTerraformPlanArtifacts();
+        if (artifactsPath == null || artifactsPath.isBlank()) {
+            return false;
+        }
+
+        byte[] artifactBytes;
+        try {
+            artifactBytes = FileUtils.readFileToByteArray(new File(artifactsPath));
+        } catch (IOException e) {
+            throw new ArtifactVerificationException("Failed to read plan artifacts bundle from " + artifactsPath + ": " + e.getMessage());
+        }
+
+        artifactVerifier.verifyAndExtract(artifactBytes, attributes.getTerraformPlanArtifactsChecksum(), workingDirectory);
+        return true;
     }
 
     @Override

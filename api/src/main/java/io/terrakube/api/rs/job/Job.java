@@ -71,6 +71,12 @@ public class Job extends GenericAuditFields {
     @Column(name = "terraform_plan")
     private String terraformPlan;
 
+    @Column(name = "terraform_plan_artifacts")
+    private String terraformPlanArtifacts;
+
+    @Column(name = "terraform_plan_artifacts_checksum")
+    private String terraformPlanArtifactsChecksum;
+
     @CreatePermission(expression = "user is a super service")
     @UpdatePermission(expression = "user is a super service")
     @Column(name = "approval_team")

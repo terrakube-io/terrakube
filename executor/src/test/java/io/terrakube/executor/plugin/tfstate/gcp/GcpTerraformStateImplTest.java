@@ -7,7 +7,10 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactVerifier;
 import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.workspace.TarGzArchiver;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +55,7 @@ class GcpTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .artifactVerifier(new ArtifactVerifier(new TarGzArchiver()))
                 .build();
     }
 
@@ -129,6 +133,65 @@ class GcpTerraformStateImplTest {
         // new URL(stateUrl).getPath() = /test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
         // replace("/test-bucket/", "") = tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
         assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", blobInfoCaptor.getValue().getBlobId().getName());
+    }
+
+    @Test
+    void testSaveArtifacts(@TempDir Path tempDir) throws IOException {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+        File archive = new File(workingDirectory, ArtifactPackagingService.ARTIFACTS_FILE_NAME);
+        FileUtils.writeStringToFile(archive, "tar-gz-bytes", Charset.defaultCharset());
+
+        String result = gcpTerraformState.saveArtifacts(organizationId, workspaceId, jobId, stepId, workingDirectory);
+
+        String expectedUrl = "https://storage.cloud.google.com/test-bucket/plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz";
+        assertEquals(expectedUrl, result);
+        verify(storage).create(any(BlobInfo.class), eq("tar-gz-bytes".getBytes()));
+    }
+
+    @Test
+    void testDownloadArtifactsSucceedsOnMatchingChecksum(@TempDir Path tempDir) throws Exception {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        File sourceDir = new File(workingDirectory, "source");
+        sourceDir.mkdirs();
+        File sourceFile = new File(sourceDir, "build/output.zip");
+        FileUtils.writeStringToFile(sourceFile, "zip-bytes", Charset.defaultCharset());
+        File tarGz = new File(sourceDir, "plan-artifacts.tar.gz");
+        new TarGzArchiver().create(tarGz, sourceDir, java.util.List.of(sourceFile));
+        byte[] bundleBytes = FileUtils.readFileToByteArray(tarGz);
+        String checksum = org.apache.commons.codec.digest.DigestUtils.sha256Hex(bundleBytes);
+
+        String artifactsUrl = "https://storage.cloud.google.com/test-bucket/plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz";
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn(artifactsUrl);
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifactsChecksum())
+                .thenReturn(checksum);
+        when(storage.signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class))).thenReturn(tarGz.toURI().toURL());
+
+        File applyWorkingDirectory = new File(workingDirectory, "apply");
+        applyWorkingDirectory.mkdirs();
+        boolean result = gcpTerraformState.downloadArtifacts(organizationId, workspaceId, jobId, stepId, applyWorkingDirectory);
+
+        assertTrue(result);
+        assertTrue(new File(applyWorkingDirectory, "build/output.zip").exists());
+    }
+
+    @Test
+    void testDownloadArtifactsReturnsFalseWhenNoneDeclared(@TempDir Path tempDir) {
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlanArtifacts())
+                .thenReturn(null);
+
+        boolean result = gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", "step1", tempDir.toFile());
+
+        assertFalse(result);
     }
 
     @Test

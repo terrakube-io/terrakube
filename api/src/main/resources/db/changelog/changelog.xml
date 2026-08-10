@@ -115,4 +115,5 @@
     <include file="/db/changelog/local/changelog-2.33.0-job-command-comment-id.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-job-soft-delete.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-job-status-index.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-plan-artifacts.xml"/>
 </databaseChangeLog>
