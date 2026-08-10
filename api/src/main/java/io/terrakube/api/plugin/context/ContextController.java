@@ -1,19 +1,18 @@
 package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.core.JacksonException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.NullNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -37,15 +36,13 @@ public class ContextController {
             JobStatus.completed,
             JobStatus.noChanges);
 
-    private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
-    private static final String CONTEXT_APPLY_KEY = "applyStructuredOutput";
-    private static final String CONTEXT_OUTPUTS_KEY = "terraformOutputs";
-
     private final StorageTypeService storageTypeService;
 
     private final JobRepository jobRepository;
 
-    private final ObjectMapper objectMapper;
+    private final ContextSanitizer contextSanitizer;
+
+    private final StreamingService streamingService;
 
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) throws IOException {
@@ -53,7 +50,7 @@ public class ContextController {
         if (context == null || context.isBlank()) {
             context = "{}";
         }
-        return new ResponseEntity<>(sanitizeContextPayload(context), HttpStatus.OK);
+        return new ResponseEntity<>(contextSanitizer.sanitize(context), HttpStatus.OK);
     }
 
     @PostMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -61,7 +58,7 @@ public class ContextController {
     public ResponseEntity<String> saveContext(@PathVariable("jobId") int jobId, @RequestBody String context) throws IOException {
         String sanitizedContext;
         try {
-            sanitizedContext = sanitizeContextPayload(context);
+            sanitizedContext = contextSanitizer.sanitize(context);
         } catch (JacksonException e) {
             log.warn("Invalid context payload for job {}", jobId, e);
             return new ResponseEntity<>("{}", HttpStatus.BAD_REQUEST);
@@ -83,101 +80,24 @@ public class ContextController {
         return new ResponseEntity<>(savedContext, HttpStatus.OK);
     }
 
-    private String sanitizeContextPayload(String context) throws JacksonException, IOException {
-        JsonNode rootNode = objectMapper.readTree(context);
-        if (rootNode instanceof ObjectNode rootObject) {
-            sanitizeStructuredChanges(rootObject, CONTEXT_PLAN_KEY);
-            sanitizeStructuredChanges(rootObject, CONTEXT_APPLY_KEY);
-            sanitizeTerraformOutputs(rootObject);
-        }
-
-        return objectMapper.writeValueAsString(rootNode);
+    @GetMapping(value = "/{jobId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamContext(
+            @PathVariable("jobId") String jobId,
+            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        streamingService.streamJobContextAsync(jobId, emitter, parseResumeId(lastEventId), contextSanitizer);
+        return emitter;
     }
 
-    private void sanitizeTerraformOutputs(ObjectNode rootNode) {
-        JsonNode outputsNode = rootNode.get(CONTEXT_OUTPUTS_KEY);
-        if (!(outputsNode instanceof ObjectNode outputsObject)) {
-            return;
+    private RecordId parseResumeId(String lastEventId) {
+        if (!StringUtils.hasText(lastEventId)) {
+            return RecordId.of("0-0");
         }
-
-        outputsObject.fields().forEachRemaining(entry -> {
-            if (!(entry.getValue() instanceof ArrayNode stepOutputs)) {
-                return;
-            }
-
-            stepOutputs.forEach(outputNode -> {
-                if (!(outputNode instanceof ObjectNode outputObject)) {
-                    return;
-                }
-
-                JsonNode sensitiveNode = outputObject.get("sensitive");
-                if (sensitiveNode != null && sensitiveNode.isBoolean() && sensitiveNode.booleanValue()) {
-                    outputObject.set("value", NullNode.getInstance());
-                }
-            });
-        });
-    }
-
-    private void sanitizeStructuredChanges(ObjectNode rootNode, String contextKey) {
-        JsonNode structuredOutputNode = rootNode.get(contextKey);
-        if (!(structuredOutputNode instanceof ObjectNode structuredOutputObject)) {
-            return;
+        try {
+            return RecordId.of(lastEventId);
+        } catch (IllegalArgumentException e) {
+            log.warn("Ignoring unparseable Last-Event-ID '{}': {}", lastEventId, e.getMessage());
+            return RecordId.of("0-0");
         }
-
-        structuredOutputObject.fields().forEachRemaining(entry -> {
-            if (!(entry.getValue() instanceof ArrayNode stepChanges)) {
-                return;
-            }
-
-            stepChanges.forEach(changeNode -> {
-                if (!(changeNode instanceof ObjectNode changeObject)) {
-                    return;
-                }
-
-                sanitizeChangeValue(changeObject, "before", "beforeSensitive");
-                sanitizeChangeValue(changeObject, "after", "afterSensitive");
-            });
-        });
-    }
-
-    private void sanitizeChangeValue(ObjectNode changeObject, String valueField, String sensitiveField) {
-        JsonNode valueNode = changeObject.get(valueField);
-        if (valueNode == null) {
-            return;
-        }
-
-        JsonNode sensitiveNode = changeObject.get(sensitiveField);
-        changeObject.set(valueField, sanitizeNode(valueNode, sensitiveNode));
-    }
-
-    private JsonNode sanitizeNode(JsonNode valueNode, JsonNode sensitiveNode) {
-        if (sensitiveNode != null && sensitiveNode.isBoolean() && sensitiveNode.booleanValue()) {
-            return NullNode.getInstance();
-        }
-
-        if (valueNode.isObject()) {
-            ObjectNode sanitizedObject = objectMapper.createObjectNode();
-            valueNode.fields().forEachRemaining(entry -> {
-                JsonNode nestedSensitiveNode = sensitiveNode != null ? sensitiveNode.get(entry.getKey()) : null;
-                sanitizedObject.set(entry.getKey(), sanitizeNode(entry.getValue(), nestedSensitiveNode));
-            });
-            return sanitizedObject;
-        }
-
-        if (valueNode.isArray()) {
-            ArrayNode sanitizedArray = objectMapper.createArrayNode();
-            ArrayNode sensitiveArray = sensitiveNode instanceof ArrayNode ? (ArrayNode) sensitiveNode : null;
-
-            for (int index = 0; index < valueNode.size(); index++) {
-                JsonNode nestedSensitiveNode = sensitiveArray != null && index < sensitiveArray.size()
-                        ? sensitiveArray.get(index)
-                        : null;
-                sanitizedArray.add(sanitizeNode(valueNode.get(index), nestedSensitiveNode));
-            }
-
-            return sanitizedArray;
-        }
-
-        return valueNode.deepCopy();
     }
 }

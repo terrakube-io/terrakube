@@ -101,7 +101,7 @@ public class PrCommentServiceTest {
 
     /** Stubs the last-step output fetch path (empty live logs, then stored bytes) for a job built via createJob(). */
     private void stubStepOutput(String text) {
-        doReturn("").when(streamingService).getCurrentLogs(any());
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
         byte[] bytes = text == null ? null : text.getBytes(StandardCharsets.UTF_8);
         doReturn(bytes).when(storageTypeService).getStepOutput(any(), any(), any());
     }
@@ -115,6 +115,17 @@ public class PrCommentServiceTest {
 
         assertTrue(summary.isPresent());
         assertEquals("Plan: 2 to add, 1 to change, 0 to destroy.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsPlanLineWithImportClause() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nPlan: 1 to import, 8 to add, 0 to change, 0 to destroy.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertTrue(summary.isPresent());
+        assertEquals("Plan: 1 to import, 8 to add, 0 to change, 0 to destroy.", summary.get());
     }
 
     @Test
@@ -474,7 +485,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultPrefersLiveStreamingLogsOverStoredOutput() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any());
+        doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any(), any());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -661,6 +672,44 @@ public class PrCommentServiceTest {
         verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
 
         assertTrue(markdownCaptor.getValue().contains("**Job:** #42"));
+    }
+
+    private Workspace workspaceWith(VcsType vcsType) {
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(vcsType);
+        Workspace workspace = new Workspace();
+        workspace.setName("test-workspace");
+        workspace.setVcs(vcs);
+        return workspace;
+    }
+
+    @Test
+    public void acknowledgeReceiptSkipsWhenCommentIdMissing() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), null, 5);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitHub() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), "998877", 5);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(any(Workspace.class), eq("998877"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitLab() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITLAB), "note-1", 5);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(any(Workspace.class), eq(5), eq("note-1"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptIsNoOpForBitbucket() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.BITBUCKET), "55", 5);
+
+        verify(bitBucketWebhookService, never()).postPrComment(any(), any());
+        verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
     }
 
     @Test

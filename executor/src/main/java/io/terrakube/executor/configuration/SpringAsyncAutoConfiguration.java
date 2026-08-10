@@ -16,15 +16,17 @@ public class SpringAsyncAutoConfiguration {
     @Primary
     public Executor threadPoolTaskExecutor() {
         // ExecutorJobImpl.createJob() is the only @Async consumer of this pool, and it must stay
-        // single-threaded: a busy pod signals REFUSING_TRAFFIC to leave the k8s Service's endpoint
-        // pool, but that only takes effect once kube-proxy propagates it, so a second request can
-        // still land here in the meantime. Capping the pool at one thread queues that request
-        // behind the running job instead of running both concurrently - that's what actually
-        // enforces "one job per pod", not the readiness signal by itself. Do not raise this.
+        // single-threaded with no local queue: OnlineModeServiceImpl's ExecutorCapacityGate is
+        // what actually enforces "one job per pod" (a busy gate returns 503 before a job is ever
+        // submitted here). This pool's zero queue capacity is defense-in-depth for the narrow
+        // race between the previous job's ExecutorCapacityGate.release() and this pool's thread
+        // actually becoming free again - a submission landing in that window is rejected
+        // (TaskRejectedException) rather than silently queued, and OnlineModeServiceImpl maps
+        // that rejection to a 503. Do not raise corePoolSize/maxPoolSize/queueCapacity.
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(1);
         executor.setMaxPoolSize(1);
-        executor.setQueueCapacity(Integer.MAX_VALUE);
+        executor.setQueueCapacity(0);
         executor.setThreadNamePrefix("terrakube-executor-job-");
         return executor;
     }

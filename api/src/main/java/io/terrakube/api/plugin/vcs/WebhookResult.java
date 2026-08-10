@@ -28,6 +28,7 @@ public class WebhookResult {
     private boolean isPrComment;
     private String prFilesUrl;
     private String rawPayload;
+    private String prDetailsUrl;
 
     public String getNormalizedEvent() {
         String normalizedEvent = "unknown";

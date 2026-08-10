@@ -57,6 +57,7 @@ public class StreamingConfiguration {
     @Bean
     JedisConnectionFactory jedisConnectionFactory(StreamingProperties props, SSLSocketFactory sslSocketFactory) {
         JedisClientConfiguration.JedisClientConfigurationBuilder clientConfigBuilder = JedisClientConfiguration.builder();
+        clientConfigBuilder.usePooling();
 
         if (props.isSsl()) {
             log.info("Setup Redis connection using SSL");

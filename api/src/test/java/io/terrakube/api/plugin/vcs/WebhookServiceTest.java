@@ -118,7 +118,7 @@ public class WebhookServiceTest {
     }
 
     @Test
-    public void planCommentAddsGitHubReactionWhenCommentIdPresent() throws Exception {
+    public void planCommentAcknowledgesReceiptWhenCommentIdPresent() throws Exception {
         pullRequestEvent.setPrWorkflowEnabled(true);
         WebhookResult result = createCommentResult("plan", 5);
         result.setCommentId("998877");
@@ -129,21 +129,7 @@ public class WebhookServiceTest {
 
         subject.handlePrCommentCommand(result, webhook, workspace);
 
-        verify(gitHubWebhookService, times(1)).addCommentReaction(workspace, "998877", "eyes");
-    }
-
-    @Test
-    public void planCommentSkipsReactionWhenCommentIdMissing() throws Exception {
-        pullRequestEvent.setPrWorkflowEnabled(true);
-        WebhookResult result = createCommentResult("plan", 5);
-
-        Job savedJob = new Job();
-        savedJob.setWorkspace(workspace);
-        doReturn(savedJob).when(jobRepository).save(any());
-
-        subject.handlePrCommentCommand(result, webhook, workspace);
-
-        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+        verify(prCommentService, times(1)).acknowledgeReceipt(workspace, "998877", 5);
     }
 
     @Test

@@ -38,6 +38,26 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
+    void keepsAnEphemeralResourcesPlanTimeStatusInsteadOfResettingToPending() {
+        // Unlike managed resources, apply -json emits no ephemeral_op/action event at all for an
+        // ephemeral resource that nothing else in the config references - its whole open/close
+        // lifecycle already happened during planning. Resetting its status to "pending" here would
+        // leave it stuck showing that even after a successful apply, since nothing during apply
+        // would ever update it again.
+        Map<String, Object> context = new HashMap<>();
+        context.put("planStructuredOutput", Map.of(
+                "plan-step-1", List.of(Map.of(
+                        "address", "ephemeral.random_password.session_secret",
+                        "action", "ephemeral",
+                        "status", "applied"))));
+
+        List<Map<String, Object>> seeded = subject().seedFromPlan(context);
+
+        assertEquals(1, seeded.size());
+        assertEquals("applied", seeded.get(0).get("status"));
+    }
+
+    @Test
     void skipsSeedingWhenThereIsNoPlanStructuredOutput() {
         List<Map<String, Object>> seeded = subject().seedFromPlan(new HashMap<>());
 
@@ -63,12 +83,27 @@ class ApplyStructuredOutputServiceTest {
         context.put("applyStructuredOutput", Map.of("existing-step", List.of(Map.of("address", "existing"))));
 
         Map<String, Object> updated = subject().updateApplyContext(
-                context, "new-step", List.of(Map.of("address", "aws_instance.new", "status", "pending")));
+                context, "new-step", List.of(Map.of("address", "aws_instance.new", "status", "pending")), List.of());
 
         assertEquals("value", updated.get("custom"));
         Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
         assertTrue(applyOutput.containsKey("existing-step"));
         assertTrue(applyOutput.containsKey("new-step"));
+    }
+
+    @Test
+    void publishApplyProgressIncludesJobDiagnosticsInSavedContext() {
+        List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.foo", "status", "applied"));
+        List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "warning", "summary", "deprecated argument"));
+
+        Map<String, Object> context = new HashMap<>();
+        Map<String, Object> updated = subject().updateApplyContext(context, "step-1", changes, jobDiagnostics);
+
+        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
+        assertEquals(changes, applyOutput.get("step-1"));
+
+        Map<String, Object> jobDiagnosticsOutput = (Map<String, Object>) updated.get("jobDiagnostics");
+        assertEquals(jobDiagnostics, jobDiagnosticsOutput.get("step-1"));
     }
 
     @Test

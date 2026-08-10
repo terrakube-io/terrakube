@@ -61,6 +61,8 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean includeBackendKeys;
 
+    private boolean useLockfile;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -111,6 +113,18 @@ public class AwsTerraformStateImpl implements TerraformState {
                 awsBackendHcl.appendln("    secret_key = \"" + secretKey + "\"");
             } else {
               log.warn("No including backend information");
+            }
+
+            // Native S3 locking, off by default. Turning it on makes concurrent runs on
+            // the same state wait for each other, which is why it is not the default:
+            // plan only jobs are allowed to run in parallel on purpose.
+            // Worth enabling when something outside Terrakube writes the same state.
+            if(useLockfile) {
+                if(version.compareTo(new ComparableVersion("1.10.0")) >= 0){
+                    awsBackendHcl.appendln("    use_lockfile = true");
+                } else {
+                    log.warn("use_lockfile is enabled but ignored, it requires terraform or tofu 1.10 and this job runs {}", version);
+                }
             }
 
             if(endpoint != null){
@@ -284,4 +298,68 @@ public class AwsTerraformStateImpl implements TerraformState {
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
     }
 
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Saving {} binary to S3: {}", product, blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
+            log.info("Successfully cached {} binary version {} in S3", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
+        try {
+            // Check if the object exists first
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+            s3client.headObject(headRequest);
+
+            // Object exists, download it
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
+                    ResponseTransformer.toBytes());
+            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from S3", product, version);
+            return true;
+        } catch (NoSuchKeyException e) {
+            log.info("{} binary version {} not found in S3 cache", product, version);
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
 }
+

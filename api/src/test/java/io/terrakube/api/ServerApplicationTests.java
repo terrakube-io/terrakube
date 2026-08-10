@@ -29,6 +29,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 
 import javax.crypto.SecretKey;
@@ -48,6 +49,12 @@ class ServerApplicationTests {
 
     @MockBean
     protected RedisTemplate<String, Object> redisTemplate;
+
+    // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
+    // container to connect to Redis on every SpringBootTest context startup - CI has no Redis
+    // service, so every test in this hierarchy would fail before this mock existed.
+    @MockBean
+    protected RedisMessageListenerContainer redisMessageListenerContainer;
 
     @MockBean
     protected DownloadReleasesService downloadReleasesService;

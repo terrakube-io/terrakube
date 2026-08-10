@@ -18,16 +18,16 @@
         <azure.version>6.4.0</azure.version>
         <msal4j.version>1.25.1</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
-        <terrakube-client-starter.version>1.6.0</terrakube-client-starter.version>
+        <terrakube-client-starter.version>1.7.0</terrakube-client-starter.version>
         <jgit.version>7.7.1.202607240634-r</jgit.version>
         <bouncy.castle>1.85</bouncy.castle>
         <commons-io.version>2.22.0</commons-io.version>
         <rest-assured.version>5.5.6</rest-assured.version>
         <wiremock.version>4.2.2</wiremock.version>
         <!--groovy.version>3.0.8</groovy.version-->
-        <aws-sdk.version>2.49.4</aws-sdk.version>
+        <aws-sdk.version>2.50.2</aws-sdk.version>
         <zt-zip.version>1.18.2</zt-zip.version>
-        <gcp-libraries-bom.version>26.85.1</gcp-libraries-bom.version>
+        <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <!--BUILDPACK DATA-->

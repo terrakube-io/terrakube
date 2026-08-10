@@ -12,6 +12,12 @@ export type PlanChange = {
   afterSensitive?: unknown;
   afterUnknown?: unknown;
   importing?: { id?: string };
+  // Only ever populated for a still-running (or since-failed) plan step, pushed live over the
+  // structured-output stream (see the design doc's "dual-source merge") - the final, `show -json`-
+  // merged plan summary never sets these.
+  status?: ChangeStatus;
+  diagnostics?: Diagnostic[];
+  driftAction?: string;
 };
 
 export type StructuredPlanOutputByStep = Record<string, PlanChange[]>;
@@ -146,6 +152,9 @@ const normalizePlanChange = (value: unknown): PlanChange | null => {
     afterSensitive: value.afterSensitive,
     afterUnknown: value.afterUnknown,
     importing,
+    status: toChangeStatus(value.status),
+    diagnostics: toDiagnostics(value.diagnostics),
+    driftAction: toOptionalString(value.driftAction),
   };
 };
 
@@ -171,23 +180,77 @@ export const normalizeStructuredPlanOutput = (value: unknown): StructuredPlanOut
   return normalizedOutput;
 };
 
-export type ApplyResourceStatus = "pending" | "applying" | "applied" | "errored";
+export type ChangeStatus =
+  | "pending" | "planned"
+  | "refreshing" | "reading"
+  | "applying" | "provisioning" | "applied"
+  | "importing" | "moving"
+  | "errored"
+  | "ephemeral-opening" | "ephemeral-renewed" | "ephemeral-closing" | "ephemeral-errored";
+
+export type Diagnostic = {
+  severity: "error" | "warning";
+  summary: string;
+  detail?: string;
+  // Only set for diagnostics with no resource address (e.g. a deprecated variable/output) - the
+  // "file:line" Terraform's diagnostic range points at, since that's otherwise the only way to
+  // tell two textually-identical unaddressed warnings apart.
+  location?: string;
+};
 
 export type ApplyChange = PlanChange & {
-  status: ApplyResourceStatus;
-  error?: string;
+  status: ChangeStatus;
+  diagnostics?: Diagnostic[];
+  elapsedSeconds?: number;
+  currentProvisioner?: string;
+  provisionerOutput?: string[];
+  driftAction?: string;
 };
 
 export type StructuredApplyOutputByStep = Record<string, ApplyChange[]>;
 
-const APPLY_STATUSES: ApplyResourceStatus[] = ["pending", "applying", "applied", "errored"];
+const CHANGE_STATUSES: ChangeStatus[] = [
+  "pending", "planned",
+  "refreshing", "reading",
+  "applying", "provisioning", "applied",
+  "importing", "moving",
+  "errored",
+  "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
+];
 
-const toApplyStatus = (value: unknown): ApplyResourceStatus => {
-  if (typeof value === "string" && (APPLY_STATUSES as string[]).includes(value)) {
-    return value as ApplyResourceStatus;
+const toChangeStatus = (value: unknown): ChangeStatus => {
+  if (typeof value === "string" && (CHANGE_STATUSES as string[]).includes(value)) {
+    return value as ChangeStatus;
   }
 
   return "pending";
+};
+
+const toDiagnostics = (value: unknown): Diagnostic[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const diagnostics = value
+    .filter(isRecord)
+    .map((entry): Diagnostic | null => {
+      const severity = entry.severity === "error" || entry.severity === "warning" ? entry.severity : null;
+      const summary = toOptionalString(entry.summary);
+      if (severity === null || summary === undefined) {
+        return null;
+      }
+
+      const detail = toOptionalString(entry.detail);
+      const location = toOptionalString(entry.location);
+      return { severity, summary, ...(detail !== undefined ? { detail } : {}), ...(location !== undefined ? { location } : {}) };
+    })
+    .filter((entry): entry is Diagnostic => entry !== null);
+
+  return diagnostics.length > 0 ? diagnostics : undefined;
+};
+
+const toOptionalNumber = (value: unknown): number | undefined => {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 };
 
 const normalizeApplyChange = (value: unknown): ApplyChange | null => {
@@ -200,8 +263,12 @@ const normalizeApplyChange = (value: unknown): ApplyChange | null => {
 
   return {
     ...planChange,
-    status: toApplyStatus(record.status),
-    error: toOptionalString(record.error),
+    status: toChangeStatus(record.status),
+    diagnostics: toDiagnostics(record.diagnostics),
+    elapsedSeconds: toOptionalNumber(record.elapsedSeconds),
+    currentProvisioner: toOptionalString(record.currentProvisioner),
+    provisionerOutput: toStringArray(record.provisionerOutput),
+    driftAction: toOptionalString(record.driftAction),
   };
 };
 
@@ -274,6 +341,23 @@ export const normalizeStructuredOutputs = (value: unknown): StructuredOutputsByS
   });
 
   return normalizedOutputs;
+};
+
+export type JobDiagnosticsByStep = Record<string, Diagnostic[]>;
+
+export const normalizeJobDiagnostics = (value: unknown): JobDiagnosticsByStep => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalized: JobDiagnosticsByStep = {};
+
+  Object.entries(value).forEach(([stepId, rawDiagnostics]) => {
+    const diagnostics = toDiagnostics(rawDiagnostics);
+    normalized[stepId] = diagnostics ?? [];
+  });
+
+  return normalized;
 };
 
 export const normalizeUITemplates = (value: unknown): Record<string, string> => {

@@ -17,16 +17,18 @@ import { DateTime } from "luxon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
-import { useAbortController, usePolling } from "../../hooks";
-import { Job, JobStep } from "../types";
+import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
+import { IncludedItem, Job, JobStep, Workspace } from "../types";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { StructuredPlanOutput } from "./StructuredPlanOutput";
 import {
+  JobDiagnosticsByStep,
   StructuredApplyOutputByStep,
   StructuredOutputsByStep,
   StructuredPlanOutputByStep,
+  normalizeJobDiagnostics,
   normalizeStructuredApplyOutput,
   normalizeStructuredOutputs,
   normalizeStructuredPlanOutput,
@@ -37,8 +39,20 @@ type Props = {
   jobId: string;
 };
 
+
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
+
+const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
+
+const getStoredUIType = (): "structured" | "console" => {
+  try {
+    return localStorage.getItem(UI_TYPE_STORAGE_KEY) === "console" ? "console" : "structured";
+  } catch {
+    // localStorage can throw in private-browsing/storage-restricted contexts - fall back silently.
+    return "structured";
+  }
+};
 
 type IncompleteVariableGuard = {
   title: string;
@@ -56,11 +70,47 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [workspaceVcsId, setWorkspaceVcsId] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
-  const [uiType, setUIType] = useState("structured");
+  // Controlled per-step Collapse open/closed state, keyed by step id. Was previously driven by
+  // Collapse's uncontrolled defaultActiveKey with `${item.id}-${item.status}` as the element key -
+  // every status transition (pending -> running -> completed) therefore remounted the whole step
+  // subtree, silently closing any row/attribute the user had expanded in StructuredPlanOutput and
+  // resetting its filters. Controlled state keyed by id alone survives status changes; the effect
+  // below still auto-opens a step the moment it starts running, same as before, but only if the
+  // user hasn't already closed it themselves.
+  const [activeStepKeys, setActiveStepKeys] = useState<Record<string, string[]>>({});
+  const initializedStepIds = useRef<Set<string>>(new Set());
+  const userToggledStepIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setActiveStepKeys((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      for (const item of steps) {
+        if (!initializedStepIds.current.has(item.id)) {
+          initializedStepIds.current.add(item.id);
+          next[item.id] = shouldStepBeExpandedByDefault(item) ? ["2"] : [];
+          changed = true;
+        } else if (
+          item.status === "running" &&
+          (next[item.id]?.length ?? 0) === 0 &&
+          !userToggledStepIds.current.has(item.id)
+        ) {
+          next[item.id] = ["2"];
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [steps]);
+
+  const [uiType, setUIType] = useState<"structured" | "console">(getStoredUIType);
   const [uiTemplates, setUITemplates] = useState<Record<string, string>>({});
   const [planStructuredOutput, setPlanStructuredOutput] = useState<StructuredPlanOutputByStep>({});
   const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
+  const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
@@ -180,7 +230,13 @@ export const DetailsJob = ({ jobId }: Props) => {
   };
 
   const onChange = (e: RadioChangeEvent) => {
-    setUIType(e.target.value);
+    const nextUIType = e.target.value as "structured" | "console";
+    setUIType(nextUIType);
+    try {
+      localStorage.setItem(UI_TYPE_STORAGE_KEY, nextUIType);
+    } catch {
+      // ignore storage errors (private browsing, quota, etc.) - preference just won't persist.
+    }
   };
 
   const renderConsoleOutput = (item: JobStep) => {
@@ -192,9 +248,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
     const structuredApplyChanges = applyStructuredOutput[item.id] || applyStructuredOutput[String(item.stepNumber)];
     const stepOutputs = terraformOutputs[item.id] || terraformOutputs[String(item.stepNumber)];
+    const stepJobDiagnostics = jobDiagnostics[item.id] || jobDiagnostics[String(item.stepNumber)];
     const hasStructuredView = Boolean(template) || Boolean(structuredChanges) || Boolean(structuredApplyChanges);
 
-    return { template, structuredChanges, structuredApplyChanges, stepOutputs, hasStructuredView };
+    return { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView };
   };
 
   const renderStepExtra = (item: JobStep) => {
@@ -207,19 +264,15 @@ export const DetailsJob = ({ jobId }: Props) => {
       return null;
     }
 
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- purely a propagation
+    // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
     return (
-      <Radio.Group
-        onChange={(event) => {
-          event.stopPropagation();
-          onChange(event);
-        }}
-        onClick={(event) => event.stopPropagation()}
-        value={uiType}
-        size="small"
-      >
-        <Radio.Button value="structured">Structured</Radio.Button>
-        <Radio.Button value="console">Console</Radio.Button>
-      </Radio.Group>
+      <div onClick={(event) => event.stopPropagation()}>
+        <Radio.Group onChange={onChange} value={uiType} size="small">
+          <Radio.Button value="structured">Structured</Radio.Button>
+          <Radio.Button value="console">Console</Radio.Button>
+        </Radio.Group>
+      </div>
     );
   };
 
@@ -230,28 +283,37 @@ export const DetailsJob = ({ jobId }: Props) => {
       return renderConsoleOutput(item);
     }
 
-    const { template, structuredChanges, structuredApplyChanges, stepOutputs, hasStructuredView } =
+    const { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView } =
       getStepStructuredData(item);
 
-    if (!hasStructuredView || uiType !== "structured") {
+    if (!hasStructuredView) {
       return renderConsoleOutput(item);
     }
 
-    if (structuredApplyChanges) {
-      return (
-        <StructuredPlanOutput changes={structuredApplyChanges} outputLog={item.outputLog} applyMode outputs={stepOutputs} />
-      );
-    }
+    const structuredContent = structuredApplyChanges ? (
+      <StructuredPlanOutput
+        changes={structuredApplyChanges}
+        outputLog={item.outputLog}
+        applyMode
+        outputs={stepOutputs}
+        jobDiagnostics={stepJobDiagnostics}
+      />
+    ) : structuredChanges ? (
+      <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} jobDiagnostics={stepJobDiagnostics} />
+    ) : (
+      <div>{parse(template ?? "")}</div>
+    );
 
-    if (structuredChanges) {
-      return <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} />;
-    }
-
-    if (template) {
-      return <div>{parse(template)}</div>;
-    }
-
-    return renderConsoleOutput(item);
+    // Keep both mounted and toggle visibility with CSS instead of conditionally rendering one or
+    // the other - unmounting StructuredPlanOutput every time the user flips between structured
+    // and console would reset its internal expanded-row/attribute state, closing any dropdowns
+    // they'd already opened.
+    return (
+      <>
+        <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
+        <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsoleOutput(item)}</div>
+      </>
+    );
   };
 
   const renderStepLabel = (item: JobStep) => {
@@ -371,9 +433,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
-        signal,
-      });
+      const response = await axiosInstance.get(
+        `organization/${organizationId}/job/${jobId}?include=step,workspace`,
+        { signal }
+      );
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -382,7 +445,9 @@ export const DetailsJob = ({ jobId }: Props) => {
 
       const included = response.data.included ?? [];
       const stepEntries = included.filter((item: any) => item.type === "step");
-      const workspaceEntry = included.find((item: any) => item.type === "workspace");
+      const workspaceEntry: Workspace | undefined = included.find(
+        (item: IncludedItem<Workspace>) => item.type === "workspace"
+      );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
       const stepsPromise = Promise.all(
@@ -465,9 +530,14 @@ export const DetailsJob = ({ jobId }: Props) => {
         return;
       }
       setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
-      setPlanStructuredOutput(normalizeStructuredPlanOutput(response?.data?.planStructuredOutput));
-      setApplyStructuredOutput(normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput));
+      // Merge (not replace) plan/apply/diagnostics - this REST snapshot can lag behind the live
+      // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
+      // soon as the executor emits them. Replacing wholesale on every 5s poll would intermittently
+      // wipe out a step's just-pushed live data with a stale snapshot that hasn't caught up yet.
+      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput) }));
+      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput) }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
+      setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
       if (isAbortError(error)) return;
     }
@@ -504,6 +574,37 @@ export const DetailsJob = ({ jobId }: Props) => {
       immediate: false,
     }
   );
+
+  type LiveStructuredOutput = {
+    phase: "plan" | "apply";
+    changes: Record<string, unknown>;
+    jobDiagnostics: Record<string, unknown>;
+  };
+
+  const isJobRunning = job?.data?.attributes.status === "running";
+  const liveStructuredOutput = useStructuredOutputStream<LiveStructuredOutput | null>({
+    url: `${getPublicApiOrigin()}/context/v1/${jobId}/stream`,
+    enabled: Boolean(jobId) && isJobRunning,
+    initial: null,
+  });
+
+  useEffect(() => {
+    if (liveStructuredOutput == null) {
+      return;
+    }
+
+    // Each push only carries the one step (plan or apply) that just changed, keyed by that
+    // step's id - merge it into the existing per-step maps rather than replacing them wholesale,
+    // otherwise a later push would wipe out an earlier step's already-loaded data.
+    setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(liveStructuredOutput.jobDiagnostics) }));
+
+    if (liveStructuredOutput.phase === "plan") {
+      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(liveStructuredOutput.changes) }));
+    } else {
+      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(liveStructuredOutput.changes) }));
+    }
+  }, [liveStructuredOutput]);
+
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
@@ -628,12 +729,11 @@ export const DetailsJob = ({ jobId }: Props) => {
           />
           {steps.length > 0 ? (
             steps.map((item) => {
-              const stepKey = `${item.id}-${item.status}`;
               const stepLabel = renderStepLabel(item);
 
               if (!shouldStepBeCollapsible(item)) {
                 return (
-                  <Card key={stepKey} size="small" style={{ width: "100%" }}>
+                  <Card key={item.id} size="small" style={{ width: "100%" }}>
                     {stepLabel}
                   </Card>
                 );
@@ -641,9 +741,16 @@ export const DetailsJob = ({ jobId }: Props) => {
 
               return (
                 <Collapse
-                  key={stepKey}
+                  key={item.id}
                   style={{ width: "100%" }}
-                  defaultActiveKey={shouldStepBeExpandedByDefault(item) ? ["2"] : []}
+                  activeKey={activeStepKeys[item.id] ?? []}
+                  onChange={(keys) => {
+                    userToggledStepIds.current.add(item.id);
+                    setActiveStepKeys((previous) => ({
+                      ...previous,
+                      [item.id]: Array.isArray(keys) ? keys : [keys],
+                    }));
+                  }}
                   items={[
                     {
                       key: "2",

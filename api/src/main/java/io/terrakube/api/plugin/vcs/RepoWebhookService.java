@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.ParseException;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.quartz.SchedulerException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,7 @@ public class RepoWebhookService {
     AzDevOpsWebhookService azDevOpsWebhookService;
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
+    PrCommentService prCommentService;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -105,10 +108,12 @@ public class RepoWebhookService {
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
 
         Set<WebhookEventType> eventTypes = new HashSet<>();
+        boolean hasPrWorkflow = false;
         for (Workspace ws : workspaces) {
             if (ws.getWebhook() != null && ws.getWebhook().getEvents() != null) {
                 for (WebhookEvent event : ws.getWebhook().getEvents()) {
                     eventTypes.add(event.getEvent());
+                    hasPrWorkflow = hasPrWorkflow || event.isPrWorkflowEnabled();
                 }
             }
         }
@@ -122,9 +127,9 @@ public class RepoWebhookService {
         if (isAzureDevOps(repoWebhook)) {
             remoteHookId = azDevOpsWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
         } else if (isGitLab(repoWebhook)) {
-            remoteHookId = gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+            remoteHookId = gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow);
         } else {
-            remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+            remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow);
         }
         repoWebhook.setRemoteHookId(remoteHookId);
         repoWebhookRepository.save(repoWebhook);
@@ -212,6 +217,19 @@ public class RepoWebhookService {
             return;
         }
 
+        if (webhookResult.getPrDetailsUrl() != null && webhookResult.getCommit() == null) {
+            if (workspace.getVcs() == null) {
+                log.warn("Workspace {} has no VCS, cannot resolve PR comment details", workspace.getName());
+                return;
+            }
+            boolean resolved = gitHubWebhookService.resolvePrDetails(workspace.getVcs(), workspace.getSource(),
+                    webhookResult.getPrDetailsUrl(), webhookResult);
+            if (!resolved) {
+                log.warn("Failed to resolve PR comment details for workspace {}, skipping", workspace.getName());
+                return;
+            }
+        }
+
         // Azure DevOps: file changes require per-workspace API calls (push payloads
         // don't include changed files, and PR changes need workspace VCS credentials).
         if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
@@ -239,50 +257,127 @@ public class RepoWebhookService {
             }
         }
 
+        if (webhookResult.isPrComment()) {
+            prCommentService.acknowledgeReceipt(workspace, webhookResult.getCommentId(), webhookResult.getPrNumber());
+        }
+
         try {
+            // Release events have no PR-workflow concept; everything else (push, pull_request,
+            // and PR comment commands) is matched via findMatchingEvent so isPrWorkflowEnabled()/
+            // isPrApplyEnabled() are available below - without those, a PR-triggered job never
+            // gets prNumber set and PrCommentService.postPlanResult()/postApplyResult() silently
+            // no-op (they bail out immediately when job.getPrNumber() is null/0), so "Post Plan
+            // on PR" would never actually post a comment for a repo on the shared v2 webhook.
+            WebhookEvent matchedEvent = webhookResult.isRelease() ? null
+                    : WebhookEventMatcher.findMatchingEvent(webhookResult, workspace.getWebhook(),
+                            webhookEventRepository);
+
+            // Mirrors WebhookService.handlePrCommentCommand: a "terrakube plan"/"terrakube apply"
+            // comment only starts a job when PR workflow is actually enabled on the matched event.
+            if (webhookResult.isPrComment()) {
+                if (!matchedEvent.isPrWorkflowEnabled()) {
+                    log.info("Ignoring PR {} comment for workspace {}: PR workflow is not enabled",
+                            webhookResult.getCommentCommand(), workspace.getName());
+                    return;
+                }
+                if ("apply".equals(webhookResult.getCommentCommand())) {
+                    createPrApplyJob(workspace, webhookResult, matchedEvent);
+                    return;
+                }
+            }
+
             String templateId = webhookResult.isRelease()
                     ? WebhookEventMatcher.findTemplateIdRelease(webhookResult, workspace.getWebhook(),
                             webhookEventRepository)
-                    : WebhookEventMatcher.findTemplateId(webhookResult, workspace.getWebhook(),
-                            webhookEventRepository);
+                    : matchedEvent.getTemplateId();
 
             log.info("V2 webhook event {} for workspace {}, using template {}", webhookResult.getNormalizedEvent(),
                     workspace.getName(), templateId);
 
-            Job job = new Job();
-            job.setTemplateReference(templateId);
-            job.setRefresh(true);
-            job.setPlanChanges(true);
-            job.setRefreshOnly(false);
-            job.setOverrideBranch(webhookResult.isRelease()
-                    ? "refs/tags/" + webhookResult.getBranch()
-                    : webhookResult.getBranch());
-            job.setOrganization(workspace.getOrganization());
-            job.setWorkspace(workspace);
-            job.setCreatedBy(webhookResult.getCreatedBy());
-            job.setUpdatedBy(webhookResult.getCreatedBy());
-            Date triggerDate = new Date(System.currentTimeMillis());
-            job.setCreatedDate(triggerDate);
-            job.setUpdatedDate(triggerDate);
-            job.setVia(webhookResult.getVia());
-            job.setCommitId(webhookResult.getCommit());
-            Job savedJob = jobRepository.save(job);
-            if (!webhookResult.isRelease() && workspace.getVcs() != null) {
-                if (isAzureDevOps(workspace)) {
-                    azDevOpsWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
-                } else if (isGitLab(workspace)) {
-                    gitLabWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
-                } else {
-                    gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
-                }
+            Job job = buildJob(workspace, webhookResult, templateId);
+            if (matchedEvent != null && matchedEvent.isPrWorkflowEnabled() && webhookResult.getPrNumber() != null) {
+                job.setPrNumber(webhookResult.getPrNumber().intValue());
+                job.setPrApplyEnabled(matchedEvent.isPrApplyEnabled());
             }
-            scheduleJobService.createJobContext(savedJob);
+            if (webhookResult.isPrComment()) {
+                job.setCommandCommentId(webhookResult.getCommentId());
+            }
+            saveAndScheduleJob(workspace, webhookResult, job);
         } catch (IllegalArgumentException e) {
             log.info("No matching template for workspace {} on event {}: {}", workspace.getName(),
                     webhookResult.getNormalizedEvent(), e.getMessage());
         } catch (Exception e) {
             log.error("Error creating job for workspace {}", workspace.getName(), e);
         }
+    }
+
+    /**
+     * Mirrors WebhookService.handlePrCommentCommand's "apply" branch: unlike a "terrakube plan"
+     * comment (which reuses the PR's regular template), apply always runs the workspace's default
+     * template with autoApply=true, behind the same PR-apply workspace lock so ScheduleJob lets
+     * only this job through (see ScheduleJob.isOwnPrApplyLock) and unlocks it on completion.
+     */
+    private void createPrApplyJob(Workspace workspace, WebhookResult webhookResult, WebhookEvent matchedEvent)
+            throws ParseException, SchedulerException {
+        Number prNumber = webhookResult.getPrNumber();
+        if (!matchedEvent.isPrApplyEnabled()) {
+            log.info("Rejecting PR apply comment for workspace {}: apply via PR comment is not enabled", workspace.getName());
+            prCommentService.postApplyDisabledNotice(workspace, prNumber != null ? prNumber.intValue() : null);
+            return;
+        }
+
+        String templateId = workspace.getDefaultTemplate();
+        if (templateId == null || templateId.isEmpty()) {
+            log.error("No default template configured for apply in PR workflow on workspace {}", workspace.getName());
+            return;
+        }
+
+        log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
+        workspace.setLocked(true);
+        workspace.setLockDescription(WebhookService.buildPrApplyLockDescription(prNumber != null ? prNumber.intValue() : null));
+        workspaceRepository.save(workspace);
+
+        Job job = buildJob(workspace, webhookResult, templateId);
+        job.setPrNumber(prNumber != null ? prNumber.intValue() : null);
+        job.setAutoApply(true);
+        job.setCommandCommentId(webhookResult.getCommentId());
+        saveAndScheduleJob(workspace, webhookResult, job);
+    }
+
+    private Job buildJob(Workspace workspace, WebhookResult webhookResult, String templateId) {
+        Job job = new Job();
+        job.setTemplateReference(templateId);
+        job.setRefresh(true);
+        job.setPlanChanges(true);
+        job.setRefreshOnly(false);
+        job.setOverrideBranch(webhookResult.isRelease()
+                ? "refs/tags/" + webhookResult.getBranch()
+                : webhookResult.getBranch());
+        job.setOrganization(workspace.getOrganization());
+        job.setWorkspace(workspace);
+        job.setCreatedBy(webhookResult.getCreatedBy());
+        job.setUpdatedBy(webhookResult.getCreatedBy());
+        Date triggerDate = new Date(System.currentTimeMillis());
+        job.setCreatedDate(triggerDate);
+        job.setUpdatedDate(triggerDate);
+        job.setVia(webhookResult.getVia());
+        job.setCommitId(webhookResult.getCommit());
+        return job;
+    }
+
+    private void saveAndScheduleJob(Workspace workspace, WebhookResult webhookResult, Job job)
+            throws ParseException, SchedulerException {
+        Job savedJob = jobRepository.save(job);
+        if (!webhookResult.isRelease() && workspace.getVcs() != null) {
+            if (isAzureDevOps(workspace)) {
+                azDevOpsWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+            } else if (isGitLab(workspace)) {
+                gitLabWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+            } else {
+                gitHubWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);
+            }
+        }
+        scheduleJobService.createJobContext(savedJob);
     }
 
     private boolean verifyGitlabToken(Map<String, String> headers, String secret) {
