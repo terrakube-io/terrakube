@@ -77,7 +77,7 @@ class AdmissionControlIntegrationTest {
                 new ExecutorFlagsProperties(), shutdownService, scriptEngineService, eventPublisher,
                 jobExecutionWatchdog, gate, redisTemplate);
         OnlineModeServiceImpl controller = new OnlineModeServiceImpl(
-                new SubmittingExecutorJob(executorJobImpl, pool), gate, eventPublisher);
+                new SubmittingExecutorJob(executorJobImpl, pool), gate, eventPublisher, null);
 
         TerraformJob firstJob = new TerraformJob();
         firstJob.setOrganizationId("org");

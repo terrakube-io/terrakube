@@ -80,12 +80,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         try {
             if (!terraformJob.getBranch().equals("remote-content") || (terraformJob.getFolder() != null && !terraformJob.getFolder().split(",")[0].equals("/"))) {
                 terraformWorkingDir = new File(Path.of(workingDirectory.getCanonicalPath(), terraformJob.getFolder().split(",")[0]).toString());
+                if (!terraformWorkingDir.getCanonicalPath().startsWith(workingDirectory.getCanonicalPath())) {
+                    throw new IOException(String.format("Invalid workspace folder path traversal attempt: %s", terraformJob.getFolder()));
+                }
                 if (!terraformWorkingDir.isDirectory()) {
-                    throw new IOException(String.format("Terraform Working Directory not exist: {}", terraformWorkingDir.getCanonicalPath()));
+                    throw new IOException(String.format("Terraform Working Directory does not exist: %s", terraformWorkingDir.getCanonicalPath()));
                 }
             }
         } catch (IOException e) {
             log.error(e.getMessage());
+            throw e;
         }
         log.info("Terraform Working Directory: {}", terraformWorkingDir.getCanonicalPath());
         return terraformWorkingDir;
