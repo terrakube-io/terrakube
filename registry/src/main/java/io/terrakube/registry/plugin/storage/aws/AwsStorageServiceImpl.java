@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.zeroturnaround.zip.ZipUtil;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -20,8 +21,8 @@ import java.io.IOException;
 @Builder
 public class AwsStorageServiceImpl implements StorageService {
 
-    private static String BUCKET_ZIP_MODULE_LOCATION = "registry/%s/%s/%s/%s/module.zip";
-    private static String BUCKET_DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
+    private static final String BUCKET_ZIP_MODULE_LOCATION = "registry/%s/%s/%s/%s/module.zip";
+    private static final String BUCKET_DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
     private static final String S3_ERROR_LOG = "S3 Not found: {}";
 
     @NonNull
@@ -37,16 +38,15 @@ public class AwsStorageServiceImpl implements StorageService {
     String registryHostname;
 
     @Override
-    public String searchModule(String organizationName, String moduleName, String providerName, String moduleVersion,
-            String source, String vcsType, String vcsConnectionType, String accessToken, String tagPrefix,
-            String folder) {
+    public String searchModule(String organizationName, String moduleName, String providerName,
+            ModuleVersionDownload download) {
+        String moduleVersion = download.version();
         String blobKey = String.format(BUCKET_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
                 moduleVersion);
         log.info("Checking Aws S3 Object exist {}", blobKey);
 
         if (!doesObjectExistByListObjects(bucketName, blobKey)) {
-            File gitCloneDirectory = gitService.getCloneRepositoryByTag(source, moduleVersion, vcsType,
-                    vcsConnectionType, accessToken, tagPrefix, folder);
+            File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
             File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
             ZipUtil.pack(gitCloneDirectory, moduleZip);
 

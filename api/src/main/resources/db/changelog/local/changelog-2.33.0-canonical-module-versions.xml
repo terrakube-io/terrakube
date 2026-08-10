@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-33-0-canonical-module-versions" author="jake" runOnChange="true">
+        <customChange class="io.terrakube.api.plugin.scheduler.module.CanonicalModuleVersionMigration"/>
+    </changeSet>
+    <changeSet id="2-33-0-module-version-unique-constraint" author="jake">
+        <addUniqueConstraint tableName="module_version" columnNames="module_id, version"
+                              constraintName="uk_module_version_module_id_version"/>
+    </changeSet>
+</databaseChangeLog>

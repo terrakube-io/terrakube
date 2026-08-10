@@ -43,8 +43,9 @@ public class ModuleTests extends OpenRegistryApplicationTests{
             "                                                {\n" +
             "                                                    \"node\": {\n" +
             "                                                        \"id\": \"4d85165f-0e99-4d45-bdcc-6b6bf4577f27\",\n" +
-            "                                                        \"version\": \"v3.3.0\",\n" +
-            "                                                        \"commit\": \"67ee4ac34b0f04a92d4ae11011920328fdb830df\"\n" +
+            "                                                        \"version\": \"3.3.0\",\n" +
+            "                                                        \"commit\": \"67ee4ac34b0f04a92d4ae11011920328fdb830df\",\n" +
+            "                                                        \"gitTag\": \"v3.3.0\"\n" +
             "                                                    }\n" +
             "                                                }\n" +
             "                                            ]\n" +
@@ -82,6 +83,7 @@ public class ModuleTests extends OpenRegistryApplicationTests{
                 .log().all()
                 .body("modules",hasSize(1))
                 .body("modules[0].versions",hasSize(1))
+                .body("modules[0].versions[0].version", org.hamcrest.Matchers.equalTo("3.3.0"))
                 .log().all()
                 .statusCode(HttpStatus.SC_OK);
     }

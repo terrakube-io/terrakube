@@ -4,8 +4,8 @@ import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.models.BlobDownloadContentResponse;
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,11 +49,12 @@ class AzureStorageServiceImplTest {
         File dummyFile = new File(gitCloneDir, "main.tf");
         FileUtils.writeStringToFile(dummyFile, "resource \"null_resource\" \"this\" {}", StandardCharsets.UTF_8);
 
-        when(gitService.getCloneRepositoryByTag(any(), any(), any(), any(), any(), any(), any()))
+        when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
                 .thenReturn(gitCloneDir);
 
-        String result = azureStorageService.searchModule("org", "module", "azure", "1.0.0", 
-                "source", "vcsType", "vcsConn", "token", "tag", "folder");
+        ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                "vcsConn", "token", "tag", "folder");
+        String result = azureStorageService.searchModule("org", "module", "azure", download);
 
         assertEquals("https://registry.terrakube.io/terraform/modules/v1/download/org/module/azure/1.0.0/module.zip", result);
         verify(blobClient).uploadFromFile(anyString());
@@ -77,8 +78,9 @@ class AzureStorageServiceImplTest {
         when(blobContainerClient.getBlobClient(anyString())).thenReturn(blobClient);
         when(blobClient.exists()).thenReturn(true);
 
-        String result = azureStorageService.searchModule("org", "module", "azure", "1.0.0", 
-                "source", "vcsType", "vcsConn", "token", "tag", "folder");
+        ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                "vcsConn", "token", "tag", "folder");
+        String result = azureStorageService.searchModule("org", "module", "azure", download);
 
         assertEquals("https://registry.terrakube.io/terraform/modules/v1/download/org/module/azure/1.0.0/module.zip", result);
         verify(blobClient, never()).uploadFromFile(anyString());

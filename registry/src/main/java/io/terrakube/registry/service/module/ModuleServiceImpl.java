@@ -11,6 +11,7 @@ import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -102,6 +103,14 @@ public class ModuleServiceImpl implements ModuleService {
         String folder = module.getAttributes().getFolder();
         String tagPrefix = module.getAttributes().getTagPrefix();
 
+        String gitTag = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId())
+                .getData()
+                .stream()
+                .filter(moduleVersion -> version.equals(moduleVersion.getAttributes().getVersion()))
+                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
+                .findFirst()
+                .orElse(null);
+
         if (module.getRelationships().getVcs().getData() != null) {
             Vcs vcsInformation = getVcsInformation(organizationId,
                     module.getRelationships().getVcs().getData().getId());
@@ -117,11 +126,11 @@ public class ModuleServiceImpl implements ModuleService {
             accessToken = sshInformation.getAttributes().getPrivateKey();
         }
 
-        moduleVersionPath = storageService.searchModule(
-                organizationName, moduleName, providerName, version, moduleSource, vcsType, vcsConnectionType,
-                accessToken, tagPrefix, folder);
+        ModuleVersionDownload download = new ModuleVersionDownload(moduleSource, version, gitTag, vcsType,
+                vcsConnectionType, accessToken, tagPrefix, folder);
+        moduleVersionPath = storageService.searchModule(organizationName, moduleName, providerName, download);
 
-        log.info("Registry Path: {}", moduleVersionPath);
+        log.info("Registry Path: {} (resolved git tag: {})", moduleVersionPath, gitTag);
         return moduleVersionPath;
     }
 
