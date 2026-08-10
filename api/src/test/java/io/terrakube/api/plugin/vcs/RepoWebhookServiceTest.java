@@ -1568,8 +1568,8 @@ class RepoWebhookServiceTest {
             verify(azDevOpsWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture());
             assertThat(captor.getValue()).containsExactlyInAnyOrder(WebhookEventType.PUSH, WebhookEventType.PULL_REQUEST);
             assertThat(rw.getRemoteHookId()).isEqualTo("sub-1,sub-2");
-            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
-            verify(gitLabWebhookService, never()).createOrUpdateRepoWebhook(any(), any());
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any(), anyBoolean());
+            verify(gitLabWebhookService, never()).createOrUpdateRepoWebhook(any(), any(), anyBoolean());
             verify(repoWebhookRepository).save(rw);
         }
 
