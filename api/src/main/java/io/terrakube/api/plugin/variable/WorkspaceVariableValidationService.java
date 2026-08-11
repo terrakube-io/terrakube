@@ -25,7 +25,7 @@ public class WorkspaceVariableValidationService {
     public void validateWorkspaceVariables(Workspace workspace) {
         List<Variable> invalidCategoryVariables = getInvalidCategoryVariables(workspace);
         if (!invalidCategoryVariables.isEmpty()) {
-            throw new InvalidVariableCategoryException(buildInvalidCategoryMessage(invalidCategoryVariables));
+            throw new InvalidVariableCategoryException(buildInvalidCategoryMessage(workspace, invalidCategoryVariables));
         }
 
         List<Variable> incompleteVariables = getIncompleteVariables(workspace);
@@ -73,14 +73,14 @@ public class WorkspaceVariableValidationService {
     }
 
     public String buildInvalidCategoryMessage(Workspace workspace) {
-        return buildInvalidCategoryMessage(getInvalidCategoryVariables(workspace));
+        return buildInvalidCategoryMessage(workspace, getInvalidCategoryVariables(workspace));
     }
 
-    public String buildInvalidCategoryMessage(List<Variable> invalidCategoryVariables) {
+    public String buildInvalidCategoryMessage(Workspace workspace, List<Variable> invalidCategoryVariables) {
         List<String> lines = new ArrayList<>();
         lines.add(INVALID_CATEGORY_TITLE);
         lines.add("");
-        lines.add("Set a category (Terraform variable or Environment variable) for these variables before retrying:");
+        lines.add(String.format("Workspace \"%s\" has variables with no category. Set a category (Terraform variable or Environment variable) for these variables before retrying:", workspace.getName()));
 
         for (Variable variable : invalidCategoryVariables) {
             lines.add("- " + variable.getKey());

@@ -55,6 +55,7 @@ class WorkspaceVariableValidationServiceTest {
     @Test
     void shouldFailWhenWorkspaceContainsVariablesWithNoCategory() {
         Workspace workspace = new Workspace();
+        workspace.setName("acme-workspace");
 
         Variable invalidCategoryVariable = new Variable();
         invalidCategoryVariable.setKey("LEGACY_VAR");
@@ -70,6 +71,7 @@ class WorkspaceVariableValidationServiceTest {
 
         assertThatThrownBy(() -> validationService.validateWorkspaceVariables(workspace))
                 .isInstanceOf(InvalidVariableCategoryException.class)
+                .hasMessageContaining("acme-workspace")
                 .hasMessageContaining("LEGACY_VAR")
                 .hasMessageNotContaining("AWS_REGION")
                 .hasMessageContaining("Run blocked because this workspace has variables with no category (must be TERRAFORM or ENV).")
