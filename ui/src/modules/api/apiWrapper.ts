@@ -1,4 +1,5 @@
 import axios from "axios";
+import { mgr } from "../../config/authConfig";
 import getUserFromStorage from "../../config/authUser";
 import { ApiResponse, RequestOptions } from "./types";
 
@@ -43,6 +44,20 @@ async function requestWrapper<T>(
     return await requestFunc();
   } catch (error) {
     if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        // Token rejected by the API - sign out so the user lands back on Login.
+        mgr.removeUser();
+        return {
+          isError: true,
+          error: {
+            status: "Unauthorized",
+            statusCode: 401,
+            message: "Your session has expired. Please sign in again.",
+          },
+          responseCode: 401,
+        };
+      }
+
       if (error.response?.status === 404) {
         return {
           isError: true,

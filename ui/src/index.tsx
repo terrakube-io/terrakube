@@ -4,7 +4,7 @@ import "./styles/global.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { AuthProvider } from "react-oidc-context";
-import { oidcConfig } from "./config/authConfig";
+import { mgr } from "./config/authConfig";
 import { getUiRedirectUri } from "./config/basePath";
 import App from "./domain/Home/App";
 import "./index.css";
@@ -24,10 +24,10 @@ const onSigninCallback = (): void => {
   window.history.replaceState({}, document.title, base);
 };
 
-// Initial render
+// Shares the UserManager with axiosConfig/apiWrapper so removeUser() there updates this provider immediately.
 root.render(
   <React.StrictMode>
-    <AuthProvider {...oidcConfig} onSigninCallback={onSigninCallback}>
+    <AuthProvider userManager={mgr} onSigninCallback={onSigninCallback}>
       <App />
     </AuthProvider>
   </React.StrictMode>
