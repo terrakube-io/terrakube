@@ -9,6 +9,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
+import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.WebhookService;
@@ -569,26 +570,35 @@ public class ScheduleJob implements org.quartz.Job {
         try {
             workspaceVariableValidationService.validateWorkspaceVariables(job.getWorkspace());
             return false;
+        } catch (InvalidVariableCategoryException exception) {
+            String failureMessage = workspaceVariableValidationService.buildInvalidCategoryMessage(job.getWorkspace());
+            log.warn("Failing job {} because of variables with no category", job.getId(), exception);
+            failJobWithVariableValidationError(job, failureMessage, WorkspaceVariableValidationService.INVALID_CATEGORY_STEP_NAME);
+            return true;
         } catch (IncompleteVariableException exception) {
             String failureMessage = workspaceVariableValidationService.buildIncompleteVariableMessage(job.getWorkspace());
             log.warn("Failing job {} because of incomplete variables", job.getId(), exception);
-            job.setStatus(JobStatus.failed);
-            job.setOutput(failureMessage);
-            jobRepository.save(job);
-
-            try {
-                String stepId = tclService.getCurrentStepId(job);
-                Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
-                step.setName(WorkspaceVariableValidationService.INCOMPLETE_VARIABLE_STEP_NAME);
-                stepRepository.save(step);
-            } catch (Exception stepException) {
-                log.warn("Unable to update step for job {}", job.getId(), stepException);
-            }
-
-            updateJobStepsWithStatus(job.getId(), JobStatus.failed);
-            updateJobStatusOnVcs(job, JobStatus.failed);
+            failJobWithVariableValidationError(job, failureMessage, WorkspaceVariableValidationService.INCOMPLETE_VARIABLE_STEP_NAME);
             return true;
         }
+    }
+
+    private void failJobWithVariableValidationError(Job job, String failureMessage, String stepName) {
+        job.setStatus(JobStatus.failed);
+        job.setOutput(failureMessage);
+        jobRepository.save(job);
+
+        try {
+            String stepId = tclService.getCurrentStepId(job);
+            Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
+            step.setName(stepName);
+            stepRepository.save(step);
+        } catch (Exception stepException) {
+            log.warn("Unable to update step for job {}", job.getId(), stepException);
+        }
+
+        updateJobStepsWithStatus(job.getId(), JobStatus.failed);
+        updateJobStatusOnVcs(job, JobStatus.failed);
     }
 
     /**

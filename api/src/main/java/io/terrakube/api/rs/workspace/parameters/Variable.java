@@ -8,6 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotNull;
 import java.sql.Types;
 import java.util.UUID;
 
@@ -33,8 +34,9 @@ public class Variable {
     @Column(name="variable_description")
     private String description;
 
+    @NotNull(message = "category is required and must be TERRAFORM or ENV")
     @Enumerated(EnumType.STRING)
-    @Column(name="variable_category")
+    @Column(name="variable_category", nullable = false)
     private Category category;
 
     @Column(name="sensitive")

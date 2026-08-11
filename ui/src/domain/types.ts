@@ -308,6 +308,8 @@ export type TeamToken = {
 
 // Variables
 
+export type VariableCategory = "TERRAFORM" | "ENV";
+
 export type Variable = {
   id: string;
   attributes: VariableAttributes;
@@ -316,7 +318,8 @@ export type VariableAttributes = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  // Legacy rows may still have no category until remediated; see issue #3395.
+  category: VariableCategory | null;
   description: string;
   sensitive: boolean;
   incomplete: boolean;
@@ -334,7 +337,7 @@ export type UpdateVariableForm = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  category: VariableCategory;
   description: string;
 };
 

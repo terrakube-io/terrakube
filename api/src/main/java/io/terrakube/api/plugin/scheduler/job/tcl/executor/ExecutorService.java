@@ -122,18 +122,7 @@ public class ExecutorService {
         environmentVariables.put("TF_IN_AUTOMATION", "1");
         environmentVariables.put("workspaceName", job.getWorkspace().getName());
         environmentVariables.put("organizationName", job.getOrganization().getName());
-        List<Variable> variableList = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
-        for (Variable variable : variableList) {
-            if (variable.getCategory().equals(Category.TERRAFORM)) {
-                log.info("Adding terraform");
-                terraformVariables.put(variable.getKey(), variable.getValue());
-            } else {
-                log.info("Adding environment variable");
-                environmentVariables.put(variable.getKey(), variable.getValue());
-            }
-            log.info("Variable Key: {} Value {}", variable.getKey(),
-                    variable.isSensitive() ? "sensitive" : variable.getValue());
-        }
+        splitWorkspaceVariablesByCategory(job, terraformVariables, environmentVariables);
 
         environmentVariables = loadOtherEnvironmentVariables(job, flow, environmentVariables);
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
@@ -190,6 +179,26 @@ public class ExecutorService {
             ephemeralExecutorService.send(job, executorContext);
         } else {
             persistentExecutorService.send(job, executorContext);
+        }
+    }
+
+    void splitWorkspaceVariablesByCategory(Job job, HashMap<String, String> terraformVariables,
+            HashMap<String, String> environmentVariables) throws ExecutionException {
+        List<Variable> variableList = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
+        for (Variable variable : variableList) {
+            if (variable.getCategory() == null) {
+                throw new ExecutionException(String.format(
+                        "Cannot run job %s: workspace '%s' has variable '%s' with no category (expected TERRAFORM or ENV). "
+                                + "Update the variable's category before retrying.",
+                        job.getId(), job.getWorkspace().getName(), variable.getKey()));
+            }
+            if (Category.TERRAFORM.equals(variable.getCategory())) {
+                log.info("Adding terraform variable, Key: {}", variable.getKey());
+                terraformVariables.put(variable.getKey(), variable.getValue());
+            } else {
+                log.info("Adding environment variable, Key: {}", variable.getKey());
+                environmentVariables.put(variable.getKey(), variable.getValue());
+            }
         }
     }
 
