@@ -13,6 +13,8 @@ public class WorkspaceVariableValidationService {
 
     public static final String INCOMPLETE_VARIABLE_STEP_NAME = "Incomplete sensitive variables";
     public static final String INCOMPLETE_VARIABLE_TITLE = "Run blocked because this workspace still has incomplete sensitive variables.";
+    public static final String INVALID_CATEGORY_STEP_NAME = "Invalid variable category";
+    public static final String INVALID_CATEGORY_TITLE = "Run blocked because this workspace has variables with no category (must be TERRAFORM or ENV).";
 
     private final VariableRepository variableRepository;
 
@@ -21,12 +23,15 @@ public class WorkspaceVariableValidationService {
     }
 
     public void validateWorkspaceVariables(Workspace workspace) {
-        List<Variable> incompleteVariables = getIncompleteVariables(workspace);
-        if (incompleteVariables.isEmpty()) {
-            return;
+        List<Variable> invalidCategoryVariables = getInvalidCategoryVariables(workspace);
+        if (!invalidCategoryVariables.isEmpty()) {
+            throw new InvalidVariableCategoryException(buildInvalidCategoryMessage(invalidCategoryVariables));
         }
 
-        throw new IncompleteVariableException(buildIncompleteVariableMessage(incompleteVariables));
+        List<Variable> incompleteVariables = getIncompleteVariables(workspace);
+        if (!incompleteVariables.isEmpty()) {
+            throw new IncompleteVariableException(buildIncompleteVariableMessage(incompleteVariables));
+        }
     }
 
     public List<Variable> getIncompleteVariables(Workspace workspace) {
@@ -34,6 +39,15 @@ public class WorkspaceVariableValidationService {
                 .orElse(List.of())
                 .stream()
                 .filter(Variable::isIncomplete)
+                .sorted(Comparator.comparing(Variable::getKey, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .toList();
+    }
+
+    public List<Variable> getInvalidCategoryVariables(Workspace workspace) {
+        return variableRepository.findByWorkspace(workspace)
+                .orElse(List.of())
+                .stream()
+                .filter(variable -> variable.getCategory() == null)
                 .sorted(Comparator.comparing(Variable::getKey, Comparator.nullsLast(String::compareToIgnoreCase)))
                 .toList();
     }
@@ -51,6 +65,25 @@ public class WorkspaceVariableValidationService {
         for (Variable variable : incompleteVariables) {
             String category = variable.getCategory() == null ? "terraform" : variable.getCategory().name().toLowerCase();
             lines.add("- " + variable.getKey() + " (" + category + ")");
+        }
+
+        lines.add("");
+        lines.add("Open the workspace Variables page to update them.");
+        return String.join("\n", lines);
+    }
+
+    public String buildInvalidCategoryMessage(Workspace workspace) {
+        return buildInvalidCategoryMessage(getInvalidCategoryVariables(workspace));
+    }
+
+    public String buildInvalidCategoryMessage(List<Variable> invalidCategoryVariables) {
+        List<String> lines = new ArrayList<>();
+        lines.add(INVALID_CATEGORY_TITLE);
+        lines.add("");
+        lines.add("Set a category (Terraform variable or Environment variable) for these variables before retrying:");
+
+        for (Variable variable : invalidCategoryVariables) {
+            lines.add("- " + variable.getKey());
         }
 
         lines.add("");

@@ -47,6 +47,8 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
+import io.terrakube.api.plugin.variable.IncompleteVariableException;
+import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
 import io.terrakube.api.plugin.variable.WorkspaceVariableValidationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.WebhookService;
@@ -284,6 +286,74 @@ public class ScheduleJobTest {
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+    }
+
+    @Test
+    public void pendingJobFailsClearlyWithWorkspaceAndKeyWhenVariableHasNoCategory() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doThrow(new InvalidVariableCategoryException("LEGACY_VAR has no category"))
+                .when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        doReturn("Run blocked because this workspace has variables with no category (must be TERRAFORM or ENV).\n- LEGACY_VAR")
+                .when(workspaceVariableValidationService).buildInvalidCategoryMessage(any(Workspace.class));
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        // A malformed legacy variable must fail the job outright, not leave it pending/retrying.
+        Assertions.assertTrue(subject().runExecution(job));
+
+        verify(executorService, never()).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+        Assertions.assertEquals(WorkspaceVariableValidationService.INVALID_CATEGORY_STEP_NAME, job.getStep().get(0).getName());
+        Assertions.assertTrue(job.getOutput().contains("LEGACY_VAR"));
+    }
+
+    @Test
+    public void pendingJobFailsWhenWorkspaceVariablesAreIncomplete() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doThrow(new IncompleteVariableException("TF_API_TOKEN is incomplete"))
+                .when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        doReturn("Run blocked because this workspace still has incomplete sensitive variables.\n- TF_API_TOKEN")
+                .when(workspaceVariableValidationService).buildIncompleteVariableMessage(any(Workspace.class));
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        verify(executorService, never()).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        Assertions.assertEquals(WorkspaceVariableValidationService.INCOMPLETE_VARIABLE_STEP_NAME, job.getStep().get(0).getName());
+        Assertions.assertTrue(job.getOutput().contains("TF_API_TOKEN"));
     }
 
     @Test
