@@ -2,6 +2,7 @@ import { WorkspaceGeneral } from "./General";
 import { WorkspaceLocking } from "./Locking";
 import { WorkspaceSSHKey } from "./SSHKey";
 import { WorkspaceWebhook } from "./Webhook";
+import { WorkspaceNotifications } from "./Notifications";
 import { WorkspaceAdvanced } from "./Advanced";
 import { WorkspaceStateShared } from "./StateShared";
 import { WorkspaceTeamAccess } from "./TeamAccess";
@@ -57,6 +58,8 @@ export const WorkspaceSettings = ({
           onWorkspaceUpdate={handleWorkspaceUpdate}
         />
       );
+    case "notifications":
+      return <WorkspaceNotifications workspace={workspace} manageWorkspace={manageWorkspace} />;
     case "advanced":
       return <WorkspaceAdvanced workspace={workspace} manageWorkspace={manageWorkspace} />;
     case "state-shared":

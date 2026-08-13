@@ -38,6 +38,7 @@ import org.springframework.transaction.TransactionStatus;
 
 import graphql.Assert;
 import io.terrakube.api.helpers.FailUnkownMethod;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
@@ -99,6 +100,7 @@ public class ScheduleJobTest {
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
     PlatformTransactionManager transactionManager;
+    JobNotificationTrigger jobNotificationTrigger;
 
     UUID stepId = UUID.randomUUID();
 
@@ -131,6 +133,9 @@ public class ScheduleJobTest {
         // reference in ScheduleJob), which has no persistence context to commit, so it's never called.
         transactionManager = mock(PlatformTransactionManager.class,
                 new FailUnkownMethod<PlatformTransactionManager>());
+        // Plain mock (not FailUnkownMethod): almost every status-transition path under test now
+        // calls notifyStatusChanged(), and its outcome is irrelevant to what these tests assert.
+        jobNotificationTrigger = mock(JobNotificationTrigger.class);
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
@@ -160,7 +165,8 @@ public class ScheduleJobTest {
                 globalVarRepository,
                 variableRepository,
                 workspaceVariableValidationService,
-                transactionManager);
+                transactionManager,
+                jobNotificationTrigger);
     }
 
     private Job job(JobStatus status) {
@@ -250,6 +256,10 @@ public class ScheduleJobTest {
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
         verify(redisTemplate, times(1)).delete(anyString());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
+        // Regression check: the scheduler updates job.status via a plain jobRepository.save(),
+        // never through Elide, so JobNotificationHook (an Elide LifeCycleHook) never sees this
+        // transition - notifyStatusChanged() must be called explicitly at every such call site.
+        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
 
     @Test
@@ -718,6 +728,7 @@ public class ScheduleJobTest {
         verify(workspaceRepository, times(2)).save(job.getWorkspace());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
         Assertions.assertEquals(JobStatus.completed, job.getStatus());
+        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
 
     @Test

@@ -7,6 +7,7 @@ import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.hooks.organization.OrganizationManageHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.ssh.Ssh;
@@ -109,4 +110,8 @@ public class Organization {
 
     @Column(name = "icon")
     private String icon;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<NotificationConfiguration> notificationConfiguration;
 }

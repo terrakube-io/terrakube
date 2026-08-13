@@ -99,6 +99,7 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   locking: "Locking",
   sshkey: "SSH Key",
   webhook: "Webhook",
+  notifications: "Notifications",
   "state-shared": "State Shared",
   "team-access": "Team Access",
   advanced: "Destruction and Deletion",

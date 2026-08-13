@@ -116,4 +116,5 @@
     <include file="/db/changelog/local/changelog-2.33.0-job-soft-delete.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-job-status-index.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-variable-category-not-null.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-notification.xml" />
 </databaseChangeLog>
