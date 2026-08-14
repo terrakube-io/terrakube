@@ -1,9 +1,24 @@
 import { CheckCircleOutlined, CloseCircleOutlined, LinkOutlined, SendOutlined } from "@ant-design/icons";
-import { Alert, Button, Checkbox, Form, Input, Space, Spin, Switch, Tag, Typography, message, theme } from "antd";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  Radio,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Tag,
+  Typography,
+  message,
+  theme,
+} from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage } from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
-import { JobStatus, NotificationChannelType } from "../types";
+import { JobStatus, NotificationChannelType, NotificationMessageStyle, Template } from "../types";
 import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
@@ -24,6 +39,7 @@ type ConfigurationForm = {
   destinationUrl: string;
   signingSecret?: string;
   active: boolean;
+  messageStyle: NotificationMessageStyle;
 };
 
 const JSONAPI_HEADERS = { "Content-Type": "application/vnd.api+json" };
@@ -37,6 +53,10 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
   const [form] = Form.useForm<ConfigurationForm>();
   const [triggerIds, setTriggerIds] = useState<Record<string, string>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<JobStatus[]>([]);
+  const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
+  // Empty means "applies to every template" - this only ever narrows which templates a
+  // configuration fires for, so an empty selection is the same as no filter at all.
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   // Undefined while an edit-mode fetch is still in flight - the scope banner stays hidden
   // rather than briefly showing the wrong scope. For create mode this is known immediately
   // from whether a workspaceId was passed in at all.
@@ -52,6 +72,19 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
     : `organization/${orgId}/notificationConfiguration`;
 
   useEffect(() => {
+    axiosInstance
+      .get(`organization/${orgId}/template`)
+      .then((response) => {
+        const templatesList = (response.data.data as Template[]).filter(
+          (t) => t.attributes.name !== "Terraform-Plan/Apply-Cli" && t.attributes.name !== "Terraform-Plan/Destroy-Cli"
+        );
+        setAvailableTemplates(templatesList);
+      })
+      .catch((err) => message.error(getErrorMessage(err) || "Failed to load templates"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
+
+  useEffect(() => {
     if (mode === "edit" && configId) {
       setLoading(true);
       const body = {
@@ -61,9 +94,10 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
         query: `{
           notification_configuration(ids: ["${configId}"]) {
             edges { node {
-              name description channelType destinationUrl active
+              name description channelType destinationUrl active messageStyle
               workspace { edges { node { id } } }
               triggers { edges { node { id jobStatus } } }
+              templates { edges { node { id } } }
             } }
           }
         }`,
@@ -78,6 +112,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             channelType: node.channelType,
             destinationUrl: node.destinationUrl,
             active: node.active,
+            messageStyle: node.messageStyle || "DETAILED",
           });
           const triggerEdges = node.triggers?.edges || [];
           const statuses: JobStatus[] = triggerEdges.map((e: any) => e.node.jobStatus);
@@ -87,6 +122,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           });
           setSelectedStatuses(statuses);
           setTriggerIds(idsByStatus);
+          setSelectedTemplateIds((node.templates?.edges || []).map((e: any) => e.node.id));
           // The config's actual scope, straight from the record being edited - not the
           // workspaceId prop, which just reflects whatever list view this was opened from and
           // is wrong whenever that's a workspace's merged view showing an org-wide default.
@@ -95,7 +131,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
         .catch((err) => message.error(getErrorMessage(err) || "Failed to load notification configuration"))
         .finally(() => setLoading(false));
     } else {
-      form.setFieldsValue({ active: true });
+      form.setFieldsValue({ active: true, messageStyle: "DETAILED" });
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,6 +168,17 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
     );
   };
 
+  // Replaces the entire "applies to these templates" set in one call - simpler and safer than
+  // diffing against what was previously selected, and Elide supports replacing a to-many
+  // relationship wholesale via PATCH .../relationships/{name}.
+  const saveTemplates = async (savedConfigId: string) => {
+    await axiosInstance.patch(
+      `notification_configuration/${savedConfigId}/relationships/templates`,
+      { data: selectedTemplateIds.map((id) => ({ type: "template", id })) },
+      { headers: JSONAPI_HEADERS }
+    );
+  };
+
   const onFinish = async (values: ConfigurationForm) => {
     if (selectedStatuses.length === 0) {
       message.error("Select at least one trigger status");
@@ -147,6 +194,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           destinationUrl: values.destinationUrl,
           signingSecret: values.channelType === "WEBHOOK" ? values.signingSecret : undefined,
           active: values.active,
+          messageStyle: values.messageStyle,
         },
       },
     };
@@ -165,6 +213,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
         message.success("Notification configuration updated successfully");
       }
       await saveTriggers(savedId!);
+      await saveTemplates(savedId!);
       onDone();
     } catch (err: any) {
       message.error(getErrorMessage(err) || "Failed to save notification configuration");
@@ -299,9 +348,41 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           <Form.Item name="active" label="Active" valuePropName="checked">
             <Switch />
           </Form.Item>
+          <Form.Item
+            name="messageStyle"
+            label="Message style"
+            help={
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single
+                compact line instead - useful for high-frequency channels.
+              </Typography.Text>
+            }
+          >
+            <Radio.Group>
+              <Radio.Button value="DETAILED">Detailed</Radio.Button>
+              <Radio.Button value="SIMPLE">Simple</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
 
           <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
-            3. Trigger on
+            3. Templates
+          </Typography.Title>
+          <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
+            Leave empty to apply to every template. Select specific templates to only notify for runs using them.
+          </Typography.Text>
+          <Form.Item>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="All templates"
+              value={selectedTemplateIds}
+              onChange={setSelectedTemplateIds}
+              options={availableTemplates.map((t) => ({ value: t.id, label: t.attributes.name }))}
+            />
+          </Form.Item>
+
+          <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
+            4. Trigger on
           </Typography.Title>
           <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
             Choose which run outcomes send this notification. {selectedStatuses.length} of {TOTAL_STATUS_COUNT}{" "}

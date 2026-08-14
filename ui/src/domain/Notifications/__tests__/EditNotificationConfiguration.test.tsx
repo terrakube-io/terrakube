@@ -5,7 +5,10 @@ import { EditNotificationConfiguration } from "../EditNotificationConfiguration"
 
 jest.mock("@/config/axiosConfig", () => ({
   __esModule: true,
-  default: { post: jest.fn(), patch: jest.fn(), get: jest.fn(), delete: jest.fn() },
+  // get() defaults to resolving an empty template list - the component fetches templates for
+  // the "3. Templates" filter unconditionally on mount, so an unconfigured jest.fn() (which
+  // returns undefined, not a Promise) would throw synchronously on the .then() call.
+  default: { post: jest.fn(), patch: jest.fn(), get: jest.fn().mockResolvedValue({ data: { data: [] } }), delete: jest.fn() },
   getErrorMessage: jest.fn(() => "error"),
 }));
 jest.mock("@/modules/api/apiWrapper", () => ({ apiPost: jest.fn() }));

@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.notification.sender;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -41,11 +42,19 @@ public class SlackSender implements NotificationSender {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         try {
-            HttpStatusCode status = restTemplate
-                    .postForEntity(configuration.getDestinationUrl(), new HttpEntity<>(payload, headers), String.class)
-                    .getStatusCode();
+            ResponseEntity<String> response = restTemplate
+                    .postForEntity(configuration.getDestinationUrl(), new HttpEntity<>(payload, headers), String.class);
+            HttpStatusCode status = response.getStatusCode();
             if (!status.is2xxSuccessful()) {
                 throw new NotificationDeliveryException("Slack endpoint returned status " + status.value());
+            }
+            // Incoming Webhooks report payload/config errors (invalid_payload, no_text,
+            // channel_not_found, no_service, ...) as HTTP 200 with a plain-text error body, not a
+            // non-2xx status - the status check above alone would silently record these as
+            // delivered. A genuinely successful call's body is the literal string "ok".
+            String body = response.getBody() == null ? "" : response.getBody().trim();
+            if (!"ok".equals(body)) {
+                throw new NotificationDeliveryException("Slack endpoint rejected the payload: " + body, null, false);
             }
         } catch (HttpStatusCodeException e) {
             throw HttpDeliveryErrors.fromStatus("Slack", e);

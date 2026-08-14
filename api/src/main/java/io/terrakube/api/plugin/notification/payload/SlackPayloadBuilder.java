@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
+import io.terrakube.api.rs.notification.NotificationMessageStyle;
 
 @Component
 public class SlackPayloadBuilder implements NotificationPayloadBuilder {
@@ -29,7 +30,12 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
     public String build(NotificationContext context) {
         String statusLabel = statusLabel(context.jobStatus());
 
+        if (context.messageStyle() == NotificationMessageStyle.SIMPLE) {
+            return buildCompactPayload(context, statusLabel);
+        }
+
         List<Map<String, Object>> blocks = new ArrayList<>();
+
         blocks.add(Map.of(
                 "type", "header",
                 "text", Map.of("type", "plain_text",
@@ -52,12 +58,25 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
                     "text", Map.of("type", "mrkdwn", "text", "*Failure reason:* " + context.failureReason())));
         }
 
-        blocks.add(Map.of(
-                "type", "actions",
-                "elements", List.of(Map.of(
-                        "type", "button",
-                        "text", Map.of("type", "plain_text", "text", "View Run"),
-                        "url", context.runUrl()))));
+        if (context.runUrl() != null && !context.runUrl().isBlank()) {
+            blocks.add(Map.of(
+                    "type", "actions",
+                    "elements", List.of(Map.of(
+                            "type", "button",
+                            "text", Map.of("type", "plain_text", "text", "View Run"),
+                            "url", context.runUrl()))));
+        }
+
+        // A workspace's org-wide and workspace-scoped configurations both fire independently (by
+        // design - see NotificationConfigResolver), so the same job can post more than one Slack
+        // message. Naming which configuration sent each one is what makes that additive behavior
+        // legible instead of looking like an accidental duplicate.
+        if (context.configurationName() != null && !context.configurationName().isBlank()) {
+            blocks.add(Map.of(
+                    "type", "context",
+                    "elements", List.of(Map.of("type", "mrkdwn",
+                            "text", "Sent by notification: *" + context.configurationName() + "*"))));
+        }
 
         // Slack only colors an attachment's left border when blocks are nested inside the
         // legacy "attachments" wrapper - a bare top-level "blocks" array (what chat.postMessage
@@ -66,8 +85,39 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
         attachment.put("color", statusColor(context.jobStatus()));
         attachment.put("blocks", blocks);
 
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        // Incoming Webhooks reject a payload with no top-level "text" (error "no_text"). Once
+        // blocks live inside "attachments" (needed for the color bar), Slack always renders this
+        // as a separate line above the card rather than hiding it - so instead of repeating the
+        // header (a pure duplicate), it carries the "Run notification for org/workspace" link.
+        // That also makes it the text shown in OS/push notification previews and whenever link
+        // previews are collapsed, so a user can still get to the workspace from just that line.
+        payload.put("text", context.workspaceUrl() != null && !context.workspaceUrl().isBlank()
+                ? "Run notification for <" + context.workspaceUrl() + "|" + context.organizationName() + "/"
+                        + context.workspaceName() + ">"
+                : context.workspaceName() + " - " + statusLabel);
+        // Overrides the webhook's default bot name/avatar so messages from different workspaces
+        // posting into the same channel are visually distinguishable at a glance.
+        payload.put("username", context.workspaceName());
+        payload.put("attachments", List.of(attachment));
+
         try {
-            return objectMapper.writeValueAsString(Map.of("attachments", List.of(attachment)));
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to render Slack payload", e);
+        }
+    }
+
+    // SIMPLE-style configurations get a single-line ping for every status instead of the full
+    // card - this is a plain top-level "text" message (no blocks/attachments): Slack only shows
+    // the visible-duplicate-line behavior when blocks are present, so the simplest way to avoid
+    // it here is to not use blocks at all, since there's nothing more to say than the one line.
+    private String buildCompactPayload(NotificationContext context, String statusLabel) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("text", context.workspaceName() + " - " + statusLabel);
+        payload.put("username", context.workspaceName());
+        try {
+            return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Slack payload", e);
         }

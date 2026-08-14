@@ -372,6 +372,7 @@ export type FederatedClaimAttributes = {
 
 // Notification
 export type NotificationChannelType = "SLACK" | "TEAMS" | "WEBHOOK";
+export type NotificationMessageStyle = "DETAILED" | "SIMPLE";
 
 export type NotificationConfiguration = {
   id: string;
@@ -387,6 +388,7 @@ export type NotificationConfigurationAttributes = {
   destinationUrl: string;
   signingSecret?: string;
   active: boolean;
+  messageStyle?: NotificationMessageStyle;
 };
 export type NotificationTrigger = {
   id: string;

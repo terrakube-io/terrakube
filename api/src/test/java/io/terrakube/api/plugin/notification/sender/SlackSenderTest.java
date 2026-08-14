@@ -41,11 +41,24 @@ class SlackSenderTest {
 
     @Test
     void postsBlockKitPayloadToIncomingWebhookUrl() {
-        wireMockServer.stubFor(post(urlPathEqualTo("/services/X/Y/Z")).willReturn(aResponse().withStatus(200)));
+        wireMockServer.stubFor(post(urlPathEqualTo("/services/X/Y/Z")).willReturn(aResponse().withStatus(200).withBody("ok")));
 
-        sender.send(configuration(), "{\"blocks\":[]}");
+        sender.send(configuration(), "{\"text\":\"fallback\",\"attachments\":[{\"blocks\":[]}]}");
 
         wireMockServer.verify(postRequestedFor(urlPathEqualTo("/services/X/Y/Z")));
+    }
+
+    @Test
+    void aPlainTextErrorBodyOnA200ResponseIsTreatedAsAFailure() {
+        // Incoming Webhooks report payload/config problems (e.g. a payload missing the required
+        // top-level "text" field) as HTTP 200 with a plain-text error body, not a 4xx - a status
+        // code check alone would silently record this as delivered.
+        wireMockServer.stubFor(post(urlPathEqualTo("/services/X/Y/Z")).willReturn(aResponse().withStatus(200).withBody("no_text")));
+
+        NotificationDeliveryException e = catchDeliveryException();
+
+        assertThat(e.getMessage()).contains("no_text");
+        assertThat(e.isRetryable()).isFalse();
     }
 
     @Test

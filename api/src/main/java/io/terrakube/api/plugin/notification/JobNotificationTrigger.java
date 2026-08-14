@@ -15,6 +15,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.repository.NotificationOutboxRepository;
 
 import lombok.extern.slf4j.Slf4j;
@@ -65,12 +66,13 @@ public class JobNotificationTrigger {
         try {
             List<NotificationConfiguration> configs = notificationConfigResolver.resolve(job.getWorkspace());
             for (NotificationConfiguration configuration : configs) {
-                boolean matches = configuration.getTriggers() != null && configuration.getTriggers().stream()
+                boolean statusMatches = configuration.getTriggers() != null && configuration.getTriggers().stream()
                         .anyMatch(trigger -> trigger.getJobStatus() == job.getStatus());
-                if (!matches) {
+                if (!statusMatches || !templateMatches(configuration, job)) {
                     continue;
                 }
-                String payload = notificationPayloadRenderer.render(configuration.getChannelType(), buildContext(job));
+                String payload = notificationPayloadRenderer.render(configuration.getChannelType(),
+                        buildContext(job, configuration));
 
                 NotificationOutbox outbox = new NotificationOutbox();
                 outbox.setId(UUID.randomUUID());
@@ -86,6 +88,17 @@ public class JobNotificationTrigger {
             log.error("Failed to resolve/enqueue notifications for job {}", job.getId(), e);
         }
         return insertedIds;
+    }
+
+    // Empty/null templates means "applies to every template" - this only ever narrows which
+    // templates a configuration fires for, never widens it, so existing configurations (no
+    // templates selected) keep matching every job exactly as before this filter existed.
+    private boolean templateMatches(NotificationConfiguration configuration, Job job) {
+        List<Template> templates = configuration.getTemplates();
+        if (templates == null || templates.isEmpty()) {
+            return true;
+        }
+        return templates.stream().anyMatch(template -> template.getId().toString().equals(job.getTemplateReference()));
     }
 
     public void notifyStatusChanged(Job job) {
@@ -105,9 +118,10 @@ public class JobNotificationTrigger {
         }
     }
 
-    NotificationContext buildContext(Job job) {
-        String runUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
-                job.getOrganization().getId(), job.getWorkspace().getId(), job.getId());
+    NotificationContext buildContext(Job job, NotificationConfiguration configuration) {
+        String workspaceUrl = String.format("%s/organizations/%s/workspaces/%s", uiUrl,
+                job.getOrganization().getId(), job.getWorkspace().getId());
+        String runUrl = workspaceUrl + "/runs/" + job.getId();
         // job.output is the raw Terraform/OpenTofu run output; there is no dedicated
         // failure-reason field on Job, so this trims the tail of that log as a
         // best-effort summary rather than shipping the whole (possibly huge) output.
@@ -123,6 +137,9 @@ public class JobNotificationTrigger {
                 job.getStatus(),
                 runUrl,
                 job.getCommitId(),
-                failureReason);
+                failureReason,
+                configuration.getName(),
+                workspaceUrl,
+                configuration.getMessageStyle());
     }
 }

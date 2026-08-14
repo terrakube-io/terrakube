@@ -9,6 +9,7 @@ import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationTrigger;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,55 @@ class JobNotificationTriggerTest {
         TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
 
         verify(notificationDispatchService, times(1)).dispatchAsync(any());
+    }
+
+    @Test
+    void enqueue_configScopedToADifferentTemplateIsSkipped() {
+        Job job = jobWithStatus(JobStatus.failed);
+        job.setTemplateReference(UUID.randomUUID().toString());
+        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        Template otherTemplate = new Template();
+        otherTemplate.setId(UUID.randomUUID());
+        configuration.setTemplates(List.of(otherTemplate));
+        when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(configuration));
+
+        List<UUID> ids = subject.enqueue(job);
+
+        verify(notificationOutboxRepository, never()).save(any());
+        assertThat(ids).isEmpty();
+    }
+
+    @Test
+    void enqueue_configScopedToTheJobsTemplateMatches() {
+        Job job = jobWithStatus(JobStatus.failed);
+        UUID templateId = UUID.randomUUID();
+        job.setTemplateReference(templateId.toString());
+        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        Template matchingTemplate = new Template();
+        matchingTemplate.setId(templateId);
+        configuration.setTemplates(List.of(matchingTemplate));
+        when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(configuration));
+        when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+
+        List<UUID> ids = subject.enqueue(job);
+
+        verify(notificationOutboxRepository, times(1)).save(any());
+        assertThat(ids).hasSize(1);
+    }
+
+    @Test
+    void enqueue_configWithNoTemplatesSelectedMatchesEveryTemplate() {
+        Job job = jobWithStatus(JobStatus.failed);
+        job.setTemplateReference(UUID.randomUUID().toString());
+        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        // templates left null/unset - see NotificationConfiguration.templates javadoc.
+        when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(configuration));
+        when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+
+        List<UUID> ids = subject.enqueue(job);
+
+        verify(notificationOutboxRepository, times(1)).save(any());
+        assertThat(ids).hasSize(1);
     }
 
     @Test

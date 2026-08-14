@@ -113,4 +113,32 @@
             <column name="last_attempt_at" />
         </createIndex>
     </changeSet>
+    <changeSet id="2-33-0-notification-configuration-message-style" author="jake">
+        <addColumn tableName="notification_configuration">
+            <column name="message_style" type="varchar(20)" defaultValue="DETAILED">
+                <constraints nullable="false" />
+            </column>
+        </addColumn>
+    </changeSet>
+    <changeSet id="2-33-0-notification-configuration-template" author="jake">
+        <!-- No rows here means "applies to every template" - this table only ever narrows which
+             templates a configuration fires for, it never widens it, so an empty set for a
+             configuration is exactly today's (pre-filter) behavior. -->
+        <createTable tableName="notification_configuration_template">
+            <column name="configuration_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="template_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="notification_configuration_template"
+            columnNames="configuration_id, template_id" constraintName="pk_notification_configuration_template" />
+        <addForeignKeyConstraint baseTableName="notification_configuration_template" baseColumnNames="configuration_id"
+            constraintName="fk_notification_configuration_template_configuration_id"
+            referencedTableName="notification_configuration" referencedColumnNames="id" onDelete="CASCADE" />
+        <addForeignKeyConstraint baseTableName="notification_configuration_template" baseColumnNames="template_id"
+            constraintName="fk_notification_configuration_template_template_id"
+            referencedTableName="template" referencedColumnNames="id" onDelete="CASCADE" />
+    </changeSet>
 </databaseChangeLog>

@@ -31,8 +31,10 @@ public class WebhookPayloadBuilder implements NotificationPayloadBuilder {
         body.put("jobId", context.jobId());
         body.put("status", context.jobStatus().name());
         body.put("runUrl", context.runUrl());
+        body.put("workspaceUrl", context.workspaceUrl());
         body.put("commitId", context.commitId());
         body.put("failureReason", context.failureReason());
+        body.put("configurationName", context.configurationName());
         try {
             return objectMapper.writeValueAsString(body);
         } catch (Exception e) {

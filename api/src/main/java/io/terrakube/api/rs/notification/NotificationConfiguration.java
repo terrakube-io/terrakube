@@ -8,6 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.yahoo.elide.annotation.CreatePermission;
@@ -26,6 +27,9 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
@@ -82,8 +86,24 @@ public class NotificationConfiguration extends GenericAuditFields {
 
     private boolean active = true;
 
+    // DETAILED renders the full card (org/job/commit, View Run button, sent-by footer) for every
+    // status; SIMPLE renders a single-line ping instead. Defaults to DETAILED - not tied to job
+    // status, so the same choice applies uniformly across the run's lifecycle rather than this
+    // code silently deciding which statuses deserve detail.
+    @Column(name = "message_style")
+    @Enumerated(EnumType.STRING)
+    private NotificationMessageStyle messageStyle = NotificationMessageStyle.DETAILED;
+
     @OneToMany(mappedBy = "configuration", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<NotificationTrigger> triggers;
+
+    // Empty/null means "applies to every template" - this only ever narrows which templates a
+    // configuration fires for (see JobNotificationTrigger), it never widens it.
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "notification_configuration_template",
+            joinColumns = @JoinColumn(name = "configuration_id"),
+            inverseJoinColumns = @JoinColumn(name = "template_id"))
+    private List<Template> templates;
 
     // Elide's nested-URL relationship inference only populates the immediate parent
     // (workspace, for organization/{orgId}/workspace/{wsId}/notificationConfiguration)
