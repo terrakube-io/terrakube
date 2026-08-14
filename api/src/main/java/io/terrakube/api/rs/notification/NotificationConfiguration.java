@@ -81,6 +81,7 @@ public class NotificationConfiguration extends GenericAuditFields {
     @Column(name = "destination_url")
     private String destinationUrl;
 
+    @ReadPermission(expression = "read notification signing secret")
     @Column(name = "signing_secret")
     private String signingSecret;
 
