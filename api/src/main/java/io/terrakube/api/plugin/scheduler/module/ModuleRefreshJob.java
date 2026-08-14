@@ -1,10 +1,10 @@
 package io.terrakube.api.plugin.scheduler.module;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import org.semver4j.Semver;
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
-import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.rs.module.Module;
@@ -28,7 +28,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.lang.module.ModuleDescriptor;
 import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
@@ -68,81 +67,94 @@ public class ModuleRefreshJob implements Job {
 
         String organizationName = module.getOrganization().getName();
         log.info("Refreshing module {} on {}", module.getName(), organizationName);
-        Map<String, Ref> currentRepoTags = null;
+        Map<String, Ref> rawRepoTags = null;
 
         try {
-            currentRepoTags = getVersionFromRepository(module.getSource(), module.getTagPrefix(),
-                    module.getVcs(), module.getSsh());
+            rawRepoTags = getVersionFromRepository(module.getSource(), module.getVcs(), module.getSsh());
         } catch (Exception e) {
+            // Broad catch is intentional: this is a scheduled Quartz job refreshing one module among many.
+            // Any VCS/network failure here must not propagate and abort the whole job execution.
             log.error("Failed to refresh module {} on organization/user {}, error {}", module.getName(),
                     organizationName, e.getMessage());
         }
 
-        if (currentRepoTags == null) {
+        if (rawRepoTags == null) {
             log.error("There are no tags available for module {} on organization/user {}, error {}", module.getName(),
                     organizationName, "No versions found");
             return;
         }
 
-        List<ModuleVersion> currentModuleVersion = Optional.ofNullable(moduleVersionRepository.findAllByModuleId(module.getId())).orElse(Collections.emptyList());
-        List<String> currentDatabaseTags = currentModuleVersion.stream().map(ModuleVersion::getVersion).toList();
-        List<String> currentRepositoryTagsTemp = currentRepoTags.keySet().stream().toList();
+        Map<String, ModuleVersionNormalizer.NormalizedVersion> canonicalVersions =
+                resolveCanonicalVersions(rawRepoTags, module.getTagPrefix(), module.getName());
 
-        if (currentDatabaseTags.isEmpty()) {
-            List<ModuleVersion> moduleVersions = new ArrayList<>();
-            currentRepoTags.forEach((key, value) -> {
-                ModuleVersion moduleVersion = new ModuleVersion();
-                moduleVersion.setVersion(key);
-                moduleVersion.setCommit(value.getObjectId().getName());
-                moduleVersion.setModule(module);
-                moduleVersions.add(moduleVersion);
-            });
+        List<ModuleVersion> currentModuleVersion = Optional
+                .ofNullable(moduleVersionRepository.findAllByModuleId(module.getId())).orElse(Collections.emptyList());
+        List<String> currentDatabaseVersions = currentModuleVersion.stream().map(ModuleVersion::getVersion).toList();
 
-            moduleVersionRepository.saveAll(moduleVersions);
-        } else {
-            log.info("Found {} versions in database for module {}", currentDatabaseTags.size(), module.getName());
-            List<String> differences = currentRepositoryTagsTemp.stream()
-                    .filter(element -> !currentDatabaseTags.contains(element))
-                    .toList();
-
-            if (differences.isEmpty()) {
-                log.info("No new versions found for module {}", module.getName());
+        Map<String, Ref> resolvedRepoTags = rawRepoTags;
+        List<ModuleVersion> newModuleVersions = new ArrayList<>();
+        canonicalVersions.forEach((canonicalVersion, normalized) -> {
+            if (currentDatabaseVersions.contains(canonicalVersion)) {
                 return;
-            } else {
-                for (String newTagRepo : differences) {
-                    Ref newModuleTag = currentRepoTags.get(newTagRepo);
-                    ModuleVersion moduleVersion = new ModuleVersion();
-                    moduleVersion.setVersion(newTagRepo);
-                    moduleVersion.setCommit(newModuleTag.getObjectId().getName());
-                    moduleVersion.setModule(module);
-                    moduleVersionRepository.save(moduleVersion);
-
-                    log.info("Adding new version {} to module {}", newTagRepo, module.getName());
-                }
             }
+            Ref ref = resolvedRepoTags.get(normalized.originalTag());
+            if (ref == null || ref.getObjectId() == null) {
+                log.warn("Skipping version {} (tag {}) for module {}: tag has no resolvable commit", canonicalVersion,
+                        normalized.originalTag(), module.getName());
+                return;
+            }
+            ModuleVersion moduleVersion = new ModuleVersion();
+            moduleVersion.setVersion(canonicalVersion);
+            moduleVersion.setGitTag(normalized.originalTag());
+            moduleVersion.setCommit(ref.getObjectId().getName());
+            moduleVersion.setModule(module);
+            newModuleVersions.add(moduleVersion);
+            log.info("Adding new version {} (tag {}) to module {}", canonicalVersion, normalized.originalTag(),
+                    module.getName());
+        });
+
+        if (newModuleVersions.isEmpty()) {
+            log.info("No new versions found for module {}", module.getName());
+        } else {
+            moduleVersionRepository.saveAll(newModuleVersions);
         }
 
         calculateLatestModuleVersion(module, organizationName);
+    }
 
+    Map<String, ModuleVersionNormalizer.NormalizedVersion> resolveCanonicalVersions(Map<String, Ref> rawRepoTags,
+            String tagPrefix, String moduleName) {
+        Map<String, List<String>> rawTagsByCanonicalVersion = new HashMap<>();
+        rawRepoTags.keySet().forEach(rawTag -> ModuleVersionNormalizer.normalize(rawTag, tagPrefix).ifPresentOrElse(
+                normalized -> rawTagsByCanonicalVersion
+                        .computeIfAbsent(normalized.canonicalVersion(), key -> new ArrayList<>())
+                        .add(rawTag),
+                () -> log.info("Skipping non-SemVer or non-matching tag {} for module {}", rawTag, moduleName)));
+
+        Map<String, ModuleVersionNormalizer.NormalizedVersion> canonicalVersions = new HashMap<>();
+        rawTagsByCanonicalVersion.forEach((canonicalVersion, rawTags) -> {
+            if (rawTags.size() > 1) {
+                log.error("Module {} has a version collision for canonical version {}: tags {}", moduleName,
+                        canonicalVersion, rawTags);
+            } else {
+                canonicalVersions.put(canonicalVersion,
+                        new ModuleVersionNormalizer.NormalizedVersion(canonicalVersion, rawTags.get(0)));
+            }
+        });
+        return canonicalVersions;
     }
 
     private void calculateLatestModuleVersion(Module module, String organizationName) {
         try {
             module.setLatestVersion(moduleVersionRepository.findAllByModuleId(module.getId()).stream()
                     .map(ModuleVersion::getVersion)
-                    .filter(v -> {
-                        try {
-                            ModuleDescriptor.Version.parse(v.replace("v", ""));
-                            return true; // Valid version format
-                        } catch (IllegalArgumentException e) {
-                            return false; // Invalid version format
-                        }
-                    })
-                    .max(Comparator.comparing(v -> ModuleDescriptor.Version.parse(v.replace("v", ""))))
+                    .filter(Semver::isValid)
+                    .max(Comparator.comparing(Semver::parse))
                     .orElse("Version pending"));
             log.info("Latest module {}/{} version {}", organizationName, module.getName(), module.getLatestVersion());
             moduleRepository.save(module);
         } catch (Exception e) {
+            // Broad catch is intentional: a bad version string must not stop the whole refresh job.
             log.error("Failed to calculate latest module version {}/{}", organizationName, module.getName());
         }
     }
@@ -156,11 +168,9 @@ public class ModuleRefreshJob implements Job {
         }
     }
 
-    private Map<String, Ref> getVersionFromRepository(String source, String tagPrefix, Vcs vcs, Ssh ssh)
+    private Map<String, Ref> getVersionFromRepository(String source, Vcs vcs, Ssh ssh)
             throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
             URISyntaxException, GitAPIException {
-        List<String> versionList = new ArrayList<>();
-
         CredentialsProvider credentialsProvider = null;
         TransportConfigCallback transportConfigCallback = null;
         Map<String, Ref> tags = new HashMap<>(), originalTags = new HashMap<>();
@@ -233,15 +243,7 @@ public class ModuleRefreshJob implements Job {
                     .callAsMap();
         }
 
-        originalTags.forEach((key, value) -> {
-            String originalTag = key.replace("refs/tags/", "");
-            if (tagPrefix == null) {
-                tags.put(originalTag, value);
-                versionList.add(originalTag);
-            } else if (originalTag.startsWith(tagPrefix)) {
-                tags.put(originalTag.replace(tagPrefix, ""), value);
-            }
-        });
+        originalTags.forEach((key, value) -> tags.put(key.replace("refs/tags/", ""), value));
 
         return tags;
     }

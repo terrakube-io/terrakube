@@ -7,6 +7,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
@@ -17,8 +18,8 @@ import java.io.IOException;
 @Slf4j
 public class LocalStorageServiceImpl implements StorageService {
 
-    private static String DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
-    private static String MODULE_LOCATION_ZIP = "/.terraform-spring-boot/local/modules/%s/%s/%s/%s/module.zip";
+    private static final String DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
+    private static final String MODULE_LOCATION_ZIP = "/.terraform-spring-boot/local/modules/%s/%s/%s/%s/module.zip";
 
     @NonNull
     GitService gitService;
@@ -27,17 +28,17 @@ public class LocalStorageServiceImpl implements StorageService {
 
     @Override
     public synchronized String searchModule(String organizationName, String moduleName, String providerName,
-            String moduleVersion, String source, String vcsType, String vcsConnectionType, String accessToken, String tagPrefix, String folder) {
+            ModuleVersionDownload download) {
+        String moduleVersion = download.version();
         String moduleFilePath = String.format(MODULE_LOCATION_ZIP, organizationName, moduleName, providerName,
                 moduleVersion);
         log.info("moduleZip: {}", moduleFilePath);
         File moduleFile = new File(FileUtils.getUserDirectoryPath().concat(moduleFilePath));
-    
+
         try {
             FileUtils.forceMkdirParent(moduleFile);
             if (!moduleFile.exists()) {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(source, moduleVersion, vcsType,
-                        vcsConnectionType, accessToken, tagPrefix, folder);
+                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
                 log.info("Git Clone Directory {}", gitCloneDirectory.getAbsolutePath());
                 log.info("moduleZip {}", moduleFile.getAbsolutePath());
                 ZipUtil.pack(gitCloneDirectory, moduleFile);

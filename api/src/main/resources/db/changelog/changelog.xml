@@ -115,5 +115,7 @@
     <include file="/db/changelog/local/changelog-2.33.0-job-command-comment-id.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-job-soft-delete.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-job-status-index.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-module-version-git-tag.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-canonical-module-versions.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-variable-category-not-null.xml"/>
 </databaseChangeLog>

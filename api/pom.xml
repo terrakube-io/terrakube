@@ -21,6 +21,7 @@
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
         <msal4j.version>1.25.1</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
+        <semver4j.version>6.0.0</semver4j.version>
         <wiremock.version>4.2.2</wiremock.version>
         <jgit.version>7.7.1.202607240634-r</jgit.version>
         <bouncy.castle>1.85</bouncy.castle>
@@ -163,6 +164,11 @@
         <dependency>
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.semver4j</groupId>
+            <artifactId>semver4j</artifactId>
+            <version>${semver4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
