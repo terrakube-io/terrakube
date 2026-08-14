@@ -1,6 +1,6 @@
 package io.terrakube.api.plugin.scheduler.module;
 
-import com.github.zafarkhaja.semver.Version;
+import org.semver4j.Semver;
 import liquibase.Scope;
 import liquibase.change.custom.CustomTaskChange;
 import liquibase.database.Database;
@@ -159,7 +159,7 @@ public class CanonicalModuleVersionMigration implements CustomTaskChange {
         }
 
         String latestVersionKey = null;
-        Version latestVersionParsed = null;
+        Semver latestVersionParsed = null;
         try (PreparedStatement updateVersion = connection
                 .prepareStatement("UPDATE module_version SET version = ?, git_tag = ? WHERE id = ?")) {
             for (Map.Entry<String, List<VersionRow>> entry : rowsByCanonicalVersion.entrySet()) {
@@ -170,7 +170,7 @@ public class CanonicalModuleVersionMigration implements CustomTaskChange {
                 updateVersion.setString(3, row.id());
                 updateVersion.executeUpdate();
 
-                Version canonicalVersion = Version.parse(entry.getKey());
+                Semver canonicalVersion = new Semver(entry.getKey());
                 if (latestVersionParsed == null || canonicalVersion.compareTo(latestVersionParsed) > 0) {
                     latestVersionParsed = canonicalVersion;
                     latestVersionKey = entry.getKey();

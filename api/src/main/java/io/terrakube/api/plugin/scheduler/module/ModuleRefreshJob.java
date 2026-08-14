@@ -1,8 +1,7 @@
 package io.terrakube.api.plugin.scheduler.module;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.github.zafarkhaja.semver.ParseException;
-import com.github.zafarkhaja.semver.Version;
+import org.semver4j.Semver;
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
@@ -149,15 +148,8 @@ public class ModuleRefreshJob implements Job {
         try {
             module.setLatestVersion(moduleVersionRepository.findAllByModuleId(module.getId()).stream()
                     .map(ModuleVersion::getVersion)
-                    .filter(v -> {
-                        try {
-                            Version.parse(v);
-                            return true;
-                        } catch (ParseException e) {
-                            return false;
-                        }
-                    })
-                    .max(Comparator.comparing(Version::parse))
+                    .filter(Semver::isValid)
+                    .max(Comparator.comparing(Semver::parse))
                     .orElse("Version pending"));
             log.info("Latest module {}/{} version {}", organizationName, module.getName(), module.getLatestVersion());
             moduleRepository.save(module);

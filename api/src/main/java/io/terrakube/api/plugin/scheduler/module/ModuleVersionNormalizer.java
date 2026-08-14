@@ -1,7 +1,6 @@
 package io.terrakube.api.plugin.scheduler.module;
 
-import com.github.zafarkhaja.semver.ParseException;
-import com.github.zafarkhaja.semver.Version;
+import org.semver4j.Semver;
 
 import java.util.Optional;
 
@@ -30,11 +29,9 @@ public final class ModuleVersionNormalizer {
             remainder = remainder.substring(1);
         }
 
-        try {
-            Version.parse(remainder);
-            return Optional.of(new NormalizedVersion(remainder, gitTag));
-        } catch (ParseException e) {
+        if (Semver.parse(remainder) == null) {
             return Optional.empty();
         }
+        return Optional.of(new NormalizedVersion(remainder, gitTag));
     }
 }
