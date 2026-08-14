@@ -872,7 +872,16 @@ export const WorkspaceDetails = ({
                   >
                     {workspace.attributes.locked ? "Unlock" : "Lock"}
                   </Button>
-                  <CreateJob changeJob={changeJob} planJob={planJob} />
+                  <CreateJob
+                    changeJob={changeJob}
+                    planJob={planJob}
+                    disabledReason={
+                      workspace.attributes.source === "empty" &&
+                      workspace.attributes.branch === "remote-content"
+                        ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
+                        : undefined
+                    }
+                  />
                 </Space>
               </div>
               <Space className="workspace-details" direction="vertical">

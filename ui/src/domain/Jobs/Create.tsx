@@ -1,5 +1,5 @@
 import { DeleteOutlined, InfoCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Select, Space, message, Typography } from "antd";
+import { Button, Form, Input, Modal, Select, Space, Tooltip, message, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -11,6 +11,9 @@ const validateMessages = { required: "${label} is required!" };
 type Props = {
   changeJob: (id: string) => void;
   planJob?: boolean;
+  // When set, "Run now" is disabled and this message explains why (e.g. a CLI/API
+  // workspace that has no applied configuration to re-run yet).
+  disabledReason?: string;
 };
 
 type CreateJobForm = {
@@ -18,7 +21,7 @@ type CreateJobForm = {
   branchName: string;
 };
 
-export const CreateJob = ({ changeJob, planJob = true }: Props) => {
+export const CreateJob = ({ changeJob, planJob = true, disabledReason }: Props) => {
   const navigate = useNavigate();
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
@@ -109,19 +112,21 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
 
   return (
     <div>
-      <Button
-        type="primary"
-        htmlType="button"
-        onClick={() => {
-          loadBranch();
-          setVisible(true);
-        }}
-        icon={<PlayCircleOutlined />}
-        disabled={!planJob || submitting}
-        loading={submitting}
-      >
-        Run now
-      </Button>
+      <Tooltip title={disabledReason}>
+        <Button
+          type="primary"
+          htmlType="button"
+          onClick={() => {
+            loadBranch();
+            setVisible(true);
+          }}
+          icon={<PlayCircleOutlined />}
+          disabled={!planJob || submitting || !!disabledReason}
+          loading={submitting}
+        >
+          Run now
+        </Button>
+      </Tooltip>
 
       <Modal
         open={visible}

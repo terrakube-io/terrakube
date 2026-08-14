@@ -1158,12 +1158,13 @@ public class RemoteTfeService {
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
                 hostname, configurationId);
-        // we need to update the source only if the VCS connection is null and the
-        // branch is other than "remote-content"
-        if (workspace.getVcs() == null && workspace.getBranch().equals("remote-content")) {
-            workspace.setSource(sourceTarGz);
-        }
-        workspace = workspaceRepository.save(workspace);
+        // We intentionally do NOT persist this configuration version onto workspace.source
+        // here. Doing so on every run (including speculative plan-only runs and runs that are
+        // later discarded before approval) made workspace.source track the last configuration
+        // *created* rather than the last configuration *applied*, so a subsequent UI "Run now"
+        // could re-queue the wrong configuration. The workspace source pointer is now updated
+        // when an apply is actually dispatched (see ExecutorService.persistAppliedConfigurationSource).
+        // The current run still uses this tarball via job.overrideSource, set below.
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
