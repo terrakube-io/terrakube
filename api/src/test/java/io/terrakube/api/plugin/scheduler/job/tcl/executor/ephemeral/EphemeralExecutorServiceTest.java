@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -298,8 +299,10 @@ public class EphemeralExecutorServiceTest {
         ExecutorContext context = context();
         context.getEnvironmentVariables().put("EPHEMERAL_CPU_REQUEST", "100m");
         context.getEnvironmentVariables().put("EPHEMERAL_MEMORY_REQUEST", "50Mi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_REQUEST", "2Gi");
         context.getEnvironmentVariables().put("EPHEMERAL_CPU_LIMIT", "200m");
         context.getEnvironmentVariables().put("EPHEMERAL_MEMORY_LIMIT", "100Mi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_LIMIT", "4Gi");
 
         subject().send(job(), context);
 
@@ -309,6 +312,24 @@ public class EphemeralExecutorServiceTest {
         assertEquals("200m", container.getResources().getLimits().get("cpu").toString());
         assertEquals("50Mi", container.getResources().getRequests().get("memory").toString());
         assertEquals("100Mi", container.getResources().getLimits().get("memory").toString());
+        assertEquals("2Gi", container.getResources().getRequests().get("ephemeral-storage").toString());
+        assertEquals("4Gi", container.getResources().getLimits().get("ephemeral-storage").toString());
+    }
+
+    @Test
+    public void setStorageResourcesOnly() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_REQUEST", "2Gi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_LIMIT", "4Gi");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals("2Gi", container.getResources().getRequests().get("ephemeral-storage").toString());
+        assertEquals("4Gi", container.getResources().getLimits().get("ephemeral-storage").toString());
+        assertNull(container.getResources().getRequests().get("cpu"));
+        assertNull(container.getResources().getLimits().get("cpu"));
     }
 
     @Test

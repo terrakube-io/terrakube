@@ -9,6 +9,7 @@ import io.terrakube.registry.plugin.storage.StorageService;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Storage;
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
@@ -18,8 +19,8 @@ import java.io.IOException;
 @Builder
 public class GcpStorageServiceImpl implements StorageService {
 
-    private static String gcpZipModuleLocation = "registry/%s/%s/%s/%s/module.zip";
-    private static String gcpDownloadModuleLocation = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
+    private static final String GCP_ZIP_MODULE_LOCATION = "registry/%s/%s/%s/%s/module.zip";
+    private static final String GCP_DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
 
     @NonNull
     private String registryHostname;
@@ -32,19 +33,18 @@ public class GcpStorageServiceImpl implements StorageService {
     private GitService gitService;
 
     @Override
-    public String searchModule(String organizationName, String moduleName, String providerName, String moduleVersion,
-            String source, String vcsType, String vcsConnectionType, String accessToken, String tagPrefix,
-            String folder) {
-        String blobKey = String.format(gcpZipModuleLocation, organizationName, moduleName, providerName, moduleVersion);
+    public String searchModule(String organizationName, String moduleName, String providerName,
+            ModuleVersionDownload download) {
+        String moduleVersion = download.version();
+        String blobKey = String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName, moduleVersion);
         log.info("Searching module: {}", blobKey);
         BlobId blobId = BlobId.of(
                 bucketName,
-                String.format(gcpZipModuleLocation, organizationName, moduleName, providerName, moduleVersion));
+                String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName, moduleVersion));
         log.info("Checking GCP Object exist {}", blobKey);
         if (storage.get(blobId) == null) {
             try {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(source, moduleVersion, vcsType,
-                        vcsConnectionType, accessToken, tagPrefix, folder);
+                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
                 File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
                 ZipUtil.pack(gitCloneDirectory, moduleZip);
 
@@ -61,7 +61,7 @@ public class GcpStorageServiceImpl implements StorageService {
             }
         }
 
-        return String.format(gcpDownloadModuleLocation, registryHostname, organizationName, moduleName, providerName,
+        return String.format(GCP_DOWNLOAD_MODULE_LOCATION, registryHostname, organizationName, moduleName, providerName,
                 moduleVersion);
     }
 
@@ -74,7 +74,7 @@ public class GcpStorageServiceImpl implements StorageService {
         data = storage.get(
                 BlobId.of(
                         bucketName,
-                        String.format(gcpZipModuleLocation, organizationName, moduleName, providerName, moduleVersion)))
+                        String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName, moduleVersion)))
                 .getContent();
         return data;
     }

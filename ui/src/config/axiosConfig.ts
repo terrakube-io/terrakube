@@ -90,6 +90,10 @@ export function getErrorMessage(error: any): string {
     if (error.response?.status === 404) {
       return "The requested resource could not be found.";
     }
+    const jsonApiDetail = error.response?.data?.errors?.[0]?.detail;
+    if (typeof jsonApiDetail === "string" && jsonApiDetail.trim() !== "") {
+      return jsonApiDetail;
+    }
     return error.response?.statusText || error.message || "An unexpected error occurred.";
   }
   return error?.message || "An unexpected error occurred.";

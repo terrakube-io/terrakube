@@ -813,7 +813,7 @@ function setModuleInclude(
   setAllVersions: React.Dispatch<React.SetStateAction<ModuleVersionAttributes[]>>
 ) {
   const versions: ModuleVersionAttributes[] = [];
-  includes.forEach((element: any) => {
+  (includes ?? []).forEach((element: any) => {
     if (element.type === "vcs") {
       setVCSProvider(element.attributes.vcsType);
     }
