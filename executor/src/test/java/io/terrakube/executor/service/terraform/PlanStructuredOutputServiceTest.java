@@ -25,9 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PlanStructuredOutputServiceTest {
 
     private PlanStructuredOutputService subject() {
-        WorkspaceSecurity workspaceSecurity = Mockito.mock(WorkspaceSecurity.class);
-        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
-        return new PlanStructuredOutputService(workspaceSecurity, new ObjectMapper(), "http://terrakube-api", new TerraformClient(), terrakubeClient);
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        return new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
     }
 
     private TerraformProcessData captureShowPlanJsonData(boolean tofu) throws Exception {
@@ -36,11 +35,9 @@ class PlanStructuredOutputServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         PlanStructuredOutputService service = new PlanStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
+                Mockito.mock(JobContextService.class),
                 new ObjectMapper(),
-                "http://terrakube-api",
-                terraformClient,
-                Mockito.mock(TerrakubeClient.class));
+                terraformClient);
 
         TerraformJob job = new TerraformJob();
         job.setJobId("1");
@@ -83,11 +80,9 @@ class PlanStructuredOutputServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         PlanStructuredOutputService service = new PlanStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
+                Mockito.mock(JobContextService.class),
                 new ObjectMapper(),
-                "http://terrakube-api",
-                terraformClient,
-                Mockito.mock(TerrakubeClient.class));
+                terraformClient);
 
         TerraformJob job = new TerraformJob();
         job.setJobId("1");
@@ -356,11 +351,9 @@ class PlanStructuredOutputServiceTest {
                 });
 
         PlanStructuredOutputService service = new PlanStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
+                Mockito.mock(JobContextService.class),
                 new ObjectMapper(),
-                "http://terrakube-api",
-                terraformClient,
-                Mockito.mock(TerrakubeClient.class));
+                terraformClient);
 
         TerraformJob job = new TerraformJob();
         job.setJobId("1");
@@ -389,11 +382,9 @@ class PlanStructuredOutputServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(false));
 
         PlanStructuredOutputService service = new PlanStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
+                Mockito.mock(JobContextService.class),
                 new ObjectMapper(),
-                "http://terrakube-api",
-                terraformClient,
-                Mockito.mock(TerrakubeClient.class));
+                terraformClient);
 
         TerraformJob job = new TerraformJob();
         job.setJobId("1");

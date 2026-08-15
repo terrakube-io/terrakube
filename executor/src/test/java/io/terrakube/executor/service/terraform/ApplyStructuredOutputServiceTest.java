@@ -19,10 +19,8 @@ class ApplyStructuredOutputServiceTest {
 
     private ApplyStructuredOutputService subject() {
         return new ApplyStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
-                new ObjectMapper(),
-                "http://terrakube-api",
-                Mockito.mock(TerrakubeClient.class));
+                Mockito.mock(JobContextService.class),
+                new ObjectMapper());
     }
 
     @Test
