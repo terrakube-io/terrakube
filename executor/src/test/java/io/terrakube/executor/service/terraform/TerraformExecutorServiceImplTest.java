@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
@@ -149,6 +150,80 @@ class TerraformExecutorServiceImplTest {
                 eq("org"), eq("42"), eq("1"), eq(List.of(seededChange)), any());
     }
 
+    // apply -json's event stream only ever forwards terse per-resource one-liners plus the final
+    // change-summary line - unlike plan(), which appends getPlanAsHumanText's rendered diff to
+    // the console, apply had nothing resembling a `terraform show`/CLI-style closing readout.
+    // appendHumanReadableOutputs should append an Outputs: section mirroring what the real CLI
+    // prints after a successful apply.
+    @Test
+    void appendsHumanReadableOutputsAfterSuccessfulApply() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(invocation -> {
+                    Consumer<String> outputConsumer = invocation.getArgument(1);
+                    outputConsumer.accept("{\"foo\":{\"value\":\"bar\",\"type\":\"string\",\"sensitive\":false}}");
+                    return CompletableFuture.completedFuture(true);
+                });
+
+        Map<String, Object> outputEntry = new HashMap<>();
+        outputEntry.put("name", "foo");
+        outputEntry.put("value", "bar");
+        outputEntry.put("sensitive", false);
+        when(terraformOutputsService.buildOutputsFromJson(anyString())).thenReturn(List.of(outputEntry));
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("Outputs:"));
+        assertTrue(result.getOutputLog().contains("foo = \"bar\""));
+    }
+
+    @Test
+    void doesNotAppendOutputsToConsoleWhenApplyItselfFailed() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(invocation -> {
+                    Consumer<String> outputConsumer = invocation.getArgument(1);
+                    outputConsumer.accept("{\"foo\":{\"value\":\"bar\",\"type\":\"string\",\"sensitive\":false}}");
+                    return CompletableFuture.completedFuture(true);
+                });
+
+        Map<String, Object> outputEntry = new HashMap<>();
+        outputEntry.put("name", "foo");
+        outputEntry.put("value", "bar");
+        outputEntry.put("sensitive", false);
+        when(terraformOutputsService.buildOutputsFromJson(anyString())).thenReturn(List.of(outputEntry));
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertFalse(result.isSuccessfulExecution());
+        assertFalse(result.getOutputLog().contains("Outputs:"));
+    }
+
     @Test
     void jsonApplyClientMergesErrorStream() {
         TerraformClient jsonApplyClient = subject().buildJsonEnabledApplyClient();
@@ -186,6 +261,88 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         verify(terraformClient).apply(any(TerraformProcessData.class), any(Consumer.class), any());
         verify(applyStructuredOutputService, never()).publishApplyProgress(anyString(), anyString(), anyString(), any(), any());
+    }
+
+    // destroy() previously ran a plain (non-JSON) terraform destroy with none of the structured
+    // per-resource status view plan()/apply() get. It now goes through the same JSON event
+    // parser and publishes under the same "apply" phase/key the UI's applyMode rendering already
+    // understands, starting from an empty change list (there's no prior plan step to seed from).
+    @Test
+    void destroyPublishesStructuredOutputFromJsonEvents() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":{\"addr\":\"aws_instance.example\"},\"action\":\"delete\"}}";
+        String applyCompleteLine = "{\"type\":\"apply_complete\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.example\"},\"elapsed_seconds\":2}}";
+
+        TerraformClient jsonDestroyClient = Mockito.mock(TerraformClient.class);
+        when(jsonDestroyClient.destroy(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    lineConsumer.accept(applyCompleteLine);
+                    return CompletableFuture.completedFuture(true);
+                });
+        doReturn(jsonDestroyClient).when(subject).buildJsonEnabledDestroyClient();
+
+        ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(applyStructuredOutputService, Mockito.atLeastOnce()).publishApplyProgress(
+                eq("org"), eq("42"), eq("1"),
+                argThat(changes -> changes.size() == 1
+                        && "aws_instance.example".equals(changes.get(0).get("address"))
+                        && "delete".equals(changes.get(0).get("action"))
+                        && "applied".equals(changes.get(0).get("status"))),
+                any());
+    }
+
+    @Test
+    void jsonDestroyClientMergesErrorStream() {
+        TerraformClient jsonDestroyClient = subject().buildJsonEnabledDestroyClient();
+
+        assertTrue(jsonDestroyClient.isJsonOutput());
+        assertTrue(jsonDestroyClient.isRedirectErrorStream());
+    }
+
+    // Regression test for a real UX gap: the structured panel stayed on console-only for a
+    // plan/apply step's *entire* duration whenever it finished faster than the 2s (now 1s)
+    // progress-flush interval, since lastFlush used to start at "now" instead of 0 - only the
+    // very last, unconditional flush after the client returned would ever populate it, so a fast
+    // plan flashed from console straight to "done" with no visible in-between structured state.
+    @Test
+    void plansFirstJsonLineFlushesStructuredOutputImmediately() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":{\"addr\":\"aws_instance.example\"},\"action\":\"create\"}}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    return CompletableFuture.completedFuture(0);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(planStructuredOutputService, Mockito.atLeastOnce()).publishPlanProgress(
+                eq("org"), eq("42"), eq("1"),
+                argThat(changes -> changes.size() == 1
+                        && "aws_instance.example".equals(changes.get(0).get("address"))),
+                any());
     }
 
     // Regression test for a real bug: a fast plan (all json lines emitted well within the 2s

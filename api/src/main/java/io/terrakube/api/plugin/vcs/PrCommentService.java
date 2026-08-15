@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.vcs;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
@@ -19,16 +21,20 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 public class PrCommentService {
 
     private static final int MAX_COMMENT_LENGTH = 60000;
+    private static final int MAX_TABLE_ROWS = 50;
     private static final Set<VcsType> PR_COMMENT_SUPPORTED_VCS = EnumSet.of(VcsType.GITHUB, VcsType.GITLAB, VcsType.BITBUCKET);
     private static final Pattern RUN_SUMMARY_PATTERN = Pattern.compile(
             // The "N to import, " clause only appears when the plan includes an import block -
@@ -46,19 +52,21 @@ public class PrCommentService {
     JobRepository jobRepository;
     StorageTypeService storageTypeService;
     StreamingService streamingService;
+    ObjectMapper objectMapper;
 
     @Value("${io.terrakube.ui.url:}")
     String uiUrl;
 
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
             BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository,
-            StorageTypeService storageTypeService, StreamingService streamingService) {
+            StorageTypeService storageTypeService, StreamingService streamingService, ObjectMapper objectMapper) {
         this.gitHubWebhookService = gitHubWebhookService;
         this.gitLabWebhookService = gitLabWebhookService;
         this.bitBucketWebhookService = bitBucketWebhookService;
         this.jobRepository = jobRepository;
         this.storageTypeService = storageTypeService;
         this.streamingService = streamingService;
+        this.objectMapper = objectMapper;
     }
 
     public void postPlanResult(Job job) {
@@ -155,17 +163,40 @@ public class PrCommentService {
     /**
      * job.getTerraformPlan() is a storage pointer to the binary .tfplan file, and
      * job.getOutput() is just append-only step-completion markers - neither holds the
-     * human-readable console text. The real diff/summary text lives in the last step's
+     * human-readable console text. The real diff/summary text lives in the plan/apply step's
      * console output, the same place the job details UI reads it from.
+     *
+     * <p>A custom TCL template can run extra steps after the plan/apply step itself (a
+     * notification, a cost-estimation call, ...), each as its own {@link Step} with a higher
+     * step number - so the highest-numbered step isn't reliably the Terraform step. Search
+     * backward from the last step for the first one whose output actually contains a
+     * recognizable plan/apply summary line, and only fall back to the literal last step (the
+     * previous behavior) if none do - e.g. the run failed before Terraform printed one.
      */
     private String fetchStepOutputText(Job job) {
-        Step step = job.getStep() == null ? null : job.getStep().stream()
-                .max(Comparator.comparingInt(Step::getStepNumber))
-                .orElse(null);
-        if (step == null) {
+        if (job.getStep() == null || job.getStep().isEmpty()) {
             return null;
         }
 
+        List<Step> stepsNewestFirst = job.getStep().stream()
+                .sorted(Comparator.comparingInt(Step::getStepNumber).reversed())
+                .collect(Collectors.toList());
+
+        String lastStepOutput = null;
+        for (Step step : stepsNewestFirst) {
+            String output = readStepOutputText(job, step);
+            if (lastStepOutput == null) {
+                lastStepOutput = output;
+            }
+            if (matchRunSummary(output) != null) {
+                return output;
+            }
+        }
+
+        return lastStepOutput;
+    }
+
+    private String readStepOutputText(Job job, Step step) {
         try {
             String stepId = step.getId().toString();
             String liveLogs = streamingService.getCurrentLogs(stepId, "");
@@ -312,6 +343,79 @@ public class PrCommentService {
         }
     }
 
+    /**
+     * Renders the same per-resource change list the job details UI's StructuredPlanOutput
+     * already shows, as a compact markdown table - the raw ANSI-stripped console text kept in
+     * the collapsible fold below is still real Terraform output, but it's runtime log text, not
+     * a reviewer-friendly summary of what's actually changing. Reads the job's structured-output
+     * context blob (the same one PlanStructuredOutputService/ApplyStructuredOutputService write
+     * to during the run) directly from storage rather than the executor's live context API,
+     * since by the time a PR comment is posted the job has already finished.
+     */
+    private Optional<String> renderStructuredChangesTable(Job job, boolean apply) {
+        try {
+            String contextJson = storageTypeService.getContext(job.getId());
+            if (contextJson == null || contextJson.isBlank()) {
+                return Optional.empty();
+            }
+
+            Map<String, Object> context = objectMapper.readValue(contextJson, new TypeReference<Map<String, Object>>() {
+            });
+            Object rawByStep = context.get(apply ? "applyStructuredOutput" : "planStructuredOutput");
+            if (!(rawByStep instanceof Map<?, ?> byStep)) {
+                return Optional.empty();
+            }
+
+            List<Map<String, Object>> changes = null;
+            for (Object rawChanges : byStep.values()) {
+                if (rawChanges instanceof List<?> list && !list.isEmpty()) {
+                    changes = (List<Map<String, Object>>) (List<?>) list;
+                    break;
+                }
+            }
+            if (changes == null) {
+                return Optional.empty();
+            }
+
+            StringBuilder table = new StringBuilder();
+            table.append("| | Resource | Action |\n");
+            table.append("|---|---|---|\n");
+            int shown = 0;
+            for (Map<String, Object> change : changes) {
+                String action = String.valueOf(change.getOrDefault("action", "unknown"));
+                if ("no-op".equals(action)) {
+                    continue;
+                }
+                if (shown >= MAX_TABLE_ROWS) {
+                    table.append("| | _").append(changes.size() - shown).append(" more resources - see full output below_ | |\n");
+                    break;
+                }
+
+                Object addressRaw = change.get("address");
+                String address = addressRaw == null ? "?" : String.valueOf(addressRaw);
+                table.append("| ").append(actionIcon(action)).append(" | `").append(address).append("` | ")
+                        .append(action).append(" |\n");
+                shown++;
+            }
+
+            return shown == 0 ? Optional.empty() : Optional.of(table.toString());
+        } catch (Exception e) {
+            log.warn("Unable to render structured changes table for job {}: {}", job.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private String actionIcon(String action) {
+        return switch (action) {
+            case "create" -> "🟢";
+            case "delete" -> "🔴";
+            case "update" -> "🔵";
+            case "replace" -> "🟠";
+            case "import" -> "⬇️";
+            default -> "⚪";
+        };
+    }
+
     private String formatPlanComment(Job job, String planOutput) {
         StringBuilder sb = new StringBuilder();
         sb.append("## Terrakube Plan Output\n\n");
@@ -326,6 +430,8 @@ public class PrCommentService {
             if (summary != null) {
                 sb.append(icon).append(" ").append(summary).append("\n\n");
             }
+
+            renderStructuredChangesTable(job, false).ifPresent(table -> sb.append(table).append("\n"));
 
             String content = planOutput;
             if (content.length() > MAX_COMMENT_LENGTH) {
@@ -364,6 +470,8 @@ public class PrCommentService {
         String icon = statusIcon(job.getStatus());
         String summary = job.getStatus() == JobStatus.completed ? "Apply complete" : "Apply failed";
         sb.append(icon).append(" ").append(summary).append("\n\n");
+
+        renderStructuredChangesTable(job, true).ifPresent(table -> sb.append(table).append("\n"));
 
         if (output != null && !output.isEmpty()) {
             String content = output;
