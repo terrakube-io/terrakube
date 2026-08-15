@@ -19,10 +19,8 @@ class ApplyStructuredOutputServiceTest {
 
     private ApplyStructuredOutputService subject() {
         return new ApplyStructuredOutputService(
-                Mockito.mock(WorkspaceSecurity.class),
-                new ObjectMapper(),
-                "http://terrakube-api",
-                Mockito.mock(TerrakubeClient.class));
+                Mockito.mock(JobContextService.class),
+                new ObjectMapper());
     }
 
     @Test
@@ -451,5 +449,293 @@ class ApplyStructuredOutputServiceTest {
         subject().resolveFinalValues(List.of(change), stateJson);
 
         assertEquals("applied", change.get("status"));
+    }
+
+    @Test
+    void neverResolvesNestedAttributesWhenParentContainerIsSensitive() {
+        // Container-level sensitivity: afterSensitive is `true` for a parent map/block,
+        // while afterUnknown contains nested field entries.
+        Map<String, Object> after = new HashMap<>();
+        after.put("input", null);
+
+        Map<String, Object> unknownInput = new HashMap<>();
+        unknownInput.put("secret_token", true);
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("input", unknownInput);
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("input", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.db_credentials");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.db_credentials",
+                          "values": {
+                            "input": {
+                              "username": "admin",
+                              "secret_token": "super-secret-password-123",
+                              "endpoint_port": 5432
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertNull(resolvedAfter.get("input"));
+
+        Map<String, Object> resolvedAfterUnknown = (Map<String, Object>) change.get("afterUnknown");
+        assertEquals(unknownInput, resolvedAfterUnknown.get("input"));
+    }
+
+    @Test
+    void neverResolvesNestedListAttributesWhenParentListIsSensitive() {
+        Map<String, Object> after = new HashMap<>();
+        after.put("items", null);
+
+        Map<String, Object> unknownItem = new HashMap<>();
+        unknownItem.put("key", true);
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("items", new ArrayList<>(List.of(unknownItem)));
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("items", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "custom_resource.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "custom_resource.example",
+                          "values": {
+                            "items": [
+                              {"key": "sensitive-item-key"}
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertNull(resolvedAfter.get("items"));
+    }
+
+    @Test
+    void sanitizesResolvedNestedSensitiveAttributesWhenLeafIsUnknown() {
+        // Leaf unknown resolving to a map containing sensitive subfields
+        Map<String, Object> after = new HashMap<>();
+        after.put("credentials", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("credentials", true);
+
+        Map<String, Object> sensitiveCredentials = new HashMap<>();
+        sensitiveCredentials.put("secret_key", true);
+        sensitiveCredentials.put("public_id", false);
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("credentials", sensitiveCredentials);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "custom_vault.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "custom_vault.example",
+                          "values": {
+                            "credentials": {
+                              "public_id": "pub-12345",
+                              "secret_key": "sec-98765"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        Map<?, ?> resolvedCredentials = (Map<?, ?>) resolvedAfter.get("credentials");
+        assertEquals("pub-12345", resolvedCredentials.get("public_id"));
+        assertNull(resolvedCredentials.get("secret_key"));
+
+        Map<String, Object> resolvedAfterUnknown = (Map<String, Object>) change.get("afterUnknown");
+        assertEquals(false, resolvedAfterUnknown.get("credentials"));
+    }
+
+    @Test
+    void sanitizesDynamicallyComputedOutputsFromStateSensitiveValues() {
+        // Plan-time had empty afterSensitive for computed output, but stateJson contains
+        // post-apply sensitive_values computed by Terraform.
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+        after.put("input", null);
+        after.put("output", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+        afterUnknown.put("input", Map.of("secret_token", true));
+        afterUnknown.put("output", true);
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("input", true);
+        afterSensitive.put("output", new HashMap<>());
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.db_credentials");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.db_credentials",
+                          "values": {
+                            "id": "130fa94e-30ad-fcd3-76ee-884a8af93d42",
+                            "input": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            },
+                            "output": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            }
+                          },
+                          "sensitive_values": {
+                            "input": true,
+                            "output": {
+                              "secret_token": true
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertEquals("130fa94e-30ad-fcd3-76ee-884a8af93d42", resolvedAfter.get("id"));
+        assertNull(resolvedAfter.get("input"));
+
+        Map<?, ?> resolvedOutput = (Map<?, ?>) resolvedAfter.get("output");
+        assertEquals("admin", resolvedOutput.get("username"));
+        assertEquals(5432, resolvedOutput.get("endpoint_port"));
+        assertNull(resolvedOutput.get("secret_token"));
+
+        Map<?, ?> resolvedSensitive = (Map<?, ?>) change.get("afterSensitive");
+        assertEquals(true, resolvedSensitive.get("input"));
+        Map<?, ?> outputSensitive = (Map<?, ?>) resolvedSensitive.get("output");
+        assertEquals(true, outputSensitive.get("secret_token"));
+    }
+
+    @Test
+    void propagatesTerraformDataInputSensitivityToOutputWhenOutputSensitivityIsEmpty() {
+        // Reproduces the exact environment scenario where terraform_data.output has empty afterSensitive {}
+        // and state.json does not mark output sensitive in sensitive_values.
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+        after.put("input", null);
+        after.put("output", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+        afterUnknown.put("input", Map.of("secret_token", true));
+        afterUnknown.put("output", true);
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("input", true);
+        afterSensitive.put("output", new HashMap<>());
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.db_credentials");
+        change.put("resourceType", "terraform_data");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.db_credentials",
+                          "values": {
+                            "id": "130fa94e-30ad-fcd3-76ee-884a8af93d42",
+                            "input": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            },
+                            "output": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            }
+                          },
+                          "sensitive_values": {
+                            "input": true
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertEquals("130fa94e-30ad-fcd3-76ee-884a8af93d42", resolvedAfter.get("id"));
+        assertNull(resolvedAfter.get("input"));
+        assertNull(resolvedAfter.get("output"));
+
+        Map<?, ?> resolvedSensitive = (Map<?, ?>) change.get("afterSensitive");
+        assertEquals(true, resolvedSensitive.get("input"));
+        assertEquals(true, resolvedSensitive.get("output"));
     }
 }
