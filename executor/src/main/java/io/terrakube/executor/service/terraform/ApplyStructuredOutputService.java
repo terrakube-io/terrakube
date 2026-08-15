@@ -168,7 +168,9 @@ public class ApplyStructuredOutputService {
 
             Object afterSensitiveRaw = change.get("afterSensitive");
             Object stateSensitiveRaw = resolvedSensitiveValuesByAddress.get(address);
-            Object mergedSensitiveRaw = mergeSensitiveMetadata(afterSensitiveRaw, stateSensitiveRaw);
+            Object mergedSensitiveRaw = normalizeResourceSensitivities(
+                    change,
+                    mergeSensitiveMetadata(afterSensitiveRaw, stateSensitiveRaw));
             change.put("afterSensitive", mergedSensitiveRaw);
 
             Map<?, ?> afterSensitive = mergedSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) mergedSensitiveRaw : Map.of();
@@ -359,6 +361,30 @@ public class ApplyStructuredOutputService {
         }
 
         return stateSensitive != null ? stateSensitive : planSensitive;
+    }
+
+    Object normalizeResourceSensitivities(Map<String, Object> change, Object sensitiveRaw) {
+        if (!(sensitiveRaw instanceof Map<?, ?> map)) {
+            return sensitiveRaw;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        map.forEach((k, v) -> result.put(String.valueOf(k), v));
+
+        Object resourceType = change.get("resourceType");
+        Object address = change.get("address");
+        if ("terraform_data".equals(resourceType) || (address instanceof String addr && addr.contains("terraform_data."))) {
+            Object inputSensitive = result.get("input");
+            Object outputSensitive = result.get("output");
+            boolean outputIsEmpty = outputSensitive == null
+                    || (outputSensitive instanceof Map<?, ?> m && m.isEmpty())
+                    || (outputSensitive instanceof List<?> l && l.isEmpty());
+            if (inputSensitive != null && !Boolean.FALSE.equals(inputSensitive) && outputIsEmpty) {
+                result.put("output", inputSensitive);
+            }
+        }
+
+        return result;
     }
 
     @SuppressWarnings("unchecked")

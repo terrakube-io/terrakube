@@ -209,8 +209,14 @@ public class PlanStructuredOutputService {
             }
             Object beforeValue = changeBlock.get("before");
             Object afterValue = changeBlock.get("after");
-            Object beforeSensitive = changeBlock.get("before_sensitive");
-            Object afterSensitive = changeBlock.get("after_sensitive");
+            Object beforeSensitive = normalizeResourceSensitivities(
+                    (String) change.get("type"),
+                    (String) change.get("address"),
+                    changeBlock.get("before_sensitive"));
+            Object afterSensitive = normalizeResourceSensitivities(
+                    (String) change.get("type"),
+                    (String) change.get("address"),
+                    changeBlock.get("after_sensitive"));
             Object changedSensitive = collectChangedSensitivePaths(
                     beforeValue,
                     afterValue,
@@ -372,6 +378,28 @@ public class PlanStructuredOutputService {
         }
 
         return "unknown";
+    }
+
+    Object normalizeResourceSensitivities(String resourceType, String address, Object sensitiveRaw) {
+        if (!(sensitiveRaw instanceof Map<?, ?> map)) {
+            return sensitiveRaw;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        map.forEach((k, v) -> result.put(String.valueOf(k), v));
+
+        if ("terraform_data".equals(resourceType) || (address != null && address.contains("terraform_data."))) {
+            Object inputSensitive = result.get("input");
+            Object outputSensitive = result.get("output");
+            boolean outputIsEmpty = outputSensitive == null
+                    || (outputSensitive instanceof Map<?, ?> m && m.isEmpty())
+                    || (outputSensitive instanceof List<?> l && l.isEmpty());
+            if (inputSensitive != null && !Boolean.FALSE.equals(inputSensitive) && outputIsEmpty) {
+                result.put("output", inputSensitive);
+            }
+        }
+
+        return result;
     }
 
     Object sanitizeSensitiveValues(Object value, Object sensitiveMetadata) {
