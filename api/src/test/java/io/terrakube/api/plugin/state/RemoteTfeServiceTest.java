@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
@@ -75,6 +76,7 @@ class RemoteTfeServiceTest {
     private final VariableRepository variableRepository = Mockito.mock(VariableRepository.class);
     private final GlobalVarRepository globalVarRepository = Mockito.mock(GlobalVarRepository.class);
     private final RbacService rbacService = Mockito.mock(RbacService.class);
+    private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
 
     @Test
     void listWorkspaceWithSearchNameUsesLoadedWorkspaceEntities() {
@@ -200,7 +202,7 @@ class RemoteTfeServiceTest {
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
-                variableRepository, globalVarRepository, rbacService);
+                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger);
     }
 
     private JwtAuthenticationToken currentUser() {
