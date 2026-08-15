@@ -7,6 +7,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableExc
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
@@ -105,6 +106,12 @@ public class ScheduleJob implements org.quartz.Job {
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
     PlatformTransactionManager transactionManager;
+    // Real job status transitions happen here via plain jobRepository.save(), never through an
+    // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
+    // them. Every save below that follows a job.setStatus(...) call is followed by a call to
+    // this so status-change notifications actually fire for real runs, not just for a job
+    // updated via a direct API PATCH.
+    JobNotificationTrigger jobNotificationTrigger;
 
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
@@ -156,6 +163,7 @@ public class ScheduleJob implements org.quartz.Job {
             try {
                 job.setStatus(JobStatus.failed);
                 jobRepository.save(job);
+                jobNotificationTrigger.notifyStatusChanged(job);
                 log.warn("Deleting Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
                 updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                 updateJobStatusOnVcs(job, JobStatus.unknown);
@@ -332,6 +340,7 @@ public class ScheduleJob implements org.quartz.Job {
                         executorService.execute(job, stepId, flow.get());
                         job.setStatus(JobStatus.queue);
                         jobRepository.save(job);
+                        jobNotificationTrigger.notifyStatusChanged(job);
                         wakeNextDispatchableJob();
                     } catch (ExecutorUnavailableException e) {
                         log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
@@ -345,6 +354,7 @@ public class ScheduleJob implements org.quartz.Job {
                         job.setStatus(JobStatus.waitingApproval);
                         job.setApprovalTeam(flow.get().getTeam());
                         jobRepository.save(job);
+                        jobNotificationTrigger.notifyStatusChanged(job);
                         log.info("Waiting Approval for Job {} Step Id {}", job.getId(), stepId);
                     } else {
                         log.info("Auto Approving is enabled for Job {} Step Id {}", job.getId(), stepId);
@@ -355,6 +365,7 @@ public class ScheduleJob implements org.quartz.Job {
                     log.warn("Disable workspace {} updating status to COMPLETED", job.getId());
                     job.setStatus(JobStatus.completed);
                     jobRepository.save(job);
+                    jobNotificationTrigger.notifyStatusChanged(job);
                     log.warn("Disable workspace scheduler for {} {}", job.getWorkspace().getId(), job.getWorkspace().getName());
                     softDeleteService.disableWorkspaceSchedules(job.getWorkspace());
                     log.warn("Update workspace deleted to true");
@@ -376,15 +387,18 @@ public class ScheduleJob implements org.quartz.Job {
                         log.info("Updating Job {} to pending to continue execution", stepId);
                         job.setStatus(JobStatus.pending);
                         jobRepository.save(job);
+                        jobNotificationTrigger.notifyStatusChanged(job);
                     } else {
                         job.setStatus(JobStatus.failed);
                         jobRepository.save(job);
+                        jobNotificationTrigger.notifyStatusChanged(job);
                     }
                     break;
                 case yamlError:
                     log.error("Terrakube Template error, please verify the template definition");
                     job.setStatus(JobStatus.failed);
                     jobRepository.save(job);
+                    jobNotificationTrigger.notifyStatusChanged(job);
                     updateJobStepsWithStatus(job.getId(), JobStatus.failed);
                     updateJobStatusOnVcs(job, JobStatus.unknown);
                     break;
@@ -436,6 +450,7 @@ public class ScheduleJob implements org.quartz.Job {
     private void completeJob(Job job) {
         job.setStatus(JobStatus.completed);
         jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
         updateJobStatusOnVcs(job, JobStatus.completed);
         postPrCommentIfNeeded(job);
         updateWorkspaceStatus(job);
@@ -502,6 +517,7 @@ public class ScheduleJob implements org.quartz.Job {
         log.error(logMessage, e);
         job.setStatus(JobStatus.failed);
         jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
         Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
         String message = String.format("Error sending to executor: %s", e.getMessage())
                 .substring(0, Math.min(e.getMessage().length(), 127));
@@ -545,6 +561,7 @@ public class ScheduleJob implements org.quartz.Job {
                 executorService.execute(job, stepId, flow.get());
                 job.setStatus(JobStatus.queue);
                 jobRepository.save(job);
+                jobNotificationTrigger.notifyStatusChanged(job);
                 wakeNextDispatchableJob();
             } catch (ExecutorUnavailableException e) {
                 log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
@@ -587,6 +604,7 @@ public class ScheduleJob implements org.quartz.Job {
         job.setStatus(JobStatus.failed);
         job.setOutput(failureMessage);
         jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
 
         try {
             String stepId = tclService.getCurrentStepId(job);

@@ -2,6 +2,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   BankOutlined,
+  BellOutlined,
   BgColorsOutlined,
   BranchesOutlined,
   CloudOutlined,
@@ -253,6 +254,7 @@ export default function AppSidebar({
           path: "actions",
           icon: <ThunderboltOutlined />,
         },
+        { key: "notifications", label: "Notifications", path: "notifications", icon: <BellOutlined /> },
       ],
     },
   ];
@@ -262,6 +264,7 @@ export default function AppSidebar({
     { key: "locking", label: "Locking", path: "locking", icon: <LockOutlined /> },
     { key: "sshkey", label: "SSH Key", path: "sshkey", icon: <KeyOutlined /> },
     { key: "webhook", label: "Webhook", path: "webhook", icon: <ApiOutlined /> },
+    { key: "notifications", label: "Notifications", path: "notifications", icon: <BellOutlined /> },
     { key: "state-shared", label: "State Shared", path: "state-shared", icon: <ShareAltOutlined /> },
     { key: "team-access", label: "Team Access", path: "team-access", icon: <TeamOutlined /> },
     { key: "advanced", label: "Destruction and Deletion", path: "advanced", icon: <DeleteOutlined /> },

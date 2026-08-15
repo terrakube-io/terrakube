@@ -58,6 +58,7 @@ import io.terrakube.api.rs.workspace.history.archive.ArchiveType;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
 import org.quartz.SchedulerException;
@@ -113,6 +114,12 @@ public class RemoteTfeService {
 
     private RbacService rbacService;
 
+    // Real job status transitions happen here via plain jobRepository.save(), never through an
+    // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
+    // them, so every status-changing save below calls this directly, same as ScheduleJob/
+    // ScheduleJobTrigger.
+    private JobNotificationTrigger jobNotificationTrigger;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -130,7 +137,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -154,6 +161,7 @@ public class RemoteTfeService {
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
+        this.jobNotificationTrigger = jobNotificationTrigger;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -808,6 +816,7 @@ public class RemoteTfeService {
         job.setPlanChanges(true);
         job.setRefreshOnly(false);
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
 
         // dummy step
         Step step = new Step();
@@ -1199,6 +1208,7 @@ public class RemoteTfeService {
         }
 
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
         log.info("Job Created");
 
         if(runsData.getData().getAttributes().get("target-addrs") != null) {
@@ -1440,6 +1450,7 @@ public class RemoteTfeService {
                 job.setTcl(cliTemplate.getTcl());
                 job.setStatus(JobStatus.pending);
                 job = jobRepository.save(job);
+                jobNotificationTrigger.notifyStatusChanged(job);
                 log.warn("Update job {} to status PENDING to continue execution", job.getId());
             }
 
@@ -1450,7 +1461,8 @@ public class RemoteTfeService {
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
-                    jobRepository.save(job);
+                    job = jobRepository.save(job);
+                    jobNotificationTrigger.notifyStatusChanged(job);
                     try {
                         scheduleJobService.createJobContextNow(job);
                     } catch (SchedulerException e) {
@@ -1475,7 +1487,8 @@ public class RemoteTfeService {
                         "User does not have permission to discard runs in this workspace");
             }
             job.setStatus(JobStatus.cancelled);
-            jobRepository.save(job);
+            job = jobRepository.save(job);
+            jobNotificationTrigger.notifyStatusChanged(job);
             scheduleJobService.deleteJobContext(job.getId());
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());

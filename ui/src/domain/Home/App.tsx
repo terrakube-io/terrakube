@@ -381,6 +381,14 @@ const App = () => {
             element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
           },
           {
+            path: "/workspaces/:id/settings/notifications",
+            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          },
+          {
+            path: "/organizations/:orgid/workspaces/:id/settings/notifications",
+            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          },
+          {
             path: "/workspaces/:id/settings/state-shared",
             element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
           },
@@ -479,6 +487,10 @@ const App = () => {
           {
             path: "/organizations/:orgid/settings/actions",
             element: <OrganizationSettings selectedTab="10" />,
+          },
+          {
+            path: "/organizations/:orgid/settings/notifications",
+            element: <OrganizationSettings selectedTab="12" />,
           },
           {
             path: "/organizations/:orgid/settings/collection",

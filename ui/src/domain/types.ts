@@ -117,6 +117,7 @@ export enum JobStatus {
   Cancelled = "cancelled",
   Failed = "failed",
   Unknown = "unknown",
+  NeverExecuted = "NeverExecuted",
 }
 
 export enum JobVia {
@@ -368,6 +369,35 @@ export type FederatedClaimAttributes = {
   claimKey: string;
   claimValue: string;
 };
+
+// Notification
+export type NotificationChannelType = "SLACK" | "TEAMS" | "WEBHOOK";
+export type NotificationMessageStyle = "DETAILED" | "SIMPLE";
+
+export type NotificationConfiguration = {
+  id: string;
+  attributes: NotificationConfigurationAttributes;
+  relationships?: {
+    workspace?: { data: { id: string } | null };
+  };
+};
+export type NotificationConfigurationAttributes = {
+  name: string;
+  description?: string;
+  channelType: NotificationChannelType;
+  destinationUrl: string;
+  signingSecret?: string;
+  active: boolean;
+  messageStyle?: NotificationMessageStyle;
+};
+export type NotificationTrigger = {
+  id: string;
+  attributes: NotificationTriggerAttributes;
+};
+export type NotificationTriggerAttributes = {
+  jobStatus: JobStatus;
+};
+
 export type ApiWorkspaceTag = {
   id: string;
   attributes: {
