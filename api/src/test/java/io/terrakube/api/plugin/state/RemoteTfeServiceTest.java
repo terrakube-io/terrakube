@@ -162,6 +162,41 @@ class RemoteTfeServiceTest {
         verify(rbacService).canApproveJob(team);
     }
 
+    @Test
+    void listWorkspaceExposesVersionConstraintAsLatestForTfeCompatibility() {
+        RemoteTfeService service = remoteTfeService();
+        JwtAuthenticationToken currentUser = currentUser();
+        Organization organization = organization("sample-org");
+        Workspace constrained = workspace("constrained", organization);
+        constrained.setTerraformVersion(">= 1.12.5");
+        when(teamTokenService.getCurrentGroups(currentUser)).thenReturn(Collections.emptyList());
+        when(workspaceRepository.findWorkspacesByOrganizationNameAndNameStartingWith("sample-org", "constrained"))
+                .thenReturn(Optional.of(List.of(constrained)));
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
+                .thenReturn(Optional.empty());
+
+        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("constrained"), currentUser);
+
+        assertEquals("latest", result.getData().get(0).getAttributes().get("terraform-version"));
+    }
+
+    @Test
+    void listWorkspaceKeepsExactVersionUnchanged() {
+        RemoteTfeService service = remoteTfeService();
+        JwtAuthenticationToken currentUser = currentUser();
+        Organization organization = organization("sample-org");
+        Workspace exact = workspace("exact", organization);
+        when(teamTokenService.getCurrentGroups(currentUser)).thenReturn(Collections.emptyList());
+        when(workspaceRepository.findWorkspacesByOrganizationNameAndNameStartingWith("sample-org", "exact"))
+                .thenReturn(Optional.of(List.of(exact)));
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
+                .thenReturn(Optional.empty());
+
+        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("exact"), currentUser);
+
+        assertEquals("1.6.0", result.getData().get(0).getAttributes().get("terraform-version"));
+    }
+
     private RemoteTfeService remoteTfeService() {
         return new RemoteTfeService(jobRepository, contentRepository, organizationRepository, workspaceRepository,
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,

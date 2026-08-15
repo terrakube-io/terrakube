@@ -75,6 +75,7 @@ import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -114,6 +115,9 @@ public class RemoteTfeService {
 
     private RbacService rbacService;
 
+    private static final String LATEST_TERRAFORM_VERSION = "latest";
+
+    private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     // Real job status transitions happen here via plain jobRepository.save(), never through an
     // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
     // them, so every status-changing save below calls this directly, same as ScheduleJob/
@@ -437,6 +441,16 @@ public class RemoteTfeService {
         return getWorkspace(workspace, otherAttributes, currentUser);
     }
 
+    // The Terraform/OpenTofu CLI remote backend parses this attribute as a strict version for any state operation
+    // and errors on constraints like ">= 1.12.5"; "latest" is the only non-exact value it tolerates.
+    private String toExposedTerraformVersion(String terraformVersion) {
+        if (terraformVersion == null || terraformVersion.isBlank() || LATEST_TERRAFORM_VERSION.equalsIgnoreCase(terraformVersion)) {
+            return terraformVersion;
+        }
+        String trimmed = terraformVersion.trim();
+        return EXACT_TERRAFORM_VERSION_PATTERN.matcher(trimmed).matches() ? trimmed : LATEST_TERRAFORM_VERSION;
+    }
+
     WorkspaceData getWorkspace(Workspace workspace, Map<String, Object> otherAttributes,
                                JwtAuthenticationToken currentUser) {
         if (workspace != null) {
@@ -449,7 +463,7 @@ public class RemoteTfeService {
             workspaceModel.setType("workspaces");
             Map<String, Object> attributes = new HashMap<>();
             attributes.put("name", workspace.getName());
-            attributes.put("terraform-version", workspace.getTerraformVersion());
+            attributes.put("terraform-version", toExposedTerraformVersion(workspace.getTerraformVersion()));
             attributes.put("locked", workspace.isLocked());
             attributes.put("auto-apply", false);
             attributes.put("execution-mode", workspace.getExecutionMode());
