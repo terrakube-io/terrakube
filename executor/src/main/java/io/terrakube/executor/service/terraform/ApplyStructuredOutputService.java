@@ -169,22 +169,120 @@ public class ApplyStructuredOutputService {
             Map<?, ?> afterSensitive = afterSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) afterSensitiveRaw : Map.of();
 
             Map<String, Object> mutableAfter = (Map<String, Object>) after;
-            afterUnknown.forEach((key, isUnknown) -> {
-                if (!Boolean.TRUE.equals(isUnknown) || !resolvedMap.containsKey(key)) {
-                    return;
-                }
+            Map<Object, Object> mutableAfterUnknown = (Map<Object, Object>) afterUnknown;
 
-                // Never let a resolved sensitive value leave the executor process, mirroring
-                // PlanStructuredOutputService's sanitize-before-send precedent - the UI already
-                // renders this as "sensitive value" either way, so leaving it redacted here has
-                // no visible effect except keeping the real value off the wire entirely.
-                if (Boolean.TRUE.equals(afterSensitive.get(key))) {
-                    return;
-                }
-
-                mutableAfter.put(String.valueOf(key), resolvedMap.get(key));
-            });
+            // Walks every key of the resource's afterUnknown, not just ones that are themselves
+            // `true` - an unknown value nested inside a block or list item (one attribute of a
+            // network_interface list entry, say) has its own true/false/nested marker several
+            // levels down, not at this top level, and previously never got resolved here at all.
+            for (Object key : new ArrayList<>(mutableAfterUnknown.keySet())) {
+                Object resolvedNewUnknown = resolveUnknownRecursive(
+                        mutableAfterUnknown.get(key),
+                        mapSlot(mutableAfter, key),
+                        resolvedMap.get(key),
+                        afterSensitive.get(key));
+                mutableAfterUnknown.put(key, resolvedNewUnknown);
+            }
         }
+    }
+
+    /**
+     * Resolves unknown values anywhere within a resource's after/afterUnknown structure - not
+     * just at the top level - by walking afterUnknown's shape (which Terraform mirrors exactly
+     * against after/afterSensitive: booleans at leaves, nested maps/lists everywhere a block or
+     * collection attribute exists) and, at each `true` leaf, splicing the matching real value
+     * from post-apply state into `after` via the given slot. Returns the same shape with
+     * resolved leaves flipped to `false`, for the caller to store back as the new afterUnknown.
+     */
+    @SuppressWarnings("unchecked")
+    private Object resolveUnknownRecursive(Object afterUnknownNode, ValueSlot afterSlot, Object resolvedNode, Object afterSensitiveNode) {
+        if (Boolean.TRUE.equals(afterUnknownNode)) {
+            // Never let a resolved sensitive value leave the executor process, mirroring
+            // PlanStructuredOutputService's sanitize-before-send precedent - the UI already
+            // renders this as "sensitive value" either way, so leaving it redacted here has no
+            // visible effect except keeping the real value off the wire entirely. Also leaves a
+            // leaf unresolved (rather than defaulting to something) when state has nothing for
+            // it - shouldn't normally happen, but silently keeping "unknown" beats guessing.
+            if (Boolean.TRUE.equals(afterSensitiveNode) || resolvedNode == null) {
+                return afterUnknownNode;
+            }
+
+            afterSlot.set(resolvedNode);
+            return false;
+        }
+
+        if (afterUnknownNode instanceof Map<?, ?> unknownMap) {
+            Object currentAfter = afterSlot.get();
+            Map<String, Object> afterMap = currentAfter instanceof Map<?, ?> existing
+                    ? new HashMap<>((Map<String, Object>) existing)
+                    : new HashMap<>();
+            Map<?, ?> resolvedMapNode = resolvedNode instanceof Map<?, ?> resolvedMapValue ? resolvedMapValue : Map.of();
+            Map<?, ?> sensitiveMapNode = afterSensitiveNode instanceof Map<?, ?> sensitiveMapValue ? sensitiveMapValue : Map.of();
+
+            Map<Object, Object> newUnknownMap = new HashMap<>();
+            for (Map.Entry<?, ?> entry : unknownMap.entrySet()) {
+                Object key = entry.getKey();
+                newUnknownMap.put(key, resolveUnknownRecursive(
+                        entry.getValue(), mapSlot(afterMap, key), resolvedMapNode.get(key), sensitiveMapNode.get(key)));
+            }
+            afterSlot.set(afterMap);
+            return newUnknownMap;
+        }
+
+        if (afterUnknownNode instanceof List<?> unknownList) {
+            Object currentAfter = afterSlot.get();
+            List<Object> afterList = currentAfter instanceof List<?> existing ? new ArrayList<>(existing) : new ArrayList<>();
+            while (afterList.size() < unknownList.size()) {
+                afterList.add(null);
+            }
+            List<?> resolvedListNode = resolvedNode instanceof List<?> resolvedListValue ? resolvedListValue : List.of();
+            List<?> sensitiveListNode = afterSensitiveNode instanceof List<?> sensitiveListValue ? sensitiveListValue : List.of();
+
+            List<Object> newUnknownList = new ArrayList<>();
+            for (int index = 0; index < unknownList.size(); index++) {
+                Object resolvedChild = index < resolvedListNode.size() ? resolvedListNode.get(index) : null;
+                Object sensitiveChild = index < sensitiveListNode.size() ? sensitiveListNode.get(index) : null;
+                newUnknownList.add(resolveUnknownRecursive(
+                        unknownList.get(index), listSlot(afterList, index), resolvedChild, sensitiveChild));
+            }
+            afterSlot.set(afterList);
+            return newUnknownList;
+        }
+
+        // afterUnknown is `false` (already known at plan time) or some other non-boolean,
+        // non-container shape this format doesn't define - nothing to resolve either way.
+        return afterUnknownNode;
+    }
+
+    /** A single addressable position inside `after` - either a map entry or a list index. */
+    private interface ValueSlot {
+        Object get();
+        void set(Object value);
+    }
+
+    private static ValueSlot mapSlot(Map<String, Object> map, Object key) {
+        String stringKey = String.valueOf(key);
+        return new ValueSlot() {
+            public Object get() {
+                return map.get(stringKey);
+            }
+            public void set(Object value) {
+                map.put(stringKey, value);
+            }
+        };
+    }
+
+    private static ValueSlot listSlot(List<Object> list, int index) {
+        return new ValueSlot() {
+            public Object get() {
+                return index < list.size() ? list.get(index) : null;
+            }
+            public void set(Object value) {
+                if (index < list.size()) {
+                    list.set(index, value);
+                }
+            }
+        };
     }
 
     @SuppressWarnings("unchecked")

@@ -6,6 +6,7 @@ import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -142,6 +143,45 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
+    void clearsTheAfterUnknownFlagOnceAnAttributeIsResolved() {
+        // The UI's diff renderer decides whether to show the "(known after apply)" placeholder
+        // purely from this flag (see structuredPlan.ts / StructuredPlanOutput.tsx's
+        // `afterUnknown === true` check) rather than from whether `after` itself is still null -
+        // so leaving the flag at `true` here left the placeholder stuck forever even once the
+        // real value had been resolved into `after` below.
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.example",
+                          "values": {"id": "4cdc25f5-37c5"}
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfterUnknown = (Map<String, Object>) change.get("afterUnknown");
+        assertEquals(false, resolvedAfterUnknown.get("id"));
+    }
+
+    @Test
     void neverResolvesASensitiveUnknownAttributeToItsRealValue() {
         Map<String, Object> after = new HashMap<>();
         after.put("result", null);
@@ -177,6 +217,163 @@ class ApplyStructuredOutputServiceTest {
 
         Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
         assertNull(resolvedAfter.get("result"));
+    }
+
+    @Test
+    void resolvesAnUnknownAttributeNestedInsideAListOfObjects() {
+        // Terraform's afterUnknown mirrors after's exact shape - a list attribute's unknown-ness
+        // is a parallel list of per-item markers, not a single top-level boolean - so an unknown
+        // value on just one field of one list entry (network_ip here) previously never resolved:
+        // the old top-level-only loop only ever looked at afterUnknown's direct keys, and
+        // "network_interface" itself is never `true` when only a field inside it is unknown.
+        Map<String, Object> networkInterface = new HashMap<>();
+        networkInterface.put("device_index", 0);
+        networkInterface.put("network_ip", null);
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("network_interface", new ArrayList<>(List.of(networkInterface)));
+
+        Map<String, Object> unknownInterfaceEntry = new HashMap<>();
+        unknownInterfaceEntry.put("network_ip", true);
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("network_interface", new ArrayList<>(List.of(unknownInterfaceEntry)));
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "google_compute_instance.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "google_compute_instance.example",
+                          "values": {
+                            "network_interface": [
+                              {"device_index": 0, "network_ip": "10.0.0.5"}
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        List<?> interfaces = (List<?>) resolvedAfter.get("network_interface");
+        Map<?, ?> resolvedInterface = (Map<?, ?>) interfaces.get(0);
+        assertEquals("10.0.0.5", resolvedInterface.get("network_ip"));
+        assertEquals(0, resolvedInterface.get("device_index"));
+
+        Map<?, ?> resolvedAfterUnknown = (Map<?, ?>) change.get("afterUnknown");
+        List<?> unknownInterfaces = (List<?>) resolvedAfterUnknown.get("network_interface");
+        Map<?, ?> resolvedUnknownInterface = (Map<?, ?>) unknownInterfaces.get(0);
+        assertEquals(false, resolvedUnknownInterface.get("network_ip"));
+    }
+
+    @Test
+    void resolvesAnUnknownAttributeNestedInsideAMap() {
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("region", "us-east-1");
+        settings.put("generated_name", null);
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("settings", settings);
+
+        Map<String, Object> unknownSettings = new HashMap<>();
+        unknownSettings.put("generated_name", true);
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("settings", unknownSettings);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "aws_thing.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "aws_thing.example",
+                          "values": {
+                            "settings": {"region": "us-east-1", "generated_name": "thing-8f2c1"}
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        Map<?, ?> resolvedSettings = (Map<?, ?>) resolvedAfter.get("settings");
+        assertEquals("thing-8f2c1", resolvedSettings.get("generated_name"));
+        assertEquals("us-east-1", resolvedSettings.get("region"));
+
+        Map<?, ?> resolvedAfterUnknown = (Map<?, ?>) change.get("afterUnknown");
+        Map<?, ?> resolvedUnknownSettings = (Map<?, ?>) resolvedAfterUnknown.get("settings");
+        assertEquals(false, resolvedUnknownSettings.get("generated_name"));
+    }
+
+    @Test
+    void neverResolvesANestedSensitiveUnknownAttribute() {
+        Map<String, Object> credentials = new HashMap<>();
+        credentials.put("token", null);
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("credentials", credentials);
+
+        Map<String, Object> unknownCredentials = new HashMap<>();
+        unknownCredentials.put("token", true);
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("credentials", unknownCredentials);
+
+        Map<String, Object> sensitiveCredentials = new HashMap<>();
+        sensitiveCredentials.put("token", true);
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("credentials", sensitiveCredentials);
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "vendor_thing.example");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "vendor_thing.example",
+                          "values": {
+                            "credentials": {"token": "top-secret-real-token"}
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        Map<?, ?> resolvedCredentials = (Map<?, ?>) resolvedAfter.get("credentials");
+        assertNull(resolvedCredentials.get("token"));
+
+        Map<?, ?> resolvedAfterUnknown = (Map<?, ?>) change.get("afterUnknown");
+        Map<?, ?> resolvedUnknownCredentials = (Map<?, ?>) resolvedAfterUnknown.get("credentials");
+        assertEquals(true, resolvedUnknownCredentials.get("token"));
     }
 
     @Test
