@@ -196,6 +196,11 @@ public class ApplyStructuredOutputService {
      */
     @SuppressWarnings("unchecked")
     private Object resolveUnknownRecursive(Object afterUnknownNode, ValueSlot afterSlot, Object resolvedNode, Object afterSensitiveNode) {
+        if (Boolean.TRUE.equals(afterSensitiveNode)) {
+            // If the container or leaf is marked sensitive, never resolve it to plaintext.
+            return afterUnknownNode;
+        }
+
         if (Boolean.TRUE.equals(afterUnknownNode)) {
             // Never let a resolved sensitive value leave the executor process, mirroring
             // PlanStructuredOutputService's sanitize-before-send precedent - the UI already
@@ -203,11 +208,11 @@ public class ApplyStructuredOutputService {
             // visible effect except keeping the real value off the wire entirely. Also leaves a
             // leaf unresolved (rather than defaulting to something) when state has nothing for
             // it - shouldn't normally happen, but silently keeping "unknown" beats guessing.
-            if (Boolean.TRUE.equals(afterSensitiveNode) || resolvedNode == null) {
+            if (resolvedNode == null) {
                 return afterUnknownNode;
             }
 
-            afterSlot.set(resolvedNode);
+            afterSlot.set(sanitizeSensitiveValues(resolvedNode, afterSensitiveNode));
             return false;
         }
 
@@ -252,6 +257,36 @@ public class ApplyStructuredOutputService {
         // afterUnknown is `false` (already known at plan time) or some other non-boolean,
         // non-container shape this format doesn't define - nothing to resolve either way.
         return afterUnknownNode;
+    }
+
+    Object sanitizeSensitiveValues(Object value, Object sensitiveMetadata) {
+        if (Boolean.TRUE.equals(sensitiveMetadata)) {
+            return null;
+        }
+
+        if (value instanceof Map<?, ?> valueMap) {
+            Map<String, Object> sanitizedMap = new HashMap<>();
+            Map<?, ?> sensitiveMap = sensitiveMetadata instanceof Map<?, ?> ? (Map<?, ?>) sensitiveMetadata : Map.of();
+
+            valueMap.forEach((key, entryValue) -> sanitizedMap.put(
+                    String.valueOf(key),
+                    sanitizeSensitiveValues(entryValue, sensitiveMap.get(key))));
+            return sanitizedMap;
+        }
+
+        if (value instanceof List<?> valueList) {
+            List<?> sensitiveList = sensitiveMetadata instanceof List<?> ? (List<?>) sensitiveMetadata : List.of();
+            List<Object> sanitizedList = new ArrayList<>();
+
+            for (int index = 0; index < valueList.size(); index++) {
+                Object sensitiveEntry = index < sensitiveList.size() ? sensitiveList.get(index) : null;
+                sanitizedList.add(sanitizeSensitiveValues(valueList.get(index), sensitiveEntry));
+            }
+
+            return sanitizedList;
+        }
+
+        return value;
     }
 
     /** A single addressable position inside `after` - either a map entry or a list index. */
