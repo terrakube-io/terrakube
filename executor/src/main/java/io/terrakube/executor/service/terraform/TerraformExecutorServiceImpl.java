@@ -303,9 +303,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 if (scriptBeforeSuccess) {
                     TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory);
-                    terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
+                    boolean planFileDownloaded = terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
                             terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
-                            terraformWorkingDir) ? new HashMap<>() : terraformParameters));
+                            terraformWorkingDir);
+                    terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
@@ -314,10 +315,22 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     // apply -json's event stream only ever carries terse per-resource one-liners
                     // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
                     // plus the final change-summary line - unlike plan(), which appends
-                    // getPlanAsHumanText's classic rendered diff, apply never appends anything
-                    // resembling a `terraform show`/CLI-style closing readout, so the console ends
-                    // abruptly with no Outputs: section. Must run before waitForStreamCompletion
-                    // below, same reasoning as plan()'s human-readable diff append.
+                    // getPlanAsHumanText's classic rendered diff, apply never appended anything
+                    // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
+                    // append (same reasoning: must run before waitForStreamCompletion below), just
+                    // rendered from the plan file apply already downloaded above instead of one it
+                    // computed itself - real `terraform apply <planfile>` reprints this same diff
+                    // before executing it, so this restores that content even though Terrakube
+                    // renders it after the resource-by-resource lines rather than before.
+                    if (execution && planFileDownloaded) {
+                        String humanReadablePlan = planStructuredOutputService.getPlanAsHumanText(terraformJob, terraformWorkingDir);
+                        if (humanReadablePlan != null && !humanReadablePlan.isBlank()) {
+                            for (String line : humanReadablePlan.split("\n", -1)) {
+                                applyOutput.accept(line);
+                            }
+                        }
+                    }
+
                     if (execution) {
                         appendHumanReadableOutputs(terraformJob, applyOutput);
                     }

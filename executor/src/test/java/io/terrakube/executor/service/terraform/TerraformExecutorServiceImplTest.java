@@ -190,6 +190,63 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.getOutputLog().contains("foo = \"bar\""));
     }
 
+    // Real `terraform apply <planfile>` reprints the plan's classic HCL diff before executing it -
+    // apply -json never does, since -json mode has no such event. When apply is running from a
+    // downloaded plan file (the normal plan-then-apply workflow), the console should get that same
+    // diff back via getPlanAsHumanText, mirroring plan()'s own append.
+    @Test
+    void appendsHumanReadablePlanDiffWhenApplyingFromDownloadedPlanFile() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformState.downloadTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
+                .thenReturn(true);
+        when(planStructuredOutputService.getPlanAsHumanText(eq(terraformJob), any(File.class)))
+                .thenReturn("-/+ resource \"random_pet\" \"this\" {\n      ~ id = \"a\" -> (known after apply)\n    }");
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        assertTrue(result.getOutputLog().contains("-/+ resource \"random_pet\" \"this\" {"));
+        assertTrue(result.getOutputLog().contains("~ id = \"a\" -> (known after apply)"));
+    }
+
+    // No plan file means apply ran directly against HCL (e.g. a Destroy-workflow-style apply with
+    // no prior plan step) - there's no saved plan for getPlanAsHumanText to render, so it must not
+    // be called at all rather than rendering stale/empty content.
+    @Test
+    void doesNotRenderPlanDiffWhenNoPlanFileWasDownloaded() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformState.downloadTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
+                .thenReturn(false);
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.apply(terraformJob, tempDir.toFile());
+
+        verify(planStructuredOutputService, never()).getPlanAsHumanText(any(), any());
+    }
+
     @Test
     void doesNotAppendOutputsToConsoleWhenApplyItselfFailed() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
