@@ -123,6 +123,7 @@ public class ApplyStructuredOutputService {
     @SuppressWarnings("unchecked")
     void resolveFinalValues(List<Map<String, Object>> changes, String stateJson) {
         Map<String, Object> resolvedValuesByAddress = new HashMap<>();
+        Map<String, Object> resolvedSensitiveValuesByAddress = new HashMap<>();
         try {
             Map<String, Object> state = objectMapper.readValue(stateJson, new TypeReference<>() {
             });
@@ -130,7 +131,7 @@ public class ApplyStructuredOutputService {
             if (valuesRaw instanceof Map<?, ?> values) {
                 Object rootModuleRaw = values.get("root_module");
                 if (rootModuleRaw instanceof Map<?, ?> rootModule) {
-                    collectResourceValues((Map<String, Object>) rootModule, resolvedValuesByAddress);
+                    collectResourceValues((Map<String, Object>) rootModule, resolvedValuesByAddress, resolvedSensitiveValuesByAddress);
                 }
             }
         } catch (Exception e) {
@@ -166,7 +167,11 @@ public class ApplyStructuredOutputService {
             }
 
             Object afterSensitiveRaw = change.get("afterSensitive");
-            Map<?, ?> afterSensitive = afterSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) afterSensitiveRaw : Map.of();
+            Object stateSensitiveRaw = resolvedSensitiveValuesByAddress.get(address);
+            Object mergedSensitiveRaw = mergeSensitiveMetadata(afterSensitiveRaw, stateSensitiveRaw);
+            change.put("afterSensitive", mergedSensitiveRaw);
+
+            Map<?, ?> afterSensitive = mergedSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) mergedSensitiveRaw : Map.of();
 
             Map<String, Object> mutableAfter = (Map<String, Object>) after;
             Map<Object, Object> mutableAfterUnknown = (Map<Object, Object>) afterUnknown;
@@ -176,11 +181,12 @@ public class ApplyStructuredOutputService {
             // network_interface list entry, say) has its own true/false/nested marker several
             // levels down, not at this top level, and previously never got resolved here at all.
             for (Object key : new ArrayList<>(mutableAfterUnknown.keySet())) {
+                Object sensitiveChild = Boolean.TRUE.equals(mergedSensitiveRaw) ? Boolean.TRUE : afterSensitive.get(key);
                 Object resolvedNewUnknown = resolveUnknownRecursive(
                         mutableAfterUnknown.get(key),
                         mapSlot(mutableAfter, key),
                         resolvedMap.get(key),
-                        afterSensitive.get(key));
+                        sensitiveChild);
                 mutableAfterUnknown.put(key, resolvedNewUnknown);
             }
         }
@@ -320,8 +326,46 @@ public class ApplyStructuredOutputService {
         };
     }
 
+    Object mergeSensitiveMetadata(Object planSensitive, Object stateSensitive) {
+        if (Boolean.TRUE.equals(planSensitive) || Boolean.TRUE.equals(stateSensitive)) {
+            return true;
+        }
+
+        if (planSensitive instanceof Map<?, ?> || stateSensitive instanceof Map<?, ?>) {
+            Map<String, Object> merged = new HashMap<>();
+            if (planSensitive instanceof Map<?, ?> planMap) {
+                planMap.forEach((k, v) -> merged.put(String.valueOf(k), v));
+            }
+            if (stateSensitive instanceof Map<?, ?> stateMap) {
+                stateMap.forEach((k, v) -> {
+                    String stringKey = String.valueOf(k);
+                    merged.put(stringKey, mergeSensitiveMetadata(merged.get(stringKey), v));
+                });
+            }
+            return merged;
+        }
+
+        if (planSensitive instanceof List<?> || stateSensitive instanceof List<?>) {
+            List<?> planList = planSensitive instanceof List<?> list ? list : List.of();
+            List<?> stateList = stateSensitive instanceof List<?> list ? list : List.of();
+            int maxLength = Math.max(planList.size(), stateList.size());
+            List<Object> merged = new ArrayList<>();
+            for (int i = 0; i < maxLength; i++) {
+                Object planVal = i < planList.size() ? planList.get(i) : null;
+                Object stateVal = i < stateList.size() ? stateList.get(i) : null;
+                merged.add(mergeSensitiveMetadata(planVal, stateVal));
+            }
+            return merged;
+        }
+
+        return stateSensitive != null ? stateSensitive : planSensitive;
+    }
+
     @SuppressWarnings("unchecked")
-    private void collectResourceValues(Map<String, Object> module, Map<String, Object> resolvedValuesByAddress) {
+    private void collectResourceValues(
+            Map<String, Object> module,
+            Map<String, Object> resolvedValuesByAddress,
+            Map<String, Object> resolvedSensitiveValuesByAddress) {
         Object resourcesRaw = module.get("resources");
         if (resourcesRaw instanceof List<?> resources) {
             for (Object resourceRaw : resources) {
@@ -331,8 +375,12 @@ public class ApplyStructuredOutputService {
 
                 Object address = resource.get("address");
                 Object values = resource.get("values");
+                Object sensitiveValues = resource.get("sensitive_values");
                 if (address instanceof String addressString && values instanceof Map<?, ?>) {
                     resolvedValuesByAddress.put(addressString, values);
+                    if (sensitiveValues != null) {
+                        resolvedSensitiveValuesByAddress.put(addressString, sensitiveValues);
+                    }
                 }
             }
         }
@@ -341,7 +389,7 @@ public class ApplyStructuredOutputService {
         if (childModulesRaw instanceof List<?> childModules) {
             for (Object childModuleRaw : childModules) {
                 if (childModuleRaw instanceof Map<?, ?> childModule) {
-                    collectResourceValues((Map<String, Object>) childModule, resolvedValuesByAddress);
+                    collectResourceValues((Map<String, Object>) childModule, resolvedValuesByAddress, resolvedSensitiveValuesByAddress);
                 }
             }
         }

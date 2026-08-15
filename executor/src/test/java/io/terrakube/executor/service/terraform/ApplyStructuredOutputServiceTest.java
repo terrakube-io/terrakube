@@ -599,4 +599,78 @@ class ApplyStructuredOutputServiceTest {
         Map<String, Object> resolvedAfterUnknown = (Map<String, Object>) change.get("afterUnknown");
         assertEquals(false, resolvedAfterUnknown.get("credentials"));
     }
+
+    @Test
+    void sanitizesDynamicallyComputedOutputsFromStateSensitiveValues() {
+        // Plan-time had empty afterSensitive for computed output, but stateJson contains
+        // post-apply sensitive_values computed by Terraform.
+        Map<String, Object> after = new HashMap<>();
+        after.put("id", null);
+        after.put("input", null);
+        after.put("output", null);
+
+        Map<String, Object> afterUnknown = new HashMap<>();
+        afterUnknown.put("id", true);
+        afterUnknown.put("input", Map.of("secret_token", true));
+        afterUnknown.put("output", true);
+
+        Map<String, Object> afterSensitive = new HashMap<>();
+        afterSensitive.put("input", true);
+        afterSensitive.put("output", new HashMap<>());
+
+        Map<String, Object> change = new HashMap<>();
+        change.put("address", "terraform_data.db_credentials");
+        change.put("after", after);
+        change.put("afterUnknown", afterUnknown);
+        change.put("afterSensitive", afterSensitive);
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        {
+                          "address": "terraform_data.db_credentials",
+                          "values": {
+                            "id": "130fa94e-30ad-fcd3-76ee-884a8af93d42",
+                            "input": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            },
+                            "output": {
+                              "endpoint_port": 5432,
+                              "secret_token": "super-secret-password-123",
+                              "username": "admin"
+                            }
+                          },
+                          "sensitive_values": {
+                            "input": true,
+                            "output": {
+                              "secret_token": true
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(change), stateJson);
+
+        Map<String, Object> resolvedAfter = (Map<String, Object>) change.get("after");
+        assertEquals("130fa94e-30ad-fcd3-76ee-884a8af93d42", resolvedAfter.get("id"));
+        assertNull(resolvedAfter.get("input"));
+
+        Map<?, ?> resolvedOutput = (Map<?, ?>) resolvedAfter.get("output");
+        assertEquals("admin", resolvedOutput.get("username"));
+        assertEquals(5432, resolvedOutput.get("endpoint_port"));
+        assertNull(resolvedOutput.get("secret_token"));
+
+        Map<?, ?> resolvedSensitive = (Map<?, ?>) change.get("afterSensitive");
+        assertEquals(true, resolvedSensitive.get("input"));
+        Map<?, ?> outputSensitive = (Map<?, ?>) resolvedSensitive.get("output");
+        assertEquals(true, outputSensitive.get("secret_token"));
+    }
 }
