@@ -876,6 +876,7 @@ export const WorkspaceDetails = ({
                   <CreateJob
                     changeJob={changeJob}
                     planJob={planJob}
+                    resources={resources}
                     disabledReason={
                       workspace.attributes.source === "empty" &&
                       workspace.attributes.branch === "remote-content"

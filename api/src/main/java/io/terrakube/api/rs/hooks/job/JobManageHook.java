@@ -6,7 +6,10 @@ import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
 import io.terrakube.api.plugin.subscription.JobStatusPublisher;
+import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.job.address.Address;
+import io.terrakube.api.rs.job.address.AddressType;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
@@ -16,6 +19,7 @@ import org.quartz.SchedulerException;
 
 import java.text.ParseException;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -25,6 +29,7 @@ public class JobManageHook implements LifeCycleHook<Job> {
     private ScheduleJobService scheduleJobService;
     private WorkspaceRepository workspaceRepository;
     private JobStatusPublisher jobStatusPublisher;
+    private AddressRepository addressRepository;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation, LifeCycleHookBinding.TransactionPhase transactionPhase, Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
@@ -32,6 +37,8 @@ public class JobManageHook implements LifeCycleHook<Job> {
         try {
             switch (operation){
                 case CREATE:
+                    createAddresses(job, job.getTargetAddrs(), AddressType.TARGET);
+                    createAddresses(job, job.getReplaceAddrs(), AddressType.REPLACE);
                     updateWorkspaceStatus(job);
                     scheduleJobService.createJobContext(job);
                     publishStatus(job);
@@ -57,6 +64,26 @@ public class JobManageHook implements LifeCycleHook<Job> {
 
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());
+        }
+    }
+
+    private void createAddresses(Job job, List<String> addressNames, AddressType type) {
+        if (addressNames == null) {
+            return;
+        }
+        for (String addressName : addressNames) {
+            if (addressName == null || addressName.isBlank()) {
+                continue;
+            }
+            Address address = new Address();
+            address.setName(addressName.trim());
+            address.setType(type);
+            address.setJob(job);
+            try {
+                addressRepository.save(address);
+            } catch (RuntimeException e) {
+                log.error("Failed to save {} address {} for job {}: {}", type, addressName, job.getId(), e.getMessage());
+            }
         }
     }
 

@@ -21,6 +21,7 @@ import org.hibernate.annotations.SQLRestriction;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -139,6 +140,18 @@ public class Job extends GenericAuditFields {
 
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Address> address;
+
+    // Requested target/replace resource addresses as submitted on job creation. Consumed by
+    // JobManageHook to create the corresponding Address rows (see the `address` relationship
+    // above), which is what ExecutorService actually reads to build the terraform CLI flags -
+    // these columns are a record of what was requested, not the operational source of truth.
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "target_addrs")
+    private List<String> targetAddrs;
+
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "replace_addrs")
+    private List<String> replaceAddrs;
 
 }
 

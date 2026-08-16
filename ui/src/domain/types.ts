@@ -541,6 +541,7 @@ export type Resource = {
   name: string;
   provider: string;
   type: string;
+  module?: string;
   values: Record<string, any>;
   depends_on: string;
   showDrawer: (data: Resource) => void;

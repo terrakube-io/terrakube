@@ -1,10 +1,37 @@
 import { AxiosInstance } from "axios";
 import { DateTime } from "luxon";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import { FlatJob, FlatJobHistory, FlatVariable, Schedule, Template, VcsType, StateOutputValue } from "../types";
+import {
+  FlatJob,
+  FlatJobHistory,
+  FlatVariable,
+  Resource,
+  Schedule,
+  Template,
+  VcsType,
+  StateOutputValue,
+} from "../types";
 import { getIaCNameById } from "./Workspaces";
 
 export type StateOutputVariableWithName = { name: string } & StateOutputValue;
+
+// parseState/parseOldState mark root-module resources with module: "root_module" (not a real
+// terraform address prefix), while child-module resources carry the module's actual address
+// (e.g. "module.foo"). Reconstructs the full terraform resource address either way.
+export function getResourceAddress(resource: Resource): string {
+  const typeAndName = `${resource.type}.${resource.name}`;
+  return resource.module && resource.module !== "root_module" ? `${resource.module}.${typeAndName}` : typeAndName;
+}
+
+// Sorted alphabetically so a dropdown built from these options is browsable, not just
+// searchable - state-parse order is otherwise root-module-first then per-module insertion
+// order, which is meaningless to a user scanning the list.
+export function buildResourceOptions(resources: Resource[]): { value: string; label: string }[] {
+  return resources
+    .map((resource) => getResourceAddress(resource))
+    .sort((a, b) => a.localeCompare(b))
+    .map((address) => ({ value: address, label: address }));
+}
 
 export const include = {
   VARIABLE: "variable",
