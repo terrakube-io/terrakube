@@ -119,9 +119,12 @@
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
+  position: relative;
+  z-index: 1;
 }
 
 .organization-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -139,7 +142,13 @@
   background: var(--tk-fill-secondary);
 }
 
-.organization-row:focus-visible,
+.organization-row-link {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.organization-row-link:focus-visible,
 .organization-sortable-header:focus-visible {
   outline: 2px solid #1890ff;
   outline-offset: -2px;

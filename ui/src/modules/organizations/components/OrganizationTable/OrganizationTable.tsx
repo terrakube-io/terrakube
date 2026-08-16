@@ -1,7 +1,7 @@
 import { Input, Typography, Pagination } from "antd";
 import { CaretUpOutlined, CaretDownOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { OrganizationModel } from "../../types";
 import { parseIconField, getOrgIcon } from "../../utils/orgIcon";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
@@ -112,25 +112,23 @@ function SortableHeader({
 }
 
 function OrganizationRow({ organization }: { organization: OrganizationModel }) {
-  const navigate = useNavigate();
   const { iconName, color } = parseIconField(organization.icon, organization.id);
   const statusCounts = organization.workspaceStatusCounts ?? {};
   const statusBreakdown = BREAKDOWN_STATUSES.filter((entry) => (statusCounts[entry.value] ?? 0) > 0);
 
-  const openOrganization = () => {
+  const rememberOrganization = () => {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, organization.id);
     sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
-    navigate(`/organizations/${organization.id}/workspaces`);
   };
 
   return (
-    <div
-      className="organization-row"
-      role="button"
-      tabIndex={0}
-      onClick={openOrganization}
-      onKeyDown={(e) => activateOnKey(e, openOrganization)}
-    >
+    <div className="organization-row">
+      <Link
+        to={`/organizations/${organization.id}/workspaces`}
+        onClick={rememberOrganization}
+        className="organization-row-link"
+        aria-label={`Open organization ${organization.name}`}
+      />
       <div className="organization-col-name">
         <div className="organization-col-name-icon">{getOrgIcon(iconName, color, 20)}</div>
         <Typography.Text strong ellipsis title={organization.name}>

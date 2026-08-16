@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { DateTime } from "luxon";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
@@ -102,16 +102,13 @@ function WorkspaceRow({
   organizationId: string;
   onSelectProject: (projectId: string | null) => void;
 }) {
-  const navigate = useNavigate();
-  const openWorkspace = () => navigate(`/organizations/${organizationId}/workspaces/${item.id}`);
   return (
-    <div
-      className="workspace-row"
-      role="button"
-      tabIndex={0}
-      onClick={openWorkspace}
-      onKeyDown={(e) => activateOnKey(e, openWorkspace)}
-    >
+    <div className="workspace-row">
+      <Link
+        to={`/organizations/${organizationId}/workspaces/${item.id}`}
+        className="workspace-row-link"
+        aria-label={`Open workspace ${item.name}`}
+      />
       <div className="workspace-col-name">
         <div className="workspace-name-line1">
           <span
