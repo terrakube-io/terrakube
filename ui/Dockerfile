@@ -17,6 +17,11 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN yarn build
 
+# => Generate SBOM
+COPY --from=anchore/syft:latest /syft /usr/local/bin/syft
+RUN mkdir -p /etc/sbom && \
+    syft scan dir:/app -o spdx-json=/etc/sbom/sbom.spdx.json -o cyclonedx-json=/etc/sbom/sbom.cdx.json
+
 # => Run container
 FROM nginxinc/nginx-unprivileged:latest
 
@@ -27,4 +32,5 @@ WORKDIR /usr/share/nginx/html
 
 # Static build
 COPY --from=builder /app/build .
+COPY --from=builder /etc/sbom /etc/sbom
 COPY conf/conf.d/terrakube-ui.conf /etc/nginx/conf.d/default.conf
