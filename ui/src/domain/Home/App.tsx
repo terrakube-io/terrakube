@@ -68,6 +68,11 @@ const UserSettingsPage = lazy(() =>
   import("@/modules/user/UserSettingsPage").then((module) => ({ default: module.UserSettingsPage }))
 );
 
+// API Docs
+const ApiDocsPage = lazy(() =>
+  import("@/modules/apiDocs/ApiDocsPage").then((module) => ({ default: module.ApiDocsPage }))
+);
+
 // Helper component to extract URL parameters for collection routes
 const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
   const { collectionid } = useParams();
@@ -509,6 +514,12 @@ const App = () => {
             element: <CollectionSettingsWrapper mode="detail" />,
           },
         ],
+      },
+      {
+        // Full-bleed: Scalar renders its own sidebar/nav, so this route skips
+        // AppLayout entirely rather than duplicating it alongside ours.
+        path: "/api-docs",
+        element: <ApiDocsPage />,
       },
     ],
     {
