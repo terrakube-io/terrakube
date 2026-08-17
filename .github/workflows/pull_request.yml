@@ -42,6 +42,11 @@ jobs:
       - name: Build Terrakube from Fork
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: mvn clean install -Dspring-boot.build-image.skip=true
+      - name: Test Registry Storage Profiles (AWS, Azure, GCP)
+        run: |
+          mvn test -pl registry -am -Paws -Dspring-boot.build-image.skip=true
+          mvn test -pl registry -am -Pazure -Dspring-boot.build-image.skip=true
+          mvn test -pl registry -am -Pgcp -Dspring-boot.build-image.skip=true
 
   build-alpaquita:
     runs-on: ubuntu-latest
