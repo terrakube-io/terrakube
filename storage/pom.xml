@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.terrakube</groupId>
+        <artifactId>terrakube-platform</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <groupId>io.terrakube.storage</groupId>
+    <artifactId>terrakube-storage</artifactId>
+    <version>${revision}</version>
+    <packaging>pom</packaging>
+    <name>Terrakube Storage Multi-Module Starter</name>
+    <description>Modular Storage Library for Terrakube</description>
+
+    <modules>
+        <module>storage-core</module>
+        <module>storage-aws</module>
+        <module>storage-azure</module>
+        <module>storage-gcp</module>
+        <module>storage-local</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+        <azure.version>6.5.0</azure.version>
+        <msal4j.version>1.25.1</msal4j.version>
+        <aws-sdk.version>2.51.3</aws-sdk.version>
+        <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
+        <zt-zip.version>1.18.2</zt-zip.version>
+        <commons-io.version>2.22.0</commons-io.version>
+        <lombok.version>1.18.46</lombok.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.azure.spring</groupId>
+                <artifactId>spring-cloud-azure-dependencies</artifactId>
+                <version>${azure.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>${gcp-libraries-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

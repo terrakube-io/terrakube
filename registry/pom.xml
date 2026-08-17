@@ -24,12 +24,10 @@
         <commons-io.version>2.22.0</commons-io.version>
         <rest-assured.version>5.5.6</rest-assured.version>
         <wiremock.version>4.2.2</wiremock.version>
-        <!--groovy.version>3.0.8</groovy.version-->
         <aws-sdk.version>2.51.3</aws-sdk.version>
         <zt-zip.version>1.18.2</zt-zip.version>
         <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
-        <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
-        </sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}</sonar.coverage.jacoco.xmlReportPaths>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.37</buildpack.builder>
         <buildpack.java>paketobuildpacks/java:22.1.0</buildpack.java>
@@ -138,17 +136,12 @@
             <version>${zt-zip.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-storage-blob</artifactId>
+            <groupId>io.terrakube.storage</groupId>
+            <artifactId>storage-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.microsoft.azure</groupId>
-            <artifactId>msal4j</artifactId>
-            <version>${msal4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-identity</artifactId>
+            <groupId>io.terrakube.storage</groupId>
+            <artifactId>storage-local</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -159,23 +152,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>s3</artifactId>
-		</dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>sts</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.wiremock.integrations</groupId>
             <artifactId>wiremock-spring-boot</artifactId>
             <version>${wiremock.version}</version>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-storage</artifactId>
         </dependency>
         <dependency>
             <groupId>io.rest-assured</groupId>
@@ -184,29 +165,53 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>com.azure.spring</groupId>
-                <artifactId>spring-cloud-azure-dependencies</artifactId>
-                <version>${azure.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>software.amazon.awssdk</groupId>
-                <artifactId>bom</artifactId>
-                <version>${aws-sdk.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.google.cloud</groupId>
-                <artifactId>libraries-bom</artifactId>
-                <version>${gcp-libraries-bom.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <profiles>
+        <profile>
+            <id>all</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-aws</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-azure</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-gcp</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>aws</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-aws</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>azure</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-azure</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>gcp</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.terrakube.storage</groupId>
+                    <artifactId>storage-gcp</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

@@ -1,11 +1,7 @@
 package io.terrakube.registry.service.git;
 
-import com.azure.core.credential.AccessToken;
-import com.azure.core.credential.TokenRequestContext;
-import com.azure.core.http.ProxyOptions;
-import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
-import com.azure.identity.DefaultAzureCredential;
-import com.azure.identity.DefaultAzureCredentialBuilder;
+import io.terrakube.storage.plugin.core.GitService;
+import io.terrakube.storage.plugin.core.ModuleVersionDownload;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -126,46 +122,61 @@ public class GitServiceImpl implements GitService {
         return credentialsProvider;
     }
 
+    @SuppressWarnings("unchecked")
     public String getAzureDefaultToken() {
         log.info("Getting Azure Default Token");
         String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
         try {
-            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+            Class<?> builderClass = Class.forName("com.azure.identity.DefaultAzureCredentialBuilder");
+            Object credentialBuilder = builderClass.getDeclaredConstructor().newInstance();
 
             String proxyHost = System.getProperty("http.proxyHost");
             String proxyPort = System.getProperty("http.proxyPort");
             if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
-                ProxyOptions proxyOptions = new ProxyOptions(
-                        ProxyOptions.Type.HTTP,
-                        new InetSocketAddress(
-                                proxyHost,
-                                Integer.parseInt(proxyPort)
-                        )
-                );
+                Class<?> proxyOptionsClass = Class.forName("com.azure.core.http.ProxyOptions");
+                Class<?> proxyTypeClass = Class.forName("com.azure.core.http.ProxyOptions$Type");
+                Object httpType = Enum.valueOf((Class<Enum>) proxyTypeClass, "HTTP");
+                Object proxyOptions = proxyOptionsClass.getConstructor(proxyTypeClass, InetSocketAddress.class)
+                        .newInstance(httpType, new InetSocketAddress(proxyHost, Integer.parseInt(proxyPort)));
 
                 String proxyUser = System.getProperty("http.proxyUser");
                 String proxyPassword = System.getProperty("http.proxyPassword");
                 if (proxyUser != null && !proxyUser.isEmpty() && proxyPassword != null && !proxyPassword.isEmpty()) {
-
-                    proxyOptions.setCredentials(
-                            proxyUser,
-                            proxyPassword
-                    );
+                    proxyOptionsClass.getMethod("setCredentials", String.class, String.class)
+                            .invoke(proxyOptions, proxyUser, proxyPassword);
                 }
-                credentialBuilder.httpClient(
-                        new NettyAsyncHttpClientBuilder().proxy(proxyOptions).build()
-                );
+
+                Class<?> nettyBuilderClass = Class.forName("com.azure.core.http.netty.NettyAsyncHttpClientBuilder");
+                Object nettyBuilder = nettyBuilderClass.getDeclaredConstructor().newInstance();
+                nettyBuilderClass.getMethod("proxy", proxyOptionsClass).invoke(nettyBuilder, proxyOptions);
+                Object httpClient = nettyBuilderClass.getMethod("build").invoke(nettyBuilder);
+
+                Class<?> httpClientClass = Class.forName("com.azure.core.http.HttpClient");
+                builderClass.getMethod("httpClient", httpClientClass).invoke(credentialBuilder, httpClient);
             }
 
-            DefaultAzureCredential credential = credentialBuilder.build();
-            TokenRequestContext requestContext = new TokenRequestContext()
-                    .setScopes(Collections.singletonList(AZURE_DEVOPS_SCOPE));
-            AccessToken accessToken = credential.getToken(requestContext).block();
-            if (accessToken == null || accessToken.getToken() == null) {
-                throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+            Object credential = builderClass.getMethod("build").invoke(credentialBuilder);
+            Class<?> tokenRequestContextClass = Class.forName("com.azure.core.credential.TokenRequestContext");
+            Object requestContext = tokenRequestContextClass.getDeclaredConstructor().newInstance();
+            tokenRequestContextClass.getMethod("setScopes", List.class)
+                    .invoke(requestContext, Collections.singletonList(AZURE_DEVOPS_SCOPE));
+
+            Class<?> tokenCredentialClass = Class.forName("com.azure.core.credential.TokenCredential");
+            Object mono = tokenCredentialClass.getMethod("getToken", tokenRequestContextClass).invoke(credential, requestContext);
+            if (mono != null) {
+                Class<?> monoClass = Class.forName("reactor.core.publisher.Mono");
+                Object accessTokenObj = monoClass.getMethod("block").invoke(mono);
+                if (accessTokenObj != null) {
+                    Class<?> accessTokenClass = Class.forName("com.azure.core.credential.AccessToken");
+                    String token = (String) accessTokenClass.getMethod("getToken").invoke(accessTokenObj);
+                    log.debug("Azure Default Token: {}", token);
+                    return token != null ? token : "";
+                }
             }
-            log.debug("Azure Default Token: {}", accessToken.getToken());
-            return accessToken.getToken();
+            throw new Exception("Failed to acquire Azure Managed Identity token. Check your environment configuration.");
+        } catch (ClassNotFoundException e) {
+            log.warn("Azure Identity SDK not present on classpath: {}", e.getMessage());
+            return "";
         } catch (Exception ex) {
             log.error("Error getting Azure Default Token: {}", ex.getMessage());
             return "";

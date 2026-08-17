@@ -2,7 +2,7 @@ package io.terrakube.registry.controller;
 
 import lombok.AllArgsConstructor;
 import io.terrakube.registry.controller.model.ReadMe;
-import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.storage.plugin.core.StorageService;
 import io.terrakube.registry.service.module.ModuleService;
 import io.terrakube.registry.service.ReadMeServiceImpl;
 import org.springframework.http.ResponseEntity;

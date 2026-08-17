@@ -28,11 +28,42 @@
     <name>Terrakube Platform</name>
 
     <modules>
+        <module>storage</module>
         <module>api</module>
         <module>registry</module>
         <module>executor</module>
         <module>coverage</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.terrakube.storage</groupId>
+                <artifactId>storage-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.terrakube.storage</groupId>
+                <artifactId>storage-aws</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.terrakube.storage</groupId>
+                <artifactId>storage-azure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.terrakube.storage</groupId>
+                <artifactId>storage-gcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.terrakube.storage</groupId>
+                <artifactId>storage-local</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <pluginManagement>

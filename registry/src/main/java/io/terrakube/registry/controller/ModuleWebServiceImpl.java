@@ -3,7 +3,7 @@ package io.terrakube.registry.controller;
 import io.terrakube.registry.controller.model.module.ModuleDTO;
 import io.terrakube.registry.controller.model.module.VersionDTO;
 import io.terrakube.registry.controller.model.module.VersionsDTO;
-import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.storage.plugin.core.StorageService;
 import io.terrakube.registry.service.module.ModuleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
