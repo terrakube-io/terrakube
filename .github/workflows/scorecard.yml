@@ -8,12 +8,11 @@ on:
   # https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained
   schedule:
     - cron: '0 0 * * 1'
-  push:
-    branches: [ "main" ]
   workflow_dispatch:
 
-# Declare default permissions as read only.
-permissions: read-all
+# Minimum default permissions; the analysis job overrides with security-events: write and id-token: write.
+permissions:
+  contents: read
 
 jobs:
   analysis:
