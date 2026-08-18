@@ -22,6 +22,7 @@
         <!-- plugins -->
         <sonar.version>5.7.0.6970</sonar.version>
         <jacoco.version>0.8.15</jacoco.version>
+        <crac.version>1.5.0</crac.version>
         <aggregate.report.dir>coverage/target/site/jacoco-aggregate/jacoco.xml</aggregate.report.dir>
     </properties>
 
