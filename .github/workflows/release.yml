@@ -4,6 +4,8 @@ on:
   release:
     types: [created]
 
+permissions: read-all
+
 jobs:
   build:
     strategy:

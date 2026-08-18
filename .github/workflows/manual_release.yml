@@ -17,6 +17,8 @@ on:
           - minor
           - major
 
+permissions: read-all
+
 env:
   REGISTRY: ghcr.io
 
