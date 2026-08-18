@@ -1,5 +1,8 @@
 package io.terrakube.executor.service.mode.online;
 
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.workspace.Workspace;
+import io.terrakube.client.model.response.Response;
 import io.terrakube.executor.service.executor.ExecutorCapacityGate;
 import io.terrakube.executor.service.executor.ExecutorJob;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -23,6 +26,7 @@ public class OnlineModeServiceImpl {
     ExecutorJob executorJob;
     ExecutorCapacityGate executorCapacityGate;
     ApplicationEventPublisher eventPublisher;
+    TerrakubeClient terrakubeClient;
 
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TerraformJob> terraformJob(@RequestBody TerraformJob terraformJob) {
@@ -36,6 +40,7 @@ public class OnlineModeServiceImpl {
 
         publishReadiness(ReadinessState.REFUSING_TRAFFIC);
         try {
+            updateWorkspaceFolder(terraformJob);
             executorJob.createJob(terraformJob);
         } catch (TaskRejectedException e) {
             // The gate was free, but the single-thread async pool (see SpringAsyncAutoConfiguration)
@@ -49,6 +54,22 @@ public class OnlineModeServiceImpl {
             return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE);
         }
         return new ResponseEntity<>(terraformJob, HttpStatus.ACCEPTED);
+    }
+
+    private void updateWorkspaceFolder(TerraformJob terraformJob) {
+        if (terrakubeClient != null) {
+            try {
+                Response<Workspace> workspaceResponse = terrakubeClient.getWorkspaceById(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+                if (workspaceResponse != null && workspaceResponse.getData() != null && workspaceResponse.getData().getAttributes() != null) {
+                    String trustedFolder = workspaceResponse.getData().getAttributes().getFolder();
+                    if (trustedFolder != null) {
+                        terraformJob.setFolder(trustedFolder);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to fetch trusted workspace folder for workspace {}: {}", terraformJob.getWorkspaceId(), e.getMessage());
+            }
+        }
     }
 
     private void publishReadiness(ReadinessState state) {
