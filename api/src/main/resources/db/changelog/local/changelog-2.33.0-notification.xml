@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-33-0-notification-configuration" author="jake">
+        <createTable tableName="notification_configuration">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="description" type="text" />
+            <column name="organization_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="workspace_id" type="varchar(36)" />
+            <column name="channel_type" type="varchar(20)">
+                <constraints nullable="false" />
+            </column>
+            <column name="destination_url" type="varchar(2048)">
+                <constraints nullable="false" />
+            </column>
+            <column name="signing_secret" type="varchar(255)" />
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false" />
+            </column>
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="notification_configuration" baseColumnNames="organization_id"
+            constraintName="fk_notification_configuration_organization_id" referencedTableName="organization"
+            referencedColumnNames="id" />
+        <addForeignKeyConstraint baseTableName="notification_configuration" baseColumnNames="workspace_id"
+            constraintName="fk_notification_configuration_workspace_id" referencedTableName="workspace"
+            referencedColumnNames="id" />
+        <createIndex tableName="notification_configuration" indexName="idx_notification_configuration_workspace_id">
+            <column name="workspace_id" />
+        </createIndex>
+        <createIndex tableName="notification_configuration" indexName="idx_notification_configuration_org_workspace_null">
+            <column name="organization_id" />
+            <column name="workspace_id" />
+        </createIndex>
+    </changeSet>
+    <changeSet id="2-33-0-notification-trigger" author="jake">
+        <createTable tableName="notification_trigger">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="job_status" type="varchar(20)">
+                <constraints nullable="false" />
+            </column>
+            <column name="configuration_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="notification_trigger" baseColumnNames="configuration_id"
+            constraintName="fk_notification_trigger_configuration_id" referencedTableName="notification_configuration"
+            referencedColumnNames="id" />
+        <createIndex tableName="notification_trigger" indexName="idx_notification_trigger_configuration_id">
+            <column name="configuration_id" />
+        </createIndex>
+    </changeSet>
+    <changeSet id="2-33-0-notification-outbox" author="jake">
+        <!-- payload/last_error are "text", not "clob": clob maps to PostgreSQL's oid-backed
+             Large Object storage, which requires every read to happen inside a real
+             (non-autocommit) transaction - the outbox poller's findDueForDispatch() query runs
+             on a plain repository call from a Quartz job with no surrounding transaction, so a
+             clob column here crashes every poll tick with "Large Objects may not be used in
+             auto-commit mode." -->
+        <createTable tableName="notification_outbox">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="job_id" type="int">
+                <constraints nullable="false" />
+            </column>
+            <column name="configuration_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="payload" type="text" />
+            <column name="status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false" />
+            </column>
+            <column name="attempt_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false" />
+            </column>
+            <column name="last_attempt_at" type="datetime" />
+            <!-- Null means "due as soon as picked up". Set explicitly when a failure carries a
+                 server-supplied delay (e.g. Slack's Retry-After on 429). -->
+            <column name="next_attempt_at" type="datetime" />
+            <column name="last_error" type="text" />
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="notification_outbox" baseColumnNames="job_id"
+            constraintName="fk_notification_outbox_job_id" referencedTableName="job"
+            referencedColumnNames="id" />
+        <addForeignKeyConstraint baseTableName="notification_outbox" baseColumnNames="configuration_id"
+            constraintName="fk_notification_outbox_configuration_id" referencedTableName="notification_configuration"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <createIndex tableName="notification_outbox" indexName="idx_notification_outbox_status_last_attempt">
+            <column name="status" />
+            <column name="last_attempt_at" />
+        </createIndex>
+    </changeSet>
+    <changeSet id="2-33-0-notification-configuration-message-style" author="jake">
+        <addColumn tableName="notification_configuration">
+            <column name="message_style" type="varchar(20)" defaultValue="DETAILED">
+                <constraints nullable="false" />
+            </column>
+        </addColumn>
+    </changeSet>
+    <changeSet id="2-33-0-notification-configuration-template" author="jake">
+        <!-- No rows here means "applies to every template" - this table only ever narrows which
+             templates a configuration fires for, it never widens it, so an empty set for a
+             configuration is exactly today's (pre-filter) behavior. -->
+        <createTable tableName="notification_configuration_template">
+            <column name="configuration_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="template_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="notification_configuration_template"
+            columnNames="configuration_id, template_id" constraintName="pk_notification_configuration_template" />
+        <addForeignKeyConstraint baseTableName="notification_configuration_template" baseColumnNames="configuration_id"
+            constraintName="fk_notification_configuration_template_configuration_id"
+            referencedTableName="notification_configuration" referencedColumnNames="id" onDelete="CASCADE" />
+        <addForeignKeyConstraint baseTableName="notification_configuration_template" baseColumnNames="template_id"
+            constraintName="fk_notification_configuration_template_template_id"
+            referencedTableName="template" referencedColumnNames="id" onDelete="CASCADE" />
+    </changeSet>
+</databaseChangeLog>

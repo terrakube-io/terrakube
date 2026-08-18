@@ -68,6 +68,11 @@ const UserSettingsPage = lazy(() =>
   import("@/modules/user/UserSettingsPage").then((module) => ({ default: module.UserSettingsPage }))
 );
 
+// API Docs
+const ApiDocsPage = lazy(() =>
+  import("@/modules/apiDocs/ApiDocsPage").then((module) => ({ default: module.ApiDocsPage }))
+);
+
 // Helper component to extract URL parameters for collection routes
 const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
   const { collectionid } = useParams();
@@ -381,6 +386,14 @@ const App = () => {
             element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
           },
           {
+            path: "/workspaces/:id/settings/notifications",
+            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          },
+          {
+            path: "/organizations/:orgid/workspaces/:id/settings/notifications",
+            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          },
+          {
             path: "/workspaces/:id/settings/state-shared",
             element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
           },
@@ -481,6 +494,10 @@ const App = () => {
             element: <OrganizationSettings selectedTab="10" />,
           },
           {
+            path: "/organizations/:orgid/settings/notifications",
+            element: <OrganizationSettings selectedTab="12" />,
+          },
+          {
             path: "/organizations/:orgid/settings/collection",
             element: <OrganizationSettings selectedTab="9" />,
           },
@@ -497,6 +514,12 @@ const App = () => {
             element: <CollectionSettingsWrapper mode="detail" />,
           },
         ],
+      },
+      {
+        // Full-bleed: Scalar renders its own sidebar/nav, so this route skips
+        // AppLayout entirely rather than duplicating it alongside ours.
+        path: "/api-docs",
+        element: <ApiDocsPage />,
       },
     ],
     {

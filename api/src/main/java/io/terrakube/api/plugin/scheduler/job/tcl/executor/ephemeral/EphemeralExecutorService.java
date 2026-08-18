@@ -33,8 +33,10 @@ public class EphemeralExecutorService {
     private static final String SECURITY_CONTEXT = "EPHEMERAL_CONFIG_SECURITY_CONTEXT";
     private static final String EPHEMERAL_CPU_REQUEST = "EPHEMERAL_CPU_REQUEST";
     private static final String EPHEMERAL_MEMORY_REQUEST = "EPHEMERAL_MEMORY_REQUEST";
+    private static final String EPHEMERAL_STORAGE_REQUEST = "EPHEMERAL_STORAGE_REQUEST";
     private static final String EPHEMERAL_CPU_LIMIT = "EPHEMERAL_CPU_LIMIT";
     private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
+    private static final String EPHEMERAL_STORAGE_LIMIT = "EPHEMERAL_STORAGE_LIMIT";
     private static final String EPHEMERAL_JOB_ENV_VARS = "EPHEMERAL_JOB_ENV_VARS";
     private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
     private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
@@ -259,8 +261,10 @@ public class EphemeralExecutorService {
 
         Optional<String> cpuRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_REQUEST));
         Optional<String> memoryRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_REQUEST));
+        Optional<String> storageRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_REQUEST));
         Optional<String> cpuLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_LIMIT));
         Optional<String> memoryLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_LIMIT));
+        Optional<String> storageLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_LIMIT));
 
         ResourceRequirementsBuilder resourceBuilder = new ResourceRequirementsBuilder();
         boolean hasResources = false;
@@ -273,12 +277,20 @@ public class EphemeralExecutorService {
             resourceBuilder.addToRequests("memory", new Quantity(memoryRequestOpt.get()));
             hasResources = true;
         }
+        if (storageRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("ephemeral-storage", new Quantity(storageRequestOpt.get()));
+            hasResources = true;
+        }
         if (cpuLimitOpt.isPresent()) {
             resourceBuilder.addToLimits("cpu", new Quantity(cpuLimitOpt.get()));
             hasResources = true;
         }
         if (memoryLimitOpt.isPresent()) {
             resourceBuilder.addToLimits("memory", new Quantity(memoryLimitOpt.get()));
+            hasResources = true;
+        }
+        if (storageLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("ephemeral-storage", new Quantity(storageLimitOpt.get()));
             hasResources = true;
         }
 

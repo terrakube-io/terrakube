@@ -117,6 +117,7 @@ export enum JobStatus {
   Cancelled = "cancelled",
   Failed = "failed",
   Unknown = "unknown",
+  NeverExecuted = "NeverExecuted",
 }
 
 export enum JobVia {
@@ -308,6 +309,8 @@ export type TeamToken = {
 
 // Variables
 
+export type VariableCategory = "TERRAFORM" | "ENV";
+
 export type Variable = {
   id: string;
   attributes: VariableAttributes;
@@ -316,7 +319,8 @@ export type VariableAttributes = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  // Legacy rows may still have no category until remediated; see issue #3395.
+  category: VariableCategory | null;
   description: string;
   sensitive: boolean;
   incomplete: boolean;
@@ -334,7 +338,7 @@ export type UpdateVariableForm = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  category: VariableCategory;
   description: string;
 };
 
@@ -365,6 +369,35 @@ export type FederatedClaimAttributes = {
   claimKey: string;
   claimValue: string;
 };
+
+// Notification
+export type NotificationChannelType = "SLACK" | "TEAMS" | "WEBHOOK";
+export type NotificationMessageStyle = "DETAILED" | "SIMPLE";
+
+export type NotificationConfiguration = {
+  id: string;
+  attributes: NotificationConfigurationAttributes;
+  relationships?: {
+    workspace?: { data: { id: string } | null };
+  };
+};
+export type NotificationConfigurationAttributes = {
+  name: string;
+  description?: string;
+  channelType: NotificationChannelType;
+  destinationUrl: string;
+  signingSecret?: string;
+  active: boolean;
+  messageStyle?: NotificationMessageStyle;
+};
+export type NotificationTrigger = {
+  id: string;
+  attributes: NotificationTriggerAttributes;
+};
+export type NotificationTriggerAttributes = {
+  jobStatus: JobStatus;
+};
+
 export type ApiWorkspaceTag = {
   id: string;
   attributes: {
@@ -508,6 +541,7 @@ export type Resource = {
   name: string;
   provider: string;
   type: string;
+  module?: string;
   values: Record<string, any>;
   depends_on: string;
   showDrawer: (data: Resource) => void;

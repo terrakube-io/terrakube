@@ -61,6 +61,11 @@ describe("useLogStream", () => {
 
       const { result } = renderHook(() => useLogStream({ url: "http://localhost/stream", enabled: true }));
 
+      // useLogStream batches messages behind a flush timer (see LOG_FLUSH_INTERVAL_MS), but the
+      // batch still needs to reach state before the transient error below sends it into a
+      // multi-second reconnect backoff - useEventStream flushes any pending batch as soon as the
+      // connection settles (success, error, or abort), which is what makes "line 1" visible here
+      // at 0ms rather than only after the flush timer would otherwise have fired.
       await act(async () => {
         await jest.advanceTimersByTimeAsync(0);
       });

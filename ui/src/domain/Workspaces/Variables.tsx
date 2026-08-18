@@ -20,7 +20,7 @@ import {
 import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import { CreateVariableForm, FlatVariable } from "../types";
+import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const VARIABLES_COLUMS = (
@@ -157,9 +157,9 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "15%",
     key: "category",
-    sorter: (a: any, b: any) => a.category.localeCompare(b.category),
+    sorter: (a: any, b: any) => (a.category ?? "").localeCompare(b.category ?? ""),
     render: (_: string, record: any) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
+      return record.category === "TERRAFORM" ? "terraform" : record.category === "ENV" ? "env" : "unset";
     },
   },
   {
@@ -225,9 +225,9 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "20%",
     key: "category",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
+    sorter: (a: FlatVariable, b: FlatVariable) => (a.category ?? "").localeCompare(b.category ?? ""),
     render: (_: string, record: FlatVariable) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
+      return record.category === "TERRAFORM" ? "terraform" : record.category === "ENV" ? "env" : "unset";
     },
   },
 ];
@@ -262,7 +262,7 @@ export const Variables = ({
   const [form] = Form.useForm<CreateVariableForm>();
   const [visible, setVisible] = useState(false);
   const [variableName, setVariableName] = useState("");
-  const [category, setCategory] = useState("TERRAFORM");
+  const [category, setCategory] = useState<VariableCategory | null>("TERRAFORM");
   const [mode, setMode] = useState("create");
   const [variableId, setVariableId] = useState("");
   const onCancel = () => {
@@ -278,7 +278,7 @@ export const Variables = ({
       sensitive: variable.sensitive,
       hcl: variable.hcl,
       description: variable.description,
-      category: variable.category,
+      category: variable.category ?? undefined,
     });
     setVisible(true);
     setCategory(variable.category);
@@ -498,7 +498,7 @@ export const Variables = ({
               Select variable category
             </Typography.Title>
 
-            <Form.Item name="category">
+            <Form.Item name="category" rules={[{ required: true, message: "Please select a variable category" }]}>
               <Radio.Group value={category} onChange={(e) => setCategory(e.target.value)}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
                   <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>

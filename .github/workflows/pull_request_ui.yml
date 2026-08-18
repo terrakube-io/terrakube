@@ -9,6 +9,8 @@ on:
     paths:
       - 'ui/**'
 
+permissions: read-all
+
 jobs:
   buildui:
     runs-on: ubuntu-latest

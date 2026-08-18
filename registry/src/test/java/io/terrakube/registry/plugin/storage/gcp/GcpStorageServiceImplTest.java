@@ -5,6 +5,7 @@ import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -45,11 +46,12 @@ class GcpStorageServiceImplTest {
         File dummyFile = new File(gitCloneDir, "main.tf");
         FileUtils.writeStringToFile(dummyFile, "resource \"null_resource\" \"this\" {}", StandardCharsets.UTF_8);
 
-        when(gitService.getCloneRepositoryByTag(any(), any(), any(), any(), any(), any(), any()))
+        when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
                 .thenReturn(gitCloneDir);
 
-        String result = gcpStorageService.searchModule("org", "module", "gcp", "1.0.0", 
-                "source", "vcsType", "vcsConn", "token", "tag", "folder");
+        ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                "vcsConn", "token", "tag", "folder");
+        String result = gcpStorageService.searchModule("org", "module", "gcp", download);
 
         assertEquals("https://registry.terrakube.io/terraform/modules/v1/download/org/module/gcp/1.0.0/module.zip", result);
         verify(storage).create(any(BlobInfo.class), any(byte[].class));
@@ -71,8 +73,9 @@ class GcpStorageServiceImplTest {
 
         when(storage.get(any(BlobId.class))).thenReturn(mock(Blob.class));
 
-        String result = gcpStorageService.searchModule("org", "module", "gcp", "1.0.0", 
-                "source", "vcsType", "vcsConn", "token", "tag", "folder");
+        ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                "vcsConn", "token", "tag", "folder");
+        String result = gcpStorageService.searchModule("org", "module", "gcp", download);
 
         assertEquals("https://registry.terrakube.io/terraform/modules/v1/download/org/module/gcp/1.0.0/module.zip", result);
         verify(storage, never()).create(any(BlobInfo.class), any(byte[].class));

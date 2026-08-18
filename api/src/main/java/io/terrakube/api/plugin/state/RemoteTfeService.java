@@ -58,6 +58,7 @@ import io.terrakube.api.rs.workspace.history.archive.ArchiveType;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
 import org.quartz.SchedulerException;
@@ -74,6 +75,7 @@ import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -113,6 +115,15 @@ public class RemoteTfeService {
 
     private RbacService rbacService;
 
+    private static final String LATEST_TERRAFORM_VERSION = "latest";
+
+    private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
+    // Real job status transitions happen here via plain jobRepository.save(), never through an
+    // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
+    // them, so every status-changing save below calls this directly, same as ScheduleJob/
+    // ScheduleJobTrigger.
+    private JobNotificationTrigger jobNotificationTrigger;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -130,7 +141,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -154,6 +165,7 @@ public class RemoteTfeService {
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
+        this.jobNotificationTrigger = jobNotificationTrigger;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -429,6 +441,16 @@ public class RemoteTfeService {
         return getWorkspace(workspace, otherAttributes, currentUser);
     }
 
+    // The Terraform/OpenTofu CLI remote backend parses this attribute as a strict version for any state operation
+    // and errors on constraints like ">= 1.12.5"; "latest" is the only non-exact value it tolerates.
+    private String toExposedTerraformVersion(String terraformVersion) {
+        if (terraformVersion == null || terraformVersion.isBlank() || LATEST_TERRAFORM_VERSION.equalsIgnoreCase(terraformVersion)) {
+            return terraformVersion;
+        }
+        String trimmed = terraformVersion.trim();
+        return EXACT_TERRAFORM_VERSION_PATTERN.matcher(trimmed).matches() ? trimmed : LATEST_TERRAFORM_VERSION;
+    }
+
     WorkspaceData getWorkspace(Workspace workspace, Map<String, Object> otherAttributes,
                                JwtAuthenticationToken currentUser) {
         if (workspace != null) {
@@ -441,7 +463,7 @@ public class RemoteTfeService {
             workspaceModel.setType("workspaces");
             Map<String, Object> attributes = new HashMap<>();
             attributes.put("name", workspace.getName());
-            attributes.put("terraform-version", workspace.getTerraformVersion());
+            attributes.put("terraform-version", toExposedTerraformVersion(workspace.getTerraformVersion()));
             attributes.put("locked", workspace.isLocked());
             attributes.put("auto-apply", false);
             attributes.put("execution-mode", workspace.getExecutionMode());
@@ -808,6 +830,7 @@ public class RemoteTfeService {
         job.setPlanChanges(true);
         job.setRefreshOnly(false);
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
 
         // dummy step
         Step step = new Step();
@@ -1158,12 +1181,13 @@ public class RemoteTfeService {
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
                 hostname, configurationId);
-        // we need to update the source only if the VCS connection is null and the
-        // branch is other than "remote-content"
-        if (workspace.getVcs() == null && workspace.getBranch().equals("remote-content")) {
-            workspace.setSource(sourceTarGz);
-        }
-        workspace = workspaceRepository.save(workspace);
+        // We intentionally do NOT persist this configuration version onto workspace.source
+        // here. Doing so on every run (including speculative plan-only runs and runs that are
+        // later discarded before approval) made workspace.source track the last configuration
+        // *created* rather than the last configuration *applied*, so a subsequent UI "Run now"
+        // could re-queue the wrong configuration. The workspace source pointer is now updated
+        // when an apply is actually dispatched (see ExecutorService.persistAppliedConfigurationSource).
+        // The current run still uses this tarball via job.overrideSource, set below.
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
@@ -1198,6 +1222,7 @@ public class RemoteTfeService {
         }
 
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
         log.info("Job Created");
 
         if(runsData.getData().getAttributes().get("target-addrs") != null) {
@@ -1439,6 +1464,7 @@ public class RemoteTfeService {
                 job.setTcl(cliTemplate.getTcl());
                 job.setStatus(JobStatus.pending);
                 job = jobRepository.save(job);
+                jobNotificationTrigger.notifyStatusChanged(job);
                 log.warn("Update job {} to status PENDING to continue execution", job.getId());
             }
 
@@ -1449,7 +1475,8 @@ public class RemoteTfeService {
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
-                    jobRepository.save(job);
+                    job = jobRepository.save(job);
+                    jobNotificationTrigger.notifyStatusChanged(job);
                     try {
                         scheduleJobService.createJobContextNow(job);
                     } catch (SchedulerException e) {
@@ -1474,7 +1501,8 @@ public class RemoteTfeService {
                         "User does not have permission to discard runs in this workspace");
             }
             job.setStatus(JobStatus.cancelled);
-            jobRepository.save(job);
+            job = jobRepository.save(job);
+            jobNotificationTrigger.notifyStatusChanged(job);
             scheduleJobService.deleteJobContext(job.getId());
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());

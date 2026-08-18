@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -23,6 +24,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
@@ -49,6 +52,7 @@ public class PrCommentServiceTest {
     JobRepository jobRepository;
     StorageTypeService storageTypeService;
     StreamingService streamingService;
+    ObjectMapper objectMapper;
 
     PrCommentService subject;
 
@@ -60,6 +64,7 @@ public class PrCommentServiceTest {
         jobRepository = mock(JobRepository.class);
         storageTypeService = mock(StorageTypeService.class);
         streamingService = mock(StreamingService.class);
+        objectMapper = new ObjectMapper();
 
         subject = new PrCommentService(
                 gitHubWebhookService,
@@ -67,7 +72,8 @@ public class PrCommentServiceTest {
                 bitBucketWebhookService,
                 jobRepository,
                 storageTypeService,
-                streamingService);
+                streamingService,
+                objectMapper);
     }
 
     private Job createJob(VcsType vcsType, Integer prNumber, JobStatus status) {
@@ -498,6 +504,158 @@ public class PrCommentServiceTest {
 
         String markdown = markdownCaptor.getValue();
         assertTrue(markdown.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
+
+    @Test
+    public void postPlanResultSkipsTrailingStepsWithoutRecognizableSummary() {
+        // A custom TCL template can run extra steps after the plan step itself (e.g. a Slack
+        // notification). The comment must still surface the plan step's diff, not whatever the
+        // last-numbered step happened to output.
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(1);
+
+        Step notifyStep = new Step();
+        notifyStep.setId(UUID.randomUUID());
+        notifyStep.setStepNumber(2);
+
+        job.setStep(List.of(planStep, notifyStep));
+
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
+        doReturn("Plan: 2 to add, 0 to change, 0 to destroy.".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(planStep.getId().toString()));
+        doReturn("Slack notification sent successfully".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(notifyStep.getId().toString()));
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("Plan: 2 to add, 0 to change, 0 to destroy."));
+        assertFalse(markdown.contains("Slack notification"));
+    }
+
+    @Test
+    public void postPlanResultFallsBackToLastStepWhenNoStepHasRecognizableSummary() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        Step initStep = new Step();
+        initStep.setId(UUID.randomUUID());
+        initStep.setStepNumber(1);
+
+        Step erroredStep = new Step();
+        erroredStep.setId(UUID.randomUUID());
+        erroredStep.setStepNumber(2);
+
+        job.setStep(List.of(initStep, erroredStep));
+
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
+        doReturn("Initializing the backend...".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(initStep.getId().toString()));
+        doReturn("Error: something unexpected happened".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(erroredStep.getId().toString()));
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("Error: something unexpected happened"));
+    }
+
+    @Test
+    public void postPlanResultRendersStructuredChangesTable() throws Exception {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 2 to add, 0 to change, 1 to destroy.");
+
+        Map<String, Object> createChange = Map.of("address", "aws_instance.example", "action", "create");
+        Map<String, Object> deleteChange = Map.of("address", "aws_instance.old", "action", "delete");
+        Map<String, Object> noOpChange = Map.of("address", "aws_instance.unchanged", "action", "no-op");
+        String contextJson = objectMapper.writeValueAsString(Map.of(
+                "planStructuredOutput", Map.of("step-1", List.of(createChange, deleteChange, noOpChange))));
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("`aws_instance.example`"));
+        assertTrue(markdown.contains("`aws_instance.old`"));
+        assertFalse(markdown.contains("aws_instance.unchanged"));
+    }
+
+    @Test
+    public void postApplyResultRendersStructuredChangesTable() throws Exception {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.");
+
+        Map<String, Object> createChange = Map.of("address", "aws_instance.example", "action", "create", "status", "applied");
+        String contextJson = objectMapper.writeValueAsString(Map.of(
+                "applyStructuredOutput", Map.of("step-1", List.of(createChange))));
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+
+        subject.postApplyResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("`aws_instance.example`"));
+    }
+
+    @Test
+    public void postPlanResultOmitsStructuredTableWhenContextHasNoPlanData() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("{}").when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertFalse(markdownCaptor.getValue().contains("| Resource | Action |"));
+    }
+
+    @Test
+    public void postPlanResultToleratesMalformedContextJson() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("{ not valid json").when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertFalse(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("Plan: 1 to add"));
     }
 
     @Test

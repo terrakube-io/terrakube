@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import java.util.Base64;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Assertions;
@@ -17,6 +18,8 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.terrakube.api.helpers.FailUnkownMethod;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.TemplateRepository;
@@ -229,6 +232,43 @@ public class TclServiceTest {
         job.setTcl(null);
 
         Assertions.assertNull(subject().getFlowTypeForStep(job, 100));
+    }
+
+    @Test
+    public void getNextFlow_parsesOnRejectCommandsOnApprovalStep() {
+        String yaml = """
+            flow:
+              - type: approval
+                step: 150
+                team: TERRAKUBE_ADMIN
+                onReject:
+                  - runtime: BASH
+                    priority: 100
+                    after: true
+                    script: "echo rejected"
+            """;
+
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(150);
+        step.setStatus(JobStatus.pending);
+
+        Job job = new Job();
+        job.setId(4711);
+        job.setTcl(encodeYaml(yaml));
+
+        doReturn(List.of(step)).when(stepRepository).findByJobId(4711);
+
+        Flow flow = subject().getNextFlow(job);
+
+        Assertions.assertEquals("approval", flow.getType());
+        Assertions.assertNotNull(flow.getOnReject());
+        Assertions.assertEquals(1, flow.getOnReject().size());
+        Command command = flow.getOnReject().get(0);
+        Assertions.assertEquals("BASH", command.getRuntime());
+        Assertions.assertEquals(100, command.getPriority());
+        Assertions.assertTrue(command.isAfter());
+        Assertions.assertEquals("echo rejected", command.getScript());
     }
 
     @Test
