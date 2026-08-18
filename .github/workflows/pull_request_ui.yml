@@ -9,7 +9,8 @@ on:
     paths:
       - 'ui/**'
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   buildui:
