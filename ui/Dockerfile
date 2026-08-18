@@ -1,5 +1,5 @@
-#=> Build container
-FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder # 24-alpine
+#=> Build container (node:24-alpine)
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder
 WORKDIR /app
 
 # Enable Corepack so it picks up the Yarn version pinned in
@@ -17,13 +17,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN yarn build
 
-# => Generate SBOM
-COPY --from=anchore/syft:latest@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 /syft /usr/local/bin/syft # latest
+# => Generate SBOM (syft:latest)
+COPY --from=anchore/syft:latest@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 /syft /usr/local/bin/syft
 RUN mkdir -p /etc/sbom && \
     syft scan dir:/app -o spdx-json=/etc/sbom/sbom.spdx.json -o cyclonedx-json=/etc/sbom/sbom.cdx.json
 
-# => Run container
-FROM nginxinc/nginx-unprivileged:latest@sha256:1ab63ed666197d757cd3ce0ad84c5136f18f774465345785f33423bd1bba4353 # latest
+# => Run container (nginx-unprivileged:latest)
+FROM nginxinc/nginx-unprivileged:latest@sha256:1ab63ed666197d757cd3ce0ad84c5136f18f774465345785f33423bd1bba4353
 
 # Default Terraform version, updated at build time
 ARG REACT_APP_TERRAKUBE_VERSION=2.0.0
