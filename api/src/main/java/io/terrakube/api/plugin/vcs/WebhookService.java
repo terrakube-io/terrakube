@@ -115,6 +115,13 @@ public class WebhookService {
 
                 sendCommitStatus(savedJob);
             }
+        } catch (IllegalArgumentException e) {
+            // A provider sends every event its hook is subscribed to, so an event with no
+            // template configured in Terrakube is an ordinary outcome rather than a
+            // failure. Logging it as an error made a working setup look broken. The
+            // polled-push path above already treats this case the same way.
+            log.info("No template configured for webhook event on workspace {}: {}", workspace.getName(),
+                    e.getMessage());
         } catch (Exception e) {
             log.error("Error creating the job", e);
         }

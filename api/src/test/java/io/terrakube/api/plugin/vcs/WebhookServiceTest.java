@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -35,6 +36,12 @@ import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
+
+import java.util.UUID;
+
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @ExtendWith(MockitoExtension.class)
 public class WebhookServiceTest {
@@ -101,7 +108,8 @@ public class WebhookServiceTest {
         pullRequestEvent.setPathType(WebhookEventPathType.PATTERN);
         pullRequestEvent.setTemplateId("pr-template-id");
 
-        doReturn(List.of(pullRequestEvent))
+        // lenient: tests that exercise a non-PR event never consult this row.
+        lenient().doReturn(List.of(pullRequestEvent))
                 .when(webhookEventRepository)
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST);
     }
@@ -246,5 +254,33 @@ public class WebhookServiceTest {
         subject.handlePrCommentCommand(result, webhook, workspace);
 
         assertEquals("112233", savedJob.getCommandCommentId());
+    }
+
+    @Test
+    public void pushEventWithNoConfiguredTemplateIsNotAnError() throws Exception {
+        // A provider delivers every event its hook is subscribed to. When only PULL_REQUEST
+        // is configured in Terrakube, an incoming push has no template to match and used to
+        // surface as "Error creating the job" in the logs, which made a working setup look
+        // broken (issue #3159). It should be ignored quietly and create no job.
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+
+        WebhookResult pushResult = new WebhookResult();
+        pushResult.setValid(true);
+        pushResult.setEvent("push");
+        pushResult.setBranch("main");
+        pushResult.setFileChanges(List.of("main.tf"));
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+
+        // No PUSH rows are configured, only the PULL_REQUEST row from setup().
+        doReturn(List.of())
+                .when(webhookEventRepository)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(jobRepository, never()).save(any());
+        verify(scheduleJobService, never()).createJobContext(any());
     }
 }
