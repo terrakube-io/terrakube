@@ -1,24 +1,33 @@
 import { DeleteOutlined, InfoCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Select, Space, message, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { Button, Collapse, Form, Input, Modal, Select, Space, Tooltip, message, Typography } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
-import { Template } from "../types";
+import { Resource, Template } from "../types";
+import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
 
 const validateMessages = { required: "${label} is required!" };
 
 type Props = {
   changeJob: (id: string) => void;
   planJob?: boolean;
+  // When set, "Run now" is disabled and this message explains why (e.g. a CLI/API
+  // workspace that has no applied configuration to re-run yet).
+  disabledReason?: string;
+  // The workspace's current state resources, offered as selectable options for
+  // Target/Replace resources below (in addition to freely typing an address).
+  resources?: Resource[];
 };
 
 type CreateJobForm = {
   templateId: string;
   branchName: string;
+  targetAddrs?: string[];
+  replaceAddrs?: string[];
 };
 
-export const CreateJob = ({ changeJob, planJob = true }: Props) => {
+export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources }: Props) => {
   const navigate = useNavigate();
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
@@ -29,6 +38,7 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
   const [branchName, setBranchName] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const resourceOptions = useMemo(() => buildResourceOptions(resources ?? []), [resources]);
 
   const onCancel = () => {
     setVisible(false);
@@ -74,6 +84,8 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
           templateReference: values.templateId,
           overrideBranch: values.branchName,
           via: "UI",
+          targetAddrs: values.targetAddrs?.length ? values.targetAddrs : undefined,
+          replaceAddrs: values.replaceAddrs?.length ? values.replaceAddrs : undefined,
         },
         relationships: {
           workspace: {
@@ -109,19 +121,21 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
 
   return (
     <div>
-      <Button
-        type="primary"
-        htmlType="button"
-        onClick={() => {
-          loadBranch();
-          setVisible(true);
-        }}
-        icon={<PlayCircleOutlined />}
-        disabled={!planJob || submitting}
-        loading={submitting}
-      >
-        Run now
-      </Button>
+      <Tooltip title={disabledReason}>
+        <Button
+          type="primary"
+          htmlType="button"
+          onClick={() => {
+            loadBranch();
+            setVisible(true);
+          }}
+          icon={<PlayCircleOutlined />}
+          disabled={!planJob || submitting || !!disabledReason}
+          loading={submitting}
+        >
+          Run now
+        </Button>
+      </Tooltip>
 
       <Modal
         open={visible}
@@ -176,6 +190,43 @@ export const CreateJob = ({ changeJob, planJob = true }: Props) => {
             >
               <Input />
             </Form.Item>
+            <Collapse
+              ghost
+              items={[
+                {
+                  key: "additionalPlanningOptions",
+                  label: "Additional planning options",
+                  children: (
+                    <>
+                      <Form.Item
+                        name="targetAddrs"
+                        label="Target resources"
+                        tooltip="Limit the plan to these resource addresses and their dependencies, e.g. aws_instance.example or module.foo.aws_instance.bar. Type an address and press Enter to add it."
+                      >
+                        <Select
+                          mode="tags"
+                          tokenSeparators={[","]}
+                          placeholder="Select or type a resource address"
+                          options={resourceOptions}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="replaceAddrs"
+                        label="Replace resources"
+                        tooltip="Force replacement of these resource addresses on the next apply, e.g. aws_instance.example or module.foo.aws_instance.bar. Type an address and press Enter to add it."
+                      >
+                        <Select
+                          mode="tags"
+                          tokenSeparators={[","]}
+                          placeholder="Select or type a resource address"
+                          options={resourceOptions}
+                        />
+                      </Form.Item>
+                    </>
+                  ),
+                },
+              ]}
+            />
           </Form>
         </Space>
       </Modal>

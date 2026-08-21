@@ -6,8 +6,9 @@ import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
+import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
 const { Content } = Layout;
 const { Step } = Steps;
 const validateMessages = {
@@ -213,23 +214,23 @@ export const CreateModule = () => {
         }
       })
       .catch((error) => {
-        if (error.response) {
-          if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
-          }
+        if (error.response?.status === 403) {
+          message.error(
+            <span>
+              You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
+              <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
+              <a
+                target="_blank"
+                href="https://docs.terrakube.io/user-guide/organizations/team-management"
+                rel="noreferrer"
+              >
+                Terrakube documentation
+              </a>
+              .
+            </span>
+          );
+        } else {
+          message.error(getErrorMessage(error));
         }
       });
   };
@@ -427,10 +428,16 @@ export const CreateModule = () => {
               </Form.Item>
               <Form.Item
                 name="provider"
-                tooltip="e.g. azurerm,aws,google"
+                tooltip="e.g. azurerm, aws, google"
                 label="Provider"
-                rules={[{ required: true }]}
-                extra="The name of a remote system that the module is primarily written to target."
+                rules={[
+                  { required: true },
+                  {
+                    pattern: MODULE_SYSTEM_PATTERN,
+                    message: "Provider must contain only letters and digits (max 64 characters).",
+                  },
+                ]}
+                extra="This is the OpenTofu/Terraform registry system — the last segment of the module address (letters and digits only, e.g. 'aws'). It is not derived from your repository name; for example use 'aws', not 'aws-ecs'."
               >
                 <Input />
               </Form.Item>

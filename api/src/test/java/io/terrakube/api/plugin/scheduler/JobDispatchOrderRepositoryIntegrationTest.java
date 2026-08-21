@@ -130,7 +130,7 @@ class JobDispatchOrderRepositoryIntegrationTest {
         assertThat(jobRepository.isJobNextInDispatchOrder(pendingInA.getId())).isTrue();
         assertThat(jobRepository.isJobNextInDispatchOrder(pendingInB.getId())).isTrue();
         assertThat(jobRepository.findNextDispatchableJobId()).isEqualTo(pendingInB.getId());
-        assertThat(stillRunningInA.getId()).isNotNull(); // sanity: entity was actually persisted
+        assertThat(stillRunningInA.getId()).isGreaterThan(0); // sanity: entity was actually persisted
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
@@ -75,6 +76,7 @@ class RemoteTfeServiceTest {
     private final VariableRepository variableRepository = Mockito.mock(VariableRepository.class);
     private final GlobalVarRepository globalVarRepository = Mockito.mock(GlobalVarRepository.class);
     private final RbacService rbacService = Mockito.mock(RbacService.class);
+    private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
 
     @Test
     void listWorkspaceWithSearchNameUsesLoadedWorkspaceEntities() {
@@ -160,12 +162,47 @@ class RemoteTfeServiceTest {
         verify(rbacService).canApproveJob(team);
     }
 
+    @Test
+    void listWorkspaceExposesVersionConstraintAsLatestForTfeCompatibility() {
+        RemoteTfeService service = remoteTfeService();
+        JwtAuthenticationToken currentUser = currentUser();
+        Organization organization = organization("sample-org");
+        Workspace constrained = workspace("constrained", organization);
+        constrained.setTerraformVersion(">= 1.12.5");
+        when(teamTokenService.getCurrentGroups(currentUser)).thenReturn(Collections.emptyList());
+        when(workspaceRepository.findWorkspacesByOrganizationNameAndNameStartingWith("sample-org", "constrained"))
+                .thenReturn(Optional.of(List.of(constrained)));
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
+                .thenReturn(Optional.empty());
+
+        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("constrained"), currentUser);
+
+        assertEquals("latest", result.getData().get(0).getAttributes().get("terraform-version"));
+    }
+
+    @Test
+    void listWorkspaceKeepsExactVersionUnchanged() {
+        RemoteTfeService service = remoteTfeService();
+        JwtAuthenticationToken currentUser = currentUser();
+        Organization organization = organization("sample-org");
+        Workspace exact = workspace("exact", organization);
+        when(teamTokenService.getCurrentGroups(currentUser)).thenReturn(Collections.emptyList());
+        when(workspaceRepository.findWorkspacesByOrganizationNameAndNameStartingWith("sample-org", "exact"))
+                .thenReturn(Optional.of(List.of(exact)));
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
+                .thenReturn(Optional.empty());
+
+        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("exact"), currentUser);
+
+        assertEquals("1.6.0", result.getData().get(0).getAttributes().get("terraform-version"));
+    }
+
     private RemoteTfeService remoteTfeService() {
         return new RemoteTfeService(jobRepository, contentRepository, organizationRepository, workspaceRepository,
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
-                variableRepository, globalVarRepository, rbacService);
+                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger);
     }
 
     private JwtAuthenticationToken currentUser() {

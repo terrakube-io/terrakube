@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosResponse } from "axios";
+import { mgr } from "./authConfig";
 import getUserFromStorage from "./authUser";
 
 type RuntimeEnv = Window["_env_"] & { REACT_APP_TERRAKUBE_SEND_COOKIES?: string };
@@ -49,6 +50,10 @@ function handleResponseSuccess(response: AxiosResponse) {
 }
 
 function handleResponseError(error: AxiosError) {
+  if (error.response?.status === 401) {
+    // Token rejected by the API - sign out so the user lands back on Login.
+    mgr.removeUser();
+  }
   if (error.response?.status === 403) {
     // Enrich the error with a clear permission message so callers can display it
     const enriched = error as AxiosError & { permissionError: true; permissionMessage: string };
@@ -84,6 +89,10 @@ export function getErrorMessage(error: any): string {
     }
     if (error.response?.status === 404) {
       return "The requested resource could not be found.";
+    }
+    const jsonApiDetail = error.response?.data?.errors?.[0]?.detail;
+    if (typeof jsonApiDetail === "string" && jsonApiDetail.trim() !== "") {
+      return jsonApiDetail;
     }
     return error.response?.statusText || error.message || "An unexpected error occurred.";
   }

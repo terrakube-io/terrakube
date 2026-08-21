@@ -99,6 +99,7 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   locking: "Locking",
   sshkey: "SSH Key",
   webhook: "Webhook",
+  notifications: "Notifications",
   "state-shared": "State Shared",
   "team-access": "Team Access",
   advanced: "Destruction and Deletion",
@@ -219,13 +220,35 @@ export const WorkspaceDetails = ({
       title: "Name",
       dataIndex: "name",
       key: "name",
-      sorter: (a: Resource, b: Resource) => a.name.localeCompare(b.name),
-      render: (text: string, record: Resource) => (
-        <Button onClick={() => showDrawer(record)} type="link">
-          {text} &nbsp;
-          <HiOutlineExternalLink />
-        </Button>
-      ),
+      sorter: (a: Resource, b: Resource) => {
+        const nameA =
+          a.index !== undefined && a.index !== null
+            ? typeof a.index === "string"
+              ? `${a.name}["${a.index}"]`
+              : `${a.name}[${a.index}]`
+            : a.name;
+        const nameB =
+          b.index !== undefined && b.index !== null
+            ? typeof b.index === "string"
+              ? `${b.name}["${b.index}"]`
+              : `${b.name}[${b.index}]`
+            : b.name;
+        return nameA.localeCompare(nameB);
+      },
+      render: (text: string, record: Resource) => {
+        const displayName =
+          record.index !== undefined && record.index !== null
+            ? typeof record.index === "string"
+              ? `${text}["${record.index}"]`
+              : `${text}[${record.index}]`
+            : text;
+        return (
+          <Button onClick={() => showDrawer(record)} type="link">
+            {displayName} &nbsp;
+            <HiOutlineExternalLink />
+          </Button>
+        );
+      },
     },
     {
       title: "Provider",
@@ -872,7 +895,17 @@ export const WorkspaceDetails = ({
                   >
                     {workspace.attributes.locked ? "Unlock" : "Lock"}
                   </Button>
-                  <CreateJob changeJob={changeJob} planJob={planJob} />
+                  <CreateJob
+                    changeJob={changeJob}
+                    planJob={planJob}
+                    resources={resources}
+                    disabledReason={
+                      workspace.attributes.source === "empty" &&
+                      workspace.attributes.branch === "remote-content"
+                        ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
+                        : undefined
+                    }
+                  />
                 </Space>
               </div>
               <Space className="workspace-details" direction="vertical">

@@ -211,10 +211,12 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             dataSource={sortedWorkspaces}
             pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
             renderItem={(item) => (
-              <List.Item
-                style={{ cursor: "pointer" }}
-                onClick={() => navigate(`/organizations/${id}/workspaces/${item.id}`)}
-              >
+              <List.Item style={{ position: "relative" }}>
+                <Link
+                  to={`/organizations/${id}/workspaces/${item.id}`}
+                  aria-label={`Open workspace ${item.name}`}
+                  style={{ position: "absolute", inset: 0, zIndex: 0 }}
+                />
                 <WorkspaceCard tags={tags} item={item} />
               </List.Item>
             )}

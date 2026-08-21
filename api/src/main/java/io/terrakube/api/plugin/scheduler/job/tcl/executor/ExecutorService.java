@@ -21,6 +21,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.repository.GlobalVarRepository;
@@ -28,6 +29,7 @@ import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.VcsRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.collection.item.Item;
@@ -38,6 +40,7 @@ import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
+import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +75,8 @@ public class ExecutorService {
 
     @Autowired
     TokenService tokenService;
+    @Autowired
+    WorkspaceRepository workspaceRepository;
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
@@ -122,18 +127,7 @@ public class ExecutorService {
         environmentVariables.put("TF_IN_AUTOMATION", "1");
         environmentVariables.put("workspaceName", job.getWorkspace().getName());
         environmentVariables.put("organizationName", job.getOrganization().getName());
-        List<Variable> variableList = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
-        for (Variable variable : variableList) {
-            if (variable.getCategory().equals(Category.TERRAFORM)) {
-                log.info("Adding terraform");
-                terraformVariables.put(variable.getKey(), variable.getValue());
-            } else {
-                log.info("Adding environment variable");
-                environmentVariables.put(variable.getKey(), variable.getValue());
-            }
-            log.info("Variable Key: {} Value {}", variable.getKey(),
-                    variable.isSensitive() ? "sensitive" : variable.getValue());
-        }
+        splitWorkspaceVariablesByCategory(job, terraformVariables, environmentVariables);
 
         environmentVariables = loadOtherEnvironmentVariables(job, flow, environmentVariables);
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
@@ -162,15 +156,23 @@ public class ExecutorService {
 
         // A remote-content workspace requires a tarball URL (job.overrideSource set by
         // the Terraform CLI configuration-version upload, or workspace.source set by the
-        // same flow). A manual UI run against such a workspace will arrive here with both
-        // null and would NPE later inside the executor when constructing the download URL.
+        // same flow). A manual UI run against such a workspace will arrive here with source
+        // null, blank, or the literal "empty" placeholder (the initial value a brand-new
+        // CLI/API workspace is created with) and would NPE later inside the executor when
+        // constructing the download URL. The UI disables "Run now" for this case; this guard
+        // is defense-in-depth for direct API calls / stale clients.
         if ("remote-content".equals(executorContext.getBranch())
-                && (executorContext.getSource() == null || executorContext.getSource().isBlank())) {
+                && (executorContext.getSource() == null || executorContext.getSource().isBlank()
+                        || "empty".equals(executorContext.getSource()))) {
             throw new ExecutionException(
                     "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
                             + "' has branch 'remote-content' but no configuration has been uploaded. "
                             + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
         }
+
+        // For CLI/API driven (remote-content) workspaces, remember the configuration version
+        // being applied so a later UI "Run now" re-queues the last applied configuration.
+        persistAppliedConfigurationSource(job, flow, executorContext.getSource());
 
         if (job.getWorkspace().getModuleSshKey() != null) {
             String moduleSshId = job.getWorkspace().getModuleSshKey();
@@ -193,17 +195,37 @@ public class ExecutorService {
         }
     }
 
-    private ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
+    void splitWorkspaceVariablesByCategory(Job job, HashMap<String, String> terraformVariables,
+            HashMap<String, String> environmentVariables) throws ExecutionException {
+        List<Variable> variableList = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
+        for (Variable variable : variableList) {
+            if (variable.getCategory() == null) {
+                throw new ExecutionException(String.format(
+                        "Cannot run job %s: workspace '%s' has variable '%s' with no category (expected TERRAFORM or ENV). "
+                                + "Update the variable's category before retrying.",
+                        job.getId(), job.getWorkspace().getName(), variable.getKey()));
+            }
+            if (Category.TERRAFORM.equals(variable.getCategory())) {
+                log.info("Adding terraform variable, Key: {}", variable.getKey());
+                terraformVariables.put(variable.getKey(), variable.getValue());
+            } else {
+                log.info("Adding environment variable, Key: {}", variable.getKey());
+                environmentVariables.put(variable.getKey(), variable.getValue());
+            }
+        }
+    }
+
+    ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
         if (job.getAddress() != null && !job.getAddress().isEmpty() && (job.getTerraformPlan() == null || job.getTerraformPlan().isEmpty())) {
             List<Address> addressList = job.getAddress();
             StringBuilder tfCliArgsPlan= new StringBuilder();
             for(Address address : addressList) {
                 if (address.getType().equals(AddressType.TARGET)) {
-                    tfCliArgsPlan.append(String.format(" -target=\"%s\"", address.getName()));
+                    tfCliArgsPlan.append(String.format(" -target=\"%s\"", escapeCliAddress(address.getName())));
                 }
 
                 if (address.getType().equals(AddressType.REPLACE)) {
-                    tfCliArgsPlan.append(String.format(" -replace=\"%s\"", address.getName()));
+                    tfCliArgsPlan.append(String.format(" -replace=\"%s\"", escapeCliAddress(address.getName())));
                 }
             }
 
@@ -216,9 +238,49 @@ public class ExecutorService {
         return executorContext;
     }
 
+    private String escapeCliAddress(String address) {
+        if (address == null) {
+            return "";
+        }
+        return address.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private boolean iacType(Job job) {
         return job.getWorkspace().getIacType() != null && job.getWorkspace().getIacType().equals("terraform") ? false
                 : true;
+    }
+
+    /**
+     * Persists the configuration version being applied onto workspace.source for CLI/API driven
+     * (remote-content) workspaces. This is only done when a terraformApply flow is dispatched
+     * (i.e. the plan was approved and the apply is being attempted), so the stored source reflects
+     * the last configuration version that reached apply - regardless of whether the apply then
+     * succeeds or fails. This lets a later UI "Run now" re-queue that same configuration version.
+     *
+     * VCS/SSH backed workspaces are intentionally skipped: their source points at a git repository
+     * and must not be overwritten with a configuration-version tarball URL.
+     */
+    void persistAppliedConfigurationSource(Job job, Flow flow, String resolvedSource) {
+        if (flow == null || !FlowType.terraformApply.name().equals(flow.getType())) {
+            return;
+        }
+        Workspace workspace = job.getWorkspace();
+        if (workspace.getVcs() != null || workspace.getSsh() != null) {
+            return;
+        }
+        if (!"remote-content".equals(workspace.getBranch())) {
+            return;
+        }
+        if (resolvedSource == null || resolvedSource.isBlank()) {
+            return;
+        }
+        if (resolvedSource.equals(workspace.getSource())) {
+            return;
+        }
+        log.info("Updating workspace {} source to last applied configuration for remote-content workspace",
+                workspace.getName());
+        workspace.setSource(resolvedSource);
+        workspaceRepository.save(workspace);
     }
 
     private HashMap<String, String> loadOtherEnvironmentVariables(Job job, Flow flow,

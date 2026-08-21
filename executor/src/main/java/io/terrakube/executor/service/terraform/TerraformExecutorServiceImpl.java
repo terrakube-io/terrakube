@@ -47,7 +47,12 @@ import static io.terrakube.executor.service.workspace.SetupWorkspaceImpl.SSH_DIR
 public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private static final String STEP_SEPARATOR = "***************************************";
-    private static final long APPLY_PROGRESS_FLUSH_INTERVAL_MS = 2000;
+    // Was 2000ms: the structured panel could sit on stale (or, worse, entirely empty - see
+    // lastFlush below) data for up to 2s at a time while resources were actively transitioning,
+    // which reads as sluggish for anything that completes faster than that. Halved rather than
+    // dropped further since each flush is a full HTTP round trip to /context/v1 (GET-merge-POST)
+    // per plan/apply/destroy step - this is a rate-limiting ceiling, not a per-event push.
+    private static final long APPLY_PROGRESS_FLUSH_INTERVAL_MS = 1000;
 
     TerraformClient terraformClient;
     TerraformState terraformState;
@@ -80,12 +85,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         try {
             if (!terraformJob.getBranch().equals("remote-content") || (terraformJob.getFolder() != null && !terraformJob.getFolder().split(",")[0].equals("/"))) {
                 terraformWorkingDir = new File(Path.of(workingDirectory.getCanonicalPath(), terraformJob.getFolder().split(",")[0]).toString());
+                if (!terraformWorkingDir.getCanonicalPath().startsWith(workingDirectory.getCanonicalPath())) {
+                    throw new IOException(String.format("Invalid workspace folder path traversal attempt: %s", terraformJob.getFolder()));
+                }
                 if (!terraformWorkingDir.isDirectory()) {
-                    throw new IOException(String.format("Terraform Working Directory not exist: {}", terraformWorkingDir.getCanonicalPath()));
+                    throw new IOException(String.format("Terraform Working Directory does not exist: %s", terraformWorkingDir.getCanonicalPath()));
                 }
             }
         } catch (IOException e) {
             log.error(e.getMessage());
+            throw e;
         }
         log.info("Terraform Working Directory: {}", terraformWorkingDir.getCanonicalPath());
         return terraformWorkingDir;
@@ -163,7 +172,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     List<Map<String, Object>> liveChanges = new ArrayList<>();
                     List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
                     TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
-                    AtomicLong lastFlush = new AtomicLong(System.currentTimeMillis());
+                    // Starting at 0 (not now()) guarantees the very first json line always
+                    // passes the "now - lastFlush > interval" check below and flushes
+                    // immediately - otherwise the structured panel stayed on console-only for
+                    // this step's *entire* duration whenever the whole plan finished in under
+                    // APPLY_PROGRESS_FLUSH_INTERVAL_MS (common for small/fast plans), only
+                    // flipping to Structured after the step had already completed.
+                    AtomicLong lastFlush = new AtomicLong(0);
 
                     Consumer<String> jsonLineConsumer = (line) -> {
                         String humanMessage = eventParser.parseLine(line, liveChanges, jobDiagnostics);
@@ -292,13 +307,37 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 if (scriptBeforeSuccess) {
                     TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory);
-                    terraformProcessData.setTerraformVariables((terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
+                    boolean planFileDownloaded = terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
                             terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
-                            terraformWorkingDir) ? new HashMap<>() : terraformParameters));
+                            terraformWorkingDir);
+                    terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+
+                    // apply -json's event stream only ever carries terse per-resource one-liners
+                    // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
+                    // plus the final change-summary line - unlike plan(), which appends
+                    // getPlanAsHumanText's classic rendered diff, apply never appended anything
+                    // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
+                    // append (same reasoning: must run before waitForStreamCompletion below), just
+                    // rendered from the plan file apply already downloaded above instead of one it
+                    // computed itself - real `terraform apply <planfile>` reprints this same diff
+                    // before executing it, so this restores that content even though Terrakube
+                    // renders it after the resource-by-resource lines rather than before.
+                    if (execution && planFileDownloaded) {
+                        String humanReadablePlan = planStructuredOutputService.getPlanAsHumanText(terraformJob, terraformWorkingDir);
+                        if (humanReadablePlan != null && !humanReadablePlan.isBlank()) {
+                            for (String line : humanReadablePlan.split("\n", -1)) {
+                                applyOutput.accept(line);
+                            }
+                        }
+                    }
+
+                    if (execution) {
+                        appendHumanReadableOutputs(terraformJob, applyOutput);
+                    }
                 }
             }
 
@@ -334,7 +373,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
 
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
-        AtomicLong lastFlush = new AtomicLong(System.currentTimeMillis());
+        // See the matching comment in plan(): starting at 0 flushes the first line immediately.
+        // Apply already seeds the panel with pending rows before this point, so this mostly
+        // matters for the first real status transition landing without a multi-second delay.
+        AtomicLong lastFlush = new AtomicLong(0);
 
         Consumer<String> jsonLineConsumer = (line) -> {
             String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
@@ -359,6 +401,49 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         if (stateJson != null) {
             applyStructuredOutputService.resolveFinalValues(changes, stateJson);
         }
+
+        applyStructuredOutputService.publishApplyProgress(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
+        pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
+
+        return execution;
+    }
+
+    // destroy() previously ran a plain (non-JSON) terraform destroy, so it never got the
+    // structured per-resource status view plan()/apply() get - unlike apply(), there's no
+    // separate prior plan step to seed rows from (a "Destroy" workflow can run destroy directly,
+    // with no plan step at all), so this starts from an empty list and lets `destroy -json`'s own
+    // planned_change/apply_* events populate it, exactly the way plan() populates its own
+    // liveChanges from empty rather than seeding them.
+    private boolean runJsonDestroy(TerraformJob terraformJob, TerraformProcessData terraformProcessData, Consumer<String> destroyOutput)
+            throws IOException, ExecutionException, InterruptedException {
+        List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        AtomicLong lastFlush = new AtomicLong(0);
+
+        Consumer<String> jsonLineConsumer = (line) -> {
+            String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
+            if (humanMessage != null) {
+                destroyOutput.accept(humanMessage);
+            }
+
+            long now = System.currentTimeMillis();
+            if (now - lastFlush.get() > APPLY_PROGRESS_FLUSH_INTERVAL_MS) {
+                lastFlush.set(now);
+                // Published under the same "apply" phase/key as runJsonApply - a destroy is
+                // rendered by the UI as an apply of all-delete actions, reusing
+                // applyStructuredOutput/StructuredPlanOutput's applyMode rather than adding a
+                // third parallel structured-output shape for what's functionally the same view.
+                applyStructuredOutputService.publishApplyProgress(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
+                pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
+            }
+        };
+
+        TerraformClient jsonDestroyClient = buildJsonEnabledDestroyClient();
+
+        boolean execution = jsonDestroyClient.destroy(terraformProcessData, jsonLineConsumer, null).get();
 
         applyStructuredOutputService.publishApplyProgress(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
@@ -414,6 +499,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .build();
     }
 
+    // Package-private (not private) so tests can spy/stub this one seam, same reasoning as
+    // buildJsonEnabledApplyClient.
+    TerraformClient buildJsonEnabledDestroyClient() {
+        return TerraformClient.builder()
+                .jsonOutput(true)
+                .showColor(false)
+                .redirectErrorStream(true)
+                .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
+                .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .build();
+    }
+
     private String getCurrentStateJson(TerraformJob terraformJob, TerraformProcessData terraformProcessData)
             throws IOException, ExecutionException, InterruptedException {
         TextStringBuilder stateOutput = new TextStringBuilder();
@@ -455,10 +552,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 showTerraformMessage(terraformJob, "DESTROY", outputDestroy);
 
                 if (scriptBeforeSuccess) {
-                    execution = terraformClient.destroy(
+                    execution = runJsonDestroy(terraformJob,
                             getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
-                            outputDestroy,
-                            null).get();
+                            outputDestroy);
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
                 }
@@ -598,6 +694,51 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jsonOutput.toString());
             }
 
+        }
+    }
+
+    // Mirrors what the real `terraform apply`/`terraform output` CLI prints after a successful
+    // apply, rendered from the same JSON handleTerraformStateChange already fetched for the
+    // structured outputs panel (terraformOutputsService.buildOutputsFromJson), rather than
+    // re-running `terraform output` a second time.
+    private void appendHumanReadableOutputs(TerraformJob terraformJob, Consumer<String> output) {
+        String outputJson = terraformJob.getTerraformOutput();
+        if (outputJson == null || outputJson.isBlank()) {
+            return;
+        }
+
+        try {
+            List<Map<String, Object>> outputs = terraformOutputsService.buildOutputsFromJson(outputJson);
+            if (outputs.isEmpty()) {
+                return;
+            }
+
+            output.accept("");
+            output.accept("Outputs:");
+            output.accept("");
+            for (Map<String, Object> entry : outputs) {
+                String name = String.valueOf(entry.get("name"));
+                boolean sensitive = Boolean.TRUE.equals(entry.get("sensitive"));
+                output.accept(name + " = " + (sensitive ? "<sensitive>" : renderOutputValue(entry.get("value"))));
+            }
+        } catch (IOException e) {
+            log.warn("Unable to render human-readable outputs for job {}", terraformJob.getJobId(), e);
+        }
+    }
+
+    private String renderOutputValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+
+        if (value instanceof String stringValue) {
+            return "\"" + stringValue + "\"";
+        }
+
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            return String.valueOf(value);
         }
     }
 

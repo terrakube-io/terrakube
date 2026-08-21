@@ -18,10 +18,8 @@ class TerraformOutputsServiceTest {
 
     private TerraformOutputsService subject() {
         return new TerraformOutputsService(
-                Mockito.mock(WorkspaceSecurity.class),
-                new ObjectMapper(),
-                "http://terrakube-api",
-                Mockito.mock(TerrakubeClient.class));
+                Mockito.mock(JobContextService.class),
+                new ObjectMapper());
     }
 
     @Test

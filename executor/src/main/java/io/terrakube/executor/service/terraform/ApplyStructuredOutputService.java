@@ -2,18 +2,9 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.terrakube.client.TerrakubeClient;
-import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,23 +17,15 @@ public class ApplyStructuredOutputService {
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_APPLY_KEY = "applyStructuredOutput";
     private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
-    private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int READ_TIMEOUT_MS = 10000;
 
-    private final WorkspaceSecurity workspaceSecurity;
+    private final JobContextService jobContextService;
     private final ObjectMapper objectMapper;
-    private final String terrakubeApiUrl;
-    private final TerrakubeClient terrakubeClient;
 
     public ApplyStructuredOutputService(
-            WorkspaceSecurity workspaceSecurity,
-            ObjectMapper objectMapper,
-            @Value("${io.terrakube.api.url}") String terrakubeApiUrl,
-            TerrakubeClient terrakubeClient) {
-        this.workspaceSecurity = workspaceSecurity;
+            JobContextService jobContextService,
+            ObjectMapper objectMapper) {
+        this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
-        this.terrakubeApiUrl = terrakubeApiUrl;
-        this.terrakubeClient = terrakubeClient;
     }
 
     public List<Map<String, Object>> seedFromPlan(String organizationId, String jobId) {
@@ -123,6 +106,7 @@ public class ApplyStructuredOutputService {
     @SuppressWarnings("unchecked")
     void resolveFinalValues(List<Map<String, Object>> changes, String stateJson) {
         Map<String, Object> resolvedValuesByAddress = new HashMap<>();
+        Map<String, Object> resolvedSensitiveValuesByAddress = new HashMap<>();
         try {
             Map<String, Object> state = objectMapper.readValue(stateJson, new TypeReference<>() {
             });
@@ -130,7 +114,7 @@ public class ApplyStructuredOutputService {
             if (valuesRaw instanceof Map<?, ?> values) {
                 Object rootModuleRaw = values.get("root_module");
                 if (rootModuleRaw instanceof Map<?, ?> rootModule) {
-                    collectResourceValues((Map<String, Object>) rootModule, resolvedValuesByAddress);
+                    collectResourceValues((Map<String, Object>) rootModule, resolvedValuesByAddress, resolvedSensitiveValuesByAddress);
                 }
             }
         } catch (Exception e) {
@@ -166,29 +150,154 @@ public class ApplyStructuredOutputService {
             }
 
             Object afterSensitiveRaw = change.get("afterSensitive");
-            Map<?, ?> afterSensitive = afterSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) afterSensitiveRaw : Map.of();
+            Object stateSensitiveRaw = resolvedSensitiveValuesByAddress.get(address);
+            Object mergedSensitiveRaw = normalizeResourceSensitivities(
+                    change,
+                    mergeSensitiveMetadata(afterSensitiveRaw, stateSensitiveRaw));
+            change.put("afterSensitive", mergedSensitiveRaw);
+
+            Map<?, ?> afterSensitive = mergedSensitiveRaw instanceof Map<?, ?> ? (Map<?, ?>) mergedSensitiveRaw : Map.of();
 
             Map<String, Object> mutableAfter = (Map<String, Object>) after;
-            afterUnknown.forEach((key, isUnknown) -> {
-                if (!Boolean.TRUE.equals(isUnknown) || !resolvedMap.containsKey(key)) {
-                    return;
-                }
+            Map<Object, Object> mutableAfterUnknown = (Map<Object, Object>) afterUnknown;
 
-                // Never let a resolved sensitive value leave the executor process, mirroring
-                // PlanStructuredOutputService's sanitize-before-send precedent - the UI already
-                // renders this as "sensitive value" either way, so leaving it redacted here has
-                // no visible effect except keeping the real value off the wire entirely.
-                if (Boolean.TRUE.equals(afterSensitive.get(key))) {
-                    return;
-                }
-
-                mutableAfter.put(String.valueOf(key), resolvedMap.get(key));
-            });
+            // Walks every key of the resource's afterUnknown, not just ones that are themselves
+            // `true` - an unknown value nested inside a block or list item (one attribute of a
+            // network_interface list entry, say) has its own true/false/nested marker several
+            // levels down, not at this top level, and previously never got resolved here at all.
+            for (Object key : new ArrayList<>(mutableAfterUnknown.keySet())) {
+                Object sensitiveChild = Boolean.TRUE.equals(mergedSensitiveRaw) ? Boolean.TRUE : afterSensitive.get(key);
+                Object resolvedNewUnknown = resolveUnknownRecursive(
+                        mutableAfterUnknown.get(key),
+                        mapSlot(mutableAfter, key),
+                        resolvedMap.get(key),
+                        sensitiveChild);
+                mutableAfterUnknown.put(key, resolvedNewUnknown);
+            }
         }
     }
 
+    /**
+     * Resolves unknown values anywhere within a resource's after/afterUnknown structure - not
+     * just at the top level - by walking afterUnknown's shape (which Terraform mirrors exactly
+     * against after/afterSensitive: booleans at leaves, nested maps/lists everywhere a block or
+     * collection attribute exists) and, at each `true` leaf, splicing the matching real value
+     * from post-apply state into `after` via the given slot. Returns the same shape with
+     * resolved leaves flipped to `false`, for the caller to store back as the new afterUnknown.
+     */
     @SuppressWarnings("unchecked")
-    private void collectResourceValues(Map<String, Object> module, Map<String, Object> resolvedValuesByAddress) {
+    private Object resolveUnknownRecursive(Object afterUnknownNode, ValueSlot afterSlot, Object resolvedNode, Object afterSensitiveNode) {
+        if (Boolean.TRUE.equals(afterSensitiveNode)) {
+            // If the container or leaf is marked sensitive, never resolve it to plaintext.
+            return afterUnknownNode;
+        }
+
+        if (Boolean.TRUE.equals(afterUnknownNode)) {
+            // Never let a resolved sensitive value leave the executor process, mirroring
+            // PlanStructuredOutputService's sanitize-before-send precedent - the UI already
+            // renders this as "sensitive value" either way, so leaving it redacted here has no
+            // visible effect except keeping the real value off the wire entirely. Also leaves a
+            // leaf unresolved (rather than defaulting to something) when state has nothing for
+            // it - shouldn't normally happen, but silently keeping "unknown" beats guessing.
+            if (resolvedNode == null) {
+                return afterUnknownNode;
+            }
+
+            afterSlot.set(sanitizeSensitiveValues(resolvedNode, afterSensitiveNode));
+            return false;
+        }
+
+        if (afterUnknownNode instanceof Map<?, ?> unknownMap) {
+            Object currentAfter = afterSlot.get();
+            Map<String, Object> afterMap = currentAfter instanceof Map<?, ?> existing
+                    ? new HashMap<>((Map<String, Object>) existing)
+                    : new HashMap<>();
+            Map<?, ?> resolvedMapNode = resolvedNode instanceof Map<?, ?> resolvedMapValue ? resolvedMapValue : Map.of();
+            Map<?, ?> sensitiveMapNode = afterSensitiveNode instanceof Map<?, ?> sensitiveMapValue ? sensitiveMapValue : Map.of();
+
+            Map<Object, Object> newUnknownMap = new HashMap<>();
+            for (Map.Entry<?, ?> entry : unknownMap.entrySet()) {
+                Object key = entry.getKey();
+                newUnknownMap.put(key, resolveUnknownRecursive(
+                        entry.getValue(), mapSlot(afterMap, key), resolvedMapNode.get(key), sensitiveMapNode.get(key)));
+            }
+            afterSlot.set(afterMap);
+            return newUnknownMap;
+        }
+
+        if (afterUnknownNode instanceof List<?> unknownList) {
+            Object currentAfter = afterSlot.get();
+            List<Object> afterList = currentAfter instanceof List<?> existing ? new ArrayList<>(existing) : new ArrayList<>();
+            while (afterList.size() < unknownList.size()) {
+                afterList.add(null);
+            }
+            List<?> resolvedListNode = resolvedNode instanceof List<?> resolvedListValue ? resolvedListValue : List.of();
+            List<?> sensitiveListNode = afterSensitiveNode instanceof List<?> sensitiveListValue ? sensitiveListValue : List.of();
+
+            List<Object> newUnknownList = new ArrayList<>();
+            for (int index = 0; index < unknownList.size(); index++) {
+                Object resolvedChild = index < resolvedListNode.size() ? resolvedListNode.get(index) : null;
+                Object sensitiveChild = index < sensitiveListNode.size() ? sensitiveListNode.get(index) : null;
+                newUnknownList.add(resolveUnknownRecursive(
+                        unknownList.get(index), listSlot(afterList, index), resolvedChild, sensitiveChild));
+            }
+            afterSlot.set(afterList);
+            return newUnknownList;
+        }
+
+        // afterUnknown is `false` (already known at plan time) or some other non-boolean,
+        // non-container shape this format doesn't define - nothing to resolve either way.
+        return afterUnknownNode;
+    }
+
+    Object sanitizeSensitiveValues(Object value, Object sensitiveMetadata) {
+        return TerraformSensitivitySanitizer.sanitizeSensitiveValues(value, sensitiveMetadata);
+    }
+
+    /** A single addressable position inside `after` - either a map entry or a list index. */
+    private interface ValueSlot {
+        Object get();
+        void set(Object value);
+    }
+
+    private static ValueSlot mapSlot(Map<String, Object> map, Object key) {
+        String stringKey = String.valueOf(key);
+        return new ValueSlot() {
+            public Object get() {
+                return map.get(stringKey);
+            }
+            public void set(Object value) {
+                map.put(stringKey, value);
+            }
+        };
+    }
+
+    private static ValueSlot listSlot(List<Object> list, int index) {
+        return new ValueSlot() {
+            public Object get() {
+                return index < list.size() ? list.get(index) : null;
+            }
+            public void set(Object value) {
+                if (index < list.size()) {
+                    list.set(index, value);
+                }
+            }
+        };
+    }
+
+    Object mergeSensitiveMetadata(Object planSensitive, Object stateSensitive) {
+        return TerraformSensitivitySanitizer.mergeSensitiveMetadata(planSensitive, stateSensitive);
+    }
+
+    Object normalizeResourceSensitivities(Map<String, Object> change, Object sensitiveRaw) {
+        return TerraformSensitivitySanitizer.normalizeResourceSensitivities(change, sensitiveRaw);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectResourceValues(
+            Map<String, Object> module,
+            Map<String, Object> resolvedValuesByAddress,
+            Map<String, Object> resolvedSensitiveValuesByAddress) {
         Object resourcesRaw = module.get("resources");
         if (resourcesRaw instanceof List<?> resources) {
             for (Object resourceRaw : resources) {
@@ -198,8 +307,12 @@ public class ApplyStructuredOutputService {
 
                 Object address = resource.get("address");
                 Object values = resource.get("values");
+                Object sensitiveValues = resource.get("sensitive_values");
                 if (address instanceof String addressString && values instanceof Map<?, ?>) {
                     resolvedValuesByAddress.put(addressString, values);
+                    if (sensitiveValues != null) {
+                        resolvedSensitiveValuesByAddress.put(addressString, sensitiveValues);
+                    }
                 }
             }
         }
@@ -208,94 +321,18 @@ public class ApplyStructuredOutputService {
         if (childModulesRaw instanceof List<?> childModules) {
             for (Object childModuleRaw : childModules) {
                 if (childModuleRaw instanceof Map<?, ?> childModule) {
-                    collectResourceValues((Map<String, Object>) childModule, resolvedValuesByAddress);
+                    collectResourceValues((Map<String, Object>) childModule, resolvedValuesByAddress, resolvedSensitiveValuesByAddress);
                 }
             }
         }
     }
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
-        HttpURLConnection connection = null;
-        try {
-            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
-            if (!jobInfo.getAttributes().getStatus().equals("running")) {
-                throw new IllegalStateException("Job is not running, cannot get context");
-            }
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "GET");
-            int statusCode = connection.getResponseCode();
-            if (statusCode >= 400) {
-                log.warn("Unable to read context for job {}. Response status: {}", jobInfo.getId(), statusCode);
-                return new HashMap<>();
-            }
-
-            String body = readResponseBody(connection);
-            if (body == null || body.isBlank()) {
-                return new HashMap<>();
-            }
-
-            return objectMapper.readValue(body, new TypeReference<>() {
-            });
-        } catch (Exception ex) {
-            log.warn("Unable to read context for job {}", jobId, ex);
-            return new HashMap<>();
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
+        return jobContextService.getCurrentContext(organizationId, jobId);
     }
 
     private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        HttpURLConnection connection = null;
-        try {
-            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
-            if (!jobInfo.getAttributes().getStatus().equals("running")) {
-                throw new IllegalStateException("Job is not running, cannot save context");
-            }
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "POST");
-            connection.setDoOutput(true);
-            byte[] data = objectMapper.writeValueAsBytes(context);
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(data);
-            }
-
-            int statusCode = connection.getResponseCode();
-            if (statusCode >= 400) {
-                log.warn("Unable to save context for job {}. Response status: {} Body: {}", jobId, statusCode,
-                        readResponseBody(connection));
-            }
-        } catch (Exception e) {
-            log.warn("Unable to save context for job {}", jobId, e);
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    private HttpURLConnection buildConnection(String endpoint, String method) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
-        connection.setRequestMethod(method);
-        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setUseCaches(false);
-        return connection;
-    }
-
-    private String readResponseBody(HttpURLConnection connection) throws IOException {
-        InputStream stream = connection.getErrorStream();
-        if (stream == null) {
-            stream = connection.getInputStream();
-        }
-
-        if (stream == null) {
-            return "";
-        }
-
-        try (InputStream responseStream = stream) {
-            return new String(responseStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        jobContextService.saveContext(organizationId, jobId, context);
     }
 }
+

@@ -1,10 +1,12 @@
-import { DownOutlined, QuestionCircleOutlined } from "@ant-design/icons";
+import { ApiOutlined, DownOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import { Dropdown } from "antd";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./HelpMenu.css";
 
 export const HelpMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const helpItems = [
     {
@@ -24,6 +26,11 @@ export const HelpMenu = () => {
     },
   ];
 
+  const handleApiDocs = () => {
+    setIsOpen(false);
+    navigate("/api-docs");
+  };
+
   return (
     <Dropdown
       trigger={["click"]}
@@ -33,6 +40,10 @@ export const HelpMenu = () => {
       popupRender={() => (
         <div className="help-menu-dropdown">
           <div className="help-menu-header">Help & Support</div>
+          <div className="help-menu-item" onClick={handleApiDocs}>
+            <ApiOutlined className="help-menu-item-icon" />
+            <span>API Docs</span>
+          </div>
           {helpItems.map((item) => (
             <a
               key={item.key}

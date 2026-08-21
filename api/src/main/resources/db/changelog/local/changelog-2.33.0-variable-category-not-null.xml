@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Issue #3395: variable.variable_category has allowed NULL since it was added in
+      changelog-1.3.xml, and ExecutorService dereferenced it without a null check, crashing
+      scheduled jobs. This backfills the only NULL rows we can infer unambiguously - keys that
+      are well-known cloud-provider auth env vars, which are never valid as TERRAFORM variables
+      - and leaves everything else NULL. Application code (WorkspaceVariableValidationService)
+      fails any job run against a workspace that still has NULL-category variables, reporting the
+      workspace and variable key so the remaining ambiguous rows can be remediated by hand.
+    -->
+
+    <changeSet id="2-33-0-variable-category-backfill-known-env" author="jake">
+        <update tableName="variable">
+            <column name="variable_category" value="ENV"/>
+            <where>variable_category IS NULL AND variable_key IN (
+                'AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN','AWS_DEFAULT_REGION','AWS_PROFILE','AWS_REGION',
+                'ARM_CLIENT_ID','ARM_CLIENT_SECRET','ARM_SUBSCRIPTION_ID','ARM_TENANT_ID',
+                'GOOGLE_CREDENTIALS','GOOGLE_PROJECT','GOOGLE_APPLICATION_CREDENTIALS',
+                'HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'
+                )</where>
+        </update>
+    </changeSet>
+
+    <!--
+      Deferred: only applied once no NULL rows remain, so an instance with unremediated legacy
+      data keeps starting up (ExecutorService/WorkspaceVariableValidationService already guard
+      against the NULLs at runtime). Re-evaluated on every startup until it can succeed.
+    -->
+    <changeSet id="2-33-0-variable-category-not-null" author="jake">
+        <preConditions onFail="WARN" onFailMessage="Skipping NOT NULL constraint on variable.variable_category: rows with a NULL category still exist. Terrakube fails jobs run against workspaces with those rows, reporting the workspace and variable key; once every row is remediated this constraint will be applied automatically on a later startup.">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM variable WHERE variable_category IS NULL</sqlCheck>
+        </preConditions>
+        <addNotNullConstraint tableName="variable" columnName="variable_category" columnDataType="varchar(32)"/>
+    </changeSet>
+
+</databaseChangeLog>

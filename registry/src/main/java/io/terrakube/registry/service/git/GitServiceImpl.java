@@ -39,8 +39,13 @@ public class GitServiceImpl implements GitService {
     private static final String SSH_REGISTRY_DIRECTORY = "%s/.terraform-spring-boot/ssh/registry/%s/id_%s";
 
     @Override
-    public File getCloneRepositoryByTag(String repository, String tag, String vcsType, String vcsConnectionType,
-            String accessToken, String tagPrefix, String folder) {
+    public File getCloneRepositoryByTag(ModuleVersionDownload download) {
+        String repository = download.repository();
+        String vcsType = download.vcsType();
+        String vcsConnectionType = download.vcsConnectionType();
+        String accessToken = download.accessToken();
+        String tagPrefix = download.tagPrefix();
+        String folder = download.folder();
         File gitCloneRepository = null;
         try {
             String userHomeDirectory = FileUtils.getUserDirectoryPath();
@@ -53,7 +58,10 @@ public class GitServiceImpl implements GitService {
             FileUtils.forceMkdir(gitCloneRepository);
             FileUtils.cleanDirectory(gitCloneRepository);
 
-            String correctTag = validateCorrectTag(tag, repository, vcsType, vcsConnectionType, accessToken, tempFolder, tagPrefix);
+            String gitTag = download.gitTag();
+            String correctTag = (gitTag != null && !gitTag.isEmpty())
+                    ? gitTag
+                    : validateCorrectTag(download.version(), repository, vcsType, vcsConnectionType, accessToken, tempFolder, tagPrefix);
 
             log.info("Cloning {} using {}", repository, correctTag);
 

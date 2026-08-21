@@ -11,6 +11,7 @@ import { AgentSettings } from "./Agents";
 import { TagsSettings } from "./Tags";
 import { TeamSettings } from "./Teams";
 import { FederatedCredentials } from "./FederatedCredentials";
+import { OrgNotifications } from "./Notifications";
 import { TemplatesSettings } from "./Templates";
 import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
@@ -31,6 +32,7 @@ const SETTINGS_TAB_LABELS: Record<string, string> = {
   "9": "Variable Collections",
   "10": "Actions",
   "11": "Federated Credentials",
+  "12": "Notifications",
 };
 
 type Props = {
@@ -94,6 +96,8 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
         return <ActionSettings managePermission={permissions.managePermission} />;
       case "11":
         return <FederatedCredentials managePermission={permissions.managePermission} />;
+      case "12":
+        return <OrgNotifications managePermission={permissions.managePermission} />;
       default:
         return <GeneralSettings managePermission={permissions.managePermission} />;
     }
