@@ -71,6 +71,7 @@ public class PersistentExecutorService {
                 .responseTimeout(RESPONSE_TIMEOUT);
 
         WebClient webClient = webClientBuilder
+                .clone()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
 

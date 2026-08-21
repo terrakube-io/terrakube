@@ -68,6 +68,7 @@ public class PersistentExecutorServiceTest {
         responseSpec = mock(ResponseSpec.class, new FailUnkownMethod<>());
         responseEntity = mock(ResponseEntity.class, new FailUnkownMethod<>());
 
+        doReturn(webClientBuilder).when(webClientBuilder).clone();
         doReturn(webClientBuilder).when(webClientBuilder).clientConnector(any());
         doReturn(webClient).when(webClientBuilder).build();
         doReturn(requestBodyUriSpec).when(webClient).post();
