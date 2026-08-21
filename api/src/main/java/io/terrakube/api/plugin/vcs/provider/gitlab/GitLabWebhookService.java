@@ -284,6 +284,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         try {
             WebClient webClient = webClientBuilder
+                    .clone()
                     .baseUrl(apiUrl)
                     .defaultHeader("Authorization", "Bearer " + accessToken)
                     .defaultHeader("Content-Type", "application/json")
@@ -476,6 +477,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         AtomicReference<String> projectId = new AtomicReference<>("");
 
         WebClient webClient = webClientBuilder
+                .clone()
                 .baseUrl(gitlabBaseUrl)
                 .defaultHeader("Authorization", "Bearer " + accessToken)
                 .defaultHeader("Content-Type", "application/json")
@@ -630,6 +632,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
 
             WebClient webClient = webClientBuilder
+                    .clone()
                     .baseUrl(workspace.getVcs().getApiUrl())
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
@@ -669,6 +672,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
 
             WebClient webClient = webClientBuilder
+                    .clone()
                     .baseUrl(workspace.getVcs().getApiUrl())
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
@@ -702,6 +706,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             String projectId = getGitlabProjectId(ownerAndRepo, workspace.getVcs().getAccessToken(), workspace.getVcs().getApiUrl());
 
             WebClient webClient = webClientBuilder
+                    .clone()
                     .baseUrl(workspace.getVcs().getApiUrl())
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + workspace.getVcs().getAccessToken())
@@ -759,6 +764,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             // Create WebClient instance
             WebClient webClient = webClientBuilder
+                    .clone()
                     .baseUrl(job.getWorkspace().getVcs().getApiUrl())
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .defaultHeader(HttpHeaders.ACCEPT, "application/json")

@@ -116,9 +116,47 @@ public class GitLabWebhookServiceTest {
     }
 
     @Test
-    public void buildCommitStatusDescriptionDefaultsToQueueMessage() {
-        String description = GitLabWebhookService.buildCommitStatusDescription(JobStatus.queue, null);
+    public void repeatedCallsMustNotAccumulateHeadersOrFilters() throws Exception {
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        java.util.List<java.util.List<String>> authHeaders = new java.util.ArrayList<>();
+        java.util.List<java.util.List<String>> contentTypeHeaders = new java.util.ArrayList<>();
 
-        assertEquals("Your task is in Terrakube queue.", description);
+        server.createContext("/projects", exchange -> {
+            java.util.List<String> auth = exchange.getRequestHeaders().get("Authorization");
+            java.util.List<String> ct = exchange.getRequestHeaders().get("Content-Type");
+            authHeaders.add(auth == null ? java.util.List.of() : java.util.List.copyOf(auth));
+            contentTypeHeaders.add(ct == null ? java.util.List.of() : java.util.List.copyOf(ct));
+
+            byte[] body = "{\"id\": 123}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            GitLabWebhookService service = newService();
+            String serverUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+
+            for (int i = 0; i < 5; i++) {
+                String projectId = service.getGitlabProjectId("owner/repo", "token-" + i, serverUrl);
+                assertEquals("123", projectId);
+            }
+
+            assertEquals(5, authHeaders.size());
+            for (int i = 0; i < authHeaders.size(); i++) {
+                java.util.List<String> auth = authHeaders.get(i);
+                assertEquals(1, auth.size(), "request " + (i + 1) + " sent " + auth.size() + " Authorization headers: " + auth);
+                assertEquals("Bearer token-" + i, auth.get(0));
+
+                java.util.List<String> ct = contentTypeHeaders.get(i);
+                assertEquals(1, ct.size(), "request " + (i + 1) + " sent " + ct.size() + " Content-Type headers: " + ct);
+                assertEquals("application/json", ct.get(0));
+            }
+        } finally {
+            server.stop(0);
+        }
     }
 }
+

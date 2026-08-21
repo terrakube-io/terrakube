@@ -127,6 +127,7 @@ public class AzDevOpsTokenService {
 
     private WebClient getWebClient(String endpoint){
         return webClientBuilder
+                .clone()
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
                 .clientConnector(
