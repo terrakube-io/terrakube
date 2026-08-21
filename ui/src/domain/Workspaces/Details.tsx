@@ -220,13 +220,35 @@ export const WorkspaceDetails = ({
       title: "Name",
       dataIndex: "name",
       key: "name",
-      sorter: (a: Resource, b: Resource) => a.name.localeCompare(b.name),
-      render: (text: string, record: Resource) => (
-        <Button onClick={() => showDrawer(record)} type="link">
-          {text} &nbsp;
-          <HiOutlineExternalLink />
-        </Button>
-      ),
+      sorter: (a: Resource, b: Resource) => {
+        const nameA =
+          a.index !== undefined && a.index !== null
+            ? typeof a.index === "string"
+              ? `${a.name}["${a.index}"]`
+              : `${a.name}[${a.index}]`
+            : a.name;
+        const nameB =
+          b.index !== undefined && b.index !== null
+            ? typeof b.index === "string"
+              ? `${b.name}["${b.index}"]`
+              : `${b.name}[${b.index}]`
+            : b.name;
+        return nameA.localeCompare(nameB);
+      },
+      render: (text: string, record: Resource) => {
+        const displayName =
+          record.index !== undefined && record.index !== null
+            ? typeof record.index === "string"
+              ? `${text}["${record.index}"]`
+              : `${text}[${record.index}]`
+            : text;
+        return (
+          <Button onClick={() => showDrawer(record)} type="link">
+            {displayName} &nbsp;
+            <HiOutlineExternalLink />
+          </Button>
+        );
+      },
     },
     {
       title: "Provider",

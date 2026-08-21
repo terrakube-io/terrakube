@@ -113,7 +113,11 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
         resource && (
           <>
             <Avatar shape="square" size="small" src={getServiceIcon(resource.provider, resource.type)} />{" "}
-            {resource.name}
+            {resource.index !== undefined && resource.index !== null
+              ? typeof resource.index === "string"
+                ? `${resource.name}["${resource.index}"]`
+                : `${resource.name}[${resource.index}]`
+              : resource.name}
           </>
         )
       }
