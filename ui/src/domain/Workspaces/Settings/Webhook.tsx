@@ -617,7 +617,7 @@ export const WorkspaceWebhook = ({
             <Row
               hidden={
                 !webhookEnabled ||
-                (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB" && vcsProvider !== "AZURE_DEVOPS") ||
+                (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB" && vcsProvider !== "AZURE_SP_MI") ||
                 migratedV2
               }
             >
