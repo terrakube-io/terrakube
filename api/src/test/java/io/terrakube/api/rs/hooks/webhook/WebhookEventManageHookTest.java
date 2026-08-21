@@ -52,6 +52,16 @@ class WebhookEventManageHookTest {
     }
 
     @Test
+    void execute_v2AzureSpMiEventChangeSchedulesSync() {
+        WebhookEvent event = eventFor(VcsType.AZURE_SP_MI, true, "https://dev.azure.com/org/proj/_git/repo.git");
+
+        subject.execute(Operation.CREATE, TransactionPhase.POSTCOMMIT, event, null, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://dev.azure.com/org/proj/repo", "11111111-1111-1111-1111-111111111111");
+    }
+
+    @Test
     void execute_nonV2OrNonSharedEventChangeDoesNotScheduleSync() {
         WebhookEvent v1Event = eventFor(VcsType.GITHUB, false, "https://github.com/owner/repo");
         WebhookEvent bitbucketEvent = eventFor(VcsType.BITBUCKET, true, "https://bitbucket.org/owner/repo");

@@ -8,6 +8,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.WebhookService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.VcsType;
@@ -32,6 +33,9 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
 
     @Autowired
     GitLabWebhookService gitLabWebhookService;
+
+    @Autowired
+    AzDevOpsWebhookService azDevOpsWebhookService;
 
     @Autowired
     RepoWebhookSyncScheduler repoWebhookSyncScheduler;
@@ -119,11 +123,12 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
         return elideEntity.isMigratedV2() && isSharedWebhookProvider(elideEntity);
     }
 
-    // Both GitHub and GitLab participate in the shared, repository-level (v2)
-    // webhook flow reconciled asynchronously by RepoWebhookSyncJob.
+    // GitHub, GitLab and Azure DevOps (AZURE_SP_MI / AZURE_DEVOPS) participate in the shared,
+    // repository-level (v2) webhook flow reconciled asynchronously by
+    // RepoWebhookSyncJob.
     private boolean isSharedWebhookProvider(Webhook elideEntity) {
         VcsType vcsType = vcsType(elideEntity);
-        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB;
+        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI || vcsType == VcsType.AZURE_DEVOPS;
     }
 
     private VcsType vcsType(Webhook elideEntity) {
@@ -133,8 +138,11 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
     }
 
     private void deleteWorkspaceHook(Webhook elideEntity) {
-        if (vcsType(elideEntity) == VcsType.GITLAB) {
+        VcsType type = vcsType(elideEntity);
+        if (type == VcsType.GITLAB) {
             gitLabWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
+        } else if (type == VcsType.AZURE_SP_MI || type == VcsType.AZURE_DEVOPS) {
+            azDevOpsWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
         } else {
             gitHubWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
         }
