@@ -215,17 +215,17 @@ public class ExecutorService {
         }
     }
 
-    private ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
+    ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
         if (job.getAddress() != null && !job.getAddress().isEmpty() && (job.getTerraformPlan() == null || job.getTerraformPlan().isEmpty())) {
             List<Address> addressList = job.getAddress();
             StringBuilder tfCliArgsPlan= new StringBuilder();
             for(Address address : addressList) {
                 if (address.getType().equals(AddressType.TARGET)) {
-                    tfCliArgsPlan.append(String.format(" -target=\"%s\"", address.getName()));
+                    tfCliArgsPlan.append(String.format(" -target=\"%s\"", escapeCliAddress(address.getName())));
                 }
 
                 if (address.getType().equals(AddressType.REPLACE)) {
-                    tfCliArgsPlan.append(String.format(" -replace=\"%s\"", address.getName()));
+                    tfCliArgsPlan.append(String.format(" -replace=\"%s\"", escapeCliAddress(address.getName())));
                 }
             }
 
@@ -236,6 +236,13 @@ public class ExecutorService {
         }
 
         return executorContext;
+    }
+
+    private String escapeCliAddress(String address) {
+        if (address == null) {
+            return "";
+        }
+        return address.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private boolean iacType(Job job) {
