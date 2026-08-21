@@ -37,7 +37,6 @@ public class ScheduleVcs implements org.quartz.Job {
     TokenService tokenService;
     VcsRepository vcsRepository;
     GitHubAppTokenRepository gitHubAppTokenRepository;
-    ScheduleGitHubAppTokenService scheduleGitHubAppTokenService;
 
     @Transactional
     @Override
