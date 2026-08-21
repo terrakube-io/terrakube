@@ -62,3 +62,21 @@ variables.auto.tfvars
 liquibase.properties
 
 ui/.yarn/install-state.gz
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Benchmark results and reports
+benchmarks/results/
+benchmark-results/
