@@ -263,7 +263,7 @@ public class ProviderRefreshJob implements Job {
                 JsonNode key = gpgKeys.get(0);
                 impl.setKeyId(truncate(key.path("key_id").asText(""), 32));
                 impl.setAsciiArmor(key.path("ascii_armor").asText(""));
-                impl.setTrustSignature(truncate(key.path("trust_signature").asText(""), 32));
+                impl.setTrustSignature(key.path("trust_signature").asText(""));
                 impl.setSource(truncate(key.path("source").asText("unknown"), 64));
                 impl.setSourceUrl(truncate(key.path("source_url").asText("https://unknown"), 512));
             } else {
