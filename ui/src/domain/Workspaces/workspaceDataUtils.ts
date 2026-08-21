@@ -19,7 +19,13 @@ export type StateOutputVariableWithName = { name: string } & StateOutputValue;
 // terraform address prefix), while child-module resources carry the module's actual address
 // (e.g. "module.foo"). Reconstructs the full terraform resource address either way.
 export function getResourceAddress(resource: Resource): string {
-  const typeAndName = `${resource.type}.${resource.name}`;
+  const indexSuffix =
+    resource.index !== undefined && resource.index !== null
+      ? typeof resource.index === "string"
+        ? `["${resource.index}"]`
+        : `[${resource.index}]`
+      : "";
+  const typeAndName = `${resource.type}.${resource.name}${indexSuffix}`;
   return resource.module && resource.module !== "root_module" ? `${resource.module}.${typeAndName}` : typeAndName;
 }
 
@@ -368,6 +374,7 @@ export function parseState(state: any) {
         type: value.type,
         provider: value.provider_name,
         module: "root_module",
+        index: value.index,
         values: value.values,
         depends_on: value.depends_on,
       });
@@ -378,7 +385,7 @@ export function parseState(state: any) {
 
   // parse child module resources
   if (state?.values?.root_module?.child_modules?.length > 0) {
-    state?.values?.root_module?.child_modules?.forEach((moduleVal: any, index: any) => {
+    state?.values?.root_module?.child_modules?.forEach((moduleVal: any) => {
       if (moduleVal.resources != null)
         for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
           resources.push({
@@ -386,6 +393,7 @@ export function parseState(state: any) {
             type: value.type,
             provider: value.provider_name,
             module: moduleVal.address,
+            index: value.index,
             values: value.values,
             depends_on: value.depends_on,
           });
@@ -445,23 +453,21 @@ export function parseOldState(state: any) {
   console.log("Parsing resources and modules fallback method");
   if (state?.resources != null && state?.resources.length > 0) {
     state?.resources.forEach((value: any) => {
-      if (value.module != null) {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace("provider[", "").replace("]", ""),
-          module: value.module,
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
-        });
-      } else {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace('provider["', "").replace('"]', ""),
-          module: "root_module",
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
+      const moduleName = value.module != null ? value.module : "root_module";
+      const provider = value.provider
+        ? value.provider.replace('provider["', "").replace('provider[', "").replace('"]', "").replace(']', "")
+        : "";
+      if (value.instances != null && value.instances.length > 0) {
+        value.instances.forEach((instance: any) => {
+          resources.push({
+            name: value.name,
+            type: value.type,
+            provider: provider,
+            module: moduleName,
+            index: instance.index_key,
+            values: instance.attributes,
+            depends_on: instance.dependencies,
+          });
         });
       }
     });
@@ -473,7 +479,7 @@ export function parseOldState(state: any) {
 }
 
 export function parseChildModules(resources: any, child_modules?: any) {
-  child_modules?.forEach((moduleVal: any, index: number) => {
+  child_modules?.forEach((moduleVal: any) => {
     if (moduleVal.resources != null)
       for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
         resources.push({
@@ -481,13 +487,14 @@ export function parseChildModules(resources: any, child_modules?: any) {
           type: value.type,
           provider: value.provider_name,
           module: moduleVal.address,
+          index: value.index,
           values: value.values,
           depends_on: value.depends_on,
         });
       }
 
     if (moduleVal.child_modules?.length > 0) {
-      resources = parseChildModules(resources);
+      resources = parseChildModules(resources, moduleVal.child_modules);
     }
   });
 

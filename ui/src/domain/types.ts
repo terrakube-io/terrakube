@@ -542,6 +542,7 @@ export type Resource = {
   provider: string;
   type: string;
   module?: string;
+  index?: string | number;
   values: Record<string, any>;
   depends_on: string;
   showDrawer: (data: Resource) => void;

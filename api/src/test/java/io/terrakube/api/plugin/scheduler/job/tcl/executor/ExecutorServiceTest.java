@@ -16,6 +16,8 @@ import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
+import io.terrakube.api.rs.job.address.Address;
+import io.terrakube.api.rs.job.address.AddressType;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
@@ -191,4 +193,105 @@ class ExecutorServiceTest {
         assertThat(workspace.getSource()).isEqualTo("empty");
         verify(workspaceRepository, never()).save(workspace);
     }
+
+    private ExecutorContext createContext() {
+        return ExecutorContext.builder()
+                .environmentVariables(new HashMap<>())
+                .variables(new HashMap<>())
+                .build();
+    }
+
+    @Test
+    void shouldNotSetTfCliArgsWhenAddressListIsEmpty() {
+        job.setAddress(List.of());
+        ExecutorContext context = createContext();
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables()).doesNotContainKey("TF_CLI_ARGS_plan");
+    }
+
+    @Test
+    void shouldSetTfCliArgsPlanForSimpleTargetAddress() {
+        Address address = new Address();
+        address.setName("aws_s3_bucket.bucket");
+        address.setType(AddressType.TARGET);
+        job.setAddress(List.of(address));
+
+        ExecutorContext context = createContext();
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", " -target=\"aws_s3_bucket.bucket\"");
+    }
+
+    @Test
+    void shouldEscapeDoubleQuotesInTargetAddressIndexKey() {
+        Address address = new Address();
+        address.setName("aws_identitystore_user.users[\"name.surname\"]");
+        address.setType(AddressType.TARGET);
+        job.setAddress(List.of(address));
+
+        ExecutorContext context = createContext();
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", " -target=\"aws_identitystore_user.users[\\\"name.surname\\\"]\"");
+    }
+
+    @Test
+    void shouldEscapeDoubleQuotesInReplaceAddressIndexKey() {
+        Address address = new Address();
+        address.setName("aws_identitystore_user.users[\"name.surname\"]");
+        address.setType(AddressType.REPLACE);
+        job.setAddress(List.of(address));
+
+        ExecutorContext context = createContext();
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", " -replace=\"aws_identitystore_user.users[\\\"name.surname\\\"]\"");
+    }
+
+    @Test
+    void shouldHandleMultipleTargetAndReplaceAddressesWithQuotedKeysAndBackslashes() {
+        Address target1 = new Address();
+        target1.setName("aws_identitystore_user.users[\"name.surname\"]");
+        target1.setType(AddressType.TARGET);
+
+        Address target2 = new Address();
+        target2.setName("module.user[\"domain\\\\user\"]");
+        target2.setType(AddressType.TARGET);
+
+        Address replace = new Address();
+        replace.setName("aws_instance.server[\"web-prod\"]");
+        replace.setType(AddressType.REPLACE);
+
+        job.setAddress(List.of(target1, target2, replace));
+
+        ExecutorContext context = createContext();
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan",
+                        " -target=\"aws_identitystore_user.users[\\\"name.surname\\\"]\"" +
+                        " -target=\"module.user[\\\"domain\\\\\\\\user\\\"]\"" +
+                        " -replace=\"aws_instance.server[\\\"web-prod\\\"]\"");
+    }
+
+    @Test
+    void shouldNotOverwriteExistingTfCliArgsPlan() {
+        Address address = new Address();
+        address.setName("aws_s3_bucket.bucket");
+        address.setType(AddressType.TARGET);
+        job.setAddress(List.of(address));
+
+        ExecutorContext context = createContext();
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-existing-flag");
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables()).containsEntry("TF_CLI_ARGS_plan", "-existing-flag");
+    }
 }
+
