@@ -26,7 +26,13 @@ public class DownloadReleasesService {
     }
 
     public void downloadReleasesToFile(String releasesUrl, File releasesFile, String githubToken) {
+        // clone() is essential: webClientBuilder is a field on this singleton bean, and
+        // DefaultWebClientBuilder.defaultHeaders() applies the consumer immediately to the
+        // builder's own HttpHeaders. Mutating the shared builder would make h.add("User-Agent", ..)
+        // below append one more value on every call, growing the header until the remote
+        // rejects the request (api.github.com starts returning 400/500 past ~7KB of headers).
         WebClient webClient = webClientBuilder
+                .clone()
                 .clientConnector(new ReactorClientHttpConnector(
                         HttpClient.create()
                                 .followRedirect(true)
