@@ -10,8 +10,10 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 
 import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
@@ -126,8 +129,9 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             return null;
         }
         String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-        GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
-                gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, gitHubAppToken.getOwner());
+        // The scheduled refresh has no repository context, so the installation is
+        // re-resolved from the owner alone when the cached id no longer works.
+        GitHubAppInstallationToken installationToken = mintInstallationToken(vcs, jws, gitHubAppToken, null);
         gitHubAppToken.setExpiresAt(installationToken.expiresAt());
         return installationToken.token();
     }
@@ -143,8 +147,11 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
             log.info("Cached GitHub App token for user/organization {} is expired or missing an expiry, refreshing",
                     ownerAndRepo[0]);
             String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
-                    gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, ownerAndRepo[0]);
+            // A failure propagates rather than serving the expired token that is still
+            // in the row: an expired token reaches the user as an unexplained
+            // "not authorized", while the row itself stays intact for the next attempt.
+            GitHubAppInstallationToken installationToken = mintInstallationToken(vcs, jws, gitHubAppToken,
+                    repositoryOf(ownerAndRepo));
             gitHubAppToken.setToken(installationToken.token());
             gitHubAppToken.setExpiresAt(installationToken.expiresAt());
             gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
@@ -164,22 +171,28 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
         String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
         log.info("Generated JWT token for GitHub App");
-        String url = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/installation";
-        log.info("Getting access token for user/organization {} using url {}", ownerAndRepo[0], url);
-        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.GET, jws);
-        if (tokenResponse.getStatusCode().value() == 200) {
-            log.info("Successfully fetched access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
-            JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
-            String installationId = rootNode.path("id").asText();
-            //gitHubAppToken.setId(UUID.randomUUID());
-            gitHubAppToken.setInstallationId(installationId);
-            gitHubAppToken.setOwner(ownerAndRepo[0]);
-            gitHubAppToken.setAppId(vcs.getClientId());
-            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(installationId,
-                    vcs.getApiUrl(), jws, ownerAndRepo[0]);
-            gitHubAppToken.setToken(installationToken.token());
-            gitHubAppToken.setExpiresAt(installationToken.expiresAt());
+        String installationId = resolveInstallationId(vcs.getApiUrl(), jws, ownerAndRepo[0],
+                repositoryOf(ownerAndRepo));
+        if (installationId == null) {
+            log.error("No installation of GitHub App {} serves user/organization {}, no token was created",
+                    vcs.getClientId(), ownerAndRepo[0]);
+            return gitHubAppToken;
         }
+        log.info("Successfully fetched access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
+        gitHubAppToken.setInstallationId(installationId);
+        gitHubAppToken.setOwner(ownerAndRepo[0]);
+        gitHubAppToken.setAppId(vcs.getClientId());
+        GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(installationId,
+                vcs.getApiUrl(), jws, ownerAndRepo[0]);
+        if (installationToken.token() == null) {
+            // Persisting a row with no token would poison the cache: every later read
+            // would hit it, find no token, and hand the caller an unauthenticated clone.
+            log.error("Installation {} of GitHub App {} returned no token for user/organization {}, nothing was saved",
+                    installationId, vcs.getClientId(), ownerAndRepo[0]);
+            return gitHubAppToken;
+        }
+        gitHubAppToken.setToken(installationToken.token());
+        gitHubAppToken.setExpiresAt(installationToken.expiresAt());
 
         gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
         log.info("Successfully saved token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
@@ -194,6 +207,95 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
                     gitHubAppToken.getOwner(), e);
         }
         return gitHubAppToken;
+    }
+
+    private static String repositoryOf(String[] ownerAndRepo) {
+        return ownerAndRepo.length > 1 ? ownerAndRepo[1] : null;
+    }
+
+    // Works out which installation of the app serves this owner (and repository, when
+    // known). One app can be installed on many accounts, and an installation id is not
+    // stable - reinstalling, or installing on a second account, issues new ids - so a
+    // cached id must never be trusted blindly.
+    //
+    // /repos/{owner}/{repo}/installation is tried first because it is the only endpoint
+    // that answers "which installation serves THIS repository". The owner-level
+    // endpoints are the fallback for callers with no repository in hand (the scheduled
+    // refresh), and /users is tried after /orgs because an owner is one or the other.
+    private String resolveInstallationId(String vcsApiUrl, String jws, String owner, String repo) {
+        HttpStatusCodeException lastFailure = null;
+        List<String> candidates = new ArrayList<>();
+        if (repo != null && !repo.isBlank()) {
+            candidates.add(vcsApiUrl + "/repos/" + owner + "/" + repo + "/installation");
+        }
+        candidates.add(vcsApiUrl + "/orgs/" + owner + "/installation");
+        candidates.add(vcsApiUrl + "/users/" + owner + "/installation");
+
+        for (String url : candidates) {
+            try {
+                ResponseEntity<String> response = callGithubAPI("", url, HttpMethod.GET, jws);
+                if (response.getStatusCode().value() == 200) {
+                    String installationId = objectMapper.readTree(response.getBody()).path("id").asText();
+                    if (!installationId.isBlank()) {
+                        log.info("Resolved installation {} for user/organization {} using {}", installationId, owner,
+                                url);
+                        return installationId;
+                    }
+                }
+                log.debug("Installation lookup {} returned {} with no usable id", url, response.getStatusCode());
+            } catch (HttpStatusCodeException e) {
+                // A 404 only means the app is not installed for that owner or repository,
+                // which is expected while walking the candidates.
+                log.debug("Installation lookup {} returned {}", url, e.getStatusCode());
+                lastFailure = e;
+            } catch (JsonProcessingException e) {
+                log.error("Could not parse the installation lookup response from {}", url, e);
+            }
+        }
+        // Every candidate failed. Rethrowing keeps this as loud as it is today rather
+        // than degrading into a null token, which reaches the user as an unexplained
+        // "not authorized" from the git client.
+        if (lastFailure != null) {
+            throw lastFailure;
+        }
+        return null;
+    }
+
+    // Mints an installation token for a cached row, re-resolving the installation when
+    // the cached id has gone stale. Returns null when no token could be obtained, so
+    // callers can leave the cached row untouched rather than blanking it.
+    private GitHubAppInstallationToken mintInstallationToken(Vcs vcs, String jws, GitHubAppToken gitHubAppToken,
+            String repo) throws JsonProcessingException {
+        String owner = gitHubAppToken.getOwner();
+        String cachedInstallationId = gitHubAppToken.getInstallationId();
+
+        if (cachedInstallationId != null && !cachedInstallationId.isBlank()) {
+            try {
+                GitHubAppInstallationToken minted = fetchGitHubAppInstallationToken(cachedInstallationId,
+                        vcs.getApiUrl(), jws, owner);
+                if (minted.token() != null) {
+                    return minted;
+                }
+                log.warn("Installation {} returned no token for user/organization {}, re-resolving the installation",
+                        cachedInstallationId, owner);
+            } catch (HttpStatusCodeException e) {
+                log.warn("Cached installation {} for user/organization {} is no longer usable ({}), re-resolving",
+                        cachedInstallationId, owner, e.getStatusCode());
+            }
+        }
+
+        String resolvedInstallationId = resolveInstallationId(vcs.getApiUrl(), jws, owner, repo);
+        if (resolvedInstallationId == null) {
+            return null;
+        }
+        if (!resolvedInstallationId.equals(cachedInstallationId)) {
+            log.info("Installation for user/organization {} changed from {} to {}", owner, cachedInstallationId,
+                    resolvedInstallationId);
+            gitHubAppToken.setInstallationId(resolvedInstallationId);
+        }
+        // Anything thrown here reaches the caller on purpose: a retry that also fails
+        // must not be reported as "no token".
+        return fetchGitHubAppInstallationToken(resolvedInstallationId, vcs.getApiUrl(), jws, owner);
     }
 
     // Gets the access token with app installation ID for a specific installation of

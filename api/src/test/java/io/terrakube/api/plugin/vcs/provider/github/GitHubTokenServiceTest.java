@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.quartz.SchedulerException;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -30,8 +31,10 @@ import io.terrakube.api.rs.vcs.Vcs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -46,6 +49,13 @@ public class GitHubTokenServiceTest {
     private static final String REPO = "testrepo";
     private static final String INSTALLATION_ID = "98765";
     private static final String APP_ID = "app-client-id";
+    // An installation id that GitHub no longer recognises, e.g. the app was reinstalled
+    // or the repository now belongs to a different installation of the same app.
+    private static final String STALE_INSTALLATION_ID = "11111";
+    private static final String USER_OWNER = "testuser";
+    // An owner no installation of the app serves: nothing is registered for it, so every
+    // lookup answers 404.
+    private static final String UNSERVED_OWNER = "ghostowner";
 
     private GitHubAppTokenRepository gitHubAppTokenRepository;
     private VcsRepository vcsRepository;
@@ -56,6 +66,9 @@ public class GitHubTokenServiceTest {
     private String privateKeyPem;
     private AtomicInteger accessTokenHits;
     private AtomicInteger installationHits;
+    private AtomicInteger orgLookupHits;
+    private AtomicInteger userLookupHits;
+    private AtomicInteger staleTokenHits;
     private String tokenToReturn;
     private String expiresAtToReturn;
     private boolean includeExpiresAt;
@@ -81,6 +94,9 @@ public class GitHubTokenServiceTest {
 
         accessTokenHits = new AtomicInteger(0);
         installationHits = new AtomicInteger(0);
+        orgLookupHits = new AtomicInteger(0);
+        userLookupHits = new AtomicInteger(0);
+        staleTokenHits = new AtomicInteger(0);
         tokenToReturn = "ghs_refreshed-token";
         expiresAtToReturn = Instant.now().plus(1, ChronoUnit.HOURS).toString();
         includeExpiresAt = true;
@@ -96,6 +112,20 @@ public class GitHubTokenServiceTest {
                     ? "{\"token\":\"" + tokenToReturn + "\",\"expires_at\":\"" + expiresAtToReturn + "\"}"
                     : "{\"token\":\"" + tokenToReturn + "\"}";
             writeJson(exchange, 201, body);
+        });
+        // The stale installation is gone: GitHub answers 404 for a token request on it.
+        httpServer.createContext("/app/installations/" + STALE_INSTALLATION_ID + "/access_tokens", exchange -> {
+            staleTokenHits.incrementAndGet();
+            writeJson(exchange, 404, "{\"message\":\"Not Found\"}");
+        });
+        // Owner-level lookups, used when no repository is known (the scheduled refresh).
+        httpServer.createContext("/orgs/" + OWNER + "/installation", exchange -> {
+            orgLookupHits.incrementAndGet();
+            writeJson(exchange, 200, "{\"id\":\"" + INSTALLATION_ID + "\"}");
+        });
+        httpServer.createContext("/users/" + USER_OWNER + "/installation", exchange -> {
+            userLookupHits.incrementAndGet();
+            writeJson(exchange, 200, "{\"id\":\"" + INSTALLATION_ID + "\"}");
         });
         httpServer.start();
     }
@@ -243,5 +273,100 @@ public class GitHubTokenServiceTest {
         assertEquals(tokenToReturn, result);
         assertNotNull(existing.getExpiresAt());
         assertEquals(1, accessTokenHits.get());
+    }
+
+    // Issue 3: an app can be installed on several accounts, and installation ids change
+    // when an app is reinstalled. A cached id that GitHub no longer accepts must be
+    // re-resolved from the repository rather than failing every mint from then on.
+    @Test
+    public void getGitHubAppToken_staleInstallationId_reResolvesFromRepository() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().minus(5, ChronoUnit.MINUTES));
+        cached.setInstallationId(STALE_INSTALLATION_ID);
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+        when(gitHubAppTokenRepository.save(any(GitHubAppToken.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        GitHubAppToken result = subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO });
+
+        assertEquals(tokenToReturn, result.getToken());
+        assertEquals(INSTALLATION_ID, result.getInstallationId(), "the corrected installation id must be stored");
+        assertEquals(1, staleTokenHits.get(), "the stale id is tried once before re-resolving");
+        assertEquals(1, installationHits.get(), "the repository endpoint resolves the current installation");
+        assertEquals(1, accessTokenHits.get());
+        verify(gitHubAppTokenRepository, times(1)).save(any(GitHubAppToken.class));
+    }
+
+    // The scheduled refresh has no repository in hand, so it must fall back to the
+    // owner-level endpoint instead of giving up on a stale id.
+    @Test
+    public void refreshAccessToken_staleInstallationId_reResolvesFromOrganization() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken existing = createCachedToken(Instant.now().minus(1, ChronoUnit.HOURS));
+        existing.setInstallationId(STALE_INSTALLATION_ID);
+        when(vcsRepository.findFirstByClientId(APP_ID)).thenReturn(vcs);
+
+        String result = subject.refreshAccessToken(existing);
+
+        assertEquals(tokenToReturn, result);
+        assertEquals(INSTALLATION_ID, existing.getInstallationId());
+        assertEquals(1, orgLookupHits.get());
+        assertEquals(1, accessTokenHits.get());
+    }
+
+    // An owner is either an organization or a user, so /orgs answering 404 must not end
+    // the search.
+    @Test
+    public void refreshAccessToken_userOwner_fallsBackToUsersEndpoint() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken existing = createCachedToken(Instant.now().minus(1, ChronoUnit.HOURS));
+        existing.setOwner(USER_OWNER);
+        existing.setInstallationId(STALE_INSTALLATION_ID);
+        when(vcsRepository.findFirstByClientId(APP_ID)).thenReturn(vcs);
+
+        String result = subject.refreshAccessToken(existing);
+
+        assertEquals(tokenToReturn, result);
+        assertEquals(INSTALLATION_ID, existing.getInstallationId());
+        assertEquals(0, orgLookupHits.get(), "the organization endpoint is not registered for a user owner");
+        assertEquals(1, userLookupHits.get());
+    }
+
+    // When nothing can be resolved the failure must surface. Serving the expired token
+    // still sitting in the row would reach the user as an unexplained "not authorized"
+    // from the git client, which is the hardest possible form of this failure to debug.
+    // The row itself must survive, so the next attempt can still use it.
+    @Test
+    public void getGitHubAppToken_noInstallationServesOwner_failsAndKeepsRow() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().minus(5, ChronoUnit.MINUTES));
+        cached.setOwner(UNSERVED_OWNER);
+        cached.setInstallationId(STALE_INSTALLATION_ID);
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(cached);
+
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
+
+        assertEquals("ghs_stale-token", cached.getToken(), "the row must not be blanked by a failed refresh");
+        assertEquals(STALE_INSTALLATION_ID, cached.getInstallationId());
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
+    }
+
+    // A first fetch that cannot resolve an installation must not persist anything. A
+    // saved row with no token poisons the cache: every later read finds it, hands back a
+    // null token, and the clone goes out unauthenticated with nothing in the logs.
+    @Test
+    public void getGitHubAppToken_firstFetchWithNoInstallation_persistsNothing() throws Exception {
+        Vcs vcs = createVcs();
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(null);
+
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
+
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
+        verify(scheduleGitHubAppTokenService, never()).createTask(anyInt(), any());
+        assertEquals(0, accessTokenHits.get());
     }
 }
