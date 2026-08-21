@@ -63,11 +63,15 @@ public class RepoWebhookService {
     }
 
     private boolean isAzureDevOps(RepoWebhook repoWebhook) {
-        return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.AZURE_SP_MI;
+        return repoWebhook.getVcs() != null
+                && (repoWebhook.getVcs().getVcsType() == VcsType.AZURE_SP_MI
+                        || repoWebhook.getVcs().getVcsType() == VcsType.AZURE_DEVOPS);
     }
 
     private boolean isAzureDevOps(Workspace workspace) {
-        return workspace.getVcs() != null && workspace.getVcs().getVcsType() == VcsType.AZURE_SP_MI;
+        return workspace.getVcs() != null
+                && (workspace.getVcs().getVcsType() == VcsType.AZURE_SP_MI
+                        || workspace.getVcs().getVcsType() == VcsType.AZURE_DEVOPS);
     }
 
     // Callers reach this exclusively through RepoWebhookSyncJob, which is

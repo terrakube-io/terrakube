@@ -123,12 +123,12 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
         return elideEntity.isMigratedV2() && isSharedWebhookProvider(elideEntity);
     }
 
-    // GitHub, GitLab and Azure DevOps (AZURE_SP_MI) participate in the shared,
+    // GitHub, GitLab and Azure DevOps (AZURE_SP_MI / AZURE_DEVOPS) participate in the shared,
     // repository-level (v2) webhook flow reconciled asynchronously by
     // RepoWebhookSyncJob.
     private boolean isSharedWebhookProvider(Webhook elideEntity) {
         VcsType vcsType = vcsType(elideEntity);
-        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI;
+        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI || vcsType == VcsType.AZURE_DEVOPS;
     }
 
     private VcsType vcsType(Webhook elideEntity) {
@@ -141,7 +141,7 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
         VcsType type = vcsType(elideEntity);
         if (type == VcsType.GITLAB) {
             gitLabWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
-        } else if (type == VcsType.AZURE_SP_MI) {
+        } else if (type == VcsType.AZURE_SP_MI || type == VcsType.AZURE_DEVOPS) {
             azDevOpsWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());
         } else {
             gitHubWebhookService.deleteWebhook(elideEntity.getWorkspace(), elideEntity.getRemoteHookId());

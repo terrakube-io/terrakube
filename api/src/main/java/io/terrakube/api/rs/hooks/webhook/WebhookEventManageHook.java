@@ -63,6 +63,6 @@ public class WebhookEventManageHook implements LifeCycleHook<WebhookEvent> {
         VcsType vcsType = webhook.getWorkspace().getVcs() == null
                 ? null
                 : webhook.getWorkspace().getVcs().getVcsType();
-        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB;
+        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI || vcsType == VcsType.AZURE_DEVOPS;
     }
 }

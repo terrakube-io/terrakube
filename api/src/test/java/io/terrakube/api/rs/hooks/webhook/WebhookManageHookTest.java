@@ -2,6 +2,7 @@ package io.terrakube.api.rs.hooks.webhook;
 
 import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.WebhookService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
@@ -42,6 +43,9 @@ class WebhookManageHookTest {
 
     @Mock
     GitLabWebhookService gitLabWebhookService;
+
+    @Mock
+    AzDevOpsWebhookService azDevOpsWebhookService;
 
     @Mock
     RepoWebhookSyncScheduler repoWebhookSyncScheduler;
@@ -180,6 +184,47 @@ class WebhookManageHookTest {
         verifyNoInteractions(gitHubWebhookService);
         assertNull(webhook.getRemoteHookId());
         verifyNoInteractions(repoWebhookSyncScheduler);
+    }
+
+    @Test
+    void execute_azureSpMi_migrationV2_precommitRemovesV1WebhookButDoesNotSyncYet() {
+        Workspace workspace = new Workspace();
+        workspace.setSource("https://dev.azure.com/org/proj/_git/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.AZURE_SP_MI);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+        webhook.setRemoteHookId("sub-v1-hook-id");
+
+        subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(azDevOpsWebhookService).deleteWebhook(workspace, "sub-v1-hook-id");
+        verifyNoInteractions(gitHubWebhookService);
+        verifyNoInteractions(gitLabWebhookService);
+        assertNull(webhook.getRemoteHookId());
+        verifyNoInteractions(repoWebhookSyncScheduler);
+    }
+
+    @Test
+    void execute_azureSpMi_postcommitSchedulesSync() {
+        Workspace workspace = new Workspace();
+        workspace.setId(java.util.UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        workspace.setSource("https://dev.azure.com/org/proj/_git/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.AZURE_SP_MI);
+        workspace.setVcs(vcs);
+
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(true);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.POSTCOMMIT, webhook, requestScope, Optional.empty());
+
+        verify(repoWebhookSyncScheduler).scheduleSync(
+                "https://dev.azure.com/org/proj/repo", "55555555-5555-5555-5555-555555555555");
     }
 
     @Test

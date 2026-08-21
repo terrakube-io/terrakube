@@ -615,7 +615,11 @@ export const WorkspaceWebhook = ({
               </Col>
             </Row>
             <Row
-              hidden={!webhookEnabled || (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB") || migratedV2}
+              hidden={
+                !webhookEnabled ||
+                (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB" && vcsProvider !== "AZURE_DEVOPS") ||
+                migratedV2
+              }
             >
               <Col span={24} style={{ marginBottom: 16 }}>
                 {migratedV2 ? (
