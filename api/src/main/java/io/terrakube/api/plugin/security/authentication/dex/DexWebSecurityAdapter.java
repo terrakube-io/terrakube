@@ -82,6 +82,7 @@ public class DexWebSecurityAdapter {
                                                         .requestMatchers("/subscriptions").permitAll()
                                         .requestMatchers("/tofu/index.json").permitAll()
                                         .requestMatchers("/terraform/index.json").permitAll()
+                                        .requestMatchers("/terragrunt/index.json").permitAll()
                                         .anyRequest().authenticated();
                                 })
                                 .oauth2ResourceServer(oauth2 -> {

@@ -29,6 +29,7 @@ type UpdateWorkspaceForm = {
   folder?: string;
   executionMode: string;
   terraformVersion: string;
+  terragruntVersion?: string;
   iacType: string;
   branch: string;
   defaultTemplate?: string;
@@ -43,38 +44,65 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const [selectedIac, setSelectedIac] = useState("");
   const { permissions: orgPermissions } = useOrgPermissions();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
+  const [terragruntVersions, setTerragruntVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const [waiting, setWaiting] = useState(false);
 
   const loadVersions = (iacType: string) => {
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
-    axiosInstance.get(versionsApi).then((resp) => {
-      const tfVersions = [];
-      if (iacType === "tofu") {
-        resp.data.forEach((release: TofuRelease) => {
-          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
-        });
-      } else {
-        for (const version in resp.data.versions) {
-          if (!version.includes("-")) tfVersions.push(version);
+    if (iacType === "terragrunt") {
+      const terragruntApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/terragrunt/index.json`;
+      const terraformApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/terraform/index.json`;
+      Promise.all([axiosInstance.get(terragruntApi), axiosInstance.get(terraformApi)]).then(
+        ([tgResp, tfResp]) => {
+          const tgVersions: string[] = [];
+          (tgResp.data as TofuRelease[]).forEach((release) => {
+            if (!release.tag_name.includes("-")) tgVersions.push(release.tag_name.replace("v", ""));
+          });
+          setTerragruntVersions(tgVersions.sort(compareVersions).reverse());
+
+          const tfVersions: string[] = [];
+          for (const version in tfResp.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
+          setTerraformVersions(tfVersions.sort(compareVersions).reverse());
         }
-      }
-      setTerraformVersions(tfVersions.sort(compareVersions).reverse());
-    });
+      );
+    } else {
+      const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
+      axiosInstance.get(versionsApi).then((resp) => {
+        const tfVersions = [];
+        if (iacType === "tofu") {
+          resp.data.forEach((release: TofuRelease) => {
+            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+          });
+        } else {
+          for (const version in resp.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
+        }
+        setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+      });
+    }
   };
 
   useEffect(() => {
     setWaiting(true);
     const iacType = workspaceData.attributes?.iacType;
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
-
-    // Parallel load: versions, agent list, and projects
-    Promise.all([
+    const isTerragrunt = iacType === "terragrunt";
+    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${isTerragrunt ? "terraform" : iacType}/index.json`;
+    const extraCalls: Promise<any>[] = [
       axiosInstance.get(versionsApi),
       axiosInstance.get(`organization/${organizationId}/agent`),
       projectService.listProjects(organizationId),
-    ]).then(([versionsRes, agentsRes, projectsRes]) => {
+    ];
+    if (isTerragrunt) {
+      extraCalls.push(
+        axiosInstance.get(`${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/terragrunt/index.json`)
+      );
+    }
+
+    Promise.all(extraCalls).then(([versionsRes, agentsRes, projectsRes, tgRes]) => {
       const tfVersions: string[] = [];
       if (iacType === "tofu") {
         versionsRes.data.forEach((release: TofuRelease) => {
@@ -86,6 +114,15 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
         }
       }
       setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+
+      if (tgRes) {
+        const tgVersions: string[] = [];
+        tgRes.data.forEach((release: TofuRelease) => {
+          if (!release.tag_name.includes("-")) tgVersions.push(release.tag_name.replace("v", ""));
+        });
+        setTerragruntVersions(tgVersions.sort(compareVersions).reverse());
+      }
+
       setAgentList(agentsRes.data.data);
       if (!projectsRes.isError) setProjectList(projectsRes.data);
       setWaiting(false);
@@ -112,6 +149,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               folder: values.folder,
               executionMode: values.executionMode,
               terraformVersion: values.terraformVersion,
+              terragruntVersion: values.terragruntVersion,
               iacType: values.iacType,
               branch: values.branch,
               defaultTemplate: values.defaultTemplate,
@@ -195,6 +233,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             folder: workspaceData.attributes?.folder,
             executionMode: workspaceData.attributes?.executionMode,
             terraformVersion: workspaceData.attributes?.terraformVersion,
+            terragruntVersion: workspaceData.attributes?.terragruntVersion,
             iacType: workspaceData.attributes?.iacType,
             branch: workspaceData.attributes?.branch,
             defaultTemplate: workspaceData.attributes?.defaultTemplate,
@@ -288,14 +327,35 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 })}
               </Select>
             </Form.Item>
+            {(selectedIac || workspaceData.attributes?.iacType) === "terragrunt" && (
+              <Form.Item
+                name="terragruntVersion"
+                label="Terragrunt Version"
+                rules={[{ validator: validateTerraformVersion(terragruntVersions) }]}
+                extra="The version of Terragrunt to use for this workspace. Version constraints are also supported (e.g. ~>0.68.0)."
+              >
+                <AutoComplete
+                  disabled={!manageWorkspace}
+                  options={terragruntVersions.map((v) => ({ value: v }))}
+                  filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                  placeholder="e.g. 0.68.5 or ~>0.68.0"
+                />
+              </Form.Item>
+            )}
             <Form.Item
               name="terraformVersion"
-              label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"}
+              label={
+                (selectedIac || workspaceData.attributes?.iacType) === "terragrunt"
+                  ? "Underlying Terraform/OpenTofu Version"
+                  : getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"
+              }
               rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
               extra={
-                "The version of " +
-                getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-                " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
+                (selectedIac || workspaceData.attributes?.iacType) === "terragrunt"
+                  ? "The version of Terraform or OpenTofu to use as the underlying execution engine."
+                  : "The version of " +
+                    getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
+                    " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
               }
             >
               <AutoComplete

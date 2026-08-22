@@ -65,6 +65,34 @@ public class IndexTests extends ServerApplicationTests {
     }
 
     @Test
+    void terragruntIndexSearch() {
+        when(redisTemplate.hasKey("terragruntReleasesResponse")).thenReturn(true);
+        when(valueOperations.get("terragruntReleasesResponse")).thenReturn("[]");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/terragrunt/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void terragruntIndexReturnsServiceUnavailableWhenGithubApiFailsAndNoCacheExists() {
+        when(redisTemplate.hasKey("terragruntReleasesResponse")).thenReturn(false);
+        when(valueOperations.get(anyString())).thenReturn(null);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/terragrunt/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
+    }
+
+    @Test
     void terraformIndexReturnsStaleCacheWhenEndpointFails() {
         when(redisTemplate.hasKey("terraformReleasesResponse")).thenReturn(false);
         when(valueOperations.get("terraformReleasesResponseStale")).thenReturn("{\"stale\": true}");

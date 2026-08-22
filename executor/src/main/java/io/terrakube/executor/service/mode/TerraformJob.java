@@ -36,10 +36,15 @@ public class TerraformJob {
     private String moduleSshKey;
     private String commitId;
     private boolean tofu;
+    private String terragruntVersion;
+    private String iacType;
     private String agentUrl;
     private HashMap<String, String> environmentVariables;
     private HashMap<String, String> variables;
     private List<Map<String, Object>> liveChanges;
     private List<Map<String, Object>> jobDiagnostics;
 
+    public boolean isTerragrunt() {
+        return "terragrunt".equalsIgnoreCase(this.iacType) || (this.terragruntVersion != null && !this.terragruntVersion.isEmpty());
+    }
 }

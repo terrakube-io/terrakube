@@ -121,4 +121,5 @@
     <include file="/db/changelog/local/changelog-2.33.0-notification.xml" />
     <include file="/db/changelog/local/changelog-2.33.0-job-target-replace-addrs.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-provider-trust-signature.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-terragrunt-version.xml"/>
 </databaseChangeLog>
