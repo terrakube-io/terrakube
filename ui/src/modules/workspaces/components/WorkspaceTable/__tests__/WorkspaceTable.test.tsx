@@ -133,6 +133,54 @@ describe("WorkspaceTable", () => {
     expect(container.querySelector(".ant-pagination")).toBeInTheDocument();
   });
 
+  it("stays on the current page when a background refresh supplies a new array with the same workspaces", () => {
+    const manyWorkspaces: WorkspaceListItem[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `bulk-${i}`,
+      name: `bulk-workspace-${i}`,
+      iacType: "terraform",
+      source: "",
+    }));
+
+    const { container, rerender } = renderTable({ workspaces: manyWorkspaces });
+
+    fireEvent.click(screen.getByTitle("2"));
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+
+    // Simulate a polling refresh: same workspaces, but a brand-new array reference.
+    rerender(
+      <MemoryRouter>
+        <WorkspaceTable {...defaultProps} workspaces={[...manyWorkspaces]} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+    expect(container.querySelector(".ant-pagination-item-active")).toHaveTextContent("2");
+  });
+
+  it("clamps to the last valid page when a refresh shrinks the workspace list below the current page", () => {
+    const manyWorkspaces: WorkspaceListItem[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `bulk-${i}`,
+      name: `bulk-workspace-${i}`,
+      iacType: "terraform",
+      source: "",
+    }));
+
+    const { rerender } = renderTable({ workspaces: manyWorkspaces });
+
+    fireEvent.click(screen.getByTitle("2"));
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+
+    const shrunkWorkspaces = manyWorkspaces.slice(0, 5);
+    rerender(
+      <MemoryRouter>
+        <WorkspaceTable {...defaultProps} workspaces={shrunkWorkspaces} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("bulk-workspace-0")).toBeInTheDocument();
+    expect(screen.queryByText("bulk-workspace-20")).not.toBeInTheDocument();
+  });
+
   it("clicking the Name header sorts ascending when not already active", () => {
     renderTable({ sortOption: "status" });
     fireEvent.click(screen.getByText("Name"));
