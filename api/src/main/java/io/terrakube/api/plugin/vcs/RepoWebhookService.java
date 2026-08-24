@@ -36,6 +36,9 @@ import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -53,6 +56,8 @@ public class RepoWebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     PrCommentService prCommentService;
+    RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
+    ObjectMapper objectMapper;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -159,8 +164,7 @@ public class RepoWebhookService {
         }
     }
 
-    @Transactional
-    public void processV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
+    public UUID acceptV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
         RepoWebhook repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId))
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
 
@@ -181,6 +185,19 @@ public class RepoWebhookService {
             throw new SecurityException("HMAC signature verification failed");
         }
 
+        String headersJson;
+        try {
+            headersJson = objectMapper.writeValueAsString(headers);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize webhook headers", e);
+        }
+        return repoWebhookDeliveryTransactions.enqueue(repoWebhook, jsonPayload, headersJson);
+    }
+
+    public void processClaimedDelivery(RepoWebhook repoWebhook, String jsonPayload, Map<String, String> headers) {
+        boolean azureDevOps = isAzureDevOps(repoWebhook);
+        boolean gitlab = isGitLab(repoWebhook);
+
         WebhookResult webhookResult;
         if (azureDevOps) {
             webhookResult = azDevOpsWebhookService.parseAzDevOpsPayload(jsonPayload, headers);
@@ -191,12 +208,12 @@ public class RepoWebhookService {
         }
 
         if (webhookResult.getEvent() != null && webhookResult.getEvent().equals("ping")) {
-            log.info("Received ping for repo webhook {}", repoWebhookId);
+            log.info("Received ping for repo webhook {}", repoWebhook.getId());
             return;
         }
 
         if (!webhookResult.isValid()) {
-            log.warn("Invalid webhook result for repo webhook {}", repoWebhookId);
+            log.warn("Invalid webhook result for repo webhook {}", repoWebhook.getId());
             return;
         }
 
