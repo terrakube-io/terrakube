@@ -409,7 +409,10 @@ public class ExecutorService {
             }
         }
 
-        List<Reference> referenceList = referenceRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
+        // This runs after ScheduleJob has deliberately released its transaction before making
+        // external calls. The repository query fetches Collection.item, preventing a detached
+        // collection proxy from trying to acquire a session here.
+        List<Reference> referenceList = referenceRepository.findByWorkspaceWithCollectionItems(job.getWorkspace());
 
         List<Collection> collectionList = new ArrayList();
         for (Reference reference : referenceList) {
