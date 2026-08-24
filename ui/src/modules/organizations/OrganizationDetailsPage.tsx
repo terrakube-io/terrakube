@@ -60,6 +60,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       [WorkspaceStatusFilter.NeverExecuted]: 0,
       [JobStatus.WaitingApproval]: 0,
       [JobStatus.Failed]: 0,
+      [JobStatus.Pending]: 0,
       [JobStatus.Queue]: 0,
       [JobStatus.Running]: 0,
       [JobStatus.Completed]: 0,
