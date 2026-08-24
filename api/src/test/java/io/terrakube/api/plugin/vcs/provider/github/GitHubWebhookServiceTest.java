@@ -1,18 +1,35 @@
 package io.terrakube.api.plugin.vcs.provider.github;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.WireMockServer;
 
+import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.workspace.Workspace;
 
 public class GitHubWebhookServiceTest {
 
@@ -156,6 +173,54 @@ public class GitHubWebhookServiceTest {
         @Test
         void returnsNullForBlankHeader() {
             assertNull(subject.extractNextPageUrl("   "));
+        }
+    }
+
+    @Nested
+    class SendCommitStatus {
+
+        WireMockServer wireMockServer;
+        TokenService tokenService;
+        GitHubWebhookService subjectWithRestTemplate;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            wireMockServer = new WireMockServer(options().dynamicPort());
+            wireMockServer.start();
+            tokenService = mock(TokenService.class);
+            when(tokenService.getAccessToken(any(String[].class), any())).thenReturn("test-token");
+            subjectWithRestTemplate = new GitHubWebhookService(new ObjectMapper(), tokenService);
+            subjectWithRestTemplate.setWebhookRestTemplate(new RestTemplate());
+
+            wireMockServer.stubFor(post(urlPathMatching("/repos/owner/repo/statuses/.*"))
+                    .willReturn(aResponse().withStatus(201)));
+        }
+
+        @AfterEach
+        void tearDown() {
+            wireMockServer.stop();
+        }
+
+        @Test
+        void neverCallsThePullsStatusesEndpoint() {
+            Vcs vcs = new Vcs();
+            vcs.setApiUrl("http://localhost:" + wireMockServer.port());
+            Organization organization = new Organization();
+            organization.setName("test-org");
+            Workspace workspace = new Workspace();
+            workspace.setSource("https://github.com/owner/repo");
+            workspace.setVcs(vcs);
+            workspace.setOrganization(organization);
+            workspace.setName("test-ws");
+            Job job = new Job();
+            job.setWorkspace(workspace);
+            job.setCommitId("abc123");
+            job.setStatus(JobStatus.completed);
+
+            subjectWithRestTemplate.sendCommitStatus(job, JobStatus.completed, null);
+
+            wireMockServer.verify(1, postRequestedFor(urlPathMatching("/repos/owner/repo/statuses/.*")));
+            wireMockServer.verify(0, postRequestedFor(urlPathMatching(".*/pulls/.*/statuses.*")));
         }
     }
 }

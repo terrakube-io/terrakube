@@ -95,7 +95,8 @@ class RepoWebhookServiceTest {
                 scheduleJobService,
                 prCommentService,
                 repoWebhookDeliveryTransactions,
-                objectMapper);
+                objectMapper,
+                Runnable::run);
     }
 
     private Workspace workspaceWithSource(String source) {

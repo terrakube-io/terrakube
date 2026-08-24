@@ -266,66 +266,12 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             log.error(String.format("Failed to send job status to GitHub, message %s", response.getBody()));
         }
-
-        // Optional: Check if the commit is part of a PR and send status to the PR as
-        // well
-        try {
-            List<Integer> prNumbers = getPullRequestNumbersForCommit(workspace, job.getCommitId());
-            for (Integer prNumber : prNumbers) {
-                String prApiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos)
-                        + "/pulls/" + prNumber + "/statuses";
-
-                // Send the status to the pull request
-                ResponseEntity<String> prResponse = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, prApiUrl,
-                        HttpMethod.POST);
-                if (prResponse == null) {
-                    log.error("Failed to send job status on PR #{} in workspace {} to GitHub", prNumber,
-                            workspace.getName());
-                    continue;
-                }
-
-                if (prResponse.getStatusCode().value() == 201) {
-                    log.info("Job status sent successfully to PR #{} on GitHub", prNumber);
-                } else {
-                    log.error(String.format("Failed to send job status to PR #%, message %s", prNumber,
-                            prResponse.getBody()));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error occurred while checking PRs for commit {}: {}", job.getCommitId(), e.getMessage());
-        }
     }
 
     // GitHub's commit-status description has a hard 140-character API limit.
     public static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
         String description = WebhookServiceBase.buildCommitStatusDescription(jobStatus, runSummary);
         return description.length() > 140 ? description.substring(0, 140) : description;
-    }
-
-    private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {
-        List<Integer> prNumbers = new ArrayList<>();
-        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
-        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
-                + "/commits/" + commitId + "/pulls";
-
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, null, apiUrl,
-                HttpMethod.GET);
-
-        if (response != null && response.getStatusCode().value() == 200) {
-            try {
-                JsonNode jsonNode = new ObjectMapper().readTree(response.getBody());
-                for (JsonNode pr : jsonNode) {
-                    prNumbers.add(pr.path("number").asInt());
-                }
-            } catch (Exception e) {
-                log.error("Failed to parse PR data for commit {}: {}", commitId, e.getMessage());
-            }
-        } else {
-            log.error("Failed to fetch PRs for commit {}: {}", commitId,
-                    response != null ? response.getBody() : "No response");
-        }
-
-        return prNumbers;
     }
 
     // GitHub paginates /pulls/{number}/files at 30 entries per page by default (100 max per page,

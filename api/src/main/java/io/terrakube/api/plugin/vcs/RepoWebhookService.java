@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -58,6 +60,7 @@ public class RepoWebhookService {
     PrCommentService prCommentService;
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
+    Executor workspaceFanoutExecutor;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -252,13 +255,24 @@ public class RepoWebhookService {
 
         log.info("Processing v2 webhook for {} workspaces on repo {}", workspaces.size(), normalizedUrl);
 
-        for (Workspace workspace : workspaces) {
-            try {
-                processWorkspaceWebhook(workspace, webhookResult);
-            } catch (Exception e) {
-                log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(), e.getMessage(), e);
-            }
-        }
+        // Bounded concurrency (workspaceFanoutExecutor, default 4 - see WorkspaceFanoutExecutorConfig)
+        // instead of a fully serial loop: a shared webhook with 35+ workspaces no longer processes
+        // them one at a time, but also can't open unbounded concurrent DB/VCS/executor connections.
+        // join() blocks until every workspace has been attempted (successfully or not - each
+        // failure is caught and logged individually below, same as before), so the caller
+        // (RepoWebhookDispatchService.attemptDelivery) only records this delivery PROCESSED once
+        // every workspace item has actually been accepted.
+        List<CompletableFuture<Void>> tasks = workspaces.stream()
+                .map(workspace -> CompletableFuture.runAsync(() -> {
+                    try {
+                        processWorkspaceWebhook(workspace, webhookResult);
+                    } catch (Exception e) {
+                        log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
+                                e.getMessage(), e);
+                    }
+                }, workspaceFanoutExecutor))
+                .toList();
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
     }
 
     private void processWorkspaceWebhook(Workspace workspace, WebhookResult webhookResult) {

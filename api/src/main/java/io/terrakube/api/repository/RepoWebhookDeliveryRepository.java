@@ -74,4 +74,11 @@ public interface RepoWebhookDeliveryRepository extends JpaRepository<RepoWebhook
     @Query("DELETE FROM repo_webhook_delivery d WHERE d.status IN :terminalStatuses AND d.createdDate < :cutoff")
     int deleteTerminalRowsCreatedBefore(@Param("terminalStatuses") List<RepoWebhookDeliveryStatus> terminalStatuses,
             @Param("cutoff") Date cutoff);
+
+    // Backs the webhook.delivery.queue.depth/oldest.age.seconds Micrometer gauges (see
+    // RepoWebhookDeliveryMetrics).
+    long countByStatus(RepoWebhookDeliveryStatus status);
+
+    @Query("SELECT MIN(d.createdDate) FROM repo_webhook_delivery d WHERE d.status = :status")
+    Date findOldestCreatedDateByStatus(@Param("status") RepoWebhookDeliveryStatus status);
 }
