@@ -164,6 +164,15 @@ public class RepoWebhookService {
         }
     }
 
+    // @Transactional so repoWebhook.getVcs() (lazily loaded, accessed below by isGitLab/isAzureDevOps
+    // for every provider) has an open session to load through - without it, findById()'s own
+    // implicit per-call transaction closes before this method body runs, leaving vcs an
+    // uninitialized proxy and throwing LazyInitializationException on every delivery. This is safe
+    // for the immediate-dispatch ordering: a Spring transactional proxy commits the transaction
+    // (including repoWebhookDeliveryTransactions.enqueue()'s nested, REQUIRED-propagation insert)
+    // before returning control to the caller, so by the time WebHookController receives the
+    // deliveryId and calls dispatchAsync, the enqueue is already committed and visible.
+    @Transactional
     public UUID acceptV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
         RepoWebhook repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId))
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
