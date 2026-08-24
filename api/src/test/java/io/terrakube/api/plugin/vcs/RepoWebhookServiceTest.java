@@ -779,7 +779,11 @@ class RepoWebhookServiceTest {
                         commentResult.setBranch("feature-branch");
                         return true;
                     });
-            when(gitHubWebhookService.fetchPrFileChanges(eq(ws.getVcs()), eq(repoUrl),
+            // any(), not eq(ws.getVcs()): processClaimedDelivery now tries this once repo-wide with
+            // the repo webhook's own Vcs before any workspace loop iteration is reached (see
+            // RepoWebhookService.processClaimedDelivery) - the workspace-scoped fallback in
+            // processWorkspaceWebhook only runs if that didn't populate anything.
+            when(gitHubWebhookService.fetchPrFileChanges(any(), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9/files")))
                     .thenReturn(List.of("main.tf"));
 
@@ -1185,6 +1189,70 @@ class RepoWebhookServiceTest {
 
             verify(workspaceRepository, never()).findByNormalizedSourceWithMigratedWebhook(any());
             verify(jobRepository, never()).save(any());
+        }
+
+        @Test
+        void fetchesPrFileChangesOnceForTheWholeDeliveryNotOncePerWorkspace() throws Exception {
+            // Regression test: fetchPrFileChanges used to run inside the per-workspace loop, so a
+            // shared webhook with N workspaces made N redundant (and, post-pagination-fix,
+            // potentially multi-page) calls for the exact same PR's file list. It should now be
+            // fetched once, repo-wide, using the repo webhook's own Vcs, and reused by every
+            // workspace.
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"opened\", \"pull_request\": {\"number\": 42, \"head\": {\"sha\": \"def456\"}}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, "dedupe-test-secret");
+            Map<String, String> headers = Map.of("x-github-event", "pull_request");
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature-branch");
+            prResult.setCommit("def456");
+            prResult.setPrNumber(42);
+            prResult.setPrFilesUrl("https://api.github.com/repos/owner/repo/pulls/42/files");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(prResult);
+            when(gitHubWebhookService.fetchPrFileChanges(eq(rw.getVcs()), eq(repoUrl), eq(prResult.getPrFilesUrl())))
+                    .thenReturn(List.of("modules/network/main.tf"));
+
+            Workspace ws1 = workspaceWithSource(repoUrl);
+            ws1.setName("dedupe-ws1");
+            Webhook wh1 = new Webhook();
+            WebhookEvent event1 = new WebhookEvent();
+            event1.setEvent(WebhookEventType.PULL_REQUEST);
+            event1.setBranch("feature-branch");
+            event1.setPath("**");
+            event1.setPathType(WebhookEventPathType.PATTERN);
+            event1.setTemplateId("template-1");
+            wh1.setEvents(List.of(event1));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = workspaceWithSource(repoUrl);
+            ws2.setName("dedupe-ws2");
+            Webhook wh2 = new Webhook();
+            WebhookEvent event2 = new WebhookEvent();
+            event2.setEvent(WebhookEventType.PULL_REQUEST);
+            event2.setBranch("feature-branch");
+            event2.setPath("**");
+            event2.setPathType(WebhookEventPathType.PATTERN);
+            event2.setTemplateId("template-2");
+            wh2.setEvents(List.of(event2));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws1, ws2));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh1, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event1));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh2, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event2));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processClaimedDelivery(rw, payload, headers);
+
+            verify(gitHubWebhookService, times(1)).fetchPrFileChanges(any(), any(), any());
+            verify(gitHubWebhookService, never()).fetchPrFileChanges(eq(ws1.getVcs()), any(), any());
+            verify(gitHubWebhookService, never()).fetchPrFileChanges(eq(ws2.getVcs()), any(), any());
+            verify(jobRepository, times(2)).save(any(Job.class));
         }
     }
 

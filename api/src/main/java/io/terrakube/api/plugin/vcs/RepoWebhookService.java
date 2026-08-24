@@ -227,6 +227,26 @@ public class RepoWebhookService {
         }
 
         String normalizedUrl = repoWebhook.getRepositoryUrl();
+
+        // GitHub/GitLab PR file changes are a repo-level fact (which files a PR touched doesn't
+        // depend on whose credentials asked), but processWorkspaceWebhook used to fetch them fresh
+        // per workspace - on a shared webhook with N workspaces, that's N redundant paginated API
+        // calls for the exact same answer. Fetch once here with the repo webhook's own Vcs and let
+        // every workspace below reuse it; processWorkspaceWebhook still fetches per-workspace as a
+        // fallback if this didn't populate anything (no repo-level Vcs, or the fetch came back
+        // empty - which also covers a repo-level credential that can't read this PR, so a workspace
+        // with its own working credentials still gets a chance). Azure DevOps is deliberately
+        // excluded: per-workspace credentials there aren't just a fallback, see the comment in
+        // processWorkspaceWebhook.
+        if (!azureDevOps && webhookResult.getPrFilesUrl() != null && repoWebhook.getVcs() != null) {
+            List<String> prFiles = gitlab
+                    ? gitLabWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                            webhookResult.getPrFilesUrl())
+                    : gitHubWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                            webhookResult.getPrFilesUrl());
+            webhookResult.setFileChanges(prFiles);
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
@@ -273,7 +293,13 @@ public class RepoWebhookService {
                         azDevOpsWebhookService.fetchPrFileChanges(
                                 workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
             }
-        } else if (webhookResult.getPrFilesUrl() != null) {
+        } else if (webhookResult.getPrFilesUrl() != null
+                && (webhookResult.getFileChanges() == null || webhookResult.getFileChanges().isEmpty())) {
+            // Fallback only: processClaimedDelivery already tried this once, repo-wide, with the
+            // repo webhook's own Vcs. Reaching here means that either didn't run (no repo-level
+            // Vcs) or came back empty - which could genuinely be a zero-file-change PR, or could be
+            // the repo-level credential lacking access while this workspace's own credential works,
+            // so it's still worth this workspace trying with its own Vcs.
             if (workspace.getVcs() != null) {
                 List<String> prFiles = isGitLab(workspace)
                         ? gitLabWebhookService.fetchPrFileChanges(

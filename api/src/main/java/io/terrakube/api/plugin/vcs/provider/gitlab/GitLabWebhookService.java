@@ -343,6 +343,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                                                 log.debug("Added new path: {}", diffModel.getNewPath());
                                                             }
                                                         }
+                                                        // Renamed files need the old path too, or a workspace whose path
+                                                        // filter only matches the pre-rename location never sees the
+                                                        // change that moved it out.
+                                                        if (diffModel.isRenamedFile() && diffModel.getOldPath() != null
+                                                                && !diffModel.getOldPath().equals(diffModel.getNewPath())
+                                                                && !fileChanges.contains(diffModel.getOldPath())) {
+                                                            fileChanges.add(diffModel.getOldPath());
+                                                            log.debug("Added old path for rename: {}", diffModel.getOldPath());
+                                                        }
 
                                                         log.debug("Processing diff - Old: {}, New: {}, NewFile: {}, DeletedFile: {}, RenamedFile: {}",
                                                                 diffModel.getOldPath(),
