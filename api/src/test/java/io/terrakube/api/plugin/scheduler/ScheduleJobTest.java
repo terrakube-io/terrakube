@@ -31,6 +31,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.quartz.JobDataMap;
+import org.quartz.JobKey;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.Scheduler;
@@ -38,6 +39,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
 import graphql.Assert;
+import jakarta.persistence.EntityNotFoundException;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
@@ -826,7 +828,7 @@ public class ScheduleJobTest {
     }
 
      @Test
-     public void completedJobWithHistoryGloballyVar() {
+     public void completedJobWithHistoryGloballyVar() throws Exception {
          Job job = job(JobStatus.completed);
          Job prev1 = job(JobStatus.completed);
          prev1.setId(4710);
@@ -861,14 +863,17 @@ public class ScheduleJobTest {
          doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
          doNothing().when(stepRepository).deleteAll(anyList());
 
+         doNothing().when(scheduleJobService).deleteJobContext(anyInt());
+
          Assert.assertTrue(subject().runExecution(job));
+         verify(scheduleJobService, times(1)).deleteJobContext(prev2.getId());
 
          verify(jobRepository, times(1)).delete(any()); // Ensure we do not delete anything else
          verify(jobRepository, times(1)).delete(prev2);
      }
 
     @Test
-    public void completedJobWithHistoryWorkspaceVar() {
+    public void completedJobWithHistoryWorkspaceVar() throws Exception {
         Job job = job(JobStatus.completed);
         Job prev1 = job(JobStatus.completed);
         prev1.setId(4710);
@@ -903,14 +908,17 @@ public class ScheduleJobTest {
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
         doNothing().when(stepRepository).deleteAll(anyList());
 
+        doNothing().when(scheduleJobService).deleteJobContext(anyInt());
+
         Assert.assertTrue(subject().runExecution(job));
+        verify(scheduleJobService, times(1)).deleteJobContext(prev2.getId());
 
         verify(jobRepository, times(1)).delete(any()); // Ensure we do not delete anything else
         verify(jobRepository, times(1)).delete(prev2);
     }
 
     @Test
-    public void completedJobWithHistorySoftDelete() {
+    public void completedJobWithHistorySoftDelete() throws Exception {
         Job job = job(JobStatus.completed);
         Job prev1 = job(JobStatus.completed);
         prev1.setId(4710);
@@ -948,13 +956,45 @@ public class ScheduleJobTest {
         doReturn(job).when(jobRepository).save(any());
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
 
+        doNothing().when(scheduleJobService).deleteJobContext(anyInt());
+
         Assert.assertTrue(subject().runExecution(job));
+        verify(scheduleJobService, times(1)).deleteJobContext(prev2.getId());
 
         // prev2 should be soft deleted (flagged), never hard deleted
         verify(jobRepository, never()).delete(any());
         verify(jobRepository, times(1)).save(prev2);
         Assertions.assertTrue(prev2.isDeleted());
         Assertions.assertFalse(prev1.isDeleted());
+    }
+
+    @Test
+    public void orphanedTriggerSelfDeschedules() throws Exception {
+        // The Job row was deleted after this trigger was scheduled (e.g. KEEP_JOB_HISTORY
+        // pruning winning the race against the job's own terminal-status cleanup tick, or a
+        // soft delete hiding the row via the entity's @SQLRestriction). The fire must remove
+        // the orphaned Quartz context instead of throwing on every refire forever.
+        JobDetail jobDetail = mock(JobDetail.class);
+        JobDataMap dataMap = new JobDataMap();
+        dataMap.put(ScheduleJob.JOB_ID, 4711);
+        dataMap.put("isTriggerFromStatusChange", "false");
+        Scheduler scheduler = mock(Scheduler.class);
+        JobExecutionContext context = mock(JobExecutionContext.class);
+        doReturn(jobDetail).when(context).getJobDetail();
+        doReturn(dataMap).when(jobDetail).getJobDataMap();
+        doReturn(scheduler).when(context).getScheduler();
+        doReturn(true).when(scheduler).deleteJob(any(JobKey.class));
+
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        doReturn(transactionStatus).when(transactionManager).getTransaction(any());
+        doNothing().when(transactionManager).rollback(transactionStatus);
+
+        doThrow(new EntityNotFoundException("Unable to find io.terrakube.api.rs.job.Job with id 4711"))
+                .when(jobRepository).getReferenceById(4711);
+
+        Assertions.assertDoesNotThrow(() -> subject().execute(context));
+
+        verify(scheduler, times(1)).deleteJob(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + 4711));
     }
 
     @Test
