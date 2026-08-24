@@ -124,6 +124,17 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         return mintAndCacheToken(vcs, ownerAndRepo, gitHubAppToken);
     }
 
+    // Mints unconditionally, ignoring whatever is cached. A token can stop working
+    // before its recorded expiry - the installation's access is narrowed, the app is
+    // suspended, the token is revoked - and expiry alone cannot detect that. This is the
+    // entry point for a caller that has just been refused by GitHub and can say so.
+    public GitHubAppToken refreshGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
+            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonProcessingException {
+        log.info("Forcing a new GitHub App token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
+        GitHubAppToken cached = gitHubAppTokenRepository.findByAppIdAndOwner(vcs.getClientId(), ownerAndRepo[0]);
+        return mintAndCacheToken(vcs, ownerAndRepo, cached);
+    }
+
     // Mints an installation token and upserts the cache row.
     //
     // The installation is resolved on every mint rather than read back from the cached

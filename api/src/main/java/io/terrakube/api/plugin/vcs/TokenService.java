@@ -177,6 +177,20 @@ public class TokenService {
         return  gitHubTokenService.getAccessToken(vcs, ownerAndRepo);
     }
 
+    // Forces a new token for the supplied repository, ignoring any cached one. Only
+    // GitHub App connections can mint on demand: an OAuth connection carries its token on
+    // the Vcs row and is refreshed by its own schedule, so there is nothing to do here.
+    public String refreshAccessToken(String gitPath, Vcs vcs) throws URISyntaxException, JsonMappingException,
+            JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+        if (vcs.getPrivateKey() == null || vcs.getPrivateKey().isBlank()) {
+            log.info("Vcs {} is not a GitHub App connection, nothing to refresh", vcs.getId());
+            return null;
+        }
+        URI uri = new URI(gitPath);
+        String[] ownerAndRepo = Arrays.copyOfRange(uri.getPath().replaceAll("\\.git$", "").split("/"), 1, 3);
+        return gitHubTokenService.refreshGitHubAppToken(vcs, ownerAndRepo).getToken();
+    }
+
     // Get the access token for access to the supplied repository in full URL
     public String getAccessToken(String gitPath, Vcs vcs) throws URISyntaxException, JsonMappingException,
             JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {

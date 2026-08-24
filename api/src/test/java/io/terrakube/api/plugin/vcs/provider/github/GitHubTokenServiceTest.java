@@ -265,6 +265,38 @@ public class GitHubTokenServiceTest {
         verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
     }
 
+    // A caller that GitHub has just refused needs a new token even though the cached one
+    // still looks valid by its expiry: revocation and narrowed access are invisible to an
+    // expiry check.
+    @Test
+    public void refreshGitHubAppToken_mintsEvenWhenTheCachedTokenLooksValid() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+        when(gitHubAppTokenRepository.save(any(GitHubAppToken.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        GitHubAppToken result = subject.refreshGitHubAppToken(vcs, new String[] { OWNER, REPO });
+
+        assertEquals(tokenToReturn, result.getToken());
+        assertEquals(cached.getId(), result.getId(), "must update the existing row, not create a new one");
+        assertEquals(1, installationHits.get(), "the installation is resolved again, not taken from the row");
+        assertEquals(1, accessTokenHits.get());
+        verify(gitHubAppTokenRepository, times(1)).save(any(GitHubAppToken.class));
+    }
+
+    @Test
+    public void refreshGitHubAppToken_noInstallation_failsWithoutCachingAnything() throws Exception {
+        Vcs vcs = createVcs();
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(null);
+
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.refreshGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
+
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
+    }
+
     // Repository discovery mints with an installation id it already picked from
     // /app/installations, and never caches or checks expiry - a response with no
     // expires_at must not blow up that call.
