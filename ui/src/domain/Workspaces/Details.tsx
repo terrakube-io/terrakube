@@ -1,13 +1,9 @@
 import {
-  CheckCircleOutlined,
   ClockCircleOutlined,
-  ExclamationCircleOutlined,
   FolderOutlined,
   LockOutlined,
   PlayCircleOutlined,
   ProfileOutlined,
-  StopOutlined,
-  SyncOutlined,
   ThunderboltOutlined,
   UnlockOutlined,
   UserOutlined,
@@ -28,7 +24,6 @@ import {
   Spin,
   Table,
   Tabs,
-  Tag,
   Typography,
   Card,
   Segmented,
@@ -73,6 +68,7 @@ import { getIaCIconById, getIaCNameById, renderVCSLogo } from "./Workspaces";
 import "./Workspaces.css";
 import LoadingFallback from "@/components/LoadingFallback";
 import RunList from "@/modules/workspaces/components/RunList";
+import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
@@ -616,28 +612,7 @@ export const WorkspaceDetails = ({
                                   <Col>
                                     {
                                       <div className="textLeft">
-                                        <Tag
-                                          icon={
-                                            item.status == "completed" ? (
-                                              <CheckCircleOutlined />
-                                            ) : item.status == "running" ? (
-                                              <SyncOutlined spin />
-                                            ) : item.status === "waitingApproval" ? (
-                                              <ExclamationCircleOutlined />
-                                            ) : item.status === "cancelled" ? (
-                                              <StopOutlined />
-                                            ) : item.status === "failed" ? (
-                                              <StopOutlined />
-                                            ) : item.status === "notExecuted" ? (
-                                              <CheckCircleOutlined />
-                                            ) : (
-                                              <ClockCircleOutlined />
-                                            )
-                                          }
-                                          color={item.statusColor}
-                                        >
-                                          {item.status}
-                                        </Tag>{" "}
+                                        <WorkspaceStatusTag status={item.status} />{" "}
                                       </div>
                                     }
                                   </Col>

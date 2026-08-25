@@ -23,7 +23,7 @@ export const WORKSPACE_STATUS_PALETTE: WorkspaceStatusPaletteEntry[] = [
   { value: WorkspaceStatusFilter.All, label: "All", icon: <BarsOutlined /> },
   {
     value: JobStatus.WaitingApproval,
-    label: "Awaiting approval",
+    label: "Waiting Approval",
     icon: <ExclamationCircleOutlined />,
     color: "#fa8f37",
   },

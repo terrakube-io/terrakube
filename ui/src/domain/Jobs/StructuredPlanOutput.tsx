@@ -1569,7 +1569,6 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                   <div
                     key={segment.key}
                     className={`structured-plan-summarySegment structured-plan-summarySegment--${segment.key}`}
-                    style={{ flexGrow: segment.count }}
                   >
                     <span className="structured-plan-summarySymbol">{segment.symbol}</span>
                     <span>{segment.label}</span>

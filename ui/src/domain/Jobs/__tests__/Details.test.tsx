@@ -200,7 +200,7 @@ describe("DetailsJob SSE reconnect behavior", () => {
       // for the transition to actually happen.
       await waitFor(
         () => {
-          expect(screen.getByText("completed")).toBeInTheDocument();
+          expect(screen.getByText("Completed")).toBeInTheDocument();
         },
         { timeout: 8000 }
       );
