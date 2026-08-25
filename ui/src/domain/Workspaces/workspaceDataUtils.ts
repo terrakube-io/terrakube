@@ -114,34 +114,9 @@ export async function setupWorkspaceIncludes(
         );
         break;
       case include.JOB:
-        let finalColor = "";
-        switch (element.attributes.status) {
-          case "completed":
-            finalColor = "#2eb039";
-            break;
-          case "noChanges":
-            finalColor = "#9f37fa";
-            break;
-          case "rejected":
-            finalColor = "#FB0136";
-            break;
-          case "failed":
-            finalColor = "#FB0136";
-            break;
-          case "running":
-            finalColor = "#108ee9";
-            break;
-          case "waitingApproval":
-            finalColor = "#fa8f37";
-            break;
-          default:
-            finalColor = "";
-            break;
-        }
         jobs.push({
           id: element.id,
           title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          statusColor: finalColor,
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
           latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
