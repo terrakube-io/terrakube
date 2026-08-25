@@ -290,6 +290,8 @@ export const DetailsJob = ({ jobId }: Props) => {
       return renderConsoleOutput(item);
     }
 
+    const isStepRunning = !isTerminalJobStatus(item.status);
+
     const structuredContent = structuredApplyChanges ? (
       <StructuredPlanOutput
         changes={structuredApplyChanges}
@@ -297,9 +299,15 @@ export const DetailsJob = ({ jobId }: Props) => {
         applyMode
         outputs={stepOutputs}
         jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
       />
     ) : structuredChanges ? (
-      <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} jobDiagnostics={stepJobDiagnostics} />
+      <StructuredPlanOutput
+        changes={structuredChanges}
+        outputLog={item.outputLog}
+        jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
+      />
     ) : (
       <div>{parse(template ?? "")}</div>
     );

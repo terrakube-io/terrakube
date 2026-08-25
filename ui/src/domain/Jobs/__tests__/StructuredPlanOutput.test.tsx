@@ -11,6 +11,15 @@ describe("StructuredPlanOutput", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows an in-progress state instead of a false success state while the step is still running", () => {
+    render(<StructuredPlanOutput changes={[]} isStepRunning />);
+
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/plan is running/i)).toBeInTheDocument();
+  });
+
   it("surfaces diagnostics instead of a false success state when a failed plan produced no changes", () => {
     render(
       <StructuredPlanOutput
