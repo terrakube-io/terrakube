@@ -7,13 +7,16 @@ import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.module.ModuleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/terraform/modules/v1")
@@ -55,10 +58,14 @@ public class ModuleWebServiceImpl {
         return ResponseEntity.noContent().headers(responseHeaders).build();
     }
 
-    @GetMapping(
-            value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip",
-            produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
-    public @ResponseBody byte[] getModuleZip(@PathVariable String organizationName, @PathVariable String moduleName, @PathVariable String providerName, @PathVariable String version) {
-        return storageService.downloadModule(organizationName, moduleName, providerName, version);
+    @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")
+    public ResponseEntity<byte[]> getModuleZip(@PathVariable String organizationName, @PathVariable String moduleName, @PathVariable String providerName, @PathVariable String version) {
+        Optional<URI> presignedDownloadUrl = storageService.getPresignedDownloadUrl(organizationName, moduleName, providerName, version);
+        if (presignedDownloadUrl.isPresent()) {
+            return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get()).build();
+        }
+
+        byte[] data = storageService.downloadModule(organizationName, moduleName, providerName, version);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).body(data);
     }
 }
