@@ -6,9 +6,9 @@
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
     "@monaco-editor/react": "^4.7.0",
-    "@scalar/api-reference-react": "^0.9.63",
+    "@scalar/api-reference-react": "^0.9.65",
     "ansi-to-react": "^6.2.6",
-    "antd": "^6.6.0",
+    "antd": "^6.6.1",
     "axios": "^1.19.0",
     "buffer": "^6.0.3",
     "cron-to-quartz": "^1.4.15",
@@ -36,7 +36,7 @@
     "remark-gfm": "4.0.1",
     "sucrase": "^3.35.1",
     "unzipit": "^2.0.1",
-    "uuid": "^14.0.1",
+    "uuid": "^14.0.2",
     "web-vitals": "^6.1.1"
   },
   "scripts": {
@@ -78,18 +78,18 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.4",
+    "@testing-library/user-event": "^14.6.6",
     "@types/jest": "^30.0.0",
-    "@types/luxon": "^3.7.4",
+    "@types/luxon": "^3.7.5",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/react-vis": "^1.11.15",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.0",
     "classnames": "^2.5.1",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
@@ -109,7 +109,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
-    "vite": "^8.2.1"
+    "vite": "^8.2.2"
   },
   "packageManager": "yarn@4.15.0"
 }
