@@ -8,6 +8,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
 
+import com.yahoo.elide.annotation.Exclude;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -22,6 +24,10 @@ import jakarta.persistence.TemporalType;
 import lombok.Getter;
 import lombok.Setter;
 
+// Not an Elide resource: this table is an internal dispatch/retry ledger (debugging aid), not
+// API-consumer data, and it carries raw request payloads/headers from VCS providers that
+// shouldn't be exposed - even to admins - through the JSON-API/GraphQL endpoints.
+@Exclude
 @Getter
 @Setter
 @Entity(name = "repo_webhook_delivery")
