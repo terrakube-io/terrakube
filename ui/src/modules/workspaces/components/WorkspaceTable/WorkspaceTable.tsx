@@ -188,8 +188,8 @@ export default function WorkspaceTable({
   const isGrouped = !!groups;
 
   useEffect(() => {
-    setPage(1);
-  }, [workspaces]);
+    setPage((prev) => Math.min(prev, Math.max(1, Math.ceil(workspaces.length / pageSize))));
+  }, [workspaces, pageSize]);
 
   const pagedWorkspaces = useMemo(() => {
     const start = (page - 1) * pageSize;
