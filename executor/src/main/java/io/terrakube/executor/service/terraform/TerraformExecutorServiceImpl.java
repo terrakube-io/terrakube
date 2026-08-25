@@ -261,6 +261,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
 
+            if (executionPlan && terraformJob.isTerragrunt()) {
+                syncTerragruntPlanFileFromCache(terraformWorkingDir);
+            }
+
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
@@ -823,13 +827,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             saveBinaryToCache(terraformJob);
         }
 
+        if (initSuccessful && terraformJob.isTerragrunt()) {
+            syncTerragruntPlanFileToCache(terraformWorkingDirectory);
+        }
+
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         Thread.sleep(5000);
         return initSuccessful;
     }
 
     /**
-     * Ensure the terraform/tofu binary is available locally, restoring it from
+     * Ensure the terraform/tofu/terragrunt binary is available locally, restoring it from
      * cloud storage if possible. This avoids downloading from HashiCorp/GitHub
      * when a fresh executor pod starts.
      *
@@ -848,22 +856,28 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             File binaryFile = new File(binaryPath);
 
             // 1. Binary already exists locally (e.g. previous job with same version on this pod)
-            if (binaryFile.exists()) {
-                log.info("Binary already exists locally at {}, skipping cache check", binaryPath);
-                return true;
+            if (!binaryFile.exists()) {
+                log.info("Binary not found locally, attempting to restore from cloud storage for version {}", resolvedVersion);
+                boolean restored = terraformState.downloadTerraformBinary(resolvedVersion, tofu, binaryFile);
+                if (restored) {
+                    log.info("Successfully restored binary from cloud storage to {}", binaryPath);
+                }
             }
 
-            // 2. Try restoring from cloud storage
-            log.info("Binary not found locally, attempting to restore from cloud storage for version {}", resolvedVersion);
-            boolean restored = terraformState.downloadTerraformBinary(resolvedVersion, tofu, binaryFile);
-            if (restored) {
-                log.info("Successfully restored binary from cloud storage to {}", binaryPath);
-                return true;
+            if (isTerragrunt(terraformJob)) {
+                String resolvedTerragrunt = downloader.resolveTerragruntVersion(terraformJob.getTerragruntVersion());
+                String tgBinaryPath = downloader.getTerragruntBinaryPath(resolvedTerragrunt);
+                File tgBinaryFile = new File(tgBinaryPath);
+                if (!tgBinaryFile.exists()) {
+                    log.info("Terragrunt binary not found locally, attempting to restore from cloud storage for version {}", resolvedTerragrunt);
+                    boolean restoredTg = terraformState.downloadTerraformBinary(resolvedTerragrunt, "terragrunt", tgBinaryFile);
+                    if (restoredTg) {
+                        log.info("Successfully restored Terragrunt binary from cloud storage to {}", tgBinaryPath);
+                    }
+                }
             }
 
-            // 3. Not in storage either — let the library download it, then we'll cache it after init
-            log.info("Binary not found in cloud storage, will be downloaded by terraform client library");
-            return false;
+            return binaryFile.exists();
         } catch (Exception e) {
             log.warn("Binary cache check failed, falling back to normal download: {}", e.getMessage());
             return false;
@@ -871,7 +885,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     /**
-     * Save the terraform/tofu binary to cloud storage after it was freshly
+     * Save the terraform/tofu/terragrunt binary to cloud storage after it was freshly
      * downloaded by the library.
      */
     private void saveBinaryToCache(TerraformJob terraformJob) {
@@ -890,6 +904,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformState.saveTerraformBinary(resolvedVersion, tofu, binaryFile);
             } else {
                 log.warn("Binary file not found at {} after init, cannot cache to storage", binaryPath);
+            }
+
+            if (isTerragrunt(terraformJob)) {
+                String resolvedTerragrunt = downloader.resolveTerragruntVersion(terraformJob.getTerragruntVersion());
+                String tgBinaryPath = downloader.getTerragruntBinaryPath(resolvedTerragrunt);
+                File tgBinaryFile = new File(tgBinaryPath);
+                if (tgBinaryFile.exists()) {
+                    log.info("Caching Terragrunt binary to cloud storage: version {}", resolvedTerragrunt);
+                    terraformState.saveTerraformBinary(resolvedTerragrunt, "terragrunt", tgBinaryFile);
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to cache binary to cloud storage: {}", e.getMessage());
@@ -913,13 +937,25 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         output.accept(
                 colorize("Initializing Terrakube Job " + terraformJob.getJobId() + " Step " + terraformJob.getStepId(),
                         colorMessage));
-        output.accept(colorize(String.format("Running %s ", getIaCType(terraformJob)) + terraformJob.getTerraformVersion(), colorMessage));
+        if (isTerragrunt(terraformJob)) {
+            output.accept(colorize(String.format("Running Terragrunt %s (with %s %s)", terraformJob.getTerragruntVersion(), terraformJob.isTofu() ? "Tofu" : "Terraform", terraformJob.getTerraformVersion()), colorMessage));
+        } else {
+            output.accept(colorize(String.format("Running %s ", getIaCType(terraformJob)) + terraformJob.getTerraformVersion(), colorMessage));
+        }
         output.accept(colorize("\n\n" + STEP_SEPARATOR, colorMessage));
         output.accept(colorize(String.format("Running %s Init: ", getIaCType(terraformJob)), colorMessage));
     }
 
     private String getIaCType(TerraformJob terraformJob) {
+        if (isTerragrunt(terraformJob)) {
+            return "Terragrunt";
+        }
         return terraformJob.isTofu() ? "Tofu" : "Terraform";
+    }
+
+    private boolean isTerragrunt(TerraformJob terraformJob) {
+        return "terragrunt".equalsIgnoreCase(terraformJob.getIacType())
+                || (terraformJob.getTerragruntVersion() != null && !terraformJob.getTerragruntVersion().isEmpty());
     }
 
     private void showTerraformMessage(TerraformJob terraformJob, String operation, Consumer<String> output) throws InterruptedException {
@@ -977,6 +1013,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
+                .terragrunt(isTerragrunt(terraformJob))
+                .terragruntVersion(terraformJob.getTerragruntVersion())
                 .terraformVariables(terraformJob.getVariables())
                 .terraformEnvironmentVariables(loadTempEnvironmentVariables(
                         workspaceRootDirectory,
@@ -1062,5 +1100,86 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         }
 
         return terraformJob.getEnvironmentVariables();
+    }
+
+    private void syncTerragruntPlanFileToCache(File workingDirectory) {
+        if (workingDirectory != null) {
+            File tgCache = new File(workingDirectory, ".terragrunt-cache");
+            if (tgCache.exists() && tgCache.isDirectory()) {
+                File planInWorkDir = new File(workingDirectory, "terraformLibrary.tfPlan");
+                if (planInWorkDir.exists() && planInWorkDir.isFile()) {
+                    copyFileToTerragruntCache(tgCache, planInWorkDir, "terraformLibrary.tfPlan");
+                }
+                File lockInWorkDir = new File(workingDirectory, ".terraform.lock.hcl");
+                if (lockInWorkDir.exists() && lockInWorkDir.isFile()) {
+                    copyFileToTerragruntCache(tgCache, lockInWorkDir, ".terraform.lock.hcl");
+                }
+            }
+        }
+    }
+
+    private void copyFileToTerragruntCache(File currentDir, File sourceFile, String targetFileName) {
+        File[] files = currentDir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    try {
+                        org.apache.commons.io.FileUtils.copyFile(sourceFile, new File(file, targetFileName));
+                    } catch (IOException e) {
+                        log.warn("Could not copy file {} to terragrunt cache dir {}: {}", targetFileName, file.getAbsolutePath(), e.getMessage());
+                    }
+                    copyFileToTerragruntCache(file, sourceFile, targetFileName);
+                }
+            }
+        }
+    }
+
+    private void syncTerragruntPlanFileFromCache(File workingDirectory) {
+        if (workingDirectory != null) {
+            File tgCache = new File(workingDirectory, ".terragrunt-cache");
+            if (tgCache.exists() && tgCache.isDirectory()) {
+                File planInWorkDir = new File(workingDirectory, "terraformLibrary.tfPlan");
+                if (!planInWorkDir.exists()) {
+                    File foundPlan = findFileInTerragruntCache(tgCache, "terraformLibrary.tfPlan");
+                    if (foundPlan != null) {
+                        try {
+                            org.apache.commons.io.FileUtils.copyFile(foundPlan, planInWorkDir);
+                            log.info("Copied Terragrunt plan file from {} to {}", foundPlan.getAbsolutePath(), planInWorkDir.getAbsolutePath());
+                        } catch (IOException e) {
+                            log.error("Failed to copy Terragrunt plan file to working directory: {}", e.getMessage());
+                        }
+                    }
+                }
+                File lockInWorkDir = new File(workingDirectory, ".terraform.lock.hcl");
+                File foundLock = findFileInTerragruntCache(tgCache, ".terraform.lock.hcl");
+                if (foundLock != null) {
+                    try {
+                        org.apache.commons.io.FileUtils.copyFile(foundLock, lockInWorkDir);
+                        log.info("Copied Terragrunt lock file from {} to {}", foundLock.getAbsolutePath(), lockInWorkDir.getAbsolutePath());
+                    } catch (IOException e) {
+                        log.warn("Failed to copy Terragrunt lock file to working directory: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    private File findFileInTerragruntCache(File dir, String fileName) {
+        File targetFile = new File(dir, fileName);
+        if (targetFile.exists() && targetFile.isFile()) {
+            return targetFile;
+        }
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) {
+                    File found = findFileInTerragruntCache(child, fileName);
+                    if (found != null) {
+                        return found;
+                    }
+                }
+            }
+        }
+        return null;
     }
 }

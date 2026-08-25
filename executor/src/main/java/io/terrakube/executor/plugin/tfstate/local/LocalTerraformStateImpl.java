@@ -199,7 +199,12 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return saveTerraformBinary(version, tofu ? "tofu" : "terraform", binaryFile);
+    }
+
+    @Override
+    public boolean saveTerraformBinary(String version, String tool, File binaryFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
         log.info("Saving {} binary to local storage: {}", product, binaryPath);
         try {
@@ -216,7 +221,12 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return downloadTerraformBinary(version, tofu ? "tofu" : "terraform", targetFile);
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, String tool, File targetFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
         log.info("Attempting to restore {} binary from local storage: {}", product, binaryPath);
         try {

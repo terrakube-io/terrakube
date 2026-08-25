@@ -488,6 +488,7 @@ export type WorkspaceAttributes = {
   name: string;
   source: string;
   terraformVersion: string;
+  terragruntVersion?: string;
   globalRemoteState?: boolean;
   sharedIds?: string;
 } & AuditFieldBase;

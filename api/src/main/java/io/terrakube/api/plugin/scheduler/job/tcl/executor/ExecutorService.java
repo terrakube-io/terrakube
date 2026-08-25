@@ -181,7 +181,9 @@ public class ExecutorService {
                 executorContext.setModuleSshKey(ssh.get().getPrivateKey());
             }
         }
+        executorContext.setIacType(job.getWorkspace().getIacType());
         executorContext.setTofu(iacType(job));
+        executorContext.setTerragruntVersion(job.getWorkspace().getTerragruntVersion());
         executorContext.setCommitId(job.getCommitId());
         executorContext
                 .setFolder(job.getWorkspace().getFolder() != null ? job.getWorkspace().getFolder().split(",")[0] : "/");
@@ -246,8 +248,7 @@ public class ExecutorService {
     }
 
     private boolean iacType(Job job) {
-        return job.getWorkspace().getIacType() != null && job.getWorkspace().getIacType().equals("terraform") ? false
-                : true;
+        return "tofu".equalsIgnoreCase(job.getWorkspace().getIacType());
     }
 
     /**

@@ -68,6 +68,7 @@ type CreateWorkspaceForm = {
   folder: string;
   name: string;
   terraformVersion: string;
+  terragruntVersion?: string;
   branch: string;
   iacType: string;
   defaultTemplate: string;
@@ -81,6 +82,7 @@ export const CreateWorkspace = () => {
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
+  const [terragruntVersions, setTerragruntVersions] = useState<string[]>([]);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
   const [orgTemplates, setOrgTemplates] = useState<Template[]>([]);
@@ -429,24 +431,52 @@ export const CreateWorkspace = () => {
   };
 
   const loadVersions = (iacType: IacType) => {
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
-    axiosInstance.get(versionsApi).then((resp) => {
-      const tfVersions = [];
-      if (iacType.id === "tofu") {
-        (resp.data as TofuRelease[]).forEach((release) => {
-          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
-        });
-      } else {
-        for (const version in resp.data.versions) {
-          if (!version.includes("-")) tfVersions.push(version);
+    if (iacType.id === "terragrunt") {
+      const terragruntApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/terragrunt/index.json`;
+      const terraformApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/terraform/index.json`;
+      Promise.all([axiosInstance.get(terragruntApi), axiosInstance.get(terraformApi)]).then(
+        ([tgResp, tfResp]) => {
+          const tgVersions: string[] = [];
+          (tgResp.data as TofuRelease[]).forEach((release) => {
+            if (!release.tag_name.includes("-")) tgVersions.push(release.tag_name.replace("v", ""));
+          });
+          tgVersions.sort(compareVersions).reverse();
+          setTerragruntVersions(tgVersions);
+          if (tgVersions.length > 0) {
+            form.setFieldsValue({ terragruntVersion: tgVersions[0] });
+          }
+
+          const tfVersions: string[] = [];
+          for (const version in tfResp.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
+          tfVersions.sort(compareVersions).reverse();
+          setTerraformVersions(tfVersions);
+          if (tfVersions.length > 0) {
+            form.setFieldsValue({ terraformVersion: tfVersions[0] });
+          }
         }
-      }
-      tfVersions.sort(compareVersions).reverse();
-      setTerraformVersions(tfVersions);
-      if (tfVersions.length > 0) {
-        form.setFieldsValue({ terraformVersion: tfVersions[0] });
-      }
-    });
+      );
+    } else {
+      const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+      axiosInstance.get(versionsApi).then((resp) => {
+        const tfVersions: string[] = [];
+        if (iacType.id === "tofu") {
+          (resp.data as TofuRelease[]).forEach((release) => {
+            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+          });
+        } else {
+          for (const version in resp.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
+        }
+        tfVersions.sort(compareVersions).reverse();
+        setTerraformVersions(tfVersions);
+        if (tfVersions.length > 0) {
+          form.setFieldsValue({ terraformVersion: tfVersions[0] });
+        }
+      });
+    }
   };
 
   const onFinish = async (values: CreateWorkspaceForm) => {
@@ -469,10 +499,11 @@ export const CreateWorkspace = () => {
               folder: values.folder,
               name: values.name,
               terraformVersion: values.terraformVersion,
+              terragruntVersion: values.terragruntVersion,
               branch: values.branch,
               iacType: iacType.id,
               defaultTemplate: values.defaultTemplate,
-              executionMode: executionMode,
+              executionMode: executionMode || "remote",
             },
             relationships: {},
           },
@@ -538,10 +569,13 @@ export const CreateWorkspace = () => {
         );
       } else {
         console.error("Failed to create workspace:", error.response?.status, error.response?.data, error);
-        message.error(
+        const errorDetail =
           error.response?.data?.errors?.[0]?.detail ||
-            "An error occurred while submitting the workspace. Please contact your system administrator."
-        );
+          error.response?.data?.["atomic:results"]?.[0]?.errors?.[0]?.detail ||
+          error.response?.data?.message ||
+          error.message ||
+          "An error occurred while submitting the workspace. Please contact your system administrator.";
+        message.error(errorDetail);
       }
     } finally {
       setCreating(false);
@@ -582,6 +616,7 @@ export const CreateWorkspace = () => {
         icon: withBasePath("/providers/terraform.svg"),
       },
       { id: "tofu", name: "OpenTofu", icon: withBasePath("/providers/opentofu.png") },
+      { id: "terragrunt", name: "Terragrunt", icon: withBasePath("/providers/terragrunt.svg") },
     ];
 
     setIacTypes(iacTypes);
@@ -1008,14 +1043,35 @@ export const CreateWorkspace = () => {
                   })}
                 </Select>
               </Form.Item>
+              {iacType?.id === "terragrunt" && (
+                <Form.Item
+                  name="terragruntVersion"
+                  label="Terragrunt Version"
+                  rules={[{ required: true }, { validator: validateTerraformVersion(terragruntVersions) }]}
+                  extra="The version of Terragrunt to use for this workspace. Version constraints are also supported (e.g. ~>0.68.0)."
+                >
+                  <AutoComplete
+                    placeholder="e.g. 0.68.5 or ~>0.68.0"
+                    options={terragruntVersions.map((v) => ({ value: v }))}
+                    filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                    style={{ width: 250 }}
+                  />
+                </Form.Item>
+              )}
               <Form.Item
                 name="terraformVersion"
-                label={iacType?.name + " Version"}
+                label={
+                  iacType?.id === "terragrunt"
+                    ? "Underlying Terraform/OpenTofu Version"
+                    : iacType?.name + " Version"
+                }
                 rules={[{ required: true }, { validator: validateTerraformVersion(terraformVersions) }]}
                 extra={
-                  "The version of " +
-                  iacType?.name +
-                  " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
+                  iacType?.id === "terragrunt"
+                    ? "The version of Terraform or OpenTofu to use as the underlying execution engine."
+                    : "The version of " +
+                      iacType?.name +
+                      " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
                 }
               >
                 <AutoComplete

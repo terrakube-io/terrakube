@@ -101,9 +101,14 @@ public class PlanStructuredOutputService {
         TextStringBuilder planOutput = new TextStringBuilder();
         TextStringBuilder planErrorOutput = new TextStringBuilder();
 
+        boolean isTerragrunt = "terragrunt".equalsIgnoreCase(terraformJob.getIacType())
+                || (terraformJob.getTerragruntVersion() != null && !terraformJob.getTerragruntVersion().isEmpty());
+
         TerraformProcessData terraformProcessData = TerraformProcessData
                 .builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
+                .terragrunt(isTerragrunt)
+                .terragruntVersion(terraformJob.getTerragruntVersion())
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
                 .tofu(terraformJob.isTofu())
@@ -136,9 +141,14 @@ public class PlanStructuredOutputService {
         TextStringBuilder planOutput = new TextStringBuilder();
         TextStringBuilder planErrorOutput = new TextStringBuilder();
 
+        boolean isTerragrunt = "terragrunt".equalsIgnoreCase(terraformJob.getIacType())
+                || (terraformJob.getTerragruntVersion() != null && !terraformJob.getTerragruntVersion().isEmpty());
+
         TerraformProcessData terraformProcessData = TerraformProcessData
                 .builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
+                .terragrunt(isTerragrunt)
+                .terragruntVersion(terraformJob.getTerragruntVersion())
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
                 .tofu(terraformJob.isTofu())

@@ -345,6 +345,46 @@ class WorkspaceTests extends ServerApplicationTests {
     }
 
     @Test
+    void createTerragruntWorkspaceAtomic() {
+        given()
+                .headers(
+                        "Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\"",
+                        "Accept", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\""
+                )
+                .body("{\n" +
+                        "  \"atomic:operations\": [\n" +
+                        "    {\n" +
+                        "      \"op\": \"add\",\n" +
+                        "      \"href\": \"/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace\",\n" +
+                        "      \"data\": {\n" +
+                        "        \"type\": \"workspace\",\n" +
+                        "        \"lid\": \"01a026af-48b5-70b9-9eca-2881e54b2523\",\n" +
+                        "        \"attributes\": {\n" +
+                        "          \"source\": \"https://github.com/alfespa17/terrakube-docker-compose\",\n" +
+                        "          \"folder\": \"/\",\n" +
+                        "          \"name\": \"terragrunt-atomic-test\",\n" +
+                        "          \"terraformVersion\": \"1.15.9\",\n" +
+                        "          \"terragruntVersion\": \"1.1.3\",\n" +
+                        "          \"branch\": \"terragrunt\",\n" +
+                        "          \"iacType\": \"terragrunt\",\n" +
+                        "          \"executionMode\": \"remote\"\n" +
+                        "        },\n" +
+                        "        \"relationships\": {}\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  ]\n" +
+                        "}")
+                .when()
+                .post("/api/v1/operations")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
     void createWorkspaceAsNonOrgMember() {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("FAKE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")

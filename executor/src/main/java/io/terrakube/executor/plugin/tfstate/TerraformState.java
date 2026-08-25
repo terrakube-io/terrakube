@@ -27,18 +27,18 @@ public interface TerraformState {
      * @return true if save succeeded
      */
     default boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        return saveTerraformBinary(version, tofu ? "tofu" : "terraform", binaryFile);
+    }
+
+    default boolean saveTerraformBinary(String version, String tool, File binaryFile) {
         return false;
     }
 
-    /**
-     * Download a cached terraform/tofu binary from cloud storage to a local path.
-     *
-     * @param version    the resolved concrete version (e.g. "1.5.7")
-     * @param tofu       true for OpenTofu, false for Terraform
-     * @param targetFile where to write the restored binary on the local filesystem
-     * @return true if binary was found in storage and restored successfully
-     */
     default boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        return downloadTerraformBinary(version, tofu ? "tofu" : "terraform", targetFile);
+    }
+
+    default boolean downloadTerraformBinary(String version, String tool, File targetFile) {
         return false;
     }
 }

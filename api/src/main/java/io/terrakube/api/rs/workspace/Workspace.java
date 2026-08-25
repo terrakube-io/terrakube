@@ -102,6 +102,9 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "terraform_version")
     private String terraformVersion;
 
+    @Column(name = "terragrunt_version")
+    private String terragruntVersion;
+
     @Column(name = "execution_mode")
     @Enumerated(EnumType.STRING)
     private ExecutionMode executionMode;

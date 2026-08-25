@@ -300,7 +300,12 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return saveTerraformBinary(version, tofu ? "tofu" : "terraform", binaryFile);
+    }
+
+    @Override
+    public boolean saveTerraformBinary(String version, String tool, File binaryFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
         log.info("Saving {} binary to S3: {}", product, blobKey);
         try {
@@ -320,7 +325,12 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return downloadTerraformBinary(version, tofu ? "tofu" : "terraform", targetFile);
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, String tool, File targetFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
         log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
         try {

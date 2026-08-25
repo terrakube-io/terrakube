@@ -208,7 +208,12 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return saveTerraformBinary(version, tofu ? "tofu" : "terraform", binaryFile);
+    }
+
+    @Override
+    public boolean saveTerraformBinary(String version, String tool, File binaryFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String blobName = product + "/" + version + "/" + product;
         log.info("Saving {} binary to Azure Blob: {}", product, blobName);
         try {
@@ -228,7 +233,12 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
-        String product = tofu ? "tofu" : "terraform";
+        return downloadTerraformBinary(version, tofu ? "tofu" : "terraform", targetFile);
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, String tool, File targetFile) {
+        String product = tool != null ? tool.toLowerCase() : "terraform";
         String blobName = product + "/" + version + "/" + product;
         log.info("Attempting to restore {} binary from Azure Blob: {}", product, blobName);
         try {

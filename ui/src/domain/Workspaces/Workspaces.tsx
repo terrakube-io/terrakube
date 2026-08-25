@@ -130,4 +130,10 @@ export const iacTypes = [
     name: "OpenTofu",
     icon: <img width="18px" src={withBasePath("/providers/opentofu.png")} alt="OpenTofu" />,
   },
+  {
+    id: "terragrunt",
+    name: "Terragrunt",
+    description: "Manage Terraform/OpenTofu configurations with Terragrunt.",
+    icon: <img width="18px" src={withBasePath("/providers/terragrunt.svg")} alt="Terragrunt" />,
+  },
 ];
