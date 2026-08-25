@@ -275,7 +275,12 @@ public class TclService {
     }
 
     private String getTemplateTcl(String templateId) {
-        return templateRepository.getReferenceById(UUID.fromString(templateId)).getTcl();
+        // findById (not getReferenceById): isTemplatePlanOnly is called from ScheduleJob's
+        // doRunExecution path, which runs with no open Hibernate session - a lazy
+        // getReferenceById proxy would throw "no session" the moment getTcl() is read.
+        return templateRepository.findById(UUID.fromString(templateId))
+                .map(Template::getTcl)
+                .orElse(null);
     }
 
     public String getFlowTypeForStep(Job job, int stepNumber) {

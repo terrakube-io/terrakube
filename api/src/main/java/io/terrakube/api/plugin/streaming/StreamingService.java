@@ -36,7 +36,10 @@ public class StreamingService {
     public String getCurrentLogs(String stepId, String streamKeySuffix){
         TextStringBuilder currentLogs = new TextStringBuilder();
         try {
-            Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
+            // findById (not getReferenceById): callers include ScheduleJob's doRunExecution path,
+            // which reads Job/Step outside any open Hibernate session - a lazy getReferenceById
+            // proxy would throw "no session" the moment a field like getStatus() below is touched.
+            Step step = stepRepository.findById(UUID.fromString(stepId)).orElseThrow();
             if(!step.getStatus().equals(JobStatus.completed) && !step.getStatus().equals(JobStatus.failed)) {
                 String streamKey = step.getJob().getId() + streamKeySuffix;
                 List<MapRecord> streamData = redisTemplate.opsForStream().read(StreamOffset.fromStart(streamKey), StreamOffset.latest(streamKey));

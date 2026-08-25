@@ -1,12 +1,19 @@
 package io.terrakube.api.plugin.vcs.provider.azdevops;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService.ChangesPage;
 import io.terrakube.api.rs.job.JobStatus;
 
 public class AzDevOpsWebhookServiceTest {
+
+    private final AzDevOpsWebhookService subject = new AzDevOpsWebhookService(new ObjectMapper(), null);
 
     @Test
     public void buildCommitStatusDescriptionAppendsRunSummaryOnSuccess() {
@@ -52,5 +59,55 @@ public class AzDevOpsWebhookServiceTest {
         String description = AzDevOpsWebhookService.buildCommitStatusDescription(JobStatus.queue, null);
 
         assertEquals("Your task is in Terrakube queue.", description);
+    }
+
+    @Nested
+    class ParseChangesPage {
+
+        @Test
+        void collectsFilePathsAndStripsTheLeadingSlash() throws Exception {
+            String body = "{\"changeEntries\":["
+                    + "{\"item\":{\"path\":\"/modules/network/main.tf\",\"gitObjectType\":\"blob\"},\"changeType\":\"edit\"},"
+                    + "{\"item\":{\"path\":\"/modules/database/main.tf\",\"gitObjectType\":\"blob\"},\"changeType\":\"add\"}"
+                    + "]}";
+
+            ChangesPage page = subject.parseChangesPage(body);
+
+            assertThat(page.files()).containsExactly("modules/network/main.tf", "modules/database/main.tf");
+            assertThat(page.nextTop()).isZero();
+            assertThat(page.nextSkip()).isZero();
+        }
+
+        @Test
+        void skipsFolderEntries() throws Exception {
+            String body = "{\"changeEntries\":["
+                    + "{\"item\":{\"path\":\"/modules\",\"isFolder\":true,\"gitObjectType\":\"tree\"},\"changeType\":\"edit\"},"
+                    + "{\"item\":{\"path\":\"/modules/network/main.tf\",\"gitObjectType\":\"blob\"},\"changeType\":\"edit\"}"
+                    + "]}";
+
+            ChangesPage page = subject.parseChangesPage(body);
+
+            assertThat(page.files()).containsExactly("modules/network/main.tf");
+        }
+
+        @Test
+        void reportsNextTopAndNextSkipWhenAnotherPageIsAvailable() throws Exception {
+            String body = "{\"changeEntries\":[],\"nextTop\":100,\"nextSkip\":100}";
+
+            ChangesPage page = subject.parseChangesPage(body);
+
+            assertThat(page.nextTop()).isEqualTo(100);
+            assertThat(page.nextSkip()).isEqualTo(100);
+        }
+
+        @Test
+        void nextTopAndNextSkipAreBothZeroWhenAbsent() throws Exception {
+            String body = "{\"changeEntries\":[]}";
+
+            ChangesPage page = subject.parseChangesPage(body);
+
+            assertThat(page.nextTop()).isZero();
+            assertThat(page.nextSkip()).isZero();
+        }
     }
 }

@@ -24,6 +24,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
@@ -81,6 +82,8 @@ public class ExecutorService {
     private VariableRepository variableRepository;
     @Autowired
     private ReferenceRepository referenceRepository;
+    @Autowired
+    private AddressRepository addressRepository;
 
     public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
@@ -216,8 +219,12 @@ public class ExecutorService {
     }
 
     ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
-        if (job.getAddress() != null && !job.getAddress().isEmpty() && (job.getTerraformPlan() == null || job.getTerraformPlan().isEmpty())) {
-            List<Address> addressList = job.getAddress();
+        // Queried, not job.getAddress(): this runs after ScheduleJob has deliberately released its
+        // transaction before making external calls (see ScheduleJob's class comment), and
+        // Job.address is a lazy @OneToMany with no fetch override - job.getAddress() would throw
+        // LazyInitializationException here with no session left to initialize the proxy through.
+        List<Address> addressList = addressRepository.findByJob(job);
+        if (!addressList.isEmpty() && (job.getTerraformPlan() == null || job.getTerraformPlan().isEmpty())) {
             StringBuilder tfCliArgsPlan= new StringBuilder();
             for(Address address : addressList) {
                 if (address.getType().equals(AddressType.TARGET)) {
@@ -409,7 +416,10 @@ public class ExecutorService {
             }
         }
 
-        List<Reference> referenceList = referenceRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
+        // This runs after ScheduleJob has deliberately released its transaction before making
+        // external calls. The repository query fetches Collection.item, preventing a detached
+        // collection proxy from trying to acquire a session here.
+        List<Reference> referenceList = referenceRepository.findByWorkspaceWithCollectionItems(job.getWorkspace());
 
         List<Collection> collectionList = new ArrayList();
         for (Reference reference : referenceList) {
