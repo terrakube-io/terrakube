@@ -16,6 +16,7 @@ import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -88,7 +89,13 @@ public class ModuleServiceImpl implements ModuleService {
         return definitionVersions;
     }
 
-    @Cacheable(cacheNames = {"getModuleVersionPath"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version")
+    // sync = true coalesces concurrent cache misses for the same key into a single resolution -
+    // without it, a burst of `terraform init` calls that all miss the cache at once would each
+    // independently repeat the Terrakube API/VCS calls and the S3 HeadObject below.
+    @Cacheable(
+            cacheNames = {"getModuleVersionPath"},
+            key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version",
+            sync = true)
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
         String moduleVersionPath = "";
@@ -134,9 +141,35 @@ public class ModuleServiceImpl implements ModuleService {
         return moduleVersionPath;
     }
 
+    static final int DOWNLOAD_COUNT_MAX_ATTEMPTS = 3;
+    private static final long[] DOWNLOAD_COUNT_BACKOFF_MILLIS = {500, 2000};
+
+    // Runs on the dedicated downloadCountExecutor (DownloadCountExecutorConfig) so this
+    // best-effort bookkeeping call never delays the Terraform-facing metadata response
+    // (ModuleWebServiceImpl.getModuleVersionPath already returns before this completes). Failures
+    // here must never surface to the caller or affect the HTTP response already issued - this
+    // counter is not used for authorization, billing, or publication correctness.
+    @Async("downloadCountExecutor")
     @Override
     public void updateModuleDownloadCount(String organizationName, String moduleName, String providerName) {
-        log.info("Update module download count");
+        for (int attempt = 1; attempt <= DOWNLOAD_COUNT_MAX_ATTEMPTS; attempt++) {
+            try {
+                doUpdateModuleDownloadCount(organizationName, moduleName, providerName);
+                return;
+            } catch (Exception e) {
+                if (attempt == DOWNLOAD_COUNT_MAX_ATTEMPTS) {
+                    log.error("Giving up updating download count for {}/{}/{} after {} attempts: {}",
+                            organizationName, moduleName, providerName, attempt, e.getMessage());
+                    return;
+                }
+                log.warn("Attempt {} to update download count for {}/{}/{} failed, retrying: {}",
+                        attempt, organizationName, moduleName, providerName, e.getMessage());
+                sleepBackoff(DOWNLOAD_COUNT_BACKOFF_MILLIS[attempt - 1]);
+            }
+        }
+    }
+
+    private void doUpdateModuleDownloadCount(String organizationName, String moduleName, String providerName) {
         String organizationId = commonSearchService.getOrganizationId(organizationName);
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
@@ -147,6 +180,14 @@ public class ModuleServiceImpl implements ModuleService {
         moduleRequest.setData(module);
 
         terrakubeClient.updateModule(moduleRequest, organizationId, module.getId());
+    }
+
+    private void sleepBackoff(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private String getAccessToken(String organizationId, String vcsId, String repository_source) {
