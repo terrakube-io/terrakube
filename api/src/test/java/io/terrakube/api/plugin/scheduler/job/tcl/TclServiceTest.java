@@ -70,7 +70,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertTrue(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -85,7 +85,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertTrue(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -102,7 +102,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertTrue(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -119,7 +119,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertFalse(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -137,7 +137,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertFalse(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -152,7 +152,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertFalse(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -167,7 +167,7 @@ public class TclServiceTest {
         UUID templateId = UUID.randomUUID();
         Template template = templateWithTcl(encodeYaml(yaml));
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
 
         Assertions.assertFalse(subject().isTemplatePlanOnly(templateId.toString()));
     }
@@ -286,7 +286,7 @@ public class TclServiceTest {
         job.setId(42);
         job.setTemplateReference(templateId.toString());
 
-        doReturn(template).when(templateRepository).getReferenceById(templateId);
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
         doReturn(job).when(jobRepository).lockForUpdate(42);
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(42);
         doReturn(job).when(jobRepository).getReferenceById(42);
@@ -317,6 +317,6 @@ public class TclServiceTest {
 
         Assertions.assertSame(job, result);
         Mockito.verify(stepRepository, Mockito.never()).save(org.mockito.ArgumentMatchers.any(Step.class));
-        Mockito.verify(templateRepository, Mockito.never()).getReferenceById(org.mockito.ArgumentMatchers.any(UUID.class));
+        Mockito.verify(templateRepository, Mockito.never()).findById(org.mockito.ArgumentMatchers.any(UUID.class));
     }
 }
