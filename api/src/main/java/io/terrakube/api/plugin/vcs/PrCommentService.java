@@ -8,6 +8,7 @@ import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.VcsType;
@@ -50,6 +51,7 @@ public class PrCommentService {
     GitLabWebhookService gitLabWebhookService;
     BitBucketWebhookService bitBucketWebhookService;
     JobRepository jobRepository;
+    StepRepository stepRepository;
     StorageTypeService storageTypeService;
     StreamingService streamingService;
     ObjectMapper objectMapper;
@@ -58,12 +60,13 @@ public class PrCommentService {
     String uiUrl;
 
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
-            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository,
+            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
             StorageTypeService storageTypeService, StreamingService streamingService, ObjectMapper objectMapper) {
         this.gitHubWebhookService = gitHubWebhookService;
         this.gitLabWebhookService = gitLabWebhookService;
         this.bitBucketWebhookService = bitBucketWebhookService;
         this.jobRepository = jobRepository;
+        this.stepRepository = stepRepository;
         this.storageTypeService = storageTypeService;
         this.streamingService = streamingService;
         this.objectMapper = objectMapper;
@@ -174,11 +177,15 @@ public class PrCommentService {
      * previous behavior) if none do - e.g. the run failed before Terraform printed one.
      */
     private String fetchStepOutputText(Job job) {
-        if (job.getStep() == null || job.getStep().isEmpty()) {
+        // job.getStep() is a lazy collection: callers here include ScheduleJob's
+        // doRunExecution path, which reads the job outside any open Hibernate session, so
+        // touching the proxy throws LazyInitializationException. Load steps explicitly instead.
+        List<Step> steps = stepRepository.findByJobId(job.getId());
+        if (steps.isEmpty()) {
             return null;
         }
 
-        List<Step> stepsNewestFirst = job.getStep().stream()
+        List<Step> stepsNewestFirst = steps.stream()
                 .sorted(Comparator.comparingInt(Step::getStepNumber).reversed())
                 .collect(Collectors.toList());
 
