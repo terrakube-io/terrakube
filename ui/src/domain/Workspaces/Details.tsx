@@ -380,7 +380,6 @@ export const WorkspaceDetails = ({
   usePolling(
     () => {
       loadWorkspace(false, false, false);
-      loadPermissionSet();
     },
     { interval: 10000, enabled: Boolean(id), immediate: false }
   );
@@ -433,11 +432,15 @@ export const WorkspaceDetails = ({
       });
   };
 
-  const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    axiosInstance
-      .get(`organization/${organizationId}/template`)
-      .then((template) => {
-        setTemplates(template.data.data);
+  const loadWorkspace = (_loadVersions: boolean, _loadTemplates = false, _loadPermissionSet = false) => {
+    const templatesRequest: Promise<any[]> = _loadTemplates
+      ? axiosInstance.get(`organization/${organizationId}/template`).then((template) => {
+          setTemplates(template.data.data);
+          return template.data.data;
+        })
+      : Promise.resolve(templates);
+    templatesRequest
+      .then((templateList) => {
         axiosInstance
           .get(
             `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
@@ -455,7 +458,7 @@ export const WorkspaceDetails = ({
                 setEnvVariables,
                 setHistory,
                 setSchedule,
-                template.data.data,
+                templateList,
                 setLastRun,
                 setVCSProvider,
                 setCurrentStateId,
@@ -464,7 +467,7 @@ export const WorkspaceDetails = ({
                 setResources,
                 setOutputs,
                 setAgent,
-                _loadWebhook,
+                _loadTemplates,
                 setContextState,
                 setCollectionVariables,
                 setCollectionEnvVariables,
@@ -494,7 +497,7 @@ export const WorkspaceDetails = ({
             setWorkspaceName(response.data.data.attributes.name);
             setExecutionMode(response.data.data.attributes.executionMode);
             if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
-            fetchActions();
+            if (_loadVersions) fetchActions();
             setLoadError(null);
           })
           .catch((err) => {
