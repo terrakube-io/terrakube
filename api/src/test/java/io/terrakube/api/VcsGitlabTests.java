@@ -57,7 +57,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
         GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder(), 30, 25);
 
-        Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:"+ wireMockServer.port())), "Gitlab project id not found");
+        Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:"+ wireMockServer.port())), "GitLab project id not found");
 
         String projectSearch="[\n" +
                 "    {\n" +
@@ -84,7 +84,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                         .withStatus(HttpStatus.OK.value())
                         .withBody(projectSearch)));
 
-        Assert.isTrue(("7107040".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/test/simple-terraform", "12345", "http://localhost:" + wireMockServer.port()))), "Gitlab project id not found");
+        Assert.isTrue(("7107040".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/test/simple-terraform", "12345", "http://localhost:" + wireMockServer.port()))), "GitLab project id not found");
 
         // Stub for direct lookup that returns 404
         stubFor(get(urlPathEqualTo("/projects/terraform2745926%2Fsimple-terraform"))
@@ -99,7 +99,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
                         .withStatus(HttpStatus.OK.value())
                         .withBody(projectSearch)));
 
-        Assert.isTrue("7138024".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "Gitlab project id not found");
+        Assert.isTrue("7138024".equals(gitLabWebhookService.getGitlabProjectId("terraform2745926/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "GitLab project id not found");
 
     }
 
@@ -119,7 +119,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
                 GitLabWebhookService gitLabWebhookService = new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost", WebClient.builder(), 30, 25);
 
-                Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "Direct Gitlab project id not found");
+                Assert.isTrue("5397249".equals(gitLabWebhookService.getGitlabProjectId("alfespa17/simple-terraform", "12345", "http://localhost:" + wireMockServer.port())), "Direct GitLab project id not found");
         }
 
     @Test
@@ -356,6 +356,7 @@ public class VcsGitlabTests extends ServerApplicationTests {
 
         Assert.isTrue(webhookResult.getFileChanges().size()==1,"File changes is not 1");
         Assert.isTrue(webhookResult.getFileChanges().get(0).equals("main.tf"),"File changes is not main.tf");
+        Assert.isTrue(webhookResult.getPrNumber() != null && webhookResult.getPrNumber().intValue() == 2, "PR number was not set from merge request event");
 
         workspace.setDeleted(true);
         workspace.setVcs(null);

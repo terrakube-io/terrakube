@@ -1,6 +1,7 @@
 package io.terrakube.registry.plugin.storage.local;
 
 import io.terrakube.registry.service.git.GitService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -54,11 +55,12 @@ class LocalStorageServiceImplTest {
             File dummyFile = new File(gitCloneDir, "main.tf");
             java.nio.file.Files.write(dummyFile.toPath(), "resource \"null_resource\" \"this\" {}".getBytes(StandardCharsets.UTF_8));
 
-            when(gitService.getCloneRepositoryByTag(any(), any(), any(), any(), any(), any(), any()))
+            when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
                     .thenReturn(gitCloneDir);
 
-            String result = localStorageService.searchModule("org", "module", "local", "1.0.0", 
-                    "source", "vcsType", "vcsConn", "token", "tag", "folder");
+            ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                    "vcsConn", "token", "tag", "folder");
+            String result = localStorageService.searchModule("org", "module", "local", download);
 
             assertEquals("https://registry.terrakube.io/terraform/modules/v1/download/org/module/local/1.0.0/module.zip", result);
             

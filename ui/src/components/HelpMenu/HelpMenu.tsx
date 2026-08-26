@@ -1,30 +1,12 @@
-import { DownOutlined, QuestionCircleOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { ApiOutlined, DownOutlined, QuestionCircleOutlined } from "@ant-design/icons";
+import { Dropdown } from "antd";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./HelpMenu.css";
 
 export const HelpMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
+  const navigate = useNavigate();
 
   const helpItems = [
     {
@@ -44,16 +26,24 @@ export const HelpMenu = () => {
     },
   ];
 
-  return (
-    <div className="help-menu-container" ref={containerRef}>
-      <button className="help-menu-button" onClick={handleToggle} aria-expanded={isOpen} aria-label="help menu">
-        <QuestionCircleOutlined className="help-menu-icon" />
-        <DownOutlined className="help-menu-arrow" />
-      </button>
+  const handleApiDocs = () => {
+    setIsOpen(false);
+    navigate("/api-docs");
+  };
 
-      {isOpen && (
+  return (
+    <Dropdown
+      trigger={["click"]}
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      placement="bottomRight"
+      popupRender={() => (
         <div className="help-menu-dropdown">
           <div className="help-menu-header">Help & Support</div>
+          <div className="help-menu-item" onClick={handleApiDocs}>
+            <ApiOutlined className="help-menu-item-icon" />
+            <span>API Docs</span>
+          </div>
           {helpItems.map((item) => (
             <a
               key={item.key}
@@ -68,7 +58,12 @@ export const HelpMenu = () => {
           ))}
         </div>
       )}
-    </div>
+    >
+      <button type="button" className="help-menu-button" aria-expanded={isOpen} aria-label="help menu">
+        <QuestionCircleOutlined className="help-menu-icon" />
+        <DownOutlined className="help-menu-arrow" />
+      </button>
+    </Dropdown>
   );
 };
 

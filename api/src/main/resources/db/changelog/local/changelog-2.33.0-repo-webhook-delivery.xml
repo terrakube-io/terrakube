@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-33-0-repo-webhook-delivery" author="jake">
+        <!-- payload/headers/last_error are "text", not "clob": clob maps to PostgreSQL's
+             oid-backed Large Object storage, which requires every read to happen inside a real
+             (non-autocommit) transaction - the delivery poller's findDueForDispatch() query runs
+             on a plain repository call from a Quartz job with no surrounding transaction, so a
+             clob column here would crash every poll tick with "Large Objects may not be used in
+             auto-commit mode." (see notification_outbox for the same fix). -->
+        <createTable tableName="repo_webhook_delivery">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="repo_webhook_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="payload" type="text" />
+            <column name="headers" type="text" />
+            <column name="status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false" />
+            </column>
+            <column name="attempt_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false" />
+            </column>
+            <column name="last_attempt_at" type="datetime" />
+            <column name="next_attempt_at" type="datetime" />
+            <column name="last_error" type="text" />
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="repo_webhook_delivery" baseColumnNames="repo_webhook_id"
+            constraintName="fk_repo_webhook_delivery_repo_webhook_id" referencedTableName="repo_webhook"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <createIndex tableName="repo_webhook_delivery" indexName="idx_repo_webhook_delivery_status">
+            <column name="status" />
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

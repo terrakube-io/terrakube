@@ -1,0 +1,1144 @@
+package io.terrakube.api.plugin.vcs.provider.azdevops;
+
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.util.UriUtils;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import io.terrakube.api.plugin.vcs.WebhookResult;
+import io.terrakube.api.plugin.vcs.WebhookServiceBase;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.JobVia;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.RepoWebhook;
+import io.terrakube.api.rs.webhook.Webhook;
+import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventType;
+import io.terrakube.api.rs.workspace.Workspace;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Handles Azure DevOps integration for Terrakube webhooks.
+ *
+ * Azure DevOps does not expose per-repository "webhooks"; instead it uses
+ * <a href="https://learn.microsoft.com/en-us/rest/api/azure/devops/hooks/subscriptions">Service Hook
+ * subscriptions</a>. A single Terrakube {@link Webhook} can map to several Azure DevOps subscriptions
+ * (one per event type), so the comma separated list of subscription ids is stored in
+ * {@link Webhook#getRemoteHookId()}.
+ *
+ * Azure DevOps service hooks cannot sign the payload (no HMAC), but they can send custom HTTP headers.
+ * We therefore authenticate the incoming request by comparing the {@code X-Terrakube-Token} header
+ * against the base64 encoded workspace id (the same secret the other providers use), mirroring the
+ * token comparison strategy used for GitLab.
+ */
+@Service
+@Slf4j
+public class AzDevOpsWebhookService extends WebhookServiceBase {
+
+    private static final String API_VERSION = "7.0";
+    private static final int MAX_PR_FILE_PAGES = 100;
+    private static final String HOOKS_API_VERSION = "7.1";
+    private static final String TOKEN_HEADER = "x-terrakube-token";
+    /**
+     * Value for webHooks {@code resourceDetailsToSend} / {@code messagesToSend} /
+     * {@code detailedMessagesToSend}. Azure's consumers metadata lists {@code ""} as "All",
+     * but posting an empty string is rejected as a missing ConsumerInput.Value; the API
+     * accepts {@code "all"} (same as the Terraform Azure DevOps provider).
+     */
+    private static final String SEND_ALL = "all";
+
+    // Azure DevOps service hook event types
+    private static final String EVENT_PUSH = "git.push";
+    private static final String EVENT_PR_CREATED = "git.pullrequest.created";
+    private static final String EVENT_PR_UPDATED = "git.pullrequest.updated";
+    private static final String EVENT_PR_COMMENT = "ms.vss-code.git-pullrequest-comment-event";
+
+    private static final String FIELD_RESOURCE = "resource";
+    private static final String FIELD_RESOURCE_VERSION = "resourceVersion";
+    private static final String FIELD_REPOSITORY = "repository";
+    private static final String FIELD_COMMIT_ID = "commitId";
+    private static final String REF_TAGS_PREFIX = "refs/tags/";
+    private static final String REF_HEADS_PREFIX = "refs/heads/";
+    private static final String NO_RESPONSE = "No response";
+    private static final String UNABLE_TO_PARSE_SOURCE_MESSAGE = "Unable to parse Azure DevOps repository from source {}";
+
+    private final ObjectMapper objectMapper;
+    private final AzDevOpsTokenService azDevOpsTokenService;
+
+    @Value("${io.terrakube.hostname}")
+    private String hostname;
+    @Value("${io.terrakube.ui.url}")
+    private String uiUrl;
+
+    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService) {
+        this.objectMapper = objectMapper;
+        this.azDevOpsTokenService = azDevOpsTokenService;
+    }
+
+    public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token,
+            Workspace workspace) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
+        result.setFileChanges(new ArrayList<>());
+        result.setWorkspaceId(workspace.getId().toString());
+
+        String tokenHeader = headers.get(TOKEN_HEADER);
+        if (tokenHeader == null || !tokenHeader.equals(token)) {
+            log.error("{} header is missing or doesn't match!", TOKEN_HEADER);
+            result.setValid(false);
+            return result;
+        }
+        result.setValid(true);
+
+        log.info("Parsing Azure DevOps webhook payload");
+        try {
+            return handleEvent(jsonPayload, result, workspace);
+        } catch (Exception e) {
+            log.error("Error processing the Azure DevOps webhook", e);
+            result.setValid(false);
+            return result;
+        }
+    }
+
+    public WebhookResult handleEvent(String jsonPayload, WebhookResult result, Workspace workspace) throws Exception {
+        JsonNode rootNode = objectMapper.readTree(jsonPayload);
+        String eventType = rootNode.path("eventType").asText();
+        log.info("Azure DevOps event type: {}", eventType);
+
+        JsonNode resource = rootNode.get(FIELD_RESOURCE);
+        if (resource == null || resource.isNull()) {
+            // Typical when the Azure subscription was created with an invalid
+            // resourceDetailsToSend value or an unsupported resourceVersion.
+            log.error(
+                    "Azure DevOps webhook for event {} has resource=null (resourceVersion={}); recreate the service hook subscription",
+                    eventType, rootNode.path(FIELD_RESOURCE_VERSION).asText(null));
+            result.setValid(false);
+            return result;
+        }
+
+        switch (eventType) {
+            case EVENT_PUSH:
+                return handlePushEvent(rootNode, result, workspace);
+            case EVENT_PR_CREATED:
+            case EVENT_PR_UPDATED:
+                return handlePullRequestEvent(rootNode, result, workspace);
+            case EVENT_PR_COMMENT:
+                return handlePullRequestCommentEvent(rootNode, result, workspace);
+            default:
+                log.error("Unsupported Azure DevOps event: {}", eventType);
+                result.setValid(false);
+                return result;
+        }
+    }
+
+    private WebhookResult handlePushEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+        JsonNode refUpdate = resource.path("refUpdates").path(0);
+        String refName = refUpdate.path("name").asText();
+
+        // Tag pushes (refs/tags/...) are treated as releases, branch pushes as regular pushes
+        if (refName.startsWith(REF_TAGS_PREFIX)) {
+            result.setEvent("release");
+            result.setRelease(true);
+            result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+        } else {
+            result.setEvent("push");
+            result.setBranch(stripRefPrefix(refName));
+        }
+
+        result.setCommit(refUpdate.path("newObjectId").asText());
+        result.setCreatedBy(resolveUser(resource.path("pushedBy")));
+
+        // Azure DevOps push payloads do not contain the changed files, so we collect them
+        // from the API. The event's commits[] array is unreliable (often empty), so we
+        // prefer diffing the pushed range oldObjectId..newObjectId.
+        JsonNode repository = resource.path(FIELD_REPOSITORY);
+        String repositoryId = repository.path("id").asText();
+        AzureRepo repo = parseSource(workspace.getSource());
+
+        if (!result.isRelease() && repo != null && !repositoryId.isEmpty()) {
+            result.setFileChanges(getPushFileChanges(workspace.getVcs(), repo, repositoryId, resource, refUpdate));
+            log.info("Azure DevOps push detected {} changed file(s) on branch {}: {}",
+                    result.getFileChanges().size(), result.getBranch(), result.getFileChanges());
+        }
+
+        return result;
+    }
+
+    /**
+     * Resolves the files changed by a push. Azure does not send them in the webhook payload, and the
+     * event's {@code commits[]} array is frequently empty, so we prefer the diff of the pushed range
+     * (oldObjectId..newObjectId) and fall back to per-commit / tip-commit changes.
+     */
+    private List<String> getPushFileChanges(Vcs vcs, AzureRepo repo, String repositoryId, JsonNode resource,
+            JsonNode refUpdate) {
+        String oldObjectId = refUpdate.path("oldObjectId").asText();
+        String newObjectId = refUpdate.path("newObjectId").asText();
+        boolean newBranch = oldObjectId == null || oldObjectId.isEmpty() || oldObjectId.chars().allMatch(c -> c == '0');
+
+        Set<String> files = new LinkedHashSet<>();
+
+        // Primary: diff the whole pushed range (covers every commit in the push)
+        if (!newBranch && !newObjectId.isEmpty()) {
+            files.addAll(getDiffChanges(vcs, repo, repositoryId, oldObjectId, newObjectId));
+        }
+
+        // Fallback 1: per-commit changes from the event payload
+        if (files.isEmpty()) {
+            for (JsonNode commit : resource.path("commits")) {
+                String commitId = commit.path(FIELD_COMMIT_ID).asText();
+                if (!commitId.isEmpty()) {
+                    files.addAll(getCommitChanges(vcs, repo, repositoryId, commitId));
+                }
+            }
+        }
+
+        // Fallback 2: changes of the tip commit
+        if (files.isEmpty() && !newObjectId.isEmpty()) {
+            files.addAll(getCommitChanges(vcs, repo, repositoryId, newObjectId));
+        }
+
+        return new ArrayList<>(files);
+    }
+
+    private List<String> getDiffChanges(Vcs vcs, AzureRepo repo, String repositoryId, String baseCommit,
+            String targetCommit) {
+        List<String> changedFiles = new ArrayList<>();
+        String apiUrl = String.format(
+                "%s/%s/_apis/git/repositories/%s/diffs/commits?baseVersionType=commit&baseVersion=%s"
+                        + "&targetVersionType=commit&targetVersion=%s&api-version=%s",
+                repo.orgBaseUrl, UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8),
+                repositoryId, baseCommit, targetCommit, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.GET);
+        if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to fetch Azure DevOps diff {}..{}", baseCommit, targetCommit);
+            return changedFiles;
+        }
+        try {
+            JsonNode rootNode = objectMapper.readTree(response.getBody());
+            for (JsonNode change : rootNode.path("changes")) {
+                addChangedFile(changedFiles, change);
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps commit diff", e);
+        }
+        return changedFiles;
+    }
+
+    private WebhookResult handlePullRequestEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
+        result.setEvent("pull_request");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        int prNumber = resource.path("pullRequestId").asInt();
+        result.setPrNumber(prNumber);
+        result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+        result.setCreatedBy(resolveUser(resource.path("createdBy")));
+
+        JsonNode repository = resource.path(FIELD_REPOSITORY);
+        String repositoryId = repository.path("id").asText();
+        AzureRepo repo = parseSource(workspace.getSource());
+
+        if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
+            result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+        }
+
+        return result;
+    }
+
+    private WebhookResult handlePullRequestCommentEvent(JsonNode rootNode, WebhookResult result, Workspace workspace) {
+        result.setEvent("issue_comment");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        String commentBody = resource.path("comment").path("content").asText().trim();
+        String command = parseTerrakubeCommand(commentBody);
+        if (command == null) {
+            result.setValid(false);
+            return result;
+        }
+
+        JsonNode pullRequest = resource.path("pullRequest");
+        int prNumber = pullRequest.path("pullRequestId").asInt();
+
+        result.setPrComment(true);
+        result.setCommentBody(commentBody);
+        result.setCommentCommand(command);
+        result.setPrNumber(prNumber);
+        result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
+        result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+
+        JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
+        String repositoryId = repository.path("id").asText();
+        AzureRepo repo = parseSource(workspace.getSource());
+
+        if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
+            result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+        }
+
+        return result;
+    }
+
+    public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {
+        AzureRepo repo = parseSource(workspace.getSource());
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
+            return "";
+        }
+
+        String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
+        if (repositoryAndProject.length == 0) {
+            log.error("Unable to resolve Azure DevOps repository id for {}", workspace.getSource());
+            return "";
+        }
+        String repositoryId = repositoryAndProject[0];
+        String projectId = repositoryAndProject[1];
+
+        // Recreate the subscriptions on update to honour any event configuration change.
+        if (webhook.getRemoteHookId() != null && !webhook.getRemoteHookId().isEmpty()) {
+            deleteWebhook(workspace, webhook.getRemoteHookId());
+        }
+
+        String secret = Base64.getEncoder()
+                .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
+        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId());
+
+        Set<String> azureEventTypes = resolveAzureEventTypes(webhook);
+
+        List<String> subscriptionIds = new ArrayList<>();
+        for (String azureEventType : azureEventTypes) {
+            String subscriptionId = createSubscription(workspace.getVcs(), repo, azureEventType, repositoryId,
+                    projectId, webhookUrl, secret);
+            if (subscriptionId != null && !subscriptionId.isEmpty()) {
+                subscriptionIds.add(subscriptionId);
+            }
+        }
+
+        if (subscriptionIds.isEmpty()) {
+            log.error("No Azure DevOps subscriptions were created for workspace {}/{}",
+                    workspace.getOrganization().getName(), workspace.getName());
+            return "";
+        }
+
+        log.info("Azure DevOps service hooks created successfully for workspace {}/{} with ids {}",
+                workspace.getOrganization().getName(), workspace.getName(), subscriptionIds);
+        return String.join(",", subscriptionIds);
+    }
+
+    public void deleteWebhook(Workspace workspace, String webhookRemoteId) {
+        AzureRepo repo = parseSource(workspace.getSource());
+        if (repo == null) {
+            log.warn("Unable to parse Azure DevOps repository from source {}, skipping deletion",
+                    workspace.getSource());
+            return;
+        }
+
+        for (String subscriptionId : webhookRemoteId.split(",")) {
+            subscriptionId = subscriptionId.trim();
+            if (subscriptionId.isEmpty()) {
+                continue;
+            }
+            String apiUrl = String.format("%s/_apis/hooks/subscriptions/%s?api-version=%s",
+                    repo.orgBaseUrl, subscriptionId, HOOKS_API_VERSION);
+            ResponseEntity<String> response = callAzureApi(workspace.getVcs(), "", apiUrl, HttpMethod.DELETE);
+            if (response != null && response.getStatusCode().is2xxSuccessful()) {
+                log.info("Azure DevOps subscription {} deleted successfully", subscriptionId);
+            } else {
+                log.warn("Failed to delete Azure DevOps subscription {}, message {}", subscriptionId,
+                        response != null ? response.getBody() : NO_RESPONSE);
+            }
+        }
+    }
+
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
+        Workspace workspace = job.getWorkspace();
+        if (job.getCommitId() == null || job.getCommitId().isBlank()) {
+            log.warn("No commit id available for job {}, skipping Azure DevOps commit status", job.getId());
+            return;
+        }
+
+        AzureRepo repo = parseSource(workspace.getSource());
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
+            return;
+        }
+        String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
+        if (repositoryAndProject.length == 0) {
+            log.error("Unable to resolve Azure DevOps repository id for commit status on {}", workspace.getSource());
+            return;
+        }
+
+        String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
+                workspace.getOrganization().getId(), workspace.getId(), job.getId());
+        String state;
+        switch (jobStatus) {
+            case completed:
+                state = "succeeded";
+                break;
+            case failed:
+            case rejected:
+            case cancelled:
+                state = "failed";
+                break;
+            case unknown:
+                state = "error";
+                break;
+            default:
+                state = "pending";
+                break;
+        }
+        String description = buildCommitStatusDescription(jobStatus, runSummary);
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("name", workspace.getOrganization().getName() + "-" + workspace.getName());
+        context.put("genre", "Terrakube");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("state", state);
+        body.put("description", description);
+        body.put("targetUrl", jobUrl);
+        body.put("context", context);
+
+        String apiUrl = String.format("%s/%s/_apis/git/repositories/%s/commits/%s/statuses?api-version=%s",
+                repo.orgBaseUrl, UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8),
+                repositoryAndProject[0], job.getCommitId(), API_VERSION);
+
+        try {
+            ResponseEntity<String> response = callAzureApi(workspace.getVcs(), objectMapper.writeValueAsString(body),
+                    apiUrl, HttpMethod.POST);
+            if (response != null && response.getStatusCode().is2xxSuccessful()) {
+                log.info("Job status sent successfully to Azure DevOps for commit {}", job.getCommitId());
+            } else {
+                log.error("Failed to send job status to Azure DevOps, message {}",
+                        response != null ? response.getBody() : NO_RESPONSE);
+            }
+        } catch (Exception e) {
+            log.error("Error sending commit status to Azure DevOps", e);
+        }
+    }
+
+    /**
+     * Returns the current tip commit id of {@code branch}, or null if it cannot be resolved.
+     * Used by outbound polling so new commits can be detected without an inbound webhook endpoint
+     * (e.g. when Terrakube runs on a private network unreachable by Azure DevOps service hooks).
+     */
+    public String getLatestCommit(Workspace workspace, String branch) {
+        AzureRepo repo = parseSource(workspace.getSource());
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, workspace.getSource());
+            return null;
+        }
+        String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
+        if (repositoryAndProject.length == 0) {
+            return null;
+        }
+
+        String filter = "heads/" + UriUtils.encodeQueryParam(branch, StandardCharsets.UTF_8);
+        String apiUrl = String.format("%s/%s/_apis/git/repositories/%s/refs?filter=%s&api-version=%s",
+                repo.orgBaseUrl, UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8),
+                repositoryAndProject[0], filter, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(workspace.getVcs(), "", apiUrl, HttpMethod.GET);
+        if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to fetch Azure DevOps branch tip for {}/{}", repo.repository, branch);
+            return null;
+        }
+        try {
+            JsonNode rootNode = objectMapper.readTree(response.getBody());
+            String expectedName = REF_HEADS_PREFIX + branch;
+            for (JsonNode ref : rootNode.path("value")) {
+                if (expectedName.equals(ref.path("name").asText())) {
+                    return ref.path("objectId").asText();
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps refs response", e);
+        }
+        return null;
+    }
+
+    /**
+     * Builds a push {@link WebhookResult} for a commit detected by polling, resolving the files
+     * changed between {@code baseCommit} (the previously seen commit, may be null) and {@code newCommit}.
+     */
+    public WebhookResult buildPushResult(Workspace workspace, String branch, String baseCommit, String newCommit) {
+        WebhookResult result = new WebhookResult();
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
+        result.setEvent("push");
+        result.setValid(true);
+        result.setBranch(branch);
+        result.setCommit(newCommit);
+        result.setCreatedBy("azuredevops-poll");
+        result.setWorkspaceId(workspace.getId().toString());
+        result.setFileChanges(new ArrayList<>());
+
+        AzureRepo repo = parseSource(workspace.getSource());
+        if (repo != null) {
+            String[] repositoryAndProject = resolveRepository(workspace.getVcs(), repo);
+            if (repositoryAndProject.length > 0) {
+                List<String> files = (baseCommit != null && !baseCommit.isEmpty())
+                        ? getDiffChanges(workspace.getVcs(), repo, repositoryAndProject[0], baseCommit, newCommit)
+                        : getCommitChanges(workspace.getVcs(), repo, repositoryAndProject[0], newCommit);
+                // Fallback to the tip commit's own changes when the range diff yields nothing
+                if (files.isEmpty() && newCommit != null && !newCommit.isEmpty()) {
+                    files = getCommitChanges(workspace.getVcs(), repo, repositoryAndProject[0], newCommit);
+                }
+                result.setFileChanges(files);
+            }
+        }
+        return result;
+    }
+
+    private Set<String> resolveAzureEventTypes(Webhook webhook) {
+        Set<String> azureEventTypes = new LinkedHashSet<>();
+        for (WebhookEvent event : webhook.getEvents()) {
+            WebhookEventType eventType = event.getEvent();
+            if (eventType == null) {
+                continue;
+            }
+            switch (eventType) {
+                case PUSH:
+                case RELEASE:
+                    // Tag (release) pushes arrive through the same git.push subscription
+                    azureEventTypes.add(EVENT_PUSH);
+                    break;
+                case PULL_REQUEST:
+                    azureEventTypes.add(EVENT_PR_CREATED);
+                    azureEventTypes.add(EVENT_PR_UPDATED);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        boolean hasPrWorkflow = webhook.getEvents().stream().anyMatch(WebhookEvent::isPrWorkflowEnabled);
+        if (hasPrWorkflow) {
+            azureEventTypes.add(EVENT_PR_COMMENT);
+        }
+        return azureEventTypes;
+    }
+
+    private String createSubscription(Vcs vcs, AzureRepo repo, String azureEventType, String repositoryId,
+            String projectId, String webhookUrl, String secret) {
+        Map<String, Object> publisherInputs = new LinkedHashMap<>();
+        publisherInputs.put("projectId", projectId);
+        publisherInputs.put(FIELD_REPOSITORY, repositoryId);
+
+        Map<String, Object> consumerInputs = new LinkedHashMap<>();
+        consumerInputs.put("url", webhookUrl);
+        consumerInputs.put("resourceDetailsToSend", SEND_ALL);
+        consumerInputs.put("detailedMessagesToSend", SEND_ALL);
+        consumerInputs.put("messagesToSend", SEND_ALL);
+        // Accept self-signed / internal certificates so deliveries are not dropped on TLS
+        // validation (otherwise Azure puts the subscription on probation and loses events).
+        consumerInputs.put("acceptUntrustedCerts", "true");
+        consumerInputs.put("httpHeaders", "X-Terrakube-Token:" + secret);
+
+        // Use 1.0 for every event type. Microsoft recommends 1.0 as the safest resource version;
+        // requesting 2.0 for git.push / PR events has been observed to yield deliveries with
+        // resource=null and resourceVersion=null while messages still arrive.
+        String resourceVersion = "1.0";
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("publisherId", "tfs");
+        body.put("eventType", azureEventType);
+        body.put(FIELD_RESOURCE_VERSION, resourceVersion);
+        body.put("consumerId", "webHooks");
+        body.put("consumerActionId", "httpRequest");
+        body.put("publisherInputs", publisherInputs);
+        body.put("consumerInputs", consumerInputs);
+
+        String apiUrl = String.format("%s/_apis/hooks/subscriptions?api-version=%s", repo.orgBaseUrl,
+                HOOKS_API_VERSION);
+
+        try {
+            ResponseEntity<String> response = callAzureApi(vcs, objectMapper.writeValueAsString(body), apiUrl,
+                    HttpMethod.POST);
+            if (response != null && response.getStatusCode().is2xxSuccessful()) {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                String id = rootNode.path("id").asText();
+                String storedVersion = rootNode.path(FIELD_RESOURCE_VERSION).asText(null);
+                String storedResourceDetails = rootNode.path("consumerInputs").path("resourceDetailsToSend")
+                        .asText(null);
+                log.info(
+                        "Created Azure DevOps subscription {} for event {} (resourceVersion={}, resourceDetailsToSend={})",
+                        id, azureEventType, storedVersion, storedResourceDetails);
+                if (storedVersion == null || storedVersion.isEmpty()) {
+                    log.warn(
+                            "Azure DevOps subscription {} was created without a resourceVersion; webhook payloads may omit resource",
+                            id);
+                }
+                return id;
+            }
+            log.error("Failed to create Azure DevOps subscription for event {}, message {}", azureEventType,
+                    response != null ? response.getBody() : NO_RESPONSE);
+        } catch (Exception e) {
+            log.error("Error creating Azure DevOps subscription for event {}", azureEventType, e);
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the Azure DevOps repository id and project id from the repository name in the source URL.
+     *
+     * @return a two element array {@code [repositoryId, projectId]} or an empty array on failure.
+     */
+    private String[] resolveRepository(Vcs vcs, AzureRepo repo) {
+        String apiUrl = String.format("%s/%s/_apis/git/repositories/%s?api-version=%s",
+                repo.orgBaseUrl, UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8),
+                UriUtils.encodePathSegment(repo.repository, StandardCharsets.UTF_8), API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.GET);
+        if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to resolve Azure DevOps repository {}/{}", repo.project, repo.repository);
+            return new String[0];
+        }
+        try {
+            JsonNode rootNode = objectMapper.readTree(response.getBody());
+            String repositoryId = rootNode.path("id").asText();
+            String projectId = rootNode.path("project").path("id").asText();
+            return new String[] { repositoryId, projectId };
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps repository response", e);
+            return new String[0];
+        }
+    }
+
+    private List<String> getCommitChanges(Vcs vcs, AzureRepo repo, String repositoryId, String commitId) {
+        List<String> changedFiles = new ArrayList<>();
+        String apiUrl = String.format("%s/%s/_apis/git/repositories/%s/commits/%s/changes?api-version=%s",
+                repo.orgBaseUrl, UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8),
+                repositoryId, commitId, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.GET);
+        if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to fetch Azure DevOps changes for commit {}", commitId);
+            return changedFiles;
+        }
+        try {
+            JsonNode rootNode = objectMapper.readTree(response.getBody());
+            for (JsonNode change : rootNode.path("changes")) {
+                addChangedFile(changedFiles, change);
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps commit changes", e);
+        }
+        return changedFiles;
+    }
+
+    private List<String> getPullRequestChanges(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+        List<String> changedFiles = new ArrayList<>();
+        String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
+        String iterationsUrl = String.format(
+                "%s/%s/_apis/git/repositories/%s/pullRequests/%s/iterations?api-version=%s",
+                repo.orgBaseUrl, encodedProject, repositoryId, prNumber, API_VERSION);
+
+        ResponseEntity<String> iterationsResponse = callAzureApi(vcs, "", iterationsUrl, HttpMethod.GET);
+        if (iterationsResponse == null || !iterationsResponse.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to fetch Azure DevOps iterations for pull request {}", prNumber);
+            return changedFiles;
+        }
+
+        int latestIteration = -1;
+        try {
+            JsonNode rootNode = objectMapper.readTree(iterationsResponse.getBody());
+            for (JsonNode iteration : rootNode.path("value")) {
+                latestIteration = Math.max(latestIteration, iteration.path("id").asInt());
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps pull request iterations", e);
+            return changedFiles;
+        }
+
+        if (latestIteration < 0) {
+            return changedFiles;
+        }
+
+        // GitPullRequestIterationChanges paginates via $top/$skip (default $top=100, max 2000) and
+        // echoes the next page's values back as nextTop/nextSkip in the response body itself (not
+        // a header) - both are 0 once there are no more changes. A single unpaginated request
+        // silently truncates the file list for any PR touching more than 100 files, which is
+        // common for monorepo PRs. MAX_PR_FILE_PAGES is a defensive cap (100 pages), not a real
+        // Azure DevOps limit.
+        int top = 100;
+        int skip = 0;
+        for (int page = 0; page < MAX_PR_FILE_PAGES; page++) {
+            String changesUrl = String.format(
+                    "%s/%s/_apis/git/repositories/%s/pullRequests/%s/iterations/%s/changes?$top=%s&$skip=%s&api-version=%s",
+                    repo.orgBaseUrl, encodedProject, repositoryId, prNumber, latestIteration, top, skip, API_VERSION);
+
+            ResponseEntity<String> changesResponse = callAzureApi(vcs, "", changesUrl, HttpMethod.GET);
+            if (changesResponse == null || !changesResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Failed to fetch Azure DevOps changes for pull request {}", prNumber);
+                break;
+            }
+            ChangesPage changesPage;
+            try {
+                changesPage = parseChangesPage(changesResponse.getBody());
+            } catch (Exception e) {
+                log.error("Error parsing Azure DevOps pull request changes", e);
+                break;
+            }
+            changedFiles.addAll(changesPage.files());
+            if (changesPage.nextTop() == 0 && changesPage.nextSkip() == 0) {
+                break;
+            }
+            top = changesPage.nextTop();
+            skip = changesPage.nextSkip();
+        }
+        return changedFiles;
+    }
+
+    // A page of GitPullRequestIterationChanges: nextTop/nextSkip are both 0 once there are no more
+    // pages (see getPullRequestChanges).
+    record ChangesPage(List<String> files, int nextTop, int nextSkip) {
+    }
+
+    // Package-private (not private) so AzDevOpsWebhookServiceTest can exercise the pagination
+    // decision - including the nextTop/nextSkip "no more pages" sentinel - directly against a JSON
+    // fixture, without standing up an HTTP stack for what's really just a JSON-shape question.
+    ChangesPage parseChangesPage(String responseBody) throws JsonProcessingException {
+        List<String> files = new ArrayList<>();
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+        for (JsonNode change : rootNode.path("changeEntries")) {
+            addChangedFile(files, change);
+        }
+        return new ChangesPage(files, rootNode.path("nextTop").asInt(0), rootNode.path("nextSkip").asInt(0));
+    }
+
+    private void addChangedFile(List<String> changedFiles, JsonNode change) {
+        JsonNode item = change.path("item");
+        // Skip folder entries, Terrakube path filters operate on files
+        if (item.path("isFolder").asBoolean(false) || "tree".equals(item.path("gitObjectType").asText())) {
+            return;
+        }
+        String path = item.path("path").asText();
+        if (path == null || path.isEmpty()) {
+            return;
+        }
+        // Azure DevOps paths are absolute (start with '/'), align them with the other providers
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        if (!changedFiles.contains(path)) {
+            changedFiles.add(path);
+        }
+    }
+
+    private ResponseEntity<String> callAzureApi(Vcs vcs, String body, String apiUrl, HttpMethod httpMethod) {
+        String token = resolveToken(vcs);
+        if (token == null || token.isEmpty()) {
+            log.error("No Azure DevOps access token available for vcs {}", vcs.getId());
+            return null;
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Accept", "application/json");
+        headers.set("Content-Type", "application/json");
+        headers.set("Authorization", "Bearer " + token);
+
+        try {
+            return makeApiRequest(headers, body, apiUrl, httpMethod);
+        } catch (RestClientException e) {
+            log.error("Error calling Azure DevOps API {}: {}", apiUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    private String resolveToken(Vcs vcs) {
+        if (vcs.getVcsType() == VcsType.AZURE_SP_MI) {
+            return azDevOpsTokenService.getAzureDefaultToken();
+        }
+        return vcs.getAccessToken();
+    }
+
+    private String resolveUser(JsonNode userNode) {
+        String uniqueName = userNode.path("uniqueName").asText();
+        if (uniqueName != null && !uniqueName.isEmpty()) {
+            return uniqueName;
+        }
+        String displayName = userNode.path("displayName").asText();
+        return displayName == null || displayName.isEmpty() ? "system" : displayName;
+    }
+
+    private String stripRefPrefix(String ref) {
+        if (ref == null) {
+            return "";
+        }
+        if (ref.startsWith(REF_HEADS_PREFIX)) {
+            return ref.substring(REF_HEADS_PREFIX.length());
+        }
+        if (ref.startsWith("refs/tags/")) {
+            return ref.substring("refs/tags/".length());
+        }
+        return ref;
+    }
+
+    /**
+     * Parses the org scoped base url, project and repository name out of a Terrakube Azure DevOps source url.
+     *
+     * Supported shapes (with or without the {@code _git} segment and an optional {@code .git} suffix):
+     * <ul>
+     *   <li>{@code https://dev.azure.com/{org}/{project}/_git/{repo}}</li>
+     *   <li>{@code https://dev.azure.com/{org}/{project}/{repo}}</li>
+     *   <li>{@code https://{org}.visualstudio.com/{project}/_git/{repo}}</li>
+     *   <li>{@code https://{org}.visualstudio.com/{project}/{repo}}</li>
+     * </ul>
+     */
+    protected AzureRepo parseSource(String source) {
+        try {
+            String cleaned = source.replaceAll("\\.git$", "");
+            URI uri = new URI(cleaned);
+            String host = uri.getHost();
+            String scheme = uri.getScheme();
+            if (host == null || scheme == null) {
+                return null;
+            }
+            // Build host[:port] WITHOUT the userinfo component. Azure DevOps clone urls
+            // frequently include a userinfo (e.g. https://org@dev.azure.com/...), but the
+            // HTTP client rejects a request URI whose authority carries the deprecated
+            // userinfo component, so it must be stripped here (getAuthority keeps it).
+            int port = uri.getPort();
+            String hostPort = host + (port != -1 ? ":" + port : "");
+
+            List<String> segments = new ArrayList<>();
+            for (String segment : uri.getPath().split("/")) {
+                if (!segment.isEmpty() && !"_git".equals(segment)) {
+                    segments.add(segment);
+                }
+            }
+
+            String orgBaseUrl;
+            String project;
+            String repository;
+            if (host.endsWith("visualstudio.com")) {
+                // org is the subdomain, path holds project then repo
+                orgBaseUrl = scheme + "://" + hostPort;
+                if (segments.size() < 2) {
+                    return null;
+                }
+                project = segments.get(0);
+                repository = segments.get(segments.size() - 1);
+            } else {
+                // dev.azure.com or Azure DevOps Server, path holds org then project then repo
+                if (segments.size() < 3) {
+                    return null;
+                }
+                orgBaseUrl = scheme + "://" + hostPort + "/" + segments.get(0);
+                project = segments.get(1);
+                repository = segments.get(segments.size() - 1);
+            }
+            return new AzureRepo(orgBaseUrl, project, repository);
+        } catch (Exception e) {
+            log.error("Error extracting the Azure DevOps repository from {}", source, e);
+            return null;
+        }
+    }
+
+    /** Holds the org scoped base url, project and repository name parsed from a source url. */
+    protected static class AzureRepo {
+        final String orgBaseUrl;
+        final String project;
+        final String repository;
+
+        AzureRepo(String orgBaseUrl, String project, String repository) {
+            this.orgBaseUrl = orgBaseUrl;
+            this.project = project;
+            this.repository = repository;
+        }
+    }
+
+    // ======================== Shared Webhook (v2) Methods ========================
+
+    /**
+     * Parses an Azure DevOps webhook payload without requiring a workspace (used by
+     * the shared v2 webhook flow). File change fetching is deferred to per-workspace
+     * processing since it requires VCS credentials.
+     */
+    public WebhookResult parseAzDevOpsPayload(String jsonPayload, Map<String, String> headers) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(JobVia.AZURE_DEVOPS.getValue());
+        result.setValid(true);
+        result.setFileChanges(new ArrayList<>());
+        result.setRawPayload(jsonPayload);
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            String eventType = rootNode.path("eventType").asText();
+            log.info("Azure DevOps v2 event type: {}", eventType);
+
+            JsonNode resource = rootNode.get(FIELD_RESOURCE);
+            if (resource == null || resource.isNull()) {
+                log.error(
+                        "Azure DevOps v2 webhook for event {} has resource=null (resourceVersion={}); recreate the service hook subscription",
+                        eventType, rootNode.path(FIELD_RESOURCE_VERSION).asText(null));
+                result.setValid(false);
+                return result;
+            }
+
+            switch (eventType) {
+                case EVENT_PUSH:
+                    return parsePushPayload(rootNode, result);
+                case EVENT_PR_CREATED:
+                case EVENT_PR_UPDATED:
+                    return parsePullRequestPayload(rootNode, result);
+                case EVENT_PR_COMMENT:
+                    return parsePullRequestCommentPayload(rootNode, result);
+                default:
+                    log.error("Unsupported Azure DevOps event: {}", eventType);
+                    result.setValid(false);
+                    return result;
+            }
+        } catch (Exception e) {
+            log.error("Error parsing Azure DevOps v2 webhook payload", e);
+            result.setValid(false);
+            return result;
+        }
+    }
+
+    private WebhookResult parsePushPayload(JsonNode rootNode, WebhookResult result) {
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+        JsonNode refUpdate = resource.path("refUpdates").path(0);
+        String refName = refUpdate.path("name").asText();
+
+        if (refName.startsWith(REF_TAGS_PREFIX)) {
+            result.setEvent("release");
+            result.setRelease(true);
+            result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+        } else {
+            result.setEvent("push");
+            result.setBranch(stripRefPrefix(refName));
+        }
+
+        result.setCommit(refUpdate.path("newObjectId").asText());
+        result.setCreatedBy(resolveUser(resource.path("pushedBy")));
+        // File changes are NOT fetched here — they require workspace-scoped VCS
+        // credentials and are resolved later via fetchPushFileChanges().
+        return result;
+    }
+
+    private WebhookResult parsePullRequestPayload(JsonNode rootNode, WebhookResult result) {
+        result.setEvent("pull_request");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        int prNumber = resource.path("pullRequestId").asInt();
+        result.setPrNumber(prNumber);
+        result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+        result.setCreatedBy(resolveUser(resource.path("createdBy")));
+        // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
+        return result;
+    }
+
+    private WebhookResult parsePullRequestCommentPayload(JsonNode rootNode, WebhookResult result) {
+        result.setEvent("issue_comment");
+        JsonNode resource = rootNode.path(FIELD_RESOURCE);
+
+        String commentBody = resource.path("comment").path("content").asText().trim();
+        String command = parseTerrakubeCommand(commentBody);
+        if (command == null) {
+            result.setValid(false);
+            return result;
+        }
+
+        JsonNode pullRequest = resource.path("pullRequest");
+        int prNumber = pullRequest.path("pullRequestId").asInt();
+
+        result.setPrComment(true);
+        result.setCommentBody(commentBody);
+        result.setCommentCommand(command);
+        result.setPrNumber(prNumber);
+        result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
+        result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
+        // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
+        return result;
+    }
+
+    /**
+     * Creates or updates shared Azure DevOps service hook subscriptions for a
+     * {@link RepoWebhook}. Maps aggregated {@link WebhookEventType}s to Azure
+     * DevOps event types and creates one subscription per event type, storing
+     * their IDs comma-separated in {@link RepoWebhook#getRemoteHookId()}.
+     */
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+        String remoteHookId = repoWebhook.getRemoteHookId();
+        AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, repoWebhook.getRepositoryUrl());
+            return remoteHookId;
+        }
+
+        // Use a seed workspace's VCS connection for API calls. The VCS is stored
+        // on the RepoWebhook itself (set when it was first created).
+        Vcs vcs = repoWebhook.getVcs();
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            log.error("Unable to resolve Azure DevOps repository id for {}", repoWebhook.getRepositoryUrl());
+            return remoteHookId;
+        }
+        String repositoryId = repositoryAndProject[0];
+        String projectId = repositoryAndProject[1];
+
+        // Recreate subscriptions on update to honour event configuration changes.
+        if (remoteHookId != null && !remoteHookId.isEmpty()) {
+            deleteRepoWebhookSubscriptions(vcs, repo, remoteHookId);
+        }
+
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String secret = repoWebhook.getWebhookSecret();
+
+        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes);
+
+        List<String> subscriptionIds = new ArrayList<>();
+        for (String azureEventType : azureEventTypes) {
+            String subscriptionId = createSubscription(vcs, repo, azureEventType, repositoryId,
+                    projectId, webhookUrl, secret);
+            if (subscriptionId != null && !subscriptionId.isEmpty()) {
+                subscriptionIds.add(subscriptionId);
+            }
+        }
+
+        if (subscriptionIds.isEmpty()) {
+            log.error("No Azure DevOps subscriptions were created for repo webhook {}", repoWebhook.getId());
+            return "";
+        }
+
+        log.info("Azure DevOps shared service hooks created/updated for repo webhook {} with ids {}",
+                repoWebhook.getId(), subscriptionIds);
+        return String.join(",", subscriptionIds);
+    }
+
+    /**
+     * Deletes all Azure DevOps service hook subscriptions for an orphaned shared
+     * {@link RepoWebhook}.
+     */
+    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+        if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
+            log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
+            return;
+        }
+        AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
+        if (repo == null) {
+            log.warn("Unable to parse Azure DevOps repository from {}, skipping deletion",
+                    repoWebhook.getRepositoryUrl());
+            return;
+        }
+        deleteRepoWebhookSubscriptions(repoWebhook.getVcs(), repo, repoWebhook.getRemoteHookId());
+    }
+
+    private void deleteRepoWebhookSubscriptions(Vcs vcs, AzureRepo repo, String commaSeparatedIds) {
+        for (String subscriptionId : commaSeparatedIds.split(",")) {
+            subscriptionId = subscriptionId.trim();
+            if (subscriptionId.isEmpty()) {
+                continue;
+            }
+            String apiUrl = String.format("%s/_apis/hooks/subscriptions/%s?api-version=%s",
+                    repo.orgBaseUrl, subscriptionId, HOOKS_API_VERSION);
+            ResponseEntity<String> response = callAzureApi(vcs, "", apiUrl, HttpMethod.DELETE);
+            if (response != null && response.getStatusCode().is2xxSuccessful()) {
+                log.info("Azure DevOps subscription {} deleted successfully", subscriptionId);
+            } else {
+                log.warn("Failed to delete Azure DevOps subscription {}, message {}", subscriptionId,
+                        response != null ? response.getBody() : NO_RESPONSE);
+            }
+        }
+    }
+
+    /**
+     * Fetches the files changed by a push event from the Azure DevOps API. Called
+     * per-workspace during v2 webhook fanout since API calls require workspace-scoped
+     * VCS credentials.
+     */
+    public List<String> fetchPushFileChanges(Vcs vcs, String source, String rawPayload) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
+            return new ArrayList<>();
+        }
+
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return new ArrayList<>();
+        }
+        String repositoryId = repositoryAndProject[0];
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(rawPayload);
+            JsonNode resource = rootNode.path(FIELD_RESOURCE);
+            JsonNode refUpdate = resource.path("refUpdates").path(0);
+            return getPushFileChanges(vcs, repo, repositoryId, resource, refUpdate);
+        } catch (Exception e) {
+            log.error("Error extracting push file changes from raw payload", e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Fetches the files changed by a pull request from the Azure DevOps API. Called
+     * per-workspace during v2 webhook fanout.
+     */
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
+            return new ArrayList<>();
+        }
+
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return new ArrayList<>();
+        }
+        return getPullRequestChanges(vcs, repo, repositoryAndProject[0], prNumber);
+    }
+
+    /**
+     * Resolves the set of Azure DevOps event type strings from aggregated
+     * {@link WebhookEventType}s (used by the shared v2 webhook flow).
+     */
+    private Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes) {
+        Set<String> azureEventTypes = new LinkedHashSet<>();
+        for (WebhookEventType eventType : eventTypes) {
+            switch (eventType) {
+                case PUSH:
+                case RELEASE:
+                    azureEventTypes.add(EVENT_PUSH);
+                    break;
+                case PULL_REQUEST:
+                    azureEventTypes.add(EVENT_PR_CREATED);
+                    azureEventTypes.add(EVENT_PR_UPDATED);
+                    break;
+                case PR_COMMENT:
+                    azureEventTypes.add(EVENT_PR_COMMENT);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return azureEventTypes;
+    }
+}

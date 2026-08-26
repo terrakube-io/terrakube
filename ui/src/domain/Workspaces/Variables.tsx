@@ -1,8 +1,11 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import {
+  Alert,
   Button,
+  Collapse,
   Form,
   Input,
+  message,
   Modal,
   Popconfirm,
   Radio,
@@ -16,28 +19,30 @@ import {
 } from "antd";
 import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
-import { CreateVariableForm, FlatVariable } from "../types";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const VARIABLES_COLUMS = (
-  organizationId: string,
-  workspaceId: string,
   onEdit: (variable: FlatVariable) => void,
+  onDelete: (variableId: string) => void,
   manageWorkspace: boolean
 ) => [
   {
     title: "Key",
     dataIndex: "key",
-    width: "30%",
+    width: "35%",
     key: "key",
     sorter: (a: FlatVariable, b: FlatVariable) => a.key.localeCompare(b.key),
     defaultSortOrder: "ascend" as const,
     render: (_: string, record: FlatVariable) => {
       return (
-        <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
-        </div>
+        <Space>
+          {record.key}
+          {record.hcl && <Tag color="blue">HCL</Tag>}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
+          {record.incomplete && <Tag color="red">Incomplete</Tag>}
+        </Space>
       );
     },
   },
@@ -75,16 +80,6 @@ const VARIABLES_COLUMS = (
     },
   },
   {
-    title: "Category",
-    dataIndex: "category",
-    key: "category",
-    width: "15%",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
-    render: (_: string, record: FlatVariable) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
-    },
-  },
-  {
     title: "Actions",
     key: "action",
     width: "20%",
@@ -96,7 +91,7 @@ const VARIABLES_COLUMS = (
           </Button>
           <Popconfirm
             onConfirm={() => {
-              deleteVariable(record.id, organizationId, workspaceId);
+              onDelete(record.id);
             }}
             title={
               <p>
@@ -130,8 +125,8 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     render: (_: string, record: any) => {
       return (
         <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
+          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag color="blue">HCL</Tag>}{" "}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
         </div>
       );
     },
@@ -162,9 +157,9 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "15%",
     key: "category",
-    sorter: (a: any, b: any) => a.category.localeCompare(b.category),
+    sorter: (a: any, b: any) => (a.category ?? "").localeCompare(b.category ?? ""),
     render: (_: string, record: any) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
+      return record.category === "TERRAFORM" ? "terraform" : record.category === "ENV" ? "env" : "unset";
     },
   },
   {
@@ -198,8 +193,8 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     render: (_: string, record: FlatVariable) => {
       return (
         <div>
-          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag>HCL</Tag>}{" "}
-          {record.sensitive && <Tag>Sensitive</Tag>}
+          {record.key} &nbsp;&nbsp;&nbsp;&nbsp; {record.hcl && <Tag color="blue">HCL</Tag>}{" "}
+          {record.sensitive && <Tag color="orange">Sensitive</Tag>}
         </div>
       );
     },
@@ -230,9 +225,9 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     dataIndex: "category",
     width: "20%",
     key: "category",
-    sorter: (a: FlatVariable, b: FlatVariable) => a.category.localeCompare(b.category),
+    sorter: (a: FlatVariable, b: FlatVariable) => (a.category ?? "").localeCompare(b.category ?? ""),
     render: (_: string, record: FlatVariable) => {
-      return record.category === "TERRAFORM" ? "terraform" : "env";
+      return record.category === "TERRAFORM" ? "terraform" : record.category === "ENV" ? "env" : "unset";
     },
   },
 ];
@@ -249,6 +244,7 @@ type Props = {
   collectionEnvVars: any[];
   globalVariables: FlatVariable[];
   globalEnvVariables: FlatVariable[];
+  reload: () => void;
 };
 
 export const Variables = ({
@@ -259,13 +255,14 @@ export const Variables = ({
   collectionEnvVars,
   globalVariables,
   globalEnvVariables,
+  reload,
 }: Props) => {
   const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [form] = Form.useForm<CreateVariableForm>();
   const [visible, setVisible] = useState(false);
   const [variableName, setVariableName] = useState("");
-  const [category, setCategory] = useState("TERRAFORM");
+  const [category, setCategory] = useState<VariableCategory | null>("TERRAFORM");
   const [mode, setMode] = useState("create");
   const [variableId, setVariableId] = useState("");
   const onCancel = () => {
@@ -281,7 +278,7 @@ export const Variables = ({
       sensitive: variable.sensitive,
       hcl: variable.hcl,
       description: variable.description,
-      category: variable.category,
+      category: variable.category ?? undefined,
     });
     setVisible(true);
     setCategory(variable.category);
@@ -292,12 +289,12 @@ export const Variables = ({
       data: {
         type: "variable",
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
-          category: category,
+          category: values.category,
         },
       },
     };
@@ -308,9 +305,14 @@ export const Variables = ({
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Variable created successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -320,12 +322,12 @@ export const Variables = ({
         type: "variable",
         id: variableId,
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
-          category: category,
+          category: values.category,
         },
       },
     };
@@ -336,14 +338,38 @@ export const Variables = ({
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
+        message.success("Variable updated successfully");
         setVisible(false);
         form.resetFields();
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
+  };
+
+  const onDelete = (deleteId: string) => {
+    axiosInstance
+      .delete(`organization/${organizationId}/workspace/${workspaceId}/variable/${deleteId}`, {
+        headers: {
+          "Content-Type": "application/vnd.api+json",
+        },
+      })
+      .then(() => {
+        message.success("Variable deleted successfully");
+        reload();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   // Combine Terraform and Environment variables
   const workspaceVariables = [...vars, ...env];
+  const incompleteWorkspaceVariables = workspaceVariables.filter((variable) => {
+    return variable.incomplete;
+  });
 
   // Combine Collection Terraform and Environment variables
   const collectionVariables = [...collectionVars, ...collectionEnvVars];
@@ -353,7 +379,9 @@ export const Variables = ({
 
   return (
     <div>
-      <h1>Variables</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Variables
+      </Typography.Title>
       <div>
         <Typography.Text type="secondary" className="App-text">
           <p>
@@ -361,65 +389,89 @@ export const Variables = ({
             later can also load default values from any *.auto.tfvars files in the configuration.
           </p>
           <p>
-            Sensitive variables are hidden from view in the UI and API, and can't be edited. (To change a sensitive
-            variable, delete and replace it.) Sensitive variables can still appear in Terraform logs if your
-            configuration is designed to output them.
+            Sensitive variables are hidden from view in the UI and API. Saving a new value replaces the previous one.
+            Sensitive variables can still appear in Terraform logs if your configuration is designed to output them.
           </p>
         </Typography.Text>
       </div>
-      <h2>Workspace variables ({workspaceVariables.length})</h2>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          These Terraform variables are set using a terraform.tfvars file. To use interpolation or set a non-string
-          value for a variable, click its HCL checkbox.
-        </Typography.Text>
-      </div>
+      {incompleteWorkspaceVariables.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: "16px" }}
+          message="Some sensitive variables are incomplete"
+          description="Complete or delete the highlighted variables before starting a new run."
+        />
+      )}
 
-      <Table
-        dataSource={workspaceVariables}
-        columns={VARIABLES_COLUMS(organizationId!, workspaceId!, onEdit, manageWorkspace)}
-        rowKey="key"
-      />
-      <Button
-        type="primary"
-        htmlType="button"
-        onClick={() => {
-          setMode("create");
-          form.resetFields();
-          setCategory("TERRAFORM"); // Default to Terraform
-          setVisible(true);
-        }}
-        disabled={!manageWorkspace}
-        icon={<PlusOutlined />}
+      <SettingsSection
+        title={`Workspace variables (${workspaceVariables.length})`}
+        description="These Terraform variables are set using a terraform.tfvars file. To use interpolation or set a non-string value for a variable, click its HCL checkbox."
+        maxWidth="100%"
       >
-        Add variable
-      </Button>
+        <Collapse
+          defaultActiveKey={["TERRAFORM", "ENV"]}
+          style={{ marginBottom: 16 }}
+          items={[
+            {
+              key: "TERRAFORM",
+              label: `Terraform Variables (${vars.length})`,
+              children: (
+                <Table
+                  dataSource={vars}
+                  columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
+                  rowKey="key"
+                  pagination={false}
+                  locale={{ emptyText: "No terraform variables defined yet." }}
+                />
+              ),
+            },
+            {
+              key: "ENV",
+              label: `Environment Variables (${env.length})`,
+              children: (
+                <Table
+                  dataSource={env}
+                  columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
+                  rowKey="key"
+                  pagination={false}
+                  locale={{ emptyText: "No environment variables defined yet." }}
+                />
+              ),
+            },
+          ]}
+        />
+        <Button
+          type="primary"
+          htmlType="button"
+          onClick={() => {
+            setMode("create");
+            form.resetFields();
+            setCategory("TERRAFORM"); // Default to Terraform
+            setVisible(true);
+          }}
+          disabled={!manageWorkspace}
+          icon={<PlusOutlined />}
+        >
+          Add variable
+        </Button>
+      </SettingsSection>
 
-      <div className="envVariables">
-        <h2>Collection Variables ({collectionVariables.length})</h2>
-        <div>
-          <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the collection used by this workspace, these values are injected
-              inside the Terrakube remote jobs.
-            </p>
-          </Typography.Text>
-        </div>
+      <SettingsSection
+        title={`Collection Variables (${collectionVariables.length})`}
+        description="The following values are taken from the collection used by this workspace, these values are injected inside the Terrakube remote jobs."
+        maxWidth="100%"
+      >
         <Table dataSource={collectionVariables} columns={COLLECTION_VARIABLES_COLUMNS()} rowKey="key" />
-      </div>
+      </SettingsSection>
 
-      <div className="envVariables">
-        <h2>Global Variables ({globalVars.length})</h2>
-        <div>
-          <Typography.Text type="secondary" className="App-text">
-            <p>
-              The following values are taken from the organization global variables, these values are injected inside
-              the Terrakube remote jobs.
-            </p>
-          </Typography.Text>
-        </div>
+      <SettingsSection
+        title={`Global Variables (${globalVars.length})`}
+        description="The following values are taken from the organization global variables, these values are injected inside the Terrakube remote jobs."
+        maxWidth="100%"
+      >
         <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
-      </div>
+      </SettingsSection>
 
       <Modal
         width="600px"
@@ -446,7 +498,7 @@ export const Variables = ({
               Select variable category
             </Typography.Title>
 
-            <Form.Item name="category">
+            <Form.Item name="category" rules={[{ required: true, message: "Please select a variable category" }]}>
               <Radio.Group value={category} onChange={(e) => setCategory(e.target.value)}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
                   <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
@@ -515,16 +567,4 @@ export const Variables = ({
       </Modal>
     </div>
   );
-};
-
-const deleteVariable = (variableId: string, organizationId: string, workspaceId: string) => {
-  axiosInstance
-    .delete(`organization/${organizationId}/workspace/${workspaceId}/variable/${variableId}`, {
-      headers: {
-        "Content-Type": "application/vnd.api+json",
-      },
-    })
-    .then((response) => {
-      console.log(response);
-    });
 };

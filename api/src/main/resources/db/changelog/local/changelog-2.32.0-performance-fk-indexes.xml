@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Indexes on foreign-key columns that are filtered on every request but were
+      never indexed. Listing a workspace triggers per-job lookups on step/address
+      and per-workspace lookups on job/history/webhook, all running as sequential
+      table scans. On busy instances this pins the database CPU and makes the
+      workspace screen very slow. Each index is guarded by a precondition so the
+      changeset is idempotent on databases where the index was already added by hand.
+    -->
+
+    <changeSet id="2-32-0-idx-step-job-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_step_job_id" tableName="step"/></not>
+        </preConditions>
+        <createIndex tableName="step" indexName="idx_step_job_id">
+            <column name="job_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-job-workspace-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_job_workspace_id" tableName="job"/></not>
+        </preConditions>
+        <createIndex tableName="job" indexName="idx_job_workspace_id">
+            <column name="workspace_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-address-job-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_address_job_id" tableName="address"/></not>
+        </preConditions>
+        <createIndex tableName="address" indexName="idx_address_job_id">
+            <column name="job_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-webhook-workspace-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_webhook_workspace_id" tableName="webhook"/></not>
+        </preConditions>
+        <createIndex tableName="webhook" indexName="idx_webhook_workspace_id">
+            <column name="workspace_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-history-workspace-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_history_workspace_id" tableName="history"/></not>
+        </preConditions>
+        <createIndex tableName="history" indexName="idx_history_workspace_id">
+            <column name="workspace_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-workspacetag-workspace-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_workspacetag_workspace_id" tableName="workspacetag"/></not>
+        </preConditions>
+        <createIndex tableName="workspacetag" indexName="idx_workspacetag_workspace_id">
+            <column name="workspace_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-32-0-idx-module-version-module-id" author="kleber.rocha@cora.com.br">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_module_version_module_id" tableName="module_version"/></not>
+        </preConditions>
+        <createIndex tableName="module_version" indexName="idx_module_version_module_id">
+            <column name="module_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

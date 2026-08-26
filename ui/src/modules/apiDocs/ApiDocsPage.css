@@ -1,0 +1,41 @@
+.api-docs-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.api-docs-topbar {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  background: #1c2128;
+  border-bottom: 1px solid #30363d;
+}
+
+.api-docs-back-link {
+  background: none;
+  border: none;
+  color: #e6edf3;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.api-docs-back-link:hover {
+  color: #fff;
+}
+
+.api-docs-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.api-docs-loading {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

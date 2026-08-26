@@ -1,8 +1,9 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Spin, Table, Typography } from "antd";
+import { Button, Form, Input, message, Modal, Popconfirm, Select, Space, Spin, Table, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 // Type definitions for Collection References
@@ -108,9 +109,15 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/collection/${collectionId}/reference/${id}`).then(() => {
-      loadReferences();
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/collection/${collectionId}/reference/${id}`)
+      .then(() => {
+        message.success("Workspace reference removed successfully");
+        loadReferences();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: ReferenceFormValues) => {
@@ -138,17 +145,27 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
         },
       })
       .then(() => {
+        message.success("Workspace reference added successfully");
         loadReferences();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadReferences = () => {
-    axiosInstance.get(`organization/${orgid}/collection/${collectionId}/reference`).then((response) => {
-      setReferences(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/collection/${collectionId}/reference`)
+      .then((response) => {
+        setReferences(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -157,18 +174,23 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
     Promise.all([
       axiosInstance.get(`organization/${orgid}/collection/${collectionId}/reference`),
       axiosInstance.get(`organization/${orgid}/workspace`),
-    ]).then(([refsRes, workspacesRes]) => {
-      setReferences(refsRes.data.data);
-      setWorkspaces(workspacesRes.data.data);
+    ])
+      .then(([refsRes, workspacesRes]) => {
+        setReferences(refsRes.data.data);
+        setWorkspaces(workspacesRes.data.data);
 
-      // Create a map of workspace IDs to names for easier lookup
-      const map: { [key: string]: string } = {};
-      workspacesRes.data.data.forEach((workspace: Workspace) => {
-        map[workspace.id] = workspace.attributes.name;
+        // Create a map of workspace IDs to names for easier lookup
+        const map: { [key: string]: string } = {};
+        workspacesRes.data.data.forEach((workspace: Workspace) => {
+          map[workspace.id] = workspace.attributes.name;
+        });
+        setWorkspacesMap(map);
+        setLoading(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setLoading(false);
       });
-      setWorkspacesMap(map);
-      setLoading(false);
-    });
   }, [orgid, collectionId]);
 
   return (
@@ -178,15 +200,19 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
           Associate workspaces with this collection to apply its variables to them.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
-        Add workspace reference
-      </Button>
-      <br></br>
+      <SettingsSection maxWidth="100%">
+        <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+          Add workspace reference
+        </Button>
+        <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Associated Workspaces</h3>
-      <Spin spinning={loading} tip="Loading References...">
-        <Table dataSource={references} columns={REFERENCE_COLUMNS} rowKey="id" />
-      </Spin>
+        <Typography.Title level={3} style={{ marginTop: "30px" }}>
+          Associated Workspaces
+        </Typography.Title>
+        <Spin spinning={loading} tip="Loading References...">
+          <Table dataSource={references} columns={REFERENCE_COLUMNS} rowKey="id" />
+        </Spin>
+      </SettingsSection>
 
       <Modal
         width="600px"

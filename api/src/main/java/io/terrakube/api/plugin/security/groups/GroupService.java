@@ -15,4 +15,6 @@ public interface GroupService {
 
      boolean isMemberWithLimitedAccessV2(User user, Organization organization);
 
+     boolean isMemberWithProjectAccess(User user, Organization organization);
+
 }

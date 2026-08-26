@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Spin, Typography, Breadcrumb } from "antd";
+import { Alert, Button, Flex, Spin, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { UserToken } from "@/modules/user/types";
@@ -34,17 +34,6 @@ export const Tokens = () => {
 
   return (
     <div className="pat-section">
-      <Breadcrumb
-        className="breadcrumb"
-        items={[
-          {
-            title: "Settings",
-          },
-          {
-            title: "Tokens",
-          },
-        ]}
-      />
       <Flex gap="middle" justify="space-between" align="center" className="header-section">
         <Flex vertical>
           <Typography.Title level={2} className="title">

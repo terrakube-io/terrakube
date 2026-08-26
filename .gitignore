@@ -40,7 +40,7 @@ scripts/setup/dex/config-ldap.yaml
 .envUi
 .envAzure
 .envGcp
-GITPOD.md
+DEVCONTAINER.md
 CHE.md
 .devcontainer/.env-dex
 
@@ -60,3 +60,5 @@ terraform.tfstate.backup
 variables.auto.tfvars
 
 liquibase.properties
+
+ui/.yarn/install-state.gz

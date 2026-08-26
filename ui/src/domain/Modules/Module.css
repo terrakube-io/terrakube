@@ -6,9 +6,9 @@
   width: 100%;
 }
 
-/* Registry page — centered, constrained width */
+/* Registry page — centered, constrained width, matches the standard page-width cap */
 .registry-centered {
-  max-width: 1200px;
+  max-width: 1600px;
   width: 100%;
   margin-left: auto;
   margin-right: auto;

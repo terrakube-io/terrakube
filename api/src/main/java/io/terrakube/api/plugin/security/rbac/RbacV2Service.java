@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.rbac;
 
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.access.Access;
 import lombok.extern.slf4j.Slf4j;
@@ -190,6 +191,67 @@ public class RbacV2Service implements RbacService {
     @Override
     public boolean canManageJob(Access access) {
         return canPlanJob(access) || canApproveJob(access);
+    }
+
+    // --- Project-level (ProjectAccess) checks ---
+
+    @Override
+    public boolean canManageWorkspace(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isManageWorkspace();
+            default -> false;
+        };
+    }
+
+    @Override
+    public boolean canManageState(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isManageState();
+            default -> false;
+        };
+    }
+
+    @Override
+    public boolean canPlanJob(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE, ROLE_PLAN -> true;
+            case ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isPlanJob();
+            default -> false;
+        };
+    }
+
+    @Override
+    public boolean canApproveJob(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isApproveJob();
+            default -> false;
+        };
+    }
+
+    @Override
+    public boolean canManageJob(ProjectAccess access) {
+        return canPlanJob(access) || canApproveJob(access);
+    }
+
+    @Override
+    public boolean canManageProject(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN -> true;
+            case ROLE_WRITE, ROLE_PLAN, ROLE_READ, ROLE_CUSTOM -> false;
+            default -> false;
+        };
     }
 
     // --- Helpers ---

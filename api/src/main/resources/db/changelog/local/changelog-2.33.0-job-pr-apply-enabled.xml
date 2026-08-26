@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-33-0-job-pr-apply-enabled" author="jake">
+        <addColumn tableName="job">
+            <column name="pr_apply_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+    <changeSet id="2-33-0-job-pr-apply-enabled-fix" author="jake">
+        <update tableName="job">
+            <column name="pr_apply_enabled" valueBoolean="false"/>
+            <where>pr_apply_enabled IS NULL</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

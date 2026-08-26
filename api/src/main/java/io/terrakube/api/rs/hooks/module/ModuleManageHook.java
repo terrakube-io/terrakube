@@ -9,6 +9,7 @@ import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.apache.hc.core5.http.HttpStatus;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -26,19 +27,25 @@ import com.yahoo.elide.core.security.RequestScope;
 import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
+import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.vcs.VcsType;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
+
 @AllArgsConstructor
 @Slf4j
 public class ModuleManageHook implements LifeCycleHook<Module> {
 
+    private static final String VALID_REGISTRY_SYSTEM_PATTERN = "^[A-Za-z0-9]{1,64}$";
+
     Scheduler scheduler;
     GitHubTokenService gitHubTokenService;
     ModuleRefreshService moduleRefreshService;
+    ModuleRepository moduleRepository;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -51,6 +58,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         module.getName(), module.getProvider());
                 switch (transactionPhase) {
                     case PRECOMMIT:
+                        validateRegistrySystem(module);
+                        validateNoDuplicateModule(module);
                         checkAndCreateGitHubAppToken(module);
                         break;
                     case POSTCOMMIT:
@@ -67,6 +76,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 }
                 break;
             case UPDATE:
+                validateRegistrySystem(module);
+                validateNoDuplicateModule(module);
                 checkNextModuleRefresh(module);
                 break;
             case DELETE:
@@ -102,6 +113,26 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             default:
                 log.warn("Hook not supported in module");
                 break;
+        }
+    }
+
+    private void validateRegistrySystem(Module module) {
+        if (module.getProvider() == null || !module.getProvider().matches(VALID_REGISTRY_SYSTEM_PATTERN)) {
+            throw new ModuleManagementException(HttpStatus.SC_BAD_REQUEST,
+                    module.getProvider() + " is not a valid provider. Provider is the OpenTofu/Terraform module "
+                            + "registry system (the last path segment of the module address, e.g. aws), not the "
+                            + "repository name, and must match " + VALID_REGISTRY_SYSTEM_PATTERN + ".");
+        }
+    }
+
+    private void validateNoDuplicateModule(Module module) {
+        List<Module> matches = moduleRepository.findAllByOrganizationIdAndNameAndProvider(
+                module.getOrganization().getId(), module.getName(), module.getProvider());
+        boolean conflict = matches.stream().anyMatch(match -> !match.getId().equals(module.getId()));
+        if (conflict) {
+            throw new ModuleManagementException(HttpStatus.SC_CONFLICT,
+                    "Module " + module.getName() + " with provider " + module.getProvider()
+                            + " already exists in this organization.");
         }
     }
 

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+        When a job is deleted, its related step and address rows must be removed first.
+        Without ON DELETE CASCADE the database raises a NOT NULL violation because
+        Hibernate tries to null out the job_id FK before deleting the parent row.
+        See: https://github.com/AzBuilder/terrakube/issues/3016
+    -->
+    <changeSet id="2-32-0-job-step-cascade" author="qubeena7@gmail.com">
+        <dropForeignKeyConstraint baseTableName="step" constraintName="fk_job_step"/>
+        <addForeignKeyConstraint
+            baseTableName="step"
+            baseColumnNames="job_id"
+            constraintName="fk_job_step"
+            referencedTableName="job"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+
+        <dropForeignKeyConstraint baseTableName="address" constraintName="fk_job_address"/>
+        <addForeignKeyConstraint
+            baseTableName="address"
+            baseColumnNames="job_id"
+            constraintName="fk_job_address"
+            referencedTableName="job"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+    </changeSet>
+
+</databaseChangeLog>

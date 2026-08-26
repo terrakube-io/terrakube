@@ -32,6 +32,8 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Builder
@@ -59,6 +61,8 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean includeBackendKeys;
 
+    private boolean useLockfile;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -68,10 +72,32 @@ public class AwsTerraformStateImpl implements TerraformState {
     @NonNull
     TerraformStatePathService terraformStatePathService;
 
+    // Matches X-Range wildcards: * or major.wildcard (e.g. 1.x, 1.*, 1.X).
+    // Bare x/X are intentionally excluded: TerraformDownloader rejects them as invalid.
+    // Major.minor.wildcard (1.6.x) is also excluded: the version regex extracts the concrete prefix correctly.
+    private static final Pattern X_RANGE_PATTERN = Pattern.compile("^\\*$|^\\d+\\.[*xX]$");
+
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
         log.info("Generating backend override file for terraform {}", terraformVersion);
-        ComparableVersion version = new ComparableVersion(terraformVersion);
+        ComparableVersion version;
+        if (X_RANGE_PATTERN.matcher(terraformVersion.trim()).matches()) {
+            // X-Range wildcards (*, x, 1.x, …) resolve to the latest terraform release,
+            // which is always >= 1.6.0, so use the new-style endpoints block.
+            log.info("X-Range wildcard detected for \"{}\", treating as latest version", terraformVersion);
+            version = new ComparableVersion("9999.9999.9999");
+        } else {
+            Matcher versionMatcher = Pattern.compile("(\\d++\\.\\d++(?:\\.\\d++)*+)").matcher(terraformVersion);
+            ComparableVersion maxVersion = null;
+            while (versionMatcher.find()) {
+                ComparableVersion found = new ComparableVersion(versionMatcher.group(1));
+                if (maxVersion == null || found.compareTo(maxVersion) > 0) {
+                    maxVersion = found;
+                }
+            }
+            version = maxVersion != null ? maxVersion : new ComparableVersion(terraformVersion);
+        }
+        log.info("Terraform version resolved to \"{}\" from constraint \"{}\"", version, terraformVersion);
 
         String awsBackend = BACKEND_FILE_NAME;
         try {
@@ -87,6 +113,18 @@ public class AwsTerraformStateImpl implements TerraformState {
                 awsBackendHcl.appendln("    secret_key = \"" + secretKey + "\"");
             } else {
               log.warn("No including backend information");
+            }
+
+            // Native S3 locking, off by default. Turning it on makes concurrent runs on
+            // the same state wait for each other, which is why it is not the default:
+            // plan only jobs are allowed to run in parallel on purpose.
+            // Worth enabling when something outside Terrakube writes the same state.
+            if(useLockfile) {
+                if(version.compareTo(new ComparableVersion("1.10.0")) >= 0){
+                    awsBackendHcl.appendln("    use_lockfile = true");
+                } else {
+                    log.warn("use_lockfile is enabled but ignored, it requires terraform or tofu 1.10 and this job runs {}", version);
+                }
             }
 
             if(endpoint != null){
@@ -260,4 +298,68 @@ public class AwsTerraformStateImpl implements TerraformState {
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
     }
 
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Saving {} binary to S3: {}", product, blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
+            log.info("Successfully cached {} binary version {} in S3", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
+        try {
+            // Check if the object exists first
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+            s3client.headObject(headRequest);
+
+            // Object exists, download it
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
+                    ResponseTransformer.toBytes());
+            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from S3", product, version);
+            return true;
+        } catch (NoSuchKeyException e) {
+            log.info("{} binary version {} not found in S3 cache", product, version);
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from S3: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
 }
+

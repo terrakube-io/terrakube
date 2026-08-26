@@ -49,6 +49,7 @@ public class GitLabTokenService {
 
     private WebClient getWebClient(String endpoint){
         return webClientBuilder
+                .clone()
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .clientConnector(
@@ -62,7 +63,7 @@ public class GitLabTokenService {
         if(gitLabToken != null) {
             return gitLabToken;
         } else {
-            throw new TokenException("500","Unable to get Gitlab Token");
+            throw new TokenException("500","Unable to get GitLab Token");
         }
     }
 }

@@ -17,7 +17,7 @@ connectors:
     # The following configurations seem to work with OpenLDAP:
     #
     # 1) Plain LDAP, without TLS:
-    host: ldap-service:1389
+    host: ldap-service:389
     insecureNoSSL: true
     #
     # 2) LDAPS without certificate validation:

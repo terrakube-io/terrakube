@@ -11,4 +11,5 @@ public interface ModuleRepository extends JpaRepository<Module, UUID> {
 
     List<Module> findByOrganizationId(UUID organizationId);
     List<Module> findByOrganizationIn(List<Organization> organizations);
+    List<Module> findAllByOrganizationIdAndNameAndProvider(UUID organizationId, String name, String provider);
 }

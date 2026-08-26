@@ -1,33 +1,51 @@
-import { DownOutlined, GithubOutlined, GitlabOutlined } from "@ant-design/icons";
+import { DownOutlined, GithubOutlined, GitlabOutlined, LockOutlined } from "@ant-design/icons";
 import {
+  Alert,
+  AutoComplete,
   Breadcrumb,
   Button,
   Card,
   Dropdown,
+  Flex,
   Form,
   Input,
   Layout,
   List,
+  Segmented,
   Select,
   Space,
   Steps,
+  Tag,
   message,
   theme,
   Typography,
 } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconContext } from "react-icons";
 import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
-import { SshKey, Template, TofuRelease, VcsModel, VcsType, VcsTypeExtended } from "../types";
-import { compareVersions } from "./Workspaces";
+import {
+  ProjectModel,
+  SshKey,
+  Template,
+  TofuRelease,
+  VcsConnectionType,
+  VcsModel,
+  VcsRepositoryGroup,
+  VcsRepositoryPage,
+  VcsRepositorySummary,
+  VcsType,
+  VcsTypeExtended,
+} from "../types";
+import { compareVersions, validateTerraformVersion } from "./Workspaces";
+import projectService from "@/modules/projects/projectService";
+import { withBasePath } from "../../config/basePath";
 const { Content } = Layout;
-const { Step } = Steps;
 
 const validateMessages = {
   required: "${label} is required!",
@@ -54,12 +72,12 @@ type CreateWorkspaceForm = {
   iacType: string;
   defaultTemplate: string;
   sshKey?: string;
+  project?: string;
 };
 
 export const CreateWorkspace = () => {
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
+  const { token } = theme.useToken();
+  const { colorBgContainer } = token;
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
@@ -67,6 +85,7 @@ export const CreateWorkspace = () => {
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
   const [orgTemplates, setOrgTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [vcsButtonsVisible, setVCSButtonsVisible] = useState(true);
   const [vcsId, setVcsId] = useState("");
   const [current, setCurrent] = useState(0);
@@ -76,28 +95,42 @@ export const CreateWorkspace = () => {
   const [versionControlFlow, setVersionControlFlow] = useState(true);
   const [requiredVcsPush, setRequiredVcsPush] = useState(true);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const [repoPickerMode, setRepoPickerMode] = useState<"list" | "manual">("list");
+  const [discoveryUnsupported, setDiscoveryUnsupported] = useState(false);
+  const [vcsGroups, setVcsGroups] = useState<VcsRepositoryGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [repoResults, setRepoResults] = useState<VcsRepositorySummary[]>([]);
+  const [repoSearch, setRepoSearch] = useState("");
+  const [repoPage, setRepoPage] = useState(1);
+  const [repoHasMore, setRepoHasMore] = useState(false);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState("");
+  const [repoError, setRepoError] = useState<string | null>(null);
+  const repoSearchDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [iacTypes, setIacTypes] = useState<IacType[]>([]);
   const [iacType, setIacType] = useState<IacType>({
     id: "terraform",
     name: "Terraform",
   });
+  const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const gitlabItems = [
     {
-      label: "Gitlab.com",
+      label: "GitLab.com",
       key: "1",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB);
       },
     },
     {
-      label: "Gitlab Community Edition",
+      label: "GitLab Community Edition",
       key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
       },
     },
     {
-      label: "Gitlab Enterprise Edition",
+      label: "GitLab Enterprise Edition",
       key: "3",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
@@ -107,15 +140,29 @@ export const CreateWorkspace = () => {
 
   const githubItems = [
     {
-      label: "Github.com",
+      label: "GitHub.com (GitHub App)",
       key: "1",
+      onClick: () => {
+        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
+      },
+    },
+    {
+      label: "GitHub.com (oAuth App)",
+      key: "2",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB);
       },
     },
     {
-      label: "Github Enterprise",
-      key: "2",
+      label: "GitHub Enterprise (GitHub App)",
+      key: "3",
+      onClick: () => {
+        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE, VcsConnectionType.STANDALONE);
+      },
+    },
+    {
+      label: "GitHub Enterprise (oAuth App)",
+      key: "4",
       onClick: () => {
         handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
       },
@@ -142,6 +189,9 @@ export const CreateWorkspace = () => {
     },
   ];
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedProjectId = searchParams.get("projectId");
+
   useEffect(() => {
     setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME));
     setLoading(true);
@@ -149,13 +199,14 @@ export const CreateWorkspace = () => {
 
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
 
-    // Parallel load: versions, SSH keys, templates, and VCS
+    // Parallel load: versions, SSH keys, templates, VCS, and projects
     Promise.all([
       axiosInstance.get(versionsApi),
       axiosInstance.get(`organization/${organizationId}/ssh`),
       axiosInstance.get(`organization/${organizationId}/template`),
       axiosInstance.get(`organization/${organizationId}/vcs`),
-    ]).then(([versionsRes, sshRes, templatesRes, vcsRes]) => {
+      projectService.listProjects(organizationId!),
+    ]).then(([versionsRes, sshRes, templatesRes, vcsRes, projectsRes]) => {
       // Process versions
       const tfVersions: string[] = [];
       if (iacType.id === "tofu") {
@@ -184,6 +235,15 @@ export const CreateWorkspace = () => {
 
       // Set VCS
       setVCS(vcsRes.data.data);
+
+      // Set projects
+      if (!projectsRes.isError) {
+        setProjectList(projectsRes.data);
+        if (preselectedProjectId) {
+          form.setFieldsValue({ project: preselectedProjectId });
+        }
+      }
+
       setLoading(false);
     });
   }, []);
@@ -202,17 +262,102 @@ export const CreateWorkspace = () => {
   const handleGitClick = (id: string) => {
     if (id === "git") {
       setSSHKeysVisible(true);
+      setRepoPickerMode("manual");
     } else {
       setSSHKeysVisible(false);
       setVcsId(id);
+      setRepoPickerMode("list");
+      setDiscoveryUnsupported(false);
+      setVcsGroups([]);
+      setRepoResults([]);
+      setRepoSearch("");
+      setSelectedRepoUrl("");
+      fetchVcsGroups(id);
     }
     setCurrent(3);
     setRequiredVcsPush(true);
     setStep3Hidden(false);
   };
 
-  const handleVCSClick = (vcsType: VcsTypeExtended) => {
-    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}`);
+  const vcsApiUrl = (path: string) => `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}${path}`;
+
+  const fetchVcsGroups = (id: string) => {
+    setGroupsLoading(true);
+    setRepoError(null);
+    axiosInstance
+      .get(vcsApiUrl(`/vcs/v1/${id}/groups`))
+      .then((response) => {
+        const groups: VcsRepositoryGroup[] = response.data || [];
+        setVcsGroups(groups);
+        setGroupsLoading(false);
+        if (groups.length > 0) {
+          setSelectedGroup(groups[0].id);
+          fetchRepositories(id, groups[0].id, "", 1, false);
+        } else {
+          message.warning(
+            "No organizations were found for this VCS connection. Enter the repository URL manually instead."
+          );
+          setRepoPickerMode("manual");
+        }
+      })
+      .catch(() => {
+        setGroupsLoading(false);
+        setDiscoveryUnsupported(true);
+        setRepoPickerMode("manual");
+        message.warning(
+          "We couldn't automatically list repositories for this connection. Enter the repository URL manually instead."
+        );
+      });
+  };
+
+  const fetchRepositories = (id: string, group: string, search: string, page: number, append: boolean) => {
+    setRepoLoading(true);
+    if (!append) {
+      setRepoError(null);
+    }
+    axiosInstance
+      .get(vcsApiUrl(`/vcs/v1/${id}/repositories`), { params: { group, search, page } })
+      .then((response) => {
+        const data: VcsRepositoryPage = response.data;
+        setRepoResults((prev) => (append ? [...prev, ...data.items] : data.items));
+        setRepoHasMore(data.hasMore);
+        setRepoPage(data.page);
+        setRepoLoading(false);
+        setRepoError(null);
+      })
+      .catch(() => {
+        setRepoLoading(false);
+        setRepoError("Something went wrong while loading repositories from the VCS provider.");
+      });
+  };
+
+  const handleGroupChange = (group: string) => {
+    setSelectedGroup(group);
+    fetchRepositories(vcsId, group, repoSearch, 1, false);
+  };
+
+  const handleRepoSearchChange = (value: string) => {
+    setRepoSearch(value);
+    if (repoSearchDebounce.current) {
+      clearTimeout(repoSearchDebounce.current);
+    }
+    repoSearchDebounce.current = setTimeout(() => {
+      fetchRepositories(vcsId, selectedGroup, value, 1, false);
+    }, 400);
+  };
+
+  const handleLoadMoreRepos = () => {
+    fetchRepositories(vcsId, selectedGroup, repoSearch, repoPage + 1, true);
+  };
+
+  const handleRepoSelect = (repo: VcsRepositorySummary) => {
+    setSelectedRepoUrl(repo.url);
+    form.setFieldsValue({ source: repo.url });
+  };
+
+  const handleVCSClick = (vcsType: VcsTypeExtended, connectionType?: VcsConnectionType) => {
+    const query = connectionType ? `?connectionType=${connectionType}` : "";
+    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}${query}`);
   };
 
   const handleConnectDifferent = () => {
@@ -255,7 +400,7 @@ export const CreateWorkspace = () => {
 
   const [form] = Form.useForm();
   const handleGitContinueClick = () => {
-    setCurrent(3);
+    setCurrent(4);
     setStep4Hidden(false);
     setStep3Hidden(true);
     const source = form.getFieldValue("source");
@@ -304,7 +449,12 @@ export const CreateWorkspace = () => {
     });
   };
 
-  const onFinish = (values: CreateWorkspaceForm) => {
+  const onFinish = async (values: CreateWorkspaceForm) => {
+    // Guard against double-submits (e.g. an impatient second click before the
+    // first request resolves).
+    if (creating) return;
+    setCreating(true);
+
     const workspace_lid = uuid();
     const body = {
       "atomic:operations": [
@@ -348,45 +498,63 @@ export const CreateWorkspace = () => {
       };
     }
 
-    axiosInstance
-      .post(`/operations`, body, {
+    if (values.project && values.project !== "none") {
+      (body["atomic:operations"][0].data.relationships as any)["project"] = {
+        data: {
+          type: "project",
+          id: values.project,
+        },
+      };
+    }
+
+    try {
+      // axios only resolves for 2xx responses, so getting here always means success —
+      // checking for one specific status code risks silently doing nothing if the API
+      // ever returns a different 2xx.
+      const response = await axiosInstance.post(`/operations`, body, {
         headers: {
           "Content-Type": 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
           Accept: 'application/vnd.api+json;ext="https://jsonapi.org/ext/atomic"',
         },
-      })
-      .then((response) => {
-        if (response.status === 200) {
-          navigate(`/organizations/${organizationId}/workspaces/${response.data["atomic:results"][0].data.id}`);
-        }
-      })
-      .catch((error) => {
-        if (error.response) {
-          if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
-          } else {
-            message.error(
-              <span>An error occurred while submitting the workspace. Please contact your system administrator.</span>
-            );
-          }
-        }
       });
+      const workspaceId = response.data["atomic:results"][0].data.id;
+      message.success("Workspace created successfully");
+      navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
+    } catch (error: any) {
+      if (error.response?.status === 403) {
+        message.error(
+          <span>
+            You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
+            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
+            <a
+              target="_blank"
+              href="https://docs.terrakube.io/user-guide/organizations/team-management"
+              rel="noreferrer"
+            >
+              Terrakube documentation
+            </a>
+            .
+          </span>
+        );
+      } else {
+        console.error("Failed to create workspace:", error.response?.status, error.response?.data, error);
+        message.error(
+          error.response?.data?.errors?.[0]?.detail ||
+            "An error occurred while submitting the workspace. Please contact your system administrator."
+        );
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleChange = (currentVal: number) => {
+    // The breadcrumb can only step backward. Going forward again always requires redoing the
+    // actual step action (a card click / Continue button), never a direct jump, so stale
+    // choices from a step you've backed out of can't be skipped past silently.
+    if (currentVal >= current) {
+      return;
+    }
     setCurrent(currentVal);
     if (currentVal === 3) {
       setStep3Hidden(false);
@@ -411,9 +579,9 @@ export const CreateWorkspace = () => {
         id: "terraform",
         name: "Terraform",
         description: "Create an empty template. So you can define your template from scratch.",
-        icon: "/providers/terraform.svg",
+        icon: withBasePath("/providers/terraform.svg"),
       },
-      { id: "tofu", name: "OpenTofu", icon: "/providers/opentofu.png" },
+      { id: "tofu", name: "OpenTofu", icon: withBasePath("/providers/opentofu.png") },
     ];
 
     setIacTypes(iacTypes);
@@ -425,7 +593,7 @@ export const CreateWorkspace = () => {
         style={{ margin: "16px 0" }}
         items={[
           {
-            title: organizationName,
+            title: <Link to={`/organizations/${organizationId}/workspaces`}>{organizationName}</Link>,
           },
           {
             title: <Link to={`/organizations/${organizationId}/workspaces`}>Workspaces</Link>,
@@ -438,50 +606,80 @@ export const CreateWorkspace = () => {
 
       <div className="site-layout-content" style={{ background: colorBgContainer }}>
         <div className="createWorkspace">
-          <h2>Create a new Workspace</h2>
+          <Typography.Title level={2} style={{ margin: 0 }}>
+            Create a new Workspace
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary" className="App-text">
               Workspaces determine how Terrakube organizes infrastructure. A workspace contains your configuration
               (infrastructure as code), shared variable values, your current and historical state, and run logs.
             </Typography.Text>
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-            <Step title="Choose IaC Type" />
-            <Step title="Choose Type" />
-            {versionControlFlow ? (
-              <>
-                <Step title="Connect to VCS" />
-                <Step title="Choose a repository" />
-              </>
-            ) : (
-              ""
-            )}
-            <Step title="Configure Settings" />
-          </Steps>
+          <div
+            style={{
+              background: token.colorFillAlter,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadiusLG,
+              padding: "20px 24px",
+              margin: "16px 0 24px 0",
+            }}
+          >
+            <Steps
+              current={current}
+              onChange={handleChange}
+              responsive
+              items={(versionControlFlow
+                ? [
+                    { title: "Choose IaC type", description: "Terraform or OpenTofu" },
+                    { title: "Choose type", description: "How runs are triggered" },
+                    { title: "Connect to VCS", description: "Pick a git provider" },
+                    { title: "Choose a repository", description: "Select your source code" },
+                    { title: "Configure settings", description: "Name, branch & defaults" },
+                  ]
+                : [
+                    { title: "Choose IaC type", description: "Terraform or OpenTofu" },
+                    { title: "Choose type", description: "How runs are triggered" },
+                    { title: "Configure settings", description: "Name & defaults" },
+                  ]
+              ).map((step, index) => ({ ...step, disabled: index >= current }))}
+            />
+          </div>
           {current == 0 && (
             <Space className="chooseType" direction="vertical">
-              <h3>Choose your IaC type </h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose your IaC type{" "}
+              </Typography.Title>
               <List
-                grid={{ gutter: 5, column: 5 }}
+                grid={{
+                  gutter: 24,
+                  xs: 1,
+                  sm: Math.min(iacTypes.length || 1, 2),
+                  md: Math.min(iacTypes.length || 1, 3),
+                  lg: Math.min(iacTypes.length || 1, 3),
+                  xl: Math.min(iacTypes.length || 1, 3),
+                }}
                 dataSource={iacTypes}
                 renderItem={(item) => (
                   <List.Item>
                     <Card
-                      style={{ width: "150px", textAlign: "center" }}
+                      style={{ textAlign: "center", minHeight: 220 }}
+                      styles={{ body: { padding: 32 } }}
                       hoverable
                       onClick={() => handleIacTypeClick(item)}
                     >
-                      <Space direction="vertical">
+                      <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
                         <img
                           style={{
-                            padding: "10px",
+                            padding: "14px",
                             backgroundColor: item.color,
-                            width: "60px",
+                            width: "96px",
+                            maxWidth: "100%",
+                            height: "auto",
                           }}
                           alt="example"
                           src={item.icon}
                         />
-                        <span style={{ fontWeight: "bold" }}>{item.name}</span>
+                        <span style={{ fontWeight: "bold", fontSize: 18, whiteSpace: "nowrap" }}>{item.name}</span>
                       </Space>
                     </Card>
                   </List.Item>
@@ -492,7 +690,9 @@ export const CreateWorkspace = () => {
 
           {current === 1 && (
             <Space className="chooseType" direction="vertical">
-              <h3>Choose your workflow </h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose your workflow{" "}
+              </Typography.Title>
               <Card hoverable onClick={handleClick}>
                 <IconContext.Provider value={{ size: "1.3em" }}>
                   <BiBookBookmark />
@@ -528,7 +728,9 @@ export const CreateWorkspace = () => {
 
           {current === 2 && versionControlFlow && (
             <Space className="chooseType" direction="vertical">
-              <h3>Connect to a version control provider</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Connect to a version control provider
+              </Typography.Title>
               <div className="workflowDescription2 App-text">
                 Choose the version control provider that hosts the {iacType?.name}&nbsp; configuration for this
                 workspace.
@@ -575,7 +777,7 @@ export const CreateWorkspace = () => {
                     <Dropdown menu={{ items: githubItems }}>
                       <Button size="large">
                         <Space>
-                          <GithubOutlined /> Github <DownOutlined />
+                          <GithubOutlined /> GitHub <DownOutlined />
                         </Space>
                       </Button>
                     </Dropdown>
@@ -583,7 +785,7 @@ export const CreateWorkspace = () => {
                       <Button size="large">
                         <Space>
                           <GitlabOutlined />
-                          Gitlab <DownOutlined />
+                          GitLab <DownOutlined />
                         </Space>
                       </Button>
                     </Dropdown>
@@ -618,27 +820,137 @@ export const CreateWorkspace = () => {
             validateMessages={validateMessages}
             initialValues={{ folder: "/" }}
           >
-            <Space hidden={step2Hidden} className="chooseType" direction="vertical">
-              <h3>Choose a repository</h3>
+            <Space hidden={step2Hidden} className="chooseType" direction="vertical" style={{ width: "100%" }}>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Choose a repository
+              </Typography.Title>
               <div className="workflowDescription2 App-text">
                 Choose the repository that hosts your {iacType?.name} source code.
               </div>
+
+              {!discoveryUnsupported && vcsId !== "" && (
+                <Segmented
+                  value={repoPickerMode}
+                  onChange={(value) => setRepoPickerMode(value as "list" | "manual")}
+                  options={[
+                    { label: "Browse repositories", value: "list" },
+                    { label: "Enter URL manually", value: "manual" },
+                  ]}
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+
+              {repoPickerMode === "list" && (
+                <div style={{ width: "100%", maxWidth: 640 }}>
+                  <Card
+                    size="small"
+                    styles={{ body: { padding: 0 } }}
+                    style={{ borderRadius: token.borderRadiusLG, overflow: "hidden" }}
+                  >
+                    <Flex
+                      wrap="wrap"
+                      gap="small"
+                      justify="space-between"
+                      align="center"
+                      style={{
+                        padding: "12px",
+                        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                        backgroundColor: token.colorFillAlter,
+                      }}
+                    >
+                      <Select
+                        style={{ flex: "1 1 200px", minWidth: 180 }}
+                        loading={groupsLoading}
+                        value={selectedGroup || undefined}
+                        placeholder="Select organization"
+                        onChange={handleGroupChange}
+                        options={vcsGroups.map((group) => ({ label: group.name, value: group.id }))}
+                      />
+                      <Input.Search
+                        placeholder="Filter repositories by name"
+                        allowClear
+                        style={{ flex: "1 1 220px", minWidth: 180 }}
+                        value={repoSearch}
+                        onChange={(e) => handleRepoSearchChange(e.target.value)}
+                      />
+                    </Flex>
+
+                    {repoError && (
+                      <Alert type="error" showIcon banner message={repoError} style={{ borderRadius: 0 }} />
+                    )}
+
+                    <List
+                      loading={repoLoading && repoResults.length === 0}
+                      style={{ maxHeight: 420, overflowY: "auto" }}
+                      dataSource={repoResults}
+                      locale={{
+                        emptyText: repoSearch ? `No repositories match "${repoSearch}"` : "No repositories found",
+                      }}
+                      renderItem={(repo: VcsRepositorySummary) => (
+                        <List.Item
+                          onClick={() => handleRepoSelect(repo)}
+                          style={{
+                            cursor: "pointer",
+                            padding: "10px 12px",
+                            backgroundColor: selectedRepoUrl === repo.url ? token.controlItemBgActive : "transparent",
+                            borderLeft:
+                              selectedRepoUrl === repo.url
+                                ? `3px solid ${token.colorPrimary}`
+                                : "3px solid transparent",
+                          }}
+                        >
+                          <Flex justify="space-between" align="center" style={{ width: "100%" }}>
+                            <Space direction="vertical" size={0}>
+                              <span style={{ fontWeight: 500 }}>{repo.name}</span>
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                {repo.fullName}
+                              </Typography.Text>
+                            </Space>
+                            {repo.privateRepo && (
+                              <Tag icon={<LockOutlined />} style={{ marginRight: 0 }}>
+                                Private
+                              </Tag>
+                            )}
+                          </Flex>
+                        </List.Item>
+                      )}
+                    />
+
+                    {repoHasMore && (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: 8,
+                          borderTop: `1px solid ${token.colorBorderSecondary}`,
+                        }}
+                      >
+                        <Button onClick={handleLoadMoreRepos} loading={repoLoading} type="link" size="small">
+                          Load more repositories
+                        </Button>
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              )}
+
               <Form.Item
                 name="source"
                 label="Git repo"
                 tooltip="e.g. https://github.com/Terrakube/terraform-sample-repository.git or git@github.com:AzBuilder/terraform-azurerm-webapp-sample.git"
                 extra=" Git repo must be a valid git url using either https or ssh protocol."
+                hidden={repoPickerMode === "list"}
                 rules={[
                   {
                     required: true,
                     pattern: new RegExp(
-                      "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
+                      "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
                     ),
                   },
                 ]}
               >
                 <Input />
               </Form.Item>
+
               <Form.Item>
                 <Button onClick={handleGitContinueClick} type="primary">
                   Continue
@@ -647,7 +959,9 @@ export const CreateWorkspace = () => {
             </Space>
 
             <Space hidden={step3Hidden} className="chooseType" direction="vertical">
-              <h3>Configure settings</h3>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                Configure settings
+              </Typography.Title>
               <Form.Item
                 name="name"
                 label="Workspace Name"
@@ -683,8 +997,8 @@ export const CreateWorkspace = () => {
               </Form.Item>
               <Form.Item
                 name="defaultTemplate"
-                label="Default template (VCS Push)"
-                tooltip="Template that will be executed by default when doing a git push to the repository."
+                label="Default Template"
+                tooltip="Template used for the terrakube apply PR comment command, and to pre-fill the template when manually creating a run."
                 rules={[{ required: requiredVcsPush }]}
                 hidden={!versionControlFlow}
               >
@@ -697,16 +1011,19 @@ export const CreateWorkspace = () => {
               <Form.Item
                 name="terraformVersion"
                 label={iacType?.name + " Version"}
-                rules={[{ required: true }]}
+                rules={[{ required: true }, { validator: validateTerraformVersion(terraformVersions) }]}
                 extra={
-                  "The version of " + iacType?.name + " to use for this workspace. It will not upgrade automatically."
+                  "The version of " +
+                  iacType?.name +
+                  " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
                 }
               >
-                <Select placeholder="select version" style={{ width: 250 }}>
-                  {terraformVersions.map(function (name) {
-                    return <Option key={name}>{name}</Option>;
-                  })}
-                </Select>
+                <AutoComplete
+                  placeholder="e.g. 1.11.0 or ~>1.11.0"
+                  options={terraformVersions.map((v) => ({ value: v }))}
+                  filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                  style={{ width: 250 }}
+                />
               </Form.Item>
               <Form.Item
                 hidden={!sshKeysVisible}
@@ -722,8 +1039,20 @@ export const CreateWorkspace = () => {
                   })}
                 </Select>
               </Form.Item>
+              <Form.Item
+                name="project"
+                label="Project"
+                extra="Optional. Assigning a project lets you group and filter workspaces."
+              >
+                <Select placeholder="(No project)" style={{ width: 250 }}>
+                  {!preselectedProjectId && <Option key="none">(No project)</Option>}
+                  {projectList.map((p) => (
+                    <Option key={p.id}>{p.name}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
               <Form.Item>
-                <Button type="primary" htmlType="submit">
+                <Button type="primary" htmlType="submit" loading={creating} disabled={creating}>
                   Create Workspace
                 </Button>
               </Form.Item>

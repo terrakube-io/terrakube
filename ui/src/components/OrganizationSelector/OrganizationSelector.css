@@ -45,6 +45,22 @@
   min-width: 100%;
 }
 
+.org-selector-search {
+  margin-bottom: 4px;
+}
+
+.org-selector-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.org-selector-empty {
+  padding: 12px;
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
 .org-selector-item {
   padding: 0 12px !important;
   margin: 0 !important;
@@ -190,4 +206,11 @@
 
 [data-color-scheme="terrakube"][data-theme="dark"] .org-selector-item.selected {
   background-color: #2d1548 !important;
+}
+
+.org-selector-dropdown--top {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
 }

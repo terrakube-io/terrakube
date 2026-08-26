@@ -6,11 +6,13 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.restassured.RestAssured;
+import io.terrakube.api.plugin.json.DownloadReleasesService;
 import io.terrakube.api.plugin.scheduler.ScheduleJob;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.token.pat.PatService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
@@ -27,12 +29,15 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -45,6 +50,15 @@ class ServerApplicationTests {
     @MockBean
     protected RedisTemplate<String, Object> redisTemplate;
 
+    // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
+    // container to connect to Redis on every SpringBootTest context startup - CI has no Redis
+    // service, so every test in this hierarchy would fail before this mock existed.
+    @MockBean
+    protected RedisMessageListenerContainer redisMessageListenerContainer;
+
+    @MockBean
+    protected DownloadReleasesService downloadReleasesService;
+
     @Mock
     protected ValueOperations<String, Object> valueOperations;
 
@@ -55,6 +69,9 @@ class ServerApplicationTests {
 
     @Autowired
     BitBucketWebhookService bitBucketWebhookService;
+
+    @Autowired
+    AzDevOpsWebhookService azDevOpsWebhookService;
 
     @Autowired
     EncryptionService encryptionService;
@@ -141,9 +158,13 @@ class ServerApplicationTests {
     }
 
     public String generateSystemToken() {
+        return generateSystemToken(new HashMap<>());
+    }
+
+    public String generateSystemToken(Map<String, Object> extraClaims) {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64KeyInternal));
 
-        String jws = Jwts.builder()
+        var builder = Jwts.builder()
                 .setIssuer(ISSUER_INTERNAL)
                 .setSubject(String.format("%s (Token)", "Terrakube Test"))
                 .setAudience(ISSUER_INTERNAL)
@@ -152,11 +173,13 @@ class ServerApplicationTests {
                 .claim("email_verified", true)
                 .claim("name", "Terrakube Test")
                 .setIssuedAt(Date.from(Instant.now()))
-                .setExpiration(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
-                .signWith(key)
-                .compact();
+                .setExpiration(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)));
 
-        return jws;
+        extraClaims.forEach((keyClaim, value) -> {
+            builder.claim(keyClaim, value);
+        });
+
+        return builder.signWith(key).compact();
     }
 
     @Test

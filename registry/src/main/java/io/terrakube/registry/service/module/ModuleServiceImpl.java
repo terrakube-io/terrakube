@@ -11,6 +11,7 @@ import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,33 +32,35 @@ public class ModuleServiceImpl implements ModuleService {
     StorageService storageService;
     CommonSearchService commonSearchService;
 
-    public static final String SEARCH_ORGANIZATION_MODULE_VERSION="{ \n" +
-            "  organization(filter: \"name==%s\") {\n" +
-            "    edges {\n" +
-            "      node {\n" +
-            "        id\n" +
-            "        name\n" +
-            "        module(filter: \"name==%s;provider==%s\") {\n" +
-            "            edges{\n" +
-            "                node{\n" +
-            "                    id\n" +
-            "                    name\n" +
-            "                    provider\n" +
-            "                    version {\n" +
-            "                        edges{\n" +
-            "                            node{\n" +
-            "                                id\n" +
-            "                                version\n" +
-            "                            }\n" +
-            "                        }\n" +
-            "                    }\n" +
-            "                }\n" +
-            "            }\n" +
-            "        }\n" +
-            "      }\n" +
-            "    }\n" +
-            "  }\n" +
-            "}";
+    public static final String SEARCH_ORGANIZATION_MODULE_VERSION = """
+        {
+          organization(filter: "name==%s") {
+            edges {
+              node {
+                id
+                name
+                module(filter: "name==%s;provider==%s") {
+                  edges {
+                    node {
+                      id
+                      name
+                      provider
+                      version {
+                        edges {
+                          node {
+                            id
+                            version
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
 
     @Cacheable(cacheNames = {"getAvailableVersions"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override
@@ -100,6 +103,14 @@ public class ModuleServiceImpl implements ModuleService {
         String folder = module.getAttributes().getFolder();
         String tagPrefix = module.getAttributes().getTagPrefix();
 
+        String gitTag = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId())
+                .getData()
+                .stream()
+                .filter(moduleVersion -> version.equals(moduleVersion.getAttributes().getVersion()))
+                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
+                .findFirst()
+                .orElse(null);
+
         if (module.getRelationships().getVcs().getData() != null) {
             Vcs vcsInformation = getVcsInformation(organizationId,
                     module.getRelationships().getVcs().getData().getId());
@@ -115,11 +126,11 @@ public class ModuleServiceImpl implements ModuleService {
             accessToken = sshInformation.getAttributes().getPrivateKey();
         }
 
-        moduleVersionPath = storageService.searchModule(
-                organizationName, moduleName, providerName, version, moduleSource, vcsType, vcsConnectionType,
-                accessToken, tagPrefix, folder);
+        ModuleVersionDownload download = new ModuleVersionDownload(moduleSource, version, gitTag, vcsType,
+                vcsConnectionType, accessToken, tagPrefix, folder);
+        moduleVersionPath = storageService.searchModule(organizationName, moduleName, providerName, download);
 
-        log.info("Registry Path: {}", moduleVersionPath);
+        log.info("Registry Path: {} (resolved git tag: {})", moduleVersionPath, gitTag);
         return moduleVersionPath;
     }
 
@@ -146,6 +157,11 @@ public class ModuleServiceImpl implements ModuleService {
         if (token == null && vcs.getAttributes().getConnectionType().equals("STANDALONE")) {
             log.info("The VCS connection is on a standalone app, getting the GitHub App token");
             GitHubAppToken gitHubAppToken = getGitHubAppTokenInformation(vcs.getAttributes().getClientId(), repository_source);
+            if (gitHubAppToken == null || gitHubAppToken.getAttributes() == null) {
+                log.warn("No GitHub App token found for VCS client id {} and repository source {}",
+                        vcs.getAttributes().getClientId(), repository_source);
+                return null;
+            }
             token = gitHubAppToken.getAttributes().getToken();
         }
         return token;

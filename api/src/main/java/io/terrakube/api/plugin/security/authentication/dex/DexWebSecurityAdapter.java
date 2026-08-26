@@ -50,7 +50,7 @@ public class DexWebSecurityAdapter {
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
-                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**"))
+                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**", "/webhook/v2/**"))
                                 .authorizeHttpRequests(authz -> {
                                         authz
                                                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -58,6 +58,7 @@ public class DexWebSecurityAdapter {
                                                         .requestMatchers("/error").permitAll()
                                                         .requestMatchers("/callback/v1/**").permitAll()
                                                         .requestMatchers("/webhook/v1/**").permitAll()
+                                                        .requestMatchers("/webhook/v2/**").permitAll()
                                                         .requestMatchers("/.well-known/terraform.json").permitAll()
                                                         .requestMatchers("/.well-known/openid-configuration")
                                                         .permitAll()
@@ -75,6 +76,10 @@ public class DexWebSecurityAdapter {
                                                         .requestMatchers("/remote/tfe/v2/plans/logs/**").permitAll()
                                                         .requestMatchers("/remote/tfe/v2/applies/logs/**").permitAll()
                                                         .requestMatchers("/app/*/*/runs/*").permitAll()
+                                                        // The WebSocket handshake itself carries no Authorization header - browsers can't set
+                                                        // custom headers on a WebSocket upgrade request. Auth happens over the GraphQL-WS
+                                                        // connection_init message instead, via AuthenticationWebSocketInterceptor.
+                                                        .requestMatchers("/subscriptions").permitAll()
                                         .requestMatchers("/tofu/index.json").permitAll()
                                         .requestMatchers("/terraform/index.json").permitAll()
                                         .anyRequest().authenticated();

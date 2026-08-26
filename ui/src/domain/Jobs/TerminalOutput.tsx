@@ -13,7 +13,13 @@ type Props = {
 
 export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [followEnabled, setFollowEnabled] = useState(isRunning);
+  const [followEnabled, setFollowEnabled] = useState(true);
+
+  useEffect(() => {
+    if (isRunning) {
+      setFollowEnabled(true);
+    }
+  }, [isRunning]);
 
   useEffect(() => {
     if (followEnabled && containerRef.current) {
@@ -77,7 +83,8 @@ export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
           </Tooltip>
         </div>
         <div className="terminal-content">
-          <Ansi>{outputLog}</Ansi>
+          {/* @ts-ignore */}
+          {Ansi.default ? <Ansi.default>{outputLog}</Ansi.default> : <Ansi>{outputLog}</Ansi>}
         </div>
       </div>
     </div>

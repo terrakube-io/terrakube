@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.rbac;
 
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.access.Access;
 
@@ -56,4 +57,18 @@ public interface RbacService {
     boolean canApproveJob(Access access);
 
     boolean canManageJob(Access access);
+
+    // --- Project-level (ProjectAccess) checks ---
+
+    boolean canManageWorkspace(ProjectAccess access);
+
+    boolean canManageState(ProjectAccess access);
+
+    boolean canPlanJob(ProjectAccess access);
+
+    boolean canApproveJob(ProjectAccess access);
+
+    boolean canManageJob(ProjectAccess access);
+
+    boolean canManageProject(ProjectAccess access);
 }

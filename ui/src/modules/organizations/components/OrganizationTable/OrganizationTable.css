@@ -1,0 +1,167 @@
+/* OrganizationTable.css */
+
+.organization-list {
+  margin-top: 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--tk-bg-container);
+}
+
+.organization-list-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--tk-fill-secondary);
+  border-bottom: 1px solid var(--tk-border-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--tk-text-secondary);
+}
+
+.organization-sortable-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.organization-sort-carets {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 0;
+  font-size: 8px;
+}
+
+.organization-col-name {
+  flex: 1 1 0;
+  max-width: 26%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.organization-col-name-icon {
+  display: flex;
+  align-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.organization-col-workspaces {
+  width: 230px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  gap: 6px;
+}
+
+.organization-workspace-count {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  border: 1px solid var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.organization-status-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.organization-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  border: 1px solid currentColor;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.organization-status-badge .anticon {
+  font-size: 12px;
+}
+
+.organization-col-description {
+  flex: 1 1 0;
+  max-width: 28%;
+  min-width: 0;
+}
+
+.organization-col-mode {
+  width: 140px;
+  flex-shrink: 0;
+  font-size: 13.5px;
+}
+
+.organization-col-actions {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  position: relative;
+  z-index: 1;
+}
+
+.organization-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--tk-border-secondary);
+  cursor: pointer;
+}
+
+.organization-row:last-child {
+  border-bottom: none;
+}
+
+.organization-row:hover {
+  background: var(--tk-fill-secondary);
+}
+
+.organization-row-link {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.organization-row-link:focus-visible,
+.organization-sortable-header:focus-visible {
+  outline: 2px solid #1890ff;
+  outline-offset: -2px;
+}
+
+.organization-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--tk-text-secondary);
+}
+
+.organization-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
+}

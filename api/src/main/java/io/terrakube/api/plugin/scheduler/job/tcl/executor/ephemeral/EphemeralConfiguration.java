@@ -7,6 +7,7 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.context.annotation.PropertySources;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -21,6 +22,6 @@ public class EphemeralConfiguration {
 
     private String namespace;
     private String image;
-    private String secret;
+    private List<String> secret;
     private Map<String, String> nodeSelector;
 }

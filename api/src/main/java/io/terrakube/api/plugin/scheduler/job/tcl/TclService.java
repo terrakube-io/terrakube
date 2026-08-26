@@ -48,7 +48,14 @@ public class TclService {
     @Transactional
     public Job initJobConfiguration(Job job) {
         log.info("InitialJobSetup {}", job.getId());
-        if (job.getStep().isEmpty()) {
+
+        // Acquire a row lock on the job before deciding whether it needs steps. Without this,
+        // two overlapping Quartz firings for the same job can both see an empty step list before
+        // either commits and both create the template's steps, duplicating every step - see
+        // JobRepository.lockForUpdate for the full race description.
+        jobRepository.lockForUpdate(job.getId());
+
+        if (stepRepository.findByJobId(job.getId()).isEmpty()) {
 
             FlowConfig flowConfig = null;
             if (job.getTemplateReference() != null) {
@@ -61,7 +68,11 @@ public class TclService {
             }
             log.info("Custom Job Setup: \n {}", flowConfig.toString());
 
-            flowConfig.getFlow().parallelStream().forEach(flow -> {
+            // Sequential on purpose: these save() calls must participate in this method's
+            // transaction. parallelStream() would run them on ForkJoinPool worker threads that
+            // don't carry the transactional/EntityManager context, so writes could silently
+            // escape the surrounding @Transactional boundary (and the lock above).
+            flowConfig.getFlow().stream().forEach(flow -> {
                 log.info("Creating step: {}", flow.toString());
                 Step newStep = new Step();
                 newStep.setStatus(JobStatus.pending);
@@ -264,7 +275,12 @@ public class TclService {
     }
 
     private String getTemplateTcl(String templateId) {
-        return templateRepository.getReferenceById(UUID.fromString(templateId)).getTcl();
+        // findById (not getReferenceById): isTemplatePlanOnly is called from ScheduleJob's
+        // doRunExecution path, which runs with no open Hibernate session - a lazy
+        // getReferenceById proxy would throw "no session" the moment getTcl() is read.
+        return templateRepository.findById(UUID.fromString(templateId))
+                .map(Template::getTcl)
+                .orElse(null);
     }
 
     public String getFlowTypeForStep(Job job, int stepNumber) {

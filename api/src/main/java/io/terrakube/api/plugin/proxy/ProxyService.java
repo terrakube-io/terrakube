@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 @Service
 public class ProxyService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate = RestTemplateFactory.build();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WorkspaceRepository workspaceRepository;
     private final VariableRepository variableRepository;

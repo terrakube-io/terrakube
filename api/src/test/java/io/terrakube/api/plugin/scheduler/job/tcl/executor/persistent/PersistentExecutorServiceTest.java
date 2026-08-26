@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -12,8 +13,11 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Optional;
 
+import io.terrakube.api.helpers.FailUnkownMethod;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +27,11 @@ import org.springframework.web.reactive.function.client.WebClient.RequestBodySpe
 import org.springframework.web.reactive.function.client.WebClient.RequestBodyUriSpec;
 import org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec;
 import org.springframework.web.reactive.function.client.WebClient.ResponseSpec;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
@@ -63,22 +68,26 @@ public class PersistentExecutorServiceTest {
         responseSpec = mock(ResponseSpec.class, new FailUnkownMethod<>());
         responseEntity = mock(ResponseEntity.class, new FailUnkownMethod<>());
 
+        doReturn(webClientBuilder).when(webClientBuilder).clone();
         doReturn(webClientBuilder).when(webClientBuilder).clientConnector(any());
         doReturn(webClient).when(webClientBuilder).build();
         doReturn(requestBodyUriSpec).when(webClient).post();
         doReturn(requestBodySpec).when(requestBodyUriSpec).uri(anyString());
         doReturn(requestBodySpec).when(requestBodySpec).contentType(any(MediaType.class));
+        doReturn(requestBodySpec).when(requestBodySpec).header(anyString(), anyString());
         doReturn(requestHeadersSpec).when(requestBodySpec).bodyValue(any(ExecutorContext.class));
         doReturn(responseSpec).when(requestHeadersSpec).retrieve();
         doReturn(Mono.just(responseEntity)).when(responseSpec).toEntity(ExecutorContext.class);
     }
 
     private PersistentExecutorService subject() {
-        return new PersistentExecutorService(
-            "http://default-executor/",
-            globalVarRepository,
-            webClientBuilder
-        );
+        PersistentExecutorService persistentExecutorService = spy(new PersistentExecutorService(
+                "http://default-executor/",
+                globalVarRepository,
+                webClientBuilder,
+                RandomStringUtils.randomAlphanumeric(32)));
+        doReturn(RandomStringUtils.randomAlphanumeric(64)).when(persistentExecutorService).generateSystemToken();
+        return persistentExecutorService;
     }
 
     private Job jobOnDefaultExecutor() {
@@ -144,6 +153,17 @@ public class PersistentExecutorServiceTest {
         doReturn(response()).when(responseEntity).getBody();
 
         assertThrows(ExecutionException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+
+        verify(requestHeadersSpec, times(1)).retrieve();
+    }
+
+    @Test
+    public void busyExecutorResponseBecomesExecutorUnavailableException() {
+        WebClientResponseException busy = WebClientResponseException.create(
+                503, "Service Unavailable", HttpHeaders.EMPTY, new byte[0], null);
+        doReturn(Mono.error(busy)).when(responseSpec).toEntity(ExecutorContext.class);
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
 
         verify(requestHeadersSpec, times(1)).retrieve();
     }

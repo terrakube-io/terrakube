@@ -30,6 +30,8 @@ import io.terrakube.api.plugin.state.model.state.StateModel;
 import io.terrakube.api.plugin.state.model.terraform.TerraformState;
 import io.terrakube.api.plugin.state.model.workspace.*;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
+import io.terrakube.api.plugin.state.model.workspace.state.consumers.LinksStateConsumer;
+import io.terrakube.api.plugin.state.model.workspace.state.consumers.RemoteStateConsumer;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
@@ -56,6 +58,7 @@ import io.terrakube.api.rs.workspace.history.archive.ArchiveType;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
 import org.quartz.SchedulerException;
@@ -72,6 +75,7 @@ import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -111,6 +115,15 @@ public class RemoteTfeService {
 
     private RbacService rbacService;
 
+    private static final String LATEST_TERRAFORM_VERSION = "latest";
+
+    private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
+    // Real job status transitions happen here via plain jobRepository.save(), never through an
+    // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
+    // them, so every status-changing save below calls this directly, same as ScheduleJob/
+    // ScheduleJobTrigger.
+    private JobNotificationTrigger jobNotificationTrigger;
+
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
                             OrganizationRepository organizationRepository,
@@ -128,7 +141,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -152,6 +165,7 @@ public class RemoteTfeService {
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
+        this.jobNotificationTrigger = jobNotificationTrigger;
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
@@ -423,34 +437,48 @@ public class RemoteTfeService {
 
     WorkspaceData getWorkspace(String organizationName, String workspaceName, Map<String, Object> otherAttributes,
                                JwtAuthenticationToken currentUser) {
-        Optional<Workspace> workspace = Optional
-                .ofNullable(workspaceRepository.getByOrganizationNameAndName(organizationName, workspaceName));
+        Workspace workspace = workspaceRepository.getByOrganizationNameAndName(organizationName, workspaceName);
+        return getWorkspace(workspace, otherAttributes, currentUser);
+    }
 
-        if (workspace.isPresent()) {
-            log.info("Found Workspace Id: {} Terraform: {}", workspace.get().getId().toString(),
-                    workspace.get().getTerraformVersion());
+    // The Terraform/OpenTofu CLI remote backend parses this attribute as a strict version for any state operation
+    // and errors on constraints like ">= 1.12.5"; "latest" is the only non-exact value it tolerates.
+    private String toExposedTerraformVersion(String terraformVersion) {
+        if (terraformVersion == null || terraformVersion.isBlank() || LATEST_TERRAFORM_VERSION.equalsIgnoreCase(terraformVersion)) {
+            return terraformVersion;
+        }
+        String trimmed = terraformVersion.trim();
+        return EXACT_TERRAFORM_VERSION_PATTERN.matcher(trimmed).matches() ? trimmed : LATEST_TERRAFORM_VERSION;
+    }
+
+    WorkspaceData getWorkspace(Workspace workspace, Map<String, Object> otherAttributes,
+                               JwtAuthenticationToken currentUser) {
+        if (workspace != null) {
+            log.info("Found Workspace Id: {} Terraform: {} Global Remote State: {}", workspace.getId().toString(),
+                    workspace.getTerraformVersion(), workspace.isGlobalRemoteState());
             WorkspaceData workspaceData = new WorkspaceData();
 
             WorkspaceModel workspaceModel = new WorkspaceModel();
-            workspaceModel.setId(workspace.get().getId().toString());
+            workspaceModel.setId(workspace.getId().toString());
             workspaceModel.setType("workspaces");
             Map<String, Object> attributes = new HashMap<>();
-            attributes.put("name", workspaceName);
-            attributes.put("terraform-version", workspace.get().getTerraformVersion());
-            attributes.put("locked", workspace.get().isLocked());
+            attributes.put("name", workspace.getName());
+            attributes.put("terraform-version", toExposedTerraformVersion(workspace.getTerraformVersion()));
+            attributes.put("locked", workspace.isLocked());
             attributes.put("auto-apply", false);
-            attributes.put("execution-mode", workspace.get().getExecutionMode());
-            attributes.put("global-remote-state", true);
+            attributes.put("execution-mode", workspace.getExecutionMode());
 
-            if (workspace.get().getFolder() != null
-                    && (workspace.get().getVcs() != null || workspace.get().getSsh() != null)
-                    && !workspace.get().getFolder().split(",")[0].equals("/")) {
-                attributes.put("working-directory", workspace.get().getFolder().split(",")[0]);
+            attributes.put("global-remote-state", workspace.isGlobalRemoteState());
+
+            if (workspace.getFolder() != null
+                    && (workspace.getVcs() != null || workspace.getSsh() != null)
+                    && !workspace.getFolder().split(",")[0].equals("/")) {
+                attributes.put("working-directory", workspace.getFolder().split(",")[0]);
             }
 
-            boolean isManageWorkspace = validateUserManageWorkspace(workspace.get().getOrganization(), currentUser) || validateLimitedManageWorkspace(workspace.get(), currentUser);
-            boolean isManageJob = validateUserManageJob(workspace.get(), currentUser);
-            boolean isApproveJob = validateUserApproveJob(workspace.get(), currentUser);
+            boolean isManageWorkspace = validateUserManageWorkspace(workspace.getOrganization(), currentUser) || validateLimitedManageWorkspace(workspace, currentUser);
+            boolean isManageJob = validateUserManageJob(workspace, currentUser);
+            boolean isApproveJob = validateUserApproveJob(workspace, currentUser);
 
             Map<String, Boolean> defaultAttributes = new HashMap<>();
             defaultAttributes.put("can-create-state-versions", isManageWorkspace);
@@ -474,10 +502,10 @@ public class RemoteTfeService {
 
             attributes.put("permissions", defaultAttributes);
 
-            if (workspace.get().getVcs() != null && !workspace.get().isAllowRemoteApply()) {
+            if (workspace.getVcs() != null && !workspace.isAllowRemoteApply()) {
                 VcsRepo vcsRepo = new VcsRepo();
-                vcsRepo.setBranch(workspace.get().getBranch());
-                vcsRepo.setRepositoryHttpUrl(workspace.get().getSource());
+                vcsRepo.setBranch(workspace.getBranch());
+                vcsRepo.setRepositoryHttpUrl(workspace.getSource());
                 attributes.put("vcs-repo", vcsRepo);
             }
 
@@ -486,7 +514,7 @@ public class RemoteTfeService {
             workspaceModel.setAttributes(attributes);
             workspaceData.setData(workspaceModel);
 
-            Optional<Job> currentJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(workspace.get(),
+            Optional<Job> currentJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(workspace,
                     Arrays.asList(JobStatus.pending, JobStatus.running, JobStatus.queue, JobStatus.waitingApproval));
             if (currentJob.isPresent()) {
                 log.info("Adding current job id: {}", currentJob.get().getId());
@@ -498,8 +526,8 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().setCurrentRun(currentRunRelationship);
             }
 
-            if (workspace.get().getProject() != null) {
-                Project project = workspace.get().getProject();
+            if (workspace.getProject() != null) {
+                Project project = workspace.getProject();
                 log.info("Adding project information: {}", project.getId());
                 if (workspaceModel.getRelationships() == null) {
                     workspaceModel.setRelationships(new io.terrakube.api.plugin.state.model.workspace.Relationships());
@@ -510,6 +538,18 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().getProject().getData().setType("projects");
             }
 
+            if (!workspace.isGlobalRemoteState()) {
+                log.info("Adding workspace remote state consumer relationship information");
+                if (workspaceModel.getRelationships() == null) {
+                    workspaceModel.setRelationships(new io.terrakube.api.plugin.state.model.workspace.Relationships());
+                }
+                workspaceModel.getRelationships().setRemoteStateConsumer(new RemoteStateConsumer());
+                workspaceModel.getRelationships().getRemoteStateConsumer().setLinks(new LinksStateConsumer());
+                workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().setRelated(
+                        String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
+                log.info("Workspace remote state consumer relationship URL: {}", workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().getRelated());
+            }
+
             return workspaceData;
         } else {
             return null;
@@ -518,21 +558,42 @@ public class RemoteTfeService {
     }
 
     StateConsumerList getWorkspaceStateConsumers(String workspaceId, JwtAuthenticationToken currentUser) {
+        log.info("Getting workspace state consumers for workspace ID: {}", workspaceId);
         Optional<Workspace> workspaceFound = Optional
-                .ofNullable(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
+                .of(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
 
         StateConsumerList stateConsumerList = new StateConsumerList();
-        stateConsumerList.setData(new ArrayList());
+        stateConsumerList.setData(new ArrayList<>());
 
         workspaceFound.ifPresent(workspaceData -> {
-            log.info("Workspace found {}, generating workspace list from organization", workspaceData.getName());
-            workspaceData.getOrganization().getWorkspace().forEach(workspace -> {
-                if (!workspace.getId().toString().equals(workspaceId)) {
-                    log.info("Adding workspace {} as state consumers", workspace.getName());
-                    stateConsumerList.getData().add(getWorkspace(workspace.getOrganization().getName(),
-                            workspace.getName(), new HashMap(), currentUser).getData());
+            log.info("Workspace found {}, globalRemoteState: {}, generating workspace list", workspaceData.getName(), workspaceData.isGlobalRemoteState());
+            if (workspaceData.isGlobalRemoteState()) {
+                log.info("Generating workspace list from organization (globalRemoteState is true)");
+                workspaceData.getOrganization().getWorkspace().forEach(workspace -> {
+                    if (!workspace.getId().toString().equals(workspaceId)) {
+                        log.info("Adding workspace {} as state consumers", workspace.getName());
+                        stateConsumerList.getData().add(getWorkspace(workspace.getOrganization().getName(),
+                                workspace.getName(), new HashMap<>(), currentUser).getData());
+                    }
+                });
+            } else {
+                log.info("Generating workspace list from sharedIds (globalRemoteState is false)");
+                if (workspaceData.getSharedIds() != null && !workspaceData.getSharedIds().isEmpty()) {
+                    String[] sharedIds = workspaceData.getSharedIds().split(",");
+                    for (String sharedId : sharedIds) {
+                        if (!sharedId.trim().isEmpty()) {
+                            try {
+                                Workspace sharedWorkspace = workspaceRepository.getReferenceById(UUID.fromString(sharedId.trim()));
+                                log.info("Adding shared workspace {} as state consumers", sharedWorkspace.getName());
+                                stateConsumerList.getData().add(getWorkspace(sharedWorkspace.getOrganization().getName(),
+                                        sharedWorkspace.getName(), new HashMap<>(), currentUser).getData());
+                            } catch (Exception e) {
+                                log.error("Error adding shared workspace ID {}: {}", sharedId, e.getMessage());
+                            }
+                        }
+                    }
                 }
-            });
+            }
         });
 
         return stateConsumerList;
@@ -548,13 +609,19 @@ public class RemoteTfeService {
             String searchTagData = searchTags.get();
             List<String> listTags = Arrays.stream(searchTagData.split(",")).toList();
             log.info("Searching workspaces with tags: {}", searchTags);
-            for (Workspace workspace : organizationRepository.getOrganizationByName(organizationName).getWorkspace()) {
+            Organization organization = organizationRepository.getOrganizationByName(organizationName);
+            Map<String, String> organizationTagNames = new HashMap<>();
+            for (Tag tag : tagRepository.findByOrganizationName(organizationName)) {
+                if (tag.getId() != null) {
+                    organizationTagNames.put(tag.getId().toString(), tag.getName());
+                }
+            }
+            for (Workspace workspace : organization.getWorkspace()) {
                 List<WorkspaceTag> workspaceTagList = workspace.getWorkspaceTag();
                 int matchingTags = 0;
 
                 for (WorkspaceTag workspaceTag : workspaceTagList) {
-                    Tag tag = tagRepository.getReferenceById(UUID.fromString(workspaceTag.getTagId()));
-                    if (listTags.indexOf(tag.getName()) > -1) {
+                    if (listTags.indexOf(organizationTagNames.get(workspaceTag.getTagId())) > -1) {
                         matchingTags++;
                     }
                 }
@@ -562,7 +629,7 @@ public class RemoteTfeService {
                         workspaceTagList.size(), listTags.size(), matchingTags);
                 if (matchingTags == listTags.size()) {
                     workspaceList.getData().add(
-                            getWorkspace(organizationName, workspace.getName(), new HashMap(), currentUser).getData());
+                            getWorkspace(workspace, new HashMap<>(), currentUser).getData());
                 }
             }
         }
@@ -575,7 +642,7 @@ public class RemoteTfeService {
             if (workspaceListByName.isPresent())
                 for (Workspace workspace : workspaceListByName.get()) {
                     workspaceList.getData().add(
-                            getWorkspace(organizationName, workspace.getName(), new HashMap(), currentUser).getData());
+                            getWorkspace(workspace, new HashMap<>(), currentUser).getData());
                 }
         }
         return workspaceList;
@@ -763,6 +830,7 @@ public class RemoteTfeService {
         job.setPlanChanges(true);
         job.setRefreshOnly(false);
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
 
         // dummy step
         Step step = new Step();
@@ -883,6 +951,30 @@ public class RemoteTfeService {
         } else {
             log.info("Keeping history for local runs {}", job.getWorkspace().getName());
         }
+    }
+
+    public String getWorkspaceName(String id){
+        return workspaceRepository.getReferenceById(UUID.fromString(id)).getName();
+    }
+
+    public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {
+        Optional<Workspace> workspaceOptinal = workspaceRepository.findById(UUID.fromString(workspaceId));
+        boolean hasAcess = false;
+        if (!workspaceOptinal.isEmpty()) {
+            Workspace workspace = workspaceOptinal.get();
+            if (workspace.isGlobalRemoteState()) {
+                hasAcess = true;
+            } else {
+                String[] sharedIds = workspace.getSharedIds().split(",");
+                for (String sharedId : sharedIds) {
+                    log.info("Checking if workspace {} is shared with {} result {}", workspace.getName(), workspaceIdToken, sharedId.trim().equals(workspaceIdToken));
+                    if (sharedId.trim().equals(workspaceIdToken)) {
+                        hasAcess = true;
+                    }
+                }
+            }
+        }
+        return hasAcess;
     }
 
     StateData getWorkspaceState(String historyId) {
@@ -1089,12 +1181,13 @@ public class RemoteTfeService {
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
                 hostname, configurationId);
-        // we need to update the source only if the VCS connection is null and the
-        // branch is other than "remote-content"
-        if (workspace.getVcs() == null && workspace.getBranch().equals("remote-content")) {
-            workspace.setSource(sourceTarGz);
-        }
-        workspace = workspaceRepository.save(workspace);
+        // We intentionally do NOT persist this configuration version onto workspace.source
+        // here. Doing so on every run (including speculative plan-only runs and runs that are
+        // later discarded before approval) made workspace.source track the last configuration
+        // *created* rather than the last configuration *applied*, so a subsequent UI "Run now"
+        // could re-queue the wrong configuration. The workspace source pointer is now updated
+        // when an apply is actually dispatched (see ExecutorService.persistAppliedConfigurationSource).
+        // The current run still uses this tarball via job.overrideSource, set below.
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
@@ -1129,6 +1222,7 @@ public class RemoteTfeService {
         }
 
         job = jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
         log.info("Job Created");
 
         if(runsData.getData().getAttributes().get("target-addrs") != null) {
@@ -1370,6 +1464,7 @@ public class RemoteTfeService {
                 job.setTcl(cliTemplate.getTcl());
                 job.setStatus(JobStatus.pending);
                 job = jobRepository.save(job);
+                jobNotificationTrigger.notifyStatusChanged(job);
                 log.warn("Update job {} to status PENDING to continue execution", job.getId());
             }
 
@@ -1380,7 +1475,8 @@ public class RemoteTfeService {
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
-                    jobRepository.save(job);
+                    job = jobRepository.save(job);
+                    jobNotificationTrigger.notifyStatusChanged(job);
                     try {
                         scheduleJobService.createJobContextNow(job);
                     } catch (SchedulerException e) {
@@ -1405,7 +1501,8 @@ public class RemoteTfeService {
                         "User does not have permission to discard runs in this workspace");
             }
             job.setStatus(JobStatus.cancelled);
-            jobRepository.save(job);
+            job = jobRepository.save(job);
+            jobNotificationTrigger.notifyStatusChanged(job);
             scheduleJobService.deleteJobContext(job.getId());
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());
@@ -1636,7 +1733,7 @@ public class RemoteTfeService {
             organization.getProject().forEach(project -> {
                 ProjectModel projectData = new ProjectModel();
                 projectData.setId(project.getId().toString());
-                projectData.setType("project");
+                projectData.setType("projects");
                 projectData.setAttributes(new HashMap<>());
                 projectData.getAttributes().put("name", project.getName());
                 projectData.setRelationships(new io.terrakube.api.plugin.state.model.project.Relationships());

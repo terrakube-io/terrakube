@@ -46,7 +46,7 @@ export default function PageWrapper({
           className="page-wrapper-crumbs"
           items={breadcrumbs.map((bc) => ({
             key: bc.path,
-            label: <NavLink to={bc.path}>{bc.label}</NavLink>,
+            title: <NavLink to={bc.path}>{bc.label}</NavLink>,
           }))}
         />
       )}

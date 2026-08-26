@@ -3,26 +3,42 @@ package io.terrakube.api.plugin.vcs;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -36,6 +52,10 @@ public class PrCommentServiceTest {
     GitLabWebhookService gitLabWebhookService;
     BitBucketWebhookService bitBucketWebhookService;
     JobRepository jobRepository;
+    StepRepository stepRepository;
+    StorageTypeService storageTypeService;
+    StreamingService streamingService;
+    ObjectMapper objectMapper;
 
     PrCommentService subject;
 
@@ -45,12 +65,33 @@ public class PrCommentServiceTest {
         gitLabWebhookService = mock(GitLabWebhookService.class);
         bitBucketWebhookService = mock(BitBucketWebhookService.class);
         jobRepository = mock(JobRepository.class);
+        stepRepository = mock(StepRepository.class);
+        storageTypeService = mock(StorageTypeService.class);
+        streamingService = mock(StreamingService.class);
+        objectMapper = new ObjectMapper();
 
         subject = new PrCommentService(
                 gitHubWebhookService,
                 gitLabWebhookService,
                 bitBucketWebhookService,
-                jobRepository);
+                jobRepository,
+                stepRepository,
+                storageTypeService,
+                streamingService,
+                objectMapper);
+    }
+
+    /**
+     * The real code now reads steps via StepRepository.findByJobId (not the job's lazy
+     * job.getStep() collection - see PrCommentService.fetchStepOutputText), so tests must keep
+     * the mock in sync with whatever steps a job is set up with.
+     */
+    private void setSteps(Job job, List<Step> steps) {
+        job.setStep(steps);
+        // lenient: plenty of tests build a job via createJob() but never exercise the
+        // fetchStepOutputText path (e.g. short-circuit on missing PR number), which would
+        // otherwise trip Mockito's strict-stubbing check.
+        lenient().doReturn(steps).when(stepRepository).findByJobId(job.getId());
     }
 
     private Job createJob(VcsType vcsType, Integer prNumber, JobStatus status) {
@@ -58,6 +99,7 @@ public class PrCommentServiceTest {
         vcs.setVcsType(vcsType);
 
         Organization org = new Organization();
+        org.setId(UUID.randomUUID());
         org.setName("test-org");
 
         Workspace workspace = new Workspace();
@@ -68,11 +110,82 @@ public class PrCommentServiceTest {
         Job job = new Job();
         job.setId(42);
         job.setPrNumber(prNumber);
+        job.setPrApplyEnabled(true);
         job.setStatus(status);
         job.setWorkspace(workspace);
         job.setOrganization(org);
 
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(1);
+        setSteps(job, List.of(step));
+
         return job;
+    }
+
+    /** Stubs the last-step output fetch path (empty live logs, then stored bytes) for a job built via createJob(). */
+    private void stubStepOutput(String text) {
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
+        byte[] bytes = text == null ? null : text.getBytes(StandardCharsets.UTF_8);
+        doReturn(bytes).when(storageTypeService).getStepOutput(any(), any(), any());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsPlanLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nPlan: 2 to add, 1 to change, 0 to destroy.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertTrue(summary.isPresent());
+        assertEquals("Plan: 2 to add, 1 to change, 0 to destroy.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsPlanLineWithImportClause() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nPlan: 1 to import, 8 to add, 0 to change, 0 to destroy.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertTrue(summary.isPresent());
+        assertEquals("Plan: 1 to import, 8 to add, 0 to change, 0 to destroy.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsNoChangesLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("No changes. Your infrastructure matches the configuration.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertEquals("No changes. Your infrastructure matches the configuration.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsApplyCompleteLine() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some preamble\n\nApply complete! Resources: 3 added, 0 changed, 1 destroyed.\n");
+
+        Optional<String> summary = subject.extractRunSummary(job);
+
+        assertEquals("Apply complete! Resources: 3 added, 0 changed, 1 destroyed.", summary.get());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsEmptyWhenNoStepOutput() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput(null);
+
+        assertTrue(subject.extractRunSummary(job).isEmpty());
+    }
+
+    @Test
+    public void extractRunSummaryReturnsEmptyWhenNoMatch() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Some unusual output with no recognizable summary");
+
+        assertTrue(subject.extractRunSummary(job).isEmpty());
     }
 
     @Test
@@ -96,7 +209,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultDispatchesToGitHub() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        job.setTerraformPlan("Plan: 3 to add, 0 to change, 1 to destroy.");
+        stubStepOutput("Plan: 3 to add, 0 to change, 1 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -120,7 +233,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultDispatchesToGitLab() {
         Job job = createJob(VcsType.GITLAB, 10, JobStatus.completed);
-        job.setTerraformPlan("No changes.");
+        stubStepOutput("No changes.");
 
         doReturn("note-99").when(gitLabWebhookService).postMergeRequestNote(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -134,7 +247,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultDispatchesToBitbucket() {
         Job job = createJob(VcsType.BITBUCKET, 7, JobStatus.completed);
-        job.setTerraformPlan("Some plan output");
+        stubStepOutput("Some plan output");
 
         doReturn("bb-123").when(bitBucketWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -148,7 +261,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultWithNoPlanOutputAndCompletedStatus() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        job.setTerraformPlan(null);
+        stubStepOutput(null);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -165,7 +278,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultWithFailedStatus() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.failed);
-        job.setTerraformPlan(null);
+        stubStepOutput(null);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -191,7 +304,7 @@ public class PrCommentServiceTest {
     @Test
     public void postApplyResultDispatchesToGitHub() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        job.setOutput("Apply complete! Resources: 3 added, 0 changed, 1 destroyed.");
+        stubStepOutput("Apply complete! Resources: 3 added, 0 changed, 1 destroyed.");
 
         subject.postApplyResult(job);
 
@@ -212,7 +325,7 @@ public class PrCommentServiceTest {
         for (int i = 0; i < 7000; i++) {
             longPlan.append("Resource aws_instance.test will be created\n");
         }
-        job.setTerraformPlan(longPlan.toString());
+        stubStepOutput(longPlan.toString());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -227,15 +340,623 @@ public class PrCommentServiceTest {
     }
 
     @Test
-    public void postPlanResultDoesNotSaveWhenCommentIdIsNull() {
+    public void postPlanResultRecordsErrorWhenCommentIdIsNull() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        job.setTerraformPlan("Some plan");
+        stubStepOutput("Some plan");
 
         doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
-        verify(jobRepository, never()).save(any());
+        verify(jobRepository, times(1)).save(job);
         assertNull(job.getPrCommentId());
+        assertNotNull(job.getPrCommentError());
+        assertTrue(job.getPrCommentError().contains("#5"));
+    }
+
+    @Test
+    public void postPlanResultRecordsErrorWhenGitHubServiceThrows() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+
+        doThrow(new RuntimeException("403 Forbidden"))
+                .when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        verify(jobRepository, times(1)).save(job);
+        assertNull(job.getPrCommentId());
+        assertNotNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postPlanResultClearsPreviousErrorOnSuccess() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+        job.setPrCommentError("Failed to post comment on pull request #5. Verify permissions.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        assertEquals("12345", job.getPrCommentId());
+        assertNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postApplyResultRecordsErrorWhenCommentIdIsNull() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setOutput("Apply complete!");
+
+        doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postApplyResult(job);
+
+        verify(jobRepository, times(1)).save(job);
+        assertNotNull(job.getPrCommentError());
+    }
+
+    @Test
+    public void postPlanResultDoesNotRecordErrorForUnsupportedVcs() {
+        Job job = createJob(VcsType.AZURE_DEVOPS, 5, JobStatus.completed);
+        job.setTerraformPlan("Some plan");
+
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        assertNull(job.getPrCommentError());
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+    }
+
+    @ParameterizedTest
+    @MethodSource("planBodyContentCases")
+    public void postPlanResultRendersExpectedBodyContent(String stepOutput, String expectedFragment,
+            String unexpectedFragment) {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput(stepOutput);
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains(expectedFragment));
+        if (unexpectedFragment != null) {
+            assertFalse(markdownCaptor.getValue().contains(unexpectedFragment));
+        }
+    }
+
+    static Stream<Arguments> planBodyContentCases() {
+        return Stream.of(
+                Arguments.of("+ resource \"aws_instance\" \"example\" {\n+   ami = \"ami-123\"\n+ }", "```diff", null),
+                Arguments.of("Some preamble\n\nPlan: 2 to add, 1 to change, 0 to destroy.\n",
+                        "✅ Plan: 2 to add, 1 to change, 0 to destroy.", null),
+                Arguments.of("No changes. Your infrastructure matches the configuration.\n",
+                        "✅ No changes. Your infrastructure matches the configuration.", null),
+                Arguments.of("Some unusual output with no recognizable summary",
+                        "<details><summary>Show Plan</summary>", "✅ Plan:"));
+    }
+
+    @Test
+    public void postPlanResultUsesFailedIconWhenPlanFailed() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.failed);
+        stubStepOutput(null);
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("❌ Plan failed"));
+    }
+
+    @Test
+    public void postApplyResultUsesCompleteIconWhenCompleted() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.");
+
+        subject.postApplyResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("✅ Apply complete"));
+        assertTrue(markdownCaptor.getValue().contains("<details><summary>Show Apply Output</summary>"));
+    }
+
+    @Test
+    public void postApplyResultUsesFailedIconWhenFailed() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.failed);
+        stubStepOutput("Error: something went wrong");
+
+        subject.postApplyResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("❌ Apply failed"));
+    }
+
+    @Test
+    public void postPlanResultStripsAnsiCodesFromStepOutput() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("[32m+ resource \"aws_instance\" \"example\"[0m");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("+ resource \"aws_instance\" \"example\""));
+        assertFalse(markdown.contains(""));
+    }
+
+    @Test
+    public void postPlanResultPrefersLiveStreamingLogsOverStoredOutput() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any(), any());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        verify(storageTypeService, never()).getStepOutput(any(), any(), any());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
+
+    @Test
+    public void postPlanResultSkipsTrailingStepsWithoutRecognizableSummary() {
+        // A custom TCL template can run extra steps after the plan step itself (e.g. a Slack
+        // notification). The comment must still surface the plan step's diff, not whatever the
+        // last-numbered step happened to output.
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(1);
+
+        Step notifyStep = new Step();
+        notifyStep.setId(UUID.randomUUID());
+        notifyStep.setStepNumber(2);
+
+        setSteps(job, List.of(planStep, notifyStep));
+
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
+        doReturn("Plan: 2 to add, 0 to change, 0 to destroy.".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(planStep.getId().toString()));
+        doReturn("Slack notification sent successfully".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(notifyStep.getId().toString()));
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("Plan: 2 to add, 0 to change, 0 to destroy."));
+        assertFalse(markdown.contains("Slack notification"));
+    }
+
+    @Test
+    public void postPlanResultFallsBackToLastStepWhenNoStepHasRecognizableSummary() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        Step initStep = new Step();
+        initStep.setId(UUID.randomUUID());
+        initStep.setStepNumber(1);
+
+        Step erroredStep = new Step();
+        erroredStep.setId(UUID.randomUUID());
+        erroredStep.setStepNumber(2);
+
+        setSteps(job, List.of(initStep, erroredStep));
+
+        doReturn("").when(streamingService).getCurrentLogs(any(), any());
+        doReturn("Initializing the backend...".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(initStep.getId().toString()));
+        doReturn("Error: something unexpected happened".getBytes(StandardCharsets.UTF_8))
+                .when(storageTypeService).getStepOutput(any(), any(), eq(erroredStep.getId().toString()));
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("Error: something unexpected happened"));
+    }
+
+    @Test
+    public void postPlanResultRendersStructuredChangesTable() throws Exception {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 2 to add, 0 to change, 1 to destroy.");
+
+        Map<String, Object> createChange = Map.of("address", "aws_instance.example", "action", "create");
+        Map<String, Object> deleteChange = Map.of("address", "aws_instance.old", "action", "delete");
+        Map<String, Object> noOpChange = Map.of("address", "aws_instance.unchanged", "action", "no-op");
+        String contextJson = objectMapper.writeValueAsString(Map.of(
+                "planStructuredOutput", Map.of("step-1", List.of(createChange, deleteChange, noOpChange))));
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("`aws_instance.example`"));
+        assertTrue(markdown.contains("`aws_instance.old`"));
+        assertFalse(markdown.contains("aws_instance.unchanged"));
+    }
+
+    @Test
+    public void postApplyResultRendersStructuredChangesTable() throws Exception {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.");
+
+        Map<String, Object> createChange = Map.of("address", "aws_instance.example", "action", "create", "status", "applied");
+        String contextJson = objectMapper.writeValueAsString(Map.of(
+                "applyStructuredOutput", Map.of("step-1", List.of(createChange))));
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+
+        subject.postApplyResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("`aws_instance.example`"));
+    }
+
+    @Test
+    public void postPlanResultOmitsStructuredTableWhenContextHasNoPlanData() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("{}").when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertFalse(markdownCaptor.getValue().contains("| Resource | Action |"));
+    }
+
+    @Test
+    public void postPlanResultToleratesMalformedContextJson() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("{ not valid json").when(storageTypeService).getContext(job.getId());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertFalse(markdown.contains("| Resource | Action |"));
+        assertTrue(markdown.contains("Plan: 1 to add"));
+    }
+
+    @Test
+    public void postPlanResultHandlesJobWithNoSteps() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        setSteps(job, List.of());
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("No changes detected"));
+    }
+
+    @Test
+    public void postApplyDisabledNoticeSkipsWhenPrNumberIsNull() {
+        Workspace workspace = createJob(VcsType.GITHUB, 5, JobStatus.completed).getWorkspace();
+
+        subject.postApplyDisabledNotice(workspace, null);
+
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+    }
+
+    @Test
+    public void postApplyDisabledNoticeSkipsWhenPrNumberIsZero() {
+        Workspace workspace = createJob(VcsType.GITHUB, 5, JobStatus.completed).getWorkspace();
+
+        subject.postApplyDisabledNotice(workspace, 0);
+
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+    }
+
+    @Test
+    public void postApplyDisabledNoticePostsNoticeWithWorkspaceAndPrNumber() {
+        Workspace workspace = createJob(VcsType.GITHUB, 5, JobStatus.completed).getWorkspace();
+
+        doReturn("999").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postApplyDisabledNotice(workspace, 7);
+
+        ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(jobCaptor.capture(), markdownCaptor.capture());
+
+        assertEquals(workspace, jobCaptor.getValue().getWorkspace());
+        assertEquals(Integer.valueOf(7), jobCaptor.getValue().getPrNumber());
+        assertTrue(markdownCaptor.getValue().contains("Allow Apply via PR Comment"));
+        assertTrue(markdownCaptor.getValue().contains("not enabled"));
+    }
+
+    @Test
+    public void postPlanResultOmitsApplyFooterWhenApplyDisabled() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setPrApplyEnabled(false);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String markdown = markdownCaptor.getValue();
+        assertFalse(markdown.contains("comment: `terrakube apply`"));
+        assertTrue(markdown.contains("Apply via PR comment is disabled"));
+        assertTrue(markdown.contains("Allow Apply via PR Comment"));
+        assertTrue(markdown.contains("terrakube plan"));
+    }
+
+    @Test
+    public void postPlanResultIncludesApplyFooterWhenApplyEnabled() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setPrApplyEnabled(true);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("comment: `terrakube apply`"));
+    }
+
+    @Test
+    public void postPlanResultUpdatesExistingThreadCommentWhenPriorPlanJobExists() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setId(99);
+        setSteps(job, job.getStep());
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        Job priorJob = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        priorJob.setId(50);
+        priorJob.setPrCommentId("existing-comment-1");
+
+        doReturn(Optional.of(priorJob)).when(jobRepository)
+                .findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
+                        job.getWorkspace(), 5, 99);
+        doReturn(true).when(gitHubWebhookService).updatePrComment(eq(job), eq("existing-comment-1"), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, times(1)).updatePrComment(eq(job), eq("existing-comment-1"), any());
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+        assertEquals("existing-comment-1", job.getPrCommentId());
+    }
+
+    @Test
+    public void postPlanResultFallsBackToNewCommentWhenUpdateFails() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setId(99);
+        setSteps(job, job.getStep());
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        Job priorJob = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        priorJob.setId(50);
+        priorJob.setPrCommentId("stale-comment-1");
+
+        doReturn(Optional.of(priorJob)).when(jobRepository)
+                .findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
+                        job.getWorkspace(), 5, 99);
+        doReturn(false).when(gitHubWebhookService).updatePrComment(eq(job), eq("stale-comment-1"), any());
+        doReturn("new-comment-1").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, times(1)).updatePrComment(eq(job), eq("stale-comment-1"), any());
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), any());
+        assertEquals("new-comment-1", job.getPrCommentId());
+    }
+
+    @Test
+    public void jobHeaderLinksToTerrakubeUiWhenUiUrlConfigured() {
+        subject.uiUrl = "https://terrakube.example.com";
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.getOrganization().setId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        job.getWorkspace().setId(UUID.fromString("22222222-2222-2222-2222-222222222222"));
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        String expectedUrl = "https://terrakube.example.com/organizations/11111111-1111-1111-1111-111111111111"
+                + "/workspaces/22222222-2222-2222-2222-222222222222/runs/42";
+        assertTrue(markdownCaptor.getValue().contains("[#42](" + expectedUrl + ")"));
+    }
+
+    @Test
+    public void jobHeaderUsesPlainReferenceWhenUiUrlNotConfigured() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+
+        assertTrue(markdownCaptor.getValue().contains("**Job:** #42"));
+    }
+
+    private Workspace workspaceWith(VcsType vcsType) {
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(vcsType);
+        Workspace workspace = new Workspace();
+        workspace.setName("test-workspace");
+        workspace.setVcs(vcs);
+        return workspace;
+    }
+
+    @Test
+    public void acknowledgeReceiptSkipsWhenCommentIdMissing() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), null, 5);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitHub() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), "998877", 5);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(any(Workspace.class), eq("998877"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptAddsEyesReactionOnGitLab() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.GITLAB), "note-1", 5);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(any(Workspace.class), eq(5), eq("note-1"), eq("eyes"));
+    }
+
+    @Test
+    public void acknowledgeReceiptIsNoOpForBitbucket() {
+        subject.acknowledgeReceipt(workspaceWith(VcsType.BITBUCKET), "55", 5);
+
+        verify(bitBucketWebhookService, never()).postPrComment(any(), any());
+        verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeCompletionSkipsWhenCommandCommentIdMissing() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeCompletionSkipsWhenPrNumberMissing() {
+        Job job = createJob(VcsType.GITHUB, null, JobStatus.completed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsThumbsUpOnGitHubSuccess() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(job.getWorkspace(), "998877", "+1");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsThumbsDownOnGitHubFailure() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.failed);
+        job.setCommandCommentId("998877");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(job.getWorkspace(), "998877", "-1");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsCheckmarkOnGitLabSuccess() {
+        Job job = createJob(VcsType.GITLAB, 5, JobStatus.completed);
+        job.setCommandCommentId("note-1");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(job.getWorkspace(), 5, "note-1", "white_check_mark");
+    }
+
+    @Test
+    public void acknowledgeCompletionAddsCrossOnGitLabFailure() {
+        Job job = createJob(VcsType.GITLAB, 5, JobStatus.failed);
+        job.setCommandCommentId("note-1");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(job.getWorkspace(), 5, "note-1", "x");
+    }
+
+    @Test
+    public void acknowledgeCompletionIsNoOpForBitbucket() {
+        Job job = createJob(VcsType.BITBUCKET, 5, JobStatus.completed);
+        job.setCommandCommentId("55");
+
+        subject.acknowledgeCompletion(job);
+
+        verify(bitBucketWebhookService, never()).postPrComment(any(), any());
+        verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
     }
 }

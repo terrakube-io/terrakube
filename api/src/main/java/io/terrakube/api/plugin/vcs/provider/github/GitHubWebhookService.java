@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -22,8 +23,10 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -36,6 +39,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GitHubWebhookService extends WebhookServiceBase {
 
+    private static final String PATH_COMMENT = "comment";
+
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
 
@@ -43,6 +48,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
     private String hostname;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
+    @Value("${io.terrakube.webhook.insecure-ssl:1}")
+    private String insecureSsl;
 
     public GitHubWebhookService(ObjectMapper objectMapper, TokenService tokenService) {
         this.objectMapper = objectMapper;
@@ -50,7 +57,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Vcs vcs) {
-        return handleWebhook(jsonPayload, headers, token, "x-hub-signature-256", JobVia.Github.name(),
+        return handleWebhook(jsonPayload, headers, token, "x-hub-signature-256", JobVia.GITHUB.getValue(),
                 (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs));
     }
 
@@ -120,9 +127,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setCreatedBy(prUser);
                 
                 String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
-                // Fetch file changes for the PR
-                List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
-                result.setFileChanges(prFileChanges);
+                result.setPrFilesUrl(prFilesUrl);
+                if (vcs != null) {
+                    List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
+                    result.setFileChanges(prFileChanges);
+                }
             } else {
                 result.setValid(false);
                 log.error("No valid github pull request event: {} ", action);
@@ -144,45 +153,55 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 JsonNode issueNode = rootNode.path("issue");
                 // Only process comments on pull requests
                 if (issueNode.has("pull_request")) {
-                    String commentBody = rootNode.path("comment").path("body").asText().trim();
+                    String commentBody = rootNode.path(PATH_COMMENT).path("body").asText().trim();
                     String command = parseTerrakubeCommand(commentBody);
                     if (command != null) {
                         result.setPrComment(true);
                         result.setCommentBody(commentBody);
                         result.setCommentCommand(command);
+                        result.setCommentId(rootNode.path(PATH_COMMENT).path("id").asText());
                         result.setPrNumber(issueNode.path("number").asInt());
-                        result.setCreatedBy(rootNode.path("comment").path("user").path("login").asText());
+                        result.setCreatedBy(rootNode.path(PATH_COMMENT).path("user").path("login").asText());
 
                         // Fetch PR details to get head SHA and branch
                         String prUrl = issueNode.path("pull_request").path("url").asText();
-                        String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
-                        String repoName = rootNode.path("repository").path("name").asText();
-                        String[] ownerAndRepo = new String[]{repoOwner, repoName};
 
-                        ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prUrl, HttpMethod.GET);
-                        if (prResponse != null && prResponse.getStatusCode().is2xxSuccessful()) {
-                            try {
-                                JsonNode prNode = objectMapper.readTree(prResponse.getBody());
-                                result.setCommit(prNode.path("head").path("sha").asText());
-                                result.setBranch(prNode.path("head").path("ref").asText());
+                        if (vcs != null) {
+                            String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
+                            String repoName = rootNode.path("repository").path("name").asText();
+                            String[] ownerAndRepo = new String[]{repoOwner, repoName};
 
-                                String prFilesUrl = prUrl + "/files";
-                                result.setFileChanges(getPrFileChanges(vcs, ownerAndRepo, prFilesUrl));
-                            } catch (Exception e) {
-                                log.error("Error fetching PR details for issue_comment", e);
+                            ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prUrl, HttpMethod.GET);
+                            if (prResponse != null && prResponse.getStatusCode().is2xxSuccessful()) {
+                                try {
+                                    JsonNode prNode = objectMapper.readTree(prResponse.getBody());
+                                    result.setCommit(prNode.path("head").path("sha").asText());
+                                    result.setBranch(prNode.path("head").path("ref").asText());
+
+                                    String prFilesUrl = prUrl + "/files";
+                                    result.setFileChanges(getPrFileChanges(vcs, ownerAndRepo, prFilesUrl));
+                                } catch (Exception e) {
+                                    log.error("Error fetching PR details for issue_comment", e);
+                                    result.setValid(false);
+                                }
+                            } else {
+                                log.error("Failed to fetch PR details for issue_comment");
                                 result.setValid(false);
                             }
                         } else {
-                            log.error("Failed to fetch PR details for issue_comment");
-                            result.setValid(false);
+                            // No Vcs yet on the shared (v2) path - defer to resolvePrDetails.
+                            result.setPrDetailsUrl(prUrl);
+                            result.setPrFilesUrl(prUrl + "/files");
                         }
                     } else {
+                        log.info("Ignoring issue_comment on PR: no terrakube command found in comment body");
                         result.setValid(false);
                     }
                 } else {
                     result.setValid(false);
                 }
             } else {
+                log.info("Ignoring issue_comment with action '{}': only 'created' is handled", action);
                 result.setValid(false);
             }
         } else {
@@ -193,7 +212,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus) {
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
@@ -202,27 +221,24 @@ public class GitHubWebhookService extends WebhookServiceBase {
         GithubCommitStatus commitStatus = GithubCommitStatus.pending;
         String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
                 + workspace.getName();
-        String commitStatusDescription = "Your task is in Terrakube queue.";
 
         // Determine the commit status based on jobStatus
         switch (jobStatus) {
             case completed:
                 commitStatus = GithubCommitStatus.success;
-                commitStatusDescription = "Your task has been completed successfully.";
                 break;
             case failed:
             case rejected:
             case cancelled:
                 commitStatus = GithubCommitStatus.failure;
-                commitStatusDescription = "Your task has failed.";
                 break;
             case unknown:
                 commitStatus = GithubCommitStatus.error;
-                commitStatusDescription = "Your task ran into errors.";
                 break;
             default:
                 break;
         }
+        String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
 
         // API URL for commit status
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos) + "/statuses/"
@@ -248,82 +264,93 @@ public class GitHubWebhookService extends WebhookServiceBase {
         if (response.getStatusCode().value() == 201) {
             log.info("Job status sent successfully to GitHub");
         } else {
-            log.error(String.format("Failed to send job status to Github, message %s", response.getBody()));
-        }
-
-        // Optional: Check if the commit is part of a PR and send status to the PR as
-        // well
-        try {
-            List<Integer> prNumbers = getPullRequestNumbersForCommit(workspace, job.getCommitId());
-            for (Integer prNumber : prNumbers) {
-                String prApiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos)
-                        + "/pulls/" + prNumber + "/statuses";
-
-                // Send the status to the pull request
-                ResponseEntity<String> prResponse = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, prApiUrl,
-                        HttpMethod.POST);
-                if (prResponse == null) {
-                    log.error("Failed to send job status on PR #{} in workspace {} to GitHub", prNumber,
-                            workspace.getName());
-                    continue;
-                }
-
-                if (prResponse.getStatusCode().value() == 201) {
-                    log.info("Job status sent successfully to PR #{} on GitHub", prNumber);
-                } else {
-                    log.error(String.format("Failed to send job status to PR #%, message %s", prNumber,
-                            prResponse.getBody()));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error occurred while checking PRs for commit {}: {}", job.getCommitId(), e.getMessage());
+            log.error(String.format("Failed to send job status to GitHub, message %s", response.getBody()));
         }
     }
 
-    private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {
-        List<Integer> prNumbers = new ArrayList<>();
-        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
-        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
-                + "/commits/" + commitId + "/pulls";
-
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, null, apiUrl,
-                HttpMethod.GET);
-
-        if (response != null && response.getStatusCode().value() == 200) {
-            try {
-                JsonNode jsonNode = new ObjectMapper().readTree(response.getBody());
-                for (JsonNode pr : jsonNode) {
-                    prNumbers.add(pr.path("number").asInt());
-                }
-            } catch (Exception e) {
-                log.error("Failed to parse PR data for commit {}: {}", commitId, e.getMessage());
-            }
-        } else {
-            log.error("Failed to fetch PRs for commit {}: {}", commitId,
-                    response != null ? response.getBody() : "No response");
-        }
-
-        return prNumbers;
+    // GitHub's commit-status description has a hard 140-character API limit.
+    public static String buildCommitStatusDescription(JobStatus jobStatus, String runSummary) {
+        String description = WebhookServiceBase.buildCommitStatusDescription(jobStatus, runSummary);
+        return description.length() > 140 ? description.substring(0, 140) : description;
     }
+
+    // GitHub paginates /pulls/{number}/files at 30 entries per page by default (100 max per page,
+    // up to 3000 files total across pages) - a single unpaginated request silently truncates the
+    // file list for any PR touching more files than fit on one page, which is common for monorepo
+    // PRs. MAX_PR_FILE_PAGES is a defensive cap (100 pages * 100/page = 10000 files), not a real
+    // GitHub limit, so a malformed or malicious Link header can't spin this into an infinite loop.
+    private static final int MAX_PR_FILE_PAGES = 100;
 
     private List<String> getPrFileChanges(Vcs vcs, String[] ownerAndRepo, String apiUrl) {
         List<String> changedFiles = new ArrayList<>();
+        String nextUrl = withPerPage(apiUrl);
 
-        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", apiUrl, HttpMethod.GET);
-        if(response == null || response.getStatusCode().value() != 200) {
-            log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
-            return changedFiles;
-        }
-        
-        try {
-            JsonNode rootNode = objectMapper.readTree(response.getBody());
-            for (JsonNode file : rootNode) {
-                changedFiles.add(file.path("filename").asText());
+        for (int page = 0; nextUrl != null && page < MAX_PR_FILE_PAGES; page++) {
+            ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", nextUrl, HttpMethod.GET);
+            if (response == null || response.getStatusCode().value() != 200) {
+                log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
+                break;
             }
-        } catch (Exception e) {
-            log.error("Error parsing JSON response", e);
+
+            try {
+                changedFiles.addAll(parseChangedFilesFromPage(response.getBody()));
+            } catch (Exception e) {
+                log.error("Error parsing JSON response", e);
+                break;
+            }
+
+            nextUrl = extractNextPageUrl(response.getHeaders().getFirst(HttpHeaders.LINK));
         }
         return changedFiles;
+    }
+
+    // Package-private (not private) so GitHubWebhookServiceTest can exercise the parsing logic -
+    // including the previous_filename/rename handling - directly, without standing up an HTTP
+    // stack for what's really just a JSON-shape question.
+    List<String> parseChangedFilesFromPage(String responseBody) throws JsonProcessingException {
+        List<String> files = new ArrayList<>();
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+        for (JsonNode file : rootNode) {
+            files.add(file.path("filename").asText());
+            // Renames need the old path too, or a workspace whose path filter only matches the
+            // pre-rename location never sees the change that moved it out.
+            String previousFilename = file.path("previous_filename").asText(null);
+            if (previousFilename != null && !previousFilename.isEmpty()) {
+                files.add(previousFilename);
+            }
+        }
+        return files;
+    }
+
+    String withPerPage(String apiUrl) {
+        return apiUrl + (apiUrl.contains("?") ? "&" : "?") + "per_page=100";
+    }
+
+    // Parses a GitHub RFC 5988 Link header, e.g.:
+    // <https://api.github.com/.../files?page=2>; rel="next", <...>; rel="last"
+    // Returns the rel="next" URL, or null once there isn't one (the last page).
+    String extractNextPageUrl(String linkHeader) {
+        if (linkHeader == null || linkHeader.isBlank()) {
+            return null;
+        }
+        for (String link : linkHeader.split(",")) {
+            String[] segments = link.split(";");
+            if (segments.length < 2) {
+                continue;
+            }
+            boolean isNext = false;
+            for (int i = 1; i < segments.length; i++) {
+                if (segments[i].trim().equals("rel=\"next\"")) {
+                    isNext = true;
+                    break;
+                }
+            }
+            String urlSegment = segments[0].trim();
+            if (isNext && urlSegment.startsWith("<") && urlSegment.endsWith(">")) {
+                return urlSegment.substring(1, urlSegment.length() - 1);
+            }
+        }
+        return null;
     }
 
     public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {
@@ -354,7 +381,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
                     + webhookUrl
-                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
         }
 
         ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl,
@@ -432,7 +459,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return null;
     }
 
-    public void updatePrComment(Job job, String commentId, String markdownBody) {
+    public boolean updatePrComment(Job job, String commentId, String markdownBody) {
         Workspace workspace = job.getWorkspace();
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
@@ -443,9 +470,125 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
         ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl, HttpMethod.PATCH);
         if (response != null && response.getStatusCode().is2xxSuccessful()) {
-            log.info("PR comment updated successfully on workspace {}", workspace.getName());
+            log.info("PR comment {} updated successfully on workspace {}", commentId, workspace.getName());
+            return true;
+        }
+        log.error("Failed to update PR comment {} on workspace {}", commentId, workspace.getName());
+        return false;
+    }
+
+    public void addCommentReaction(Workspace workspace, String commentId, String reactionContent) {
+        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
+                + "/issues/comments/" + commentId + "/reactions";
+
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo,
+                "{\"content\":\"" + reactionContent + "\"}", apiUrl, HttpMethod.POST);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            log.info("Added {} reaction to PR comment {} in workspace {}", reactionContent, commentId, workspace.getName());
         } else {
-            log.error("Failed to update PR comment on workspace {}", workspace.getName());
+            log.error("Failed to add reaction to PR comment {} in workspace {}", commentId, workspace.getName());
+        }
+    }
+
+    public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers, Vcs vcs) {
+        WebhookResult result = new WebhookResult();
+        result.setBranch("");
+        result.setVia(JobVia.GITHUB.getValue());
+        result.setValid(true);
+        return handleEvent(jsonPayload, result, headers, vcs);
+    }
+
+    public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers) {
+        return parseGitHubPayload(jsonPayload, headers, null);
+    }
+
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, String prFilesUrl) {
+        String[] ownerAndRepo = extractOwnerAndRepo(source);
+        return getPrFileChanges(vcs, ownerAndRepo, prFilesUrl);
+    }
+
+    public boolean resolvePrDetails(Vcs vcs, String source, String prDetailsUrl, WebhookResult result) {
+        String[] ownerAndRepo = extractOwnerAndRepo(source);
+        ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prDetailsUrl, HttpMethod.GET);
+        if (prResponse == null || !prResponse.getStatusCode().is2xxSuccessful()) {
+            log.error("Failed to resolve PR details from {}", prDetailsUrl);
+            return false;
+        }
+        try {
+            JsonNode prNode = objectMapper.readTree(prResponse.getBody());
+            result.setCommit(prNode.path("head").path("sha").asText());
+            result.setBranch(prNode.path("head").path("ref").asText());
+            return true;
+        } catch (Exception e) {
+            log.error("Error parsing PR details from {}", prDetailsUrl, e);
+            return false;
+        }
+    }
+
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
+            boolean hasPrWorkflow) {
+        String id = repoWebhook.getRemoteHookId();
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
+
+        String events = eventTypes.stream()
+                .map(e -> "\"" + e.name().toLowerCase() + "\"")
+                .collect(Collectors.joining(","));
+
+        if (hasPrWorkflow && !events.contains("issue_comment")) {
+            events += ",\"issue_comment\"";
+        }
+
+        String body;
+        String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
+        HttpMethod httpMethod;
+
+        if (id != null && !id.isEmpty()) {
+            body = "{\"active\":true, \"events\":[" + events + "]}";
+            apiUrl = apiUrl + "/" + id;
+            httpMethod = HttpMethod.PATCH;
+        } else {
+            body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                    + webhookUrl
+                    + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
+            httpMethod = HttpMethod.POST;
+        }
+
+        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, apiUrl, httpMethod);
+        if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
+            if (id == null || id.isEmpty()) {
+                try {
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    id = rootNode.path("id").asText();
+                } catch (Exception e) {
+                    log.error("Error parsing JSON response", e);
+                }
+            }
+            log.info("GitHub repo webhook created/updated successfully with id {}", id);
+        }
+
+        return id;
+    }
+
+    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+        if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
+            log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
+            return;
+        }
+        String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
+        String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks/" + repoWebhook.getRemoteHookId();
+
+        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, "", apiUrl, HttpMethod.DELETE);
+        if (response == null) {
+            log.error("Failed to delete repo webhook with remote hook id {}", repoWebhook.getRemoteHookId());
+            return;
+        }
+
+        if (response.getStatusCode().value() == 204) {
+            log.info("Repo webhook with remote hook id {} deleted successfully", repoWebhook.getRemoteHookId());
+        } else {
+            log.warn("Failed to delete repo webhook with remote hook id {}, message {}", repoWebhook.getRemoteHookId(), response.getBody());
         }
     }
 

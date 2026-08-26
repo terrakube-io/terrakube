@@ -9,6 +9,8 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { VcsModel, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
+import { EditVCS } from "./EditVCS";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 const { Paragraph } = Typography;
 
@@ -21,11 +23,19 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState(vcsMode != null ? vcsMode : "list");
+  const [mode, setMode] = useState<"list" | "new" | "edit">(
+    vcsMode != null ? (vcsMode as "list" | "new" | "edit") : "list"
+  );
   const [vcs, setVCS] = useState<VcsModel[]>([]);
+  const [editVcsId, setEditVcsId] = useState<string | undefined>(undefined);
 
   const onAddVCS = () => {
     setMode("new");
+  };
+
+  const onEditVCS = (id: string) => {
+    setEditVcsId(id);
+    setMode("edit");
   };
 
   const renderVCSLogo = (vcs: VcsType) => {
@@ -106,6 +116,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
           axiosInstance
             .delete(`organization/${orgid}/vcs/${id}`)
             .then(() => {
+              message.success("VCS provider deleted successfully");
               loadVCS();
             })
             .catch((err) => {
@@ -148,10 +159,10 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
     <div className="setting">
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
-      ) : mode != "new" ? (
+      ) : mode === "list" ? (
         <div>
           {" "}
-          <h1 style={{ paddingBottom: "10px" }}>
+          <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
             VCS Providers
             <Button
               type="primary"
@@ -163,149 +174,159 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
             >
               Add a VCS Provider
             </Button>{" "}
-          </h1>
+          </Typography.Title>
           <br />
-          {loading ? (
-            <p>Data loading...</p>
-          ) : (
-            <List
-              className="vcsList"
-              itemLayout="horizontal"
-              dataSource={vcs}
-              split
-              renderItem={(item) => (
-                <List.Item>
-                  <Card
-                    style={{ width: "100%" }}
-                    title={
-                      <span>
-                        {renderVCSLogo(item.attributes.vcsType)}&nbsp;&nbsp;
-                        {item.attributes.name}
-                      </span>
-                    }
-                    actions={[
-                      <div style={{ float: "right" }}>
-                        <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
-                          Edit Client
-                        </Button>
-                        &nbsp;&nbsp;&nbsp;
-                        <Popconfirm
-                          onConfirm={() => {
-                            onDelete(item.id);
-                          }}
-                          style={{ width: "100px" }}
-                          title={
-                            <p>
-                              Deleting this {renderVCSType(item.attributes.vcsType)} client will disconnect <br /> any
-                              workspaces currently using it. <br /> This means that VCS changes will not trigger <br />{" "}
-                              jobs on those workspaces. <br />
-                              Are you sure?
-                            </p>
-                          }
-                          okText="Yes"
-                          cancelText="Cancel"
-                        >
-                          {" "}
-                          <Button type="primary" icon={<DeleteOutlined />} danger disabled={!managePermission}>
-                            Delete Client
+          <SettingsSection maxWidth="100%">
+            {loading ? (
+              <p>Data loading...</p>
+            ) : (
+              <List
+                className="vcsList"
+                itemLayout="horizontal"
+                dataSource={vcs}
+                split
+                renderItem={(item) => (
+                  <List.Item>
+                    <Card
+                      style={{ width: "100%" }}
+                      title={
+                        <span>
+                          {renderVCSLogo(item.attributes.vcsType)}&nbsp;&nbsp;
+                          {item.attributes.name}
+                        </span>
+                      }
+                      actions={[
+                        <div key="actions" style={{ float: "right" }}>
+                          <Button
+                            type="default"
+                            icon={<EditOutlined />}
+                            disabled={!managePermission}
+                            onClick={() => onEditVCS(item.id)}
+                          >
+                            Edit Client
                           </Button>
-                        </Popconfirm>
-                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                      </div>,
-                    ]}
-                  >
-                    <div className="paragraph">
-                      <Row>
-                        <Col span={6}>
-                          <Typography.Text type="secondary">Callback URL</Typography.Text>
-                        </Col>
-                        <Col span={18}>
-                          <Paragraph copyable> {getCallBackUrl(item.attributes?.callback ?? item.id)} </Paragraph>
-                        </Col>
-                      </Row>
-                    </div>
-                    <Divider />
-                    <div className="paragraph">
-                      <Row>
-                        <Col span={6}>
-                          <Typography.Text type="secondary">API URL</Typography.Text>
-                        </Col>
-                        <Col span={18}>
-                          <Typography.Text type="secondary">{item.attributes?.apiUrl}</Typography.Text>
-                        </Col>
-                      </Row>
-                    </div>
-                    <Divider />
-                    <div className="paragraph">
-                      <Row>
-                        <Col span={6}>
-                          <Typography.Text type="secondary">Created</Typography.Text>
-                        </Col>
-                        <Col span={18}>
-                          <Typography.Text type="secondary">{item.attributes.createdDate}</Typography.Text>
-                        </Col>
-                      </Row>
-                    </div>
-                    <Divider />
-                    <div className="paragraph">
-                      <Row>
-                        <Col span={6}>
-                          {item.attributes.status !== "COMPLETED" ? (
-                            <Typography.Text type="secondary">
-                              Connect to {renderVCSType(item.attributes.vcsType)}
-                            </Typography.Text>
-                          ) : (
-                            <Typography.Text type="secondary">Connection</Typography.Text>
-                          )}
-                        </Col>
-                        <Col span={12}>
-                          {item.attributes.status !== "COMPLETED" ? (
-                            <Typography.Text type="secondary">
-                              Connecting to {renderVCSType(item.attributes.vcsType)} will take your{" "}
-                              {renderVCSType(item.attributes.vcsType)} user through the OAuth flow to create an
-                              authorization token for access to all repositories for this organization. This means that
-                              your currently logged in {renderVCSType(item.attributes.vcsType)} user token will be used
-                              for all {renderVCSType(item.attributes.vcsType)} API interactions by any Terrakube user
-                              anywhere within the scope of <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b>.
-                            </Typography.Text>
-                          ) : (
-                            <Typography.Text type="secondary">
-                              A connection was made on {item.attributes.createdDate} by authenticating via OAuth as{" "}
-                              {renderVCSType(item.attributes.vcsType)} user <b>{item.attributes.createdBy}</b>, which
-                              assigned an OAuth token for use by all Terrakube users in the{" "}
-                              <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b> organization.
-                            </Typography.Text>
-                          )}
-                        </Col>
-                        <Col span={6}>
-                          {item.attributes.status !== "COMPLETED" && item.attributes.connectionType === "OAUTH" ? (
-                            <Button
-                              type="primary"
-                              target="_blank"
-                              href={getConnectUrl(
-                                item.attributes.vcsType,
-                                item.attributes.clientId,
-                                getCallBackUrl(item.attributes?.callback ?? item.id),
-                                item.attributes.endpoint
-                              )}
-                              size="small"
-                            >
-                              Connect to {renderVCSType(item.attributes.vcsType)}
+                          &nbsp;&nbsp;&nbsp;
+                          <Popconfirm
+                            onConfirm={() => {
+                              onDelete(item.id);
+                            }}
+                            style={{ width: "100px" }}
+                            title={
+                              <p>
+                                Deleting this {renderVCSType(item.attributes.vcsType)} client will disconnect <br /> any
+                                workspaces currently using it. <br /> This means that VCS changes will not trigger{" "}
+                                <br /> jobs on those workspaces. <br />
+                                Are you sure?
+                              </p>
+                            }
+                            okText="Yes"
+                            cancelText="Cancel"
+                          >
+                            {" "}
+                            <Button type="primary" icon={<DeleteOutlined />} danger disabled={!managePermission}>
+                              Delete Client
                             </Button>
-                          ) : (
-                            <span />
-                          )}
-                        </Col>
-                      </Row>
-                    </div>
-                  </Card>
-                </List.Item>
-              )}
-            />
-          )}
+                          </Popconfirm>
+                          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        </div>,
+                      ]}
+                    >
+                      <div className="paragraph">
+                        <Row>
+                          <Col span={6}>
+                            <Typography.Text type="secondary">Callback URL</Typography.Text>
+                          </Col>
+                          <Col span={18}>
+                            <Paragraph copyable> {getCallBackUrl(item.attributes?.callback ?? item.id)} </Paragraph>
+                          </Col>
+                        </Row>
+                      </div>
+                      <Divider />
+                      <div className="paragraph">
+                        <Row>
+                          <Col span={6}>
+                            <Typography.Text type="secondary">API URL</Typography.Text>
+                          </Col>
+                          <Col span={18}>
+                            <Typography.Text type="secondary">{item.attributes?.apiUrl}</Typography.Text>
+                          </Col>
+                        </Row>
+                      </div>
+                      <Divider />
+                      <div className="paragraph">
+                        <Row>
+                          <Col span={6}>
+                            <Typography.Text type="secondary">Created</Typography.Text>
+                          </Col>
+                          <Col span={18}>
+                            <Typography.Text type="secondary">{item.attributes.createdDate}</Typography.Text>
+                          </Col>
+                        </Row>
+                      </div>
+                      <Divider />
+                      <div className="paragraph">
+                        <Row>
+                          <Col span={6}>
+                            {item.attributes.status !== "COMPLETED" ? (
+                              <Typography.Text type="secondary">
+                                Connect to {renderVCSType(item.attributes.vcsType)}
+                              </Typography.Text>
+                            ) : (
+                              <Typography.Text type="secondary">Connection</Typography.Text>
+                            )}
+                          </Col>
+                          <Col span={12}>
+                            {item.attributes.status !== "COMPLETED" ? (
+                              <Typography.Text type="secondary">
+                                Connecting to {renderVCSType(item.attributes.vcsType)} will take your{" "}
+                                {renderVCSType(item.attributes.vcsType)} user through the OAuth flow to create an
+                                authorization token for access to all repositories for this organization. This means
+                                that your currently logged in {renderVCSType(item.attributes.vcsType)} user token will
+                                be used for all {renderVCSType(item.attributes.vcsType)} API interactions by any
+                                Terrakube user anywhere within the scope of{" "}
+                                <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b>.
+                              </Typography.Text>
+                            ) : (
+                              <Typography.Text type="secondary">
+                                A connection was made on {item.attributes.createdDate} by authenticating via OAuth as{" "}
+                                {renderVCSType(item.attributes.vcsType)} user <b>{item.attributes.createdBy}</b>, which
+                                assigned an OAuth token for use by all Terrakube users in the{" "}
+                                <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b> organization.
+                              </Typography.Text>
+                            )}
+                          </Col>
+                          <Col span={6}>
+                            {item.attributes.status !== "COMPLETED" && item.attributes.connectionType === "OAUTH" ? (
+                              <Button
+                                type="primary"
+                                target="_blank"
+                                href={getConnectUrl(
+                                  item.attributes.vcsType,
+                                  item.attributes.clientId,
+                                  getCallBackUrl(item.attributes?.callback ?? item.id),
+                                  item.attributes.endpoint
+                                )}
+                                size="small"
+                              >
+                                Connect to {renderVCSType(item.attributes.vcsType)}
+                              </Button>
+                            ) : (
+                              <span />
+                            )}
+                          </Col>
+                        </Row>
+                      </div>
+                    </Card>
+                  </List.Item>
+                )}
+              />
+            )}
+          </SettingsSection>
         </div>
-      ) : (
+      ) : mode === "new" ? (
         <AddVCS setMode={setMode} loadVCS={loadVCS} />
+      ) : (
+        <EditVCS vcsId={editVcsId!} setMode={setMode} loadVCS={loadVCS} />
       )}
     </div>
   );

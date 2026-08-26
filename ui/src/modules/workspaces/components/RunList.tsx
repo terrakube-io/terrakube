@@ -1,17 +1,11 @@
 import { List, Avatar, Tag, Pagination, Tooltip, Button } from "antd";
-import {
-  UserOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-} from "@ant-design/icons";
-import { FlatJob, JobStatus } from "../../../domain/types";
+import { UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { FlatJob } from "../../../domain/types";
 import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter from "./RunFilter";
+import WorkspaceStatusTag from "./WorkspaceStatusTag";
 
 // Storage key for persisting pagination state
 const RUNS_PAGE_KEY = "runsCurrentPage";
@@ -115,31 +109,6 @@ export default function RunList({ jobs, onRunClick }: Props) {
     return "Terraform";
   };
 
-  const renderStatusTag = (status: JobStatus, statusColor: string) => (
-    <Tag
-      icon={
-        status === JobStatus.Completed ? (
-          <CheckCircleOutlined />
-        ) : status === JobStatus.NoChanges ? (
-          <CheckCircleOutlined />
-        ) : status === JobStatus.Running ? (
-          <SyncOutlined spin />
-        ) : status === JobStatus.WaitingApproval ? (
-          <ExclamationCircleOutlined />
-        ) : status === JobStatus.Cancelled ? (
-          <StopOutlined />
-        ) : status === JobStatus.Failed ? (
-          <StopOutlined />
-        ) : (
-          <ClockCircleOutlined />
-        )
-      }
-      color={statusColor}
-    >
-      {status.toLowerCase()}
-    </Tag>
-  );
-
   const sortedJobs = filteredJobs.sort((a, b) => parseInt(a.id) - parseInt(b.id)).reverse();
   const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -170,7 +139,12 @@ export default function RunList({ jobs, onRunClick }: Props) {
           <List.Item
             actions={[
               <div key="status" style={{ textAlign: "right" }}>
-                {renderStatusTag(item.status, item.statusColor)}
+                <WorkspaceStatusTag status={item.status} />
+                {item.prCommentError && (
+                  <Tooltip title={item.prCommentError}>
+                    <WarningOutlined style={{ color: "#fa8f37", marginLeft: 6 }} />
+                  </Tooltip>
+                )}
                 <div>
                   <Tooltip title={formatDate((item as any).createdDate)}>
                     <span className="metadata">{item.latestChange}</span>

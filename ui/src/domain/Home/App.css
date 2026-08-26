@@ -50,6 +50,10 @@
   margin-bottom: 15px;
 }
 
+[data-theme="dark"] .popup-text {
+  color: var(--tk-text-secondary);
+}
+
 .paragraph {
   margin: 0;
 }

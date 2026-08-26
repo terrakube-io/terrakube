@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 public class TofuJsonController {
 
     private static final String TOFU_REDIS_KEY = "tofuReleasesResponse";
+    private static final String TOFU_STALE_REDIS_KEY = "tofuReleasesResponseStale";
     TofuJsonProperties tofuJsonProperties;
     RedisTemplate redisTemplate;
     DownloadReleasesService downloadReleasesService;
@@ -71,10 +72,17 @@ public class TofuJsonController {
                 log.warn("Saving tofu releases to redis...");
                 redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndex);
                 redisTemplate.expire(TOFU_REDIS_KEY, tofuJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
+                redisTemplate.opsForValue().set(TOFU_STALE_REDIS_KEY, tofuIndex);
                 return new ResponseEntity<>(tofuIndex, HttpStatus.OK);
             } catch (Exception e) {
-                log.error(e.getMessage());
-                return new ResponseEntity<>("", HttpStatus.INTERNAL_SERVER_ERROR);
+                log.error("Failed to fetch OpenTofu releases from GitHub API: {}", e.getMessage());
+                String staleData = (String) redisTemplate.opsForValue().get(TOFU_STALE_REDIS_KEY);
+                if (staleData != null && !staleData.isEmpty()) {
+                    log.warn("GitHub API unavailable - serving stale cached OpenTofu releases");
+                    return new ResponseEntity<>(staleData, HttpStatus.OK);
+                }
+                log.error("GitHub API unavailable and no stale cache available - returning 503");
+                return new ResponseEntity<>("{\"error\":\"OpenTofu releases temporarily unavailable\"}", HttpStatus.SERVICE_UNAVAILABLE);
             }
         }
     }

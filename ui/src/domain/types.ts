@@ -20,6 +20,47 @@ export type AttributeWrapped<T> = {
   attributes: T;
 };
 
+/**
+ * A resource narrowed to the attributes a `fields[type]=...` query parameter asked for.
+ *
+ * Naming any field for a type also suppresses that resource's `relationships` block, so both are
+ * removed here. Prefer deriving this through {@link sparseFields} rather than writing it directly,
+ * so the shape cannot disagree with the request that produced it.
+ */
+export type Sparse<T extends { attributes: object }, K extends keyof T["attributes"]> = Omit<
+  T,
+  "attributes" | "relationships"
+> & {
+  attributes: Pick<T["attributes"], K>;
+};
+
+declare const RESOURCE: unique symbol;
+
+/** A `fields[type]=...` query fragment that carries the resource shape it produces. */
+export type FieldSet<R> = string & { readonly [RESOURCE]: R };
+
+/** The resource shape a {@link FieldSet} yields. */
+export type SparseOf<F> = F extends FieldSet<infer R> ? R : never;
+
+type AttributeName<T extends { attributes: object }> = keyof T["attributes"] & string;
+
+/**
+ * Builds a `fields[type]=...` fragment and the response shape it produces from one field list, so
+ * the two cannot drift. Interpolates into a URL as an ordinary string.
+ *
+ *     const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name");
+ *     type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
+ *     axiosInstance.get(`organization/${id}?${ORGANIZATION_FIELDS}`);
+ *
+ * Field names are checked against the resource, so a typo fails to compile rather than reaching the
+ * server and quietly returning a resource without it. Applied in two calls because TypeScript
+ * cannot infer the field list while the resource type is given explicitly.
+ */
+export function sparseFields<T extends { attributes: object }>(type: string) {
+  return <const K extends readonly AttributeName<T>[]>(...fields: K): FieldSet<Sparse<T, K[number]>> =>
+    `fields[${type}]=${fields.join(",")}` as FieldSet<Sparse<T, K[number]>>;
+}
+
 // Organization
 export type Organization = {
   id: string;
@@ -31,6 +72,8 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  workspaceCount?: number;
+  workspaceStatusCounts?: Record<string, number>;
 };
 
 export type ApiResponse<T> = {
@@ -74,6 +117,7 @@ export enum JobStatus {
   Cancelled = "cancelled",
   Failed = "failed",
   Unknown = "unknown",
+  NeverExecuted = "NeverExecuted",
 }
 
 export enum JobVia {
@@ -91,6 +135,8 @@ export type JobAttributes = {
   output: string;
   approvalTeam: string;
   commitId: string;
+  prNumber?: number;
+  prCommentError?: string;
 } & AuditFieldBase;
 
 export type JobStep = {
@@ -105,11 +151,12 @@ export type FlatJob = {
   id: string;
   title: string;
   status: JobStatus;
-  statusColor: string;
   latestChange: string;
   commitId?: string;
   createdBy: string;
   via?: JobVia;
+  prNumber?: number;
+  prCommentError?: string;
 };
 // VCS
 
@@ -157,6 +204,26 @@ export enum VcsConnectionType {
   OAUTH = "OAUTH",
   STANDALONE = "STANDALONE",
 }
+
+export type VcsRepositoryGroup = {
+  id: string;
+  name: string;
+};
+
+export type VcsRepositorySummary = {
+  name: string;
+  fullName: string;
+  group: string;
+  url: string;
+  privateRepo: boolean;
+  defaultBranch?: string;
+};
+
+export type VcsRepositoryPage = {
+  items: VcsRepositorySummary[];
+  hasMore: boolean;
+  page: number;
+};
 export enum VcsStatus {
   PENDING = "PENDING",
   COMPLETED = "COMPLETED",
@@ -241,6 +308,8 @@ export type TeamToken = {
 
 // Variables
 
+export type VariableCategory = "TERRAFORM" | "ENV";
+
 export type Variable = {
   id: string;
   attributes: VariableAttributes;
@@ -249,9 +318,11 @@ export type VariableAttributes = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  // Legacy rows may still have no category until remediated; see issue #3395.
+  category: VariableCategory | null;
   description: string;
   sensitive: boolean;
+  incomplete: boolean;
 };
 
 export type FlatVariable = {
@@ -266,7 +337,7 @@ export type UpdateVariableForm = {
   key: string;
   value: string;
   hcl: boolean;
-  category: string;
+  category: VariableCategory;
   description: string;
 };
 
@@ -289,6 +360,43 @@ export type FederatedAttributes = {
   issuerUrl: string;
   audience: string;
 };
+export type FederatedClaim = {
+  id: string;
+  attributes: FederatedClaimAttributes;
+};
+export type FederatedClaimAttributes = {
+  claimKey: string;
+  claimValue: string;
+};
+
+// Notification
+export type NotificationChannelType = "SLACK" | "TEAMS" | "WEBHOOK";
+export type NotificationMessageStyle = "DETAILED" | "SIMPLE";
+
+export type NotificationConfiguration = {
+  id: string;
+  attributes: NotificationConfigurationAttributes;
+  relationships?: {
+    workspace?: { data: { id: string } | null };
+  };
+};
+export type NotificationConfigurationAttributes = {
+  name: string;
+  description?: string;
+  channelType: NotificationChannelType;
+  destinationUrl: string;
+  signingSecret?: string;
+  active: boolean;
+  messageStyle?: NotificationMessageStyle;
+};
+export type NotificationTrigger = {
+  id: string;
+  attributes: NotificationTriggerAttributes;
+};
+export type NotificationTriggerAttributes = {
+  jobStatus: JobStatus;
+};
+
 export type ApiWorkspaceTag = {
   id: string;
   attributes: {
@@ -335,6 +443,24 @@ export type FlatSchedule = {
   id: string;
 } & ScheduleAttributes;
 
+// Projects
+export type Project = {
+  id: string;
+  attributes: ProjectAttributes;
+  relationships: { organization: RelationshipItem };
+};
+
+export type ProjectAttributes = {
+  name: string;
+  description?: string;
+} & AuditFieldBase;
+
+export type ProjectModel = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 // Workspaces
 export type Workspace = {
   id: string;
@@ -343,6 +469,7 @@ export type Workspace = {
     organization: RelationshipItem;
     webhook?: RelationshipItem;
     agent?: RelationshipItem;
+    project?: RelationshipItem;
     history?: RelationshipArray;
   };
 };
@@ -360,6 +487,8 @@ export type WorkspaceAttributes = {
   name: string;
   source: string;
   terraformVersion: string;
+  globalRemoteState?: boolean;
+  sharedIds?: string;
 } & AuditFieldBase;
 
 export type Webhook = {
@@ -368,12 +497,17 @@ export type Webhook = {
 };
 export type WebhookAttributes = {
   remoteHookId: string;
+  migratedV2: boolean;
 };
 export enum WebhookEventType {
   PUSH = "PUSH",
   PULL_REQUEST = "PULL_REQUEST",
   PR_COMMENT = "PR_COMMENT",
   PING = "PING",
+}
+export enum WebhookEventPathType {
+  PATTERN = "PATTERN",
+  REGEX = "REGEX",
 }
 export type WebhookEvent = {
   id: string;
@@ -382,10 +516,12 @@ export type WebhookEvent = {
 export type WebhookEventAttributes = {
   branch: string;
   path: string;
+  pathType: WebhookEventPathType;
   templateId: string;
   priority: number;
   event: WebhookEventType;
   prWorkflowEnabled: boolean;
+  prApplyEnabled: boolean;
 };
 
 // Agent
@@ -404,6 +540,8 @@ export type Resource = {
   name: string;
   provider: string;
   type: string;
+  module?: string;
+  index?: string | number;
   values: Record<string, any>;
   depends_on: string;
   showDrawer: (data: Resource) => void;

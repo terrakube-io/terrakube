@@ -12,6 +12,9 @@ export type WorkspaceListItem = {
   normalizedSource?: string;
   terraformVersion?: string;
   tags?: string[];
+  projectId?: string;
+  projectName?: string;
+  locked?: boolean;
 };
 
 export type ListWorkspacesResponse = {

@@ -49,9 +49,8 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
     }
 
     @Override
-    public String generateAccessToken() {
+    public String generateAccessToken(String workspaceId) {
         log.error("Generate Dex Authentication Private Token");
-        String newToken = "";
 
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
@@ -63,6 +62,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("email", WorkspaceSecurityImpl.EMAIL)
                 .claim("email_verified", true)
                 .claim("name", WorkspaceSecurityImpl.NAME)
+                .claim("workspaceId", workspaceId)
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(Instant.now().plus(30, ChronoUnit.DAYS)))
                 .signWith(key, SignatureAlgorithm.HS256)
@@ -89,9 +89,9 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
     }
 
     @Override
-    public void addTerraformCredentials() {
+    public void addTerraformCredentials(String workspaceId) {
 
-        String token = generateAccessToken();
+        String token = generateAccessToken(workspaceId);
         String credentialFileContent = String.format(CREDENTIALS_CONTENT, registryDomain, token);
         String credentialFileContent2 = "";
         try {

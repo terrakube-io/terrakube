@@ -1,8 +1,23 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Popconfirm, Radio, Space, Spin, Table, Tag, Typography, Checkbox } from "antd";
+import {
+  Button,
+  Form,
+  Input,
+  message,
+  Modal,
+  Popconfirm,
+  Radio,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  Checkbox,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 // Type definitions for Collection Items
@@ -122,17 +137,22 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
     setMode("edit");
     setItemId(id);
     setVisible(true);
-    axiosInstance.get(`organization/${orgid}/collection/${collectionId}/item/${id}`).then((response) => {
-      setItemKey(response.data.data.attributes.key);
-      form.setFieldsValue({
-        key: response.data.data.attributes.key,
-        value: response.data.data.attributes.value,
-        hcl: response.data.data.attributes.hcl,
-        sensitive: response.data.data.attributes.sensitive,
-        category: response.data.data.attributes.category,
-        description: response.data.data.attributes.description,
+    axiosInstance
+      .get(`organization/${orgid}/collection/${collectionId}/item/${id}`)
+      .then((response) => {
+        setItemKey(response.data.data.attributes.key);
+        form.setFieldsValue({
+          key: response.data.data.attributes.key,
+          value: response.data.data.attributes.value,
+          hcl: response.data.data.attributes.hcl,
+          sensitive: response.data.data.attributes.sensitive,
+          category: response.data.data.attributes.category,
+          description: response.data.data.attributes.description,
+        });
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
-    });
   };
 
   const onNew = () => {
@@ -143,9 +163,15 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
   };
 
   const onDelete = (id: string) => {
-    axiosInstance.delete(`organization/${orgid}/collection/${collectionId}/item/${id}`).then(() => {
-      loadItems();
-    });
+    axiosInstance
+      .delete(`organization/${orgid}/collection/${collectionId}/item/${id}`)
+      .then(() => {
+        message.success("Variable deleted successfully");
+        loadItems();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+      });
   };
 
   const onCreate = (values: CollectionItemFormValues) => {
@@ -170,9 +196,13 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         },
       })
       .then(() => {
+        message.success("Variable added successfully");
         loadItems();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
@@ -198,17 +228,27 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         },
       })
       .then(() => {
+        message.success("Variable updated successfully");
         loadItems();
         setVisible(false);
         form.resetFields();
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
 
   const loadItems = () => {
-    axiosInstance.get(`organization/${orgid}/collection/${collectionId}/item`).then((response) => {
-      setItems(response.data.data);
-      setLoading(false);
-    });
+    axiosInstance
+      .get(`organization/${orgid}/collection/${collectionId}/item`)
+      .then((response) => {
+        setItems(response.data.data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -223,15 +263,19 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
           Add and manage variables for this collection. These variables can be applied to workspaces.
         </Typography.Text>
       </div>
-      <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
-        Add variable to collection
-      </Button>
-      <br></br>
+      <SettingsSection maxWidth="100%">
+        <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />}>
+          Add variable to collection
+        </Button>
+        <br></br>
 
-      <h3 style={{ marginTop: "30px" }}>Collection Variables</h3>
-      <Spin spinning={loading} tip="Loading Collection Variables...">
-        <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
-      </Spin>
+        <Typography.Title level={3} style={{ marginTop: "30px" }}>
+          Collection Variables
+        </Typography.Title>
+        <Spin spinning={loading} tip="Loading Collection Variables...">
+          <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
+        </Spin>
+      </SettingsSection>
 
       <Modal
         width="600px"

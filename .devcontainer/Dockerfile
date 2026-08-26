@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/devcontainers/java:dev-17-bookworm
+# dev-17-bookworm
+FROM mcr.microsoft.com/devcontainers/java:dev-17-bookworm@sha256:912bee33a9ff003b2d045218369760b5aa848045a57f5111a0769f44266289ae
 
 # Install necessary packages
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
@@ -45,9 +46,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
     dpkg -i bao_2.2.2_linux_${BAO_ARCH}.deb && \
     rm bao_2.2.2_linux_${BAO_ARCH}.deb
 
-COPY rootCA.pem /usr/local/share/ca-certificates/root.crt
+COPY rootCA.pem* /usr/local/share/ca-certificates/root.crt
 
 RUN update-ca-certificates
 
+RUN mkdir -p /home/vscode/.m2 && chown -R vscode:vscode /home/vscode/.m2
 
 ENTRYPOINT ["sleep", "infinity"]

@@ -196,4 +196,54 @@ public class GcpTerraformStateImpl implements TerraformState {
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
     }
+
+    @Override
+    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = String.format("tfbinary/%s/%s/%s", product, version, product);
+        log.info("Saving {} binary to GCS: {}", product, blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            storage.create(blobInfo, FileUtils.readFileToByteArray(binaryFile));
+            log.info("Successfully cached {} binary version {} in GCS", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache {} binary version {} in GCS: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+        String product = tofu ? "tofu" : "terraform";
+        String blobKey = String.format("tfbinary/%s/%s/%s", product, version, product);
+        log.info("Attempting to restore {} binary from GCS: {}", product, blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            com.google.cloud.storage.Blob blob = storage.get(blobId);
+            if (blob == null || !blob.exists()) {
+                log.info("{} binary version {} not found in GCS cache", product, version);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            byte[] content = storage.readAllBytes(blobId);
+            FileUtils.writeByteArrayToFile(targetFile, content);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored {} binary", product);
+            }
+
+            log.info("Successfully restored {} binary version {} from GCS", product, version);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} from GCS: {}", product, version, e.getMessage());
+            return false;
+        }
+    }
 }

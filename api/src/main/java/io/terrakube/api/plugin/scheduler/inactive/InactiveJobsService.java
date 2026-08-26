@@ -1,12 +1,12 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
+import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.PostConstruct;
 import java.text.ParseException;
 import java.util.UUID;
 

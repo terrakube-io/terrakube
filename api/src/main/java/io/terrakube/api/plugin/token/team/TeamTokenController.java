@@ -122,6 +122,17 @@ public class TeamTokenController {
                permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
                permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
             });
+            if (workspace.getProject() != null) {
+                workspace.getProject().getProjectAccess().stream()
+                        .filter(pa -> groups.contains(pa.getName()))
+                        .forEach(pa -> {
+                            permissions.setManageState(permissions.manageState || rbacService.canManageState(pa));
+                            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(pa));
+                            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(pa));
+                            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(pa));
+                            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(pa));
+                        });
+            }
         });
 
         log.debug("Permissions with Workspace: {}", permissions);

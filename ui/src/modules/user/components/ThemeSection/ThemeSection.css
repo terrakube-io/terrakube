@@ -31,3 +31,7 @@
 .ant-select-item-option-content .color-option {
   padding: 0;
 }
+
+[data-theme="dark"] .color-box {
+  border-color: rgba(255, 255, 255, 0.12);
+}

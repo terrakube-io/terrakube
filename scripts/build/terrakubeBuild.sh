@@ -28,9 +28,10 @@ docker tag $(docker images open-registry -q) azbuilder/open-registry:latest
 docker tag $(docker images executortemp -q) azbuilder/executor:latest
 
 # Build Terrakube UI Image
-cd ui 
+cd ui
 
 # Install UI dependencies
+corepack enable
 yarn install
 
 # Build docker image

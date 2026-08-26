@@ -80,7 +80,7 @@ public class JwksController {
             jwkElement.setE(exponent);
             jwkElement.setKid(kid);
             jwkElement.setUse("sig");
-            jwkElement.setAlg("RS256");
+            jwkElement.setAlg("RS512");
 
             jwkData.getKeys().add(jwkElement);
 

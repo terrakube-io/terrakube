@@ -1,4 +1,4 @@
-import { Button, Tabs } from "antd";
+import { Button, Tabs, Typography } from "antd";
 import { HiOutlineExternalLink } from "react-icons/hi";
 
 type Props = {
@@ -8,12 +8,16 @@ type Props = {
 export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
   return (
     <div>
-      <h2>Waiting for configuration</h2>
+      <Typography.Title level={2} style={{ margin: 0 }}>
+        Waiting for configuration
+      </Typography.Title>
       <div className="App-text">
         This workspace currently has no Terraform configuration files associated with it. Terrakube is waiting for the
         configuration to be uploaded.
       </div>
-      <h3>CLI-driven workflow</h3>
+      <Typography.Title level={3} style={{ margin: 0 }}>
+        CLI-driven workflow
+      </Typography.Title>
       <div className="App-text">
         <ol>
           <li>
@@ -92,7 +96,9 @@ export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
           CLI workflow guide.&nbsp; <HiOutlineExternalLink />.
         </Button>
         <br /> <br />
-        <h3>API-driven workflow</h3>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          API-driven workflow
+        </Typography.Title>
         Advanced users can follow{" "}
         <Button
           className="link"

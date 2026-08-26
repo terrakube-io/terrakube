@@ -17,4 +17,5 @@
     <include file="/db/changelog/demo-data/limited-access.xml"/>
     <include file="/db/changelog/demo-data/h2-test-values.xml" />
     <include file="/db/changelog/demo-data/rbac-v2-demo-data.xml" />
+    <include file="/db/changelog/demo-data/project-access-demo-data.xml" />
 </databaseChangeLog>

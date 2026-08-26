@@ -121,26 +121,32 @@ public class DynamicCredentialsService {
     }
 
     private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId) {
+        return generateJwt(organizationName, workspaceName, tokenAudience, organizationId, workspaceId, jobId, null);
+    }
+
+    private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId, Map<String, Object> extraClaims) {
         String jwtToken = "";
         if (privateKeyPath != null && !privateKeyPath.isEmpty()) {
             try {
                 Instant now = Instant.now();
-                jwtToken = Jwts.builder()
-                        .setSubject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
+                var builder = Jwts.builder()
+                        .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
+                        //.audience().add(tokenAudience).and()
                         .setAudience(tokenAudience)
-                        .setId(UUID.randomUUID().toString())
-                        .setHeaderParam("kid", kid)
+                        .id(UUID.randomUUID().toString())
+                        .header().add("kid", kid).and()
                         .claim("terrakube_workspace_id", workspaceId)
                         .claim("terrakube_organization_id", organizationId)
                         .claim("terrakube_workspace_name", workspaceName)
                         .claim("terrakube_organization_name", organizationName)
                         .claim("terrakube_job_id", String.valueOf(jobId))
-                        .setIssuedAt(Date.from(now))
-                        .setIssuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
-                        .setExpiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
-                        .signWith(getPrivateKey())
+                        .issuedAt(Date.from(now))
+                        .issuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
+                        .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)));
+                if (extraClaims != null) extraClaims.forEach(builder::claim);
+                jwtToken = builder
+                        .signWith(getPrivateKey(), Jwts.SIG.RS512)
                         .compact();
-
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
@@ -153,20 +159,27 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables) {
+        Map<String, Object> extraClaims = null;
+        if (Boolean.parseBoolean(workspaceEnvVariables.get("ENABLE_AWS_SESSION_TAGS"))) {
+            extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
+        }
+
         String awsWebIdentityToken = generateJwt(
                 job.getOrganization().getName(),
                 job.getWorkspace().getName(),
                 workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"),
                 job.getOrganization().getId().toString(),
                 job.getWorkspace().getId().toString(),
-                job.getId()
+                job.getId(),
+                extraClaims
         );
 
         log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);
 
         workspaceEnvVariables.put("TERRAKUBE_AWS_CREDENTIALS_FILE", awsWebIdentityToken);
         workspaceEnvVariables.put("AWS_ROLE_ARN", workspaceEnvVariables.get("WORKLOAD_IDENTITY_ROLE_AWS"));
-        workspaceEnvVariables.put("AWS_WEB_IDENTITY_TOKEN_FILE", getDefaultExecutorPath(job) + "/terrakube_config_dynamic_credentials_aws.txt");
+        // AWS_WEB_IDENTITY_TOKEN_FILE is set by the executor once it knows the absolute
+        // path of the file it wrote (the workspace clone dir is only known there).
 
         return workspaceEnvVariables;
     }
@@ -195,7 +208,7 @@ public class DynamicCredentialsService {
                 "    \"token_url\": \"https://sts.googleapis.com/v1/token\",\n" +
                 "    \"service_account_impersonation_url\": \"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken\",\n" +
                 "    \"credential_source\": {\n" +
-                "      \"file\": \"%s/terrakube_dynamic_credentials.json\",\n" +
+                "      \"file\": \"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\",\n" +
                 "      \"format\": {\n" +
                 "        \"type\": \"json\",\n" +
                 "        \"subject_token_field_name\": \"access_token\"\n" +
@@ -203,21 +216,43 @@ public class DynamicCredentialsService {
                 "    }\n" +
                 "  }";
 
-        String executorDirectory = getDefaultExecutorPath(job);
-
+        // The ${WORKSPACE_DIRECTORY} placeholder is substituted by the executor when
+        // it writes the config to disk (only the executor knows the workspace clone path).
         String audience = workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP");
         String serviceAccountEmail = workspaceEnvVariables.get("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL");
 
-        googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail, executorDirectory);
+        googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail);
 
         log.debug("TERRAKUBE_GCP_CREDENTIALS_FILE: {}", googleCredentialsFile);
         log.debug("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE: {}", googleCredentialConfigFile);
 
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_FILE", googleCredentialsFile);
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE", googleCredentialConfigFile);
-        workspaceEnvVariables.put("GOOGLE_APPLICATION_CREDENTIALS", executorDirectory + "/terrakube_config_dynamic_credentials.json");
+        // GOOGLE_APPLICATION_CREDENTIALS is set by the executor once it knows the absolute
+        // path of the file it wrote (the workspace clone dir is only known there).
 
         return workspaceEnvVariables;
+    }
+
+    private Map<String, Object> buildAwsSessionTags(Job job) {
+        Map<String, List<String>> principalTags = new LinkedHashMap<>();
+        principalTags.put("terrakube:org",       List.of(sanitizeTag(job.getOrganization().getName())));
+        principalTags.put("terrakube:workspace", List.of(sanitizeTag(job.getWorkspace().getName())));
+        var project = job.getWorkspace().getProject();
+        if (project != null) {
+            principalTags.put("terrakube:project", List.of(sanitizeTag(project.getName())));
+        }
+        return Map.of(
+                "principal_tags",      principalTags,
+                "transitive_tag_keys", new ArrayList<>(principalTags.keySet()));
+    }
+
+    private String sanitizeTag(String value) {
+        if (value == null) {
+            return "";
+        }
+        String sanitized = value.replaceAll("[^A-Za-z0-9 _.:/=+@-]", "_");
+        return sanitized.length() > 256 ? sanitized.substring(0, 256) : sanitized;
     }
 
     private PrivateKey getPrivateKey() throws Exception {
@@ -261,14 +296,5 @@ public class DynamicCredentialsService {
         }
 
         return publicKeyPEM;
-    }
-
-    private static String getDefaultExecutorPath(Job job) {
-        return String.format(
-                "%s/.terraform-spring-boot/executor/%s/%s",
-                FileUtils.getUserDirectoryPath(),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString()
-        );
     }
 }

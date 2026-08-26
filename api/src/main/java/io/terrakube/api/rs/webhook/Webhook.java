@@ -28,7 +28,9 @@ import lombok.Setter;
 @Getter
 @Setter
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WebhookManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WebhookManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookManageHook.class)
 @Entity(name = "webhook")
 public class Webhook extends GenericAuditFields {
@@ -44,6 +46,9 @@ public class Webhook extends GenericAuditFields {
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     private Workspace workspace;
     
+    @Column(name = "migrated_v2")
+    private boolean migratedV2 = false;
+
     @OneToMany(mappedBy = "webhook", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<WebhookEvent> events;
 }

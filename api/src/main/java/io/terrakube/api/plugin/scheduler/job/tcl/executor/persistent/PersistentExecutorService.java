@@ -2,8 +2,14 @@ package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Optional;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -12,14 +18,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import io.netty.channel.ChannelOption;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import lombok.extern.slf4j.Slf4j;
 import reactor.netty.http.client.HttpClient;
+
+import javax.crypto.SecretKey;
 
 @Slf4j
 @Service
@@ -34,34 +46,70 @@ public class PersistentExecutorService {
     @Autowired
     private WebClient.Builder webClientBuilder;
 
+    @Value("${io.terrakube.token.internal}")
+    private String base64KeyInternal;
+
     // Manual all-args constructor because Lombok will not copy @Value
     public PersistentExecutorService(
         @Value("${io.terrakube.executor.url}") String executorUrl,
         @Autowired GlobalVarRepository globalVarRepository,
-        @Autowired WebClient.Builder webClientBuilder) {
+        @Autowired WebClient.Builder webClientBuilder,
+        @Value("${io.terrakube.token.internal}") String internalJwtSecret) {
             this.executorUrl = executorUrl;
             this.globalVarRepository = globalVarRepository;
             this.webClientBuilder = webClientBuilder;
+            this.base64KeyInternal = internalJwtSecret;
     }
 
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
+
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
+        HttpClient httpClient = HttpClient.create()
+                .proxyWithSystemProperties()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MS)
+                .responseTimeout(RESPONSE_TIMEOUT);
+
         WebClient webClient = webClientBuilder
-                .clientConnector(
-                        new ReactorClientHttpConnector(
-                                HttpClient.create().proxyWithSystemProperties()))
+                .clone()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
+
+        String executorUrlForRequest;
+        try {
+            executorUrlForRequest = getExecutorUrl(job);
+        } catch (URISyntaxException e) {
+            throw new ExecutionException(e);
+        }
 
         ResponseEntity<ExecutorContext> response = null;
         try {
             response = webClient.post()
-                    .uri(getExecutorUrl(job))
+                    .uri(executorUrlForRequest)
                     .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + generateSystemToken())
                     .bodyValue(executorContext)
                     .retrieve()
                     .toEntity(ExecutorContext.class)
                     .block();
         } catch (Exception ex) {
-            throw new ExecutionException(ex);
+            if (ex instanceof WebClientRequestException) {
+                // No response was ever received: connection refused, timed out, or (in Kubernetes,
+                // when every replica is mid-job and REFUSING_TRAFFIC) the Service has no ready
+                // endpoints. This is a capacity problem, not a broken job, so it's retryable.
+                String hint = String.format(
+                        " Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).",
+                        executorUrlForRequest);
+                throw new ExecutorUnavailableException(new Throwable(ex.getMessage() + hint, ex));
+            }
+            if (ex instanceof WebClientResponseException wcre
+                    && wcre.getStatusCode().equals(HttpStatus.SERVICE_UNAVAILABLE)) {
+                // The executor pod's per-pod capacity gate was already held by another job
+                // (persistent-executor-admission-control) - retryable, not a job failure.
+                throw new ExecutorUnavailableException(new Throwable(
+                        "Executor at " + executorUrlForRequest + " is busy (503), will retry", ex));
+            }
+            throw new ExecutionException(new Throwable(ex.getMessage(), ex));
         }
 
         log.debug("Sending Job: /n {}", executorContext.toBuilder()
@@ -97,5 +145,21 @@ public class PersistentExecutorService {
             log.info("No default executor found, using default executor url {}", this.executorUrl);
             return this.executorUrl;
         }
+    }
+
+    public String generateSystemToken() {
+        return Jwts.builder()
+                .issuer("TERRAKUBE_INTERNAL")
+                .subject(String.format("%s (Token)", "Terrakube Internal"))
+                .audience().add("TERRAKUBE_INTERNAL").and()
+                .id(UUID.randomUUID().toString())
+                .claim("email", "internal@terrakube.io")
+                .claim("email_verified", true)
+                .claim("name", "Terrakube Api")
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(
+                        Instant.now().plus(10, ChronoUnit.SECONDS)
+                        )
+                ).signWith(Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64KeyInternal))).compact();
     }
 }

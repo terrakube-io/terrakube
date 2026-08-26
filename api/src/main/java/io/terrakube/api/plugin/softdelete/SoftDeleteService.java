@@ -5,16 +5,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.scheduler.workspace.DeleteStorageBackendJob;
+import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
-import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 
 import java.text.ParseException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,9 +29,15 @@ public class SoftDeleteService {
 
     ScheduleJobService scheduleJobService;
 
+    ModuleRefreshService moduleRefreshService;
+
+    ModuleRepository moduleRepository;
+
     ScheduleRepository scheduleRepository;
 
     WorkspaceRepository workspaceRepository;
+
+    JobRepository jobRepository;
 
     Scheduler scheduler;
 
@@ -48,11 +56,11 @@ public class SoftDeleteService {
     }
 
     public void deleteWorkspaceStorage(Workspace workspace){
-        List<Job> jobList = workspace.getJob();
-        List<Integer> jobIdList = new ArrayList();
-        jobList.forEach(job -> jobIdList.add(job.getId()));
         String workspaceId = workspace.getId().toString();
         String organizationId = workspace.getOrganization().getId().toString();
+        // Use a native query so soft-deleted jobs are also included, otherwise the
+        // @SQLRestriction on Job would hide them and leave their output data orphaned.
+        List<Integer> jobIdList = jobRepository.findAllJobIdsByWorkspaceIncludingDeleted(workspaceId);
 
         try {
             log.info("Setup job to delete storage for organization {} workspace {} jobs {}", organizationId, workspaceId, jobIdList);
@@ -85,6 +93,8 @@ public class SoftDeleteService {
 
     public void disableOrganization(Organization organization){
         log.info("Disable Organization Id: {}", organization.getId().toString());
+        disableOrganizationModules(organization);
+
         for(Workspace workspace: organization.getWorkspace()){
             log.info("Disable Workspace: {}", workspace.getId().toString());
             disableWorkspaceSchedules(workspace);
@@ -92,5 +102,17 @@ public class SoftDeleteService {
             workspaceRepository.save(workspace);
         }
 
+    }
+
+    private void disableOrganizationModules(Organization organization) {
+        for (Module module : moduleRepository.findByOrganizationId(organization.getId())) {
+            try {
+                log.info("Disable module refresh schedule for module {}", module.getId());
+                moduleRefreshService.deleteTask(module.getId().toString());
+            } catch (SchedulerException e) {
+                log.error("Failed to delete module refresh task for module {}, error {}", module.getId(),
+                        e.getMessage());
+            }
+        }
     }
 }
