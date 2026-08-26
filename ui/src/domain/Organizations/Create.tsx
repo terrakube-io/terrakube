@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { IconSelector } from "./IconSelector";
+import { organizationNameRules } from "../../config/validation";
 import { useState } from "react";
 import "./Organizations.css";
 const { Content } = Layout;
@@ -120,10 +121,7 @@ export const CreateOrganization = ({ setOrganizationName }: Props) => {
               label="Organization name"
               tooltip="e.g. company-name"
               extra=" Organization names must be unique and will be part of your resource names used in various tools, for example development, production, finance."
-              rules={[
-                { required: true, message: "This field is required!" },
-                { pattern: /^[a-zA-Z0-9]*$/, message: "Only letters and numbers are allowed!" },
-              ]}
+              rules={organizationNameRules}
             >
               <Input />
             </Form.Item>

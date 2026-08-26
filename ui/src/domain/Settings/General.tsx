@@ -17,6 +17,7 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { Organization, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 
 const DEFAULT_ICON = "FaBuilding";
@@ -169,7 +170,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
             }}
           >
             <SettingsSection title="Identity" description="Basic information about this organization.">
-              <Form.Item name="name" label="Name">
+              <Form.Item name="name" label="Name" rules={organizationNameRules}>
                 <Input />
               </Form.Item>
               <Form.Item
