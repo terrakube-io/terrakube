@@ -49,9 +49,14 @@ export function useOrgPermissions(orgIdOverride?: string) {
 
   useEffect(() => {
     if (!orgId) {
+      setPermissions(defaultPermissions);
       setLoading(false);
       return;
     }
+
+    let cancelled = false;
+    setPermissions(defaultPermissions);
+    setLoading(true);
 
     const url = `${
       new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
@@ -60,6 +65,7 @@ export function useOrgPermissions(orgIdOverride?: string) {
     axiosInstance
       .get(url)
       .then((response) => {
+        if (cancelled) return;
         setPermissions({
           manageState: response.data.manageState ?? false,
           manageWorkspace: response.data.manageWorkspace ?? false,
@@ -78,8 +84,14 @@ export function useOrgPermissions(orgIdOverride?: string) {
         // Keep default (all false) on error — user sees read-only UI
       })
       .finally(() => {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [orgId]);
 
   return { permissions, loading };
