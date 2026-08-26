@@ -576,12 +576,7 @@ export const WorkspaceDetails = ({
                         ),
                       }}
                       dataSource={
-                        jobs.length > 0
-                          ? jobs
-                              .sort((a: any, b: any) => a.id - b.id)
-                              .reverse()
-                              .slice(0, 1)
-                          : []
+                        jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id).slice(0, 1) : []
                       }
                       renderItem={(item) => (
                         <List.Item>

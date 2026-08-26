@@ -109,7 +109,7 @@ export default function RunList({ jobs, onRunClick }: Props) {
     return "Terraform";
   };
 
-  const sortedJobs = filteredJobs.sort((a, b) => parseInt(a.id) - parseInt(b.id)).reverse();
+  const sortedJobs = [...filteredJobs].sort((a, b) => parseInt(b.id) - parseInt(a.id));
   const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Find the job with highest ID to mark as current
