@@ -19,6 +19,7 @@ import "./Home.css";
 import AppSidebar from "@/modules/layout/AppSidebar/AppSidebar";
 import LoadingFallback from "@/components/LoadingFallback";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
+import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
 import { FlatOrganization } from "../types";
 const { Footer } = Layout;
@@ -148,32 +149,27 @@ const AppLayout = () => {
   const { colorScheme, themeMode } = useTheme();
 
   useEffect(() => {
-    const pathname = window.location.pathname;
-    const paths = pathname.split("/");
-    const orgIdIndex = paths.indexOf("organizations") + 1;
+    const orgId = getOrgIdFromPathname(window.location.pathname);
 
-    if (orgIdIndex > 0 && orgIdIndex < paths.length) {
-      const orgId = paths[orgIdIndex];
-      if (orgId) {
-        const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
-        const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+    if (orgId) {
+      const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
+      const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
 
-        if (storedOrgName && storedOrgId === orgId) {
-          setOrganizationName(storedOrgName);
-        } else {
-          organizationService
-            .getOrganizationNameGraphQL(orgId)
-            .then((orgName) => {
-              if (orgName) {
-                sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
-                sessionStorage.setItem(ORGANIZATION_NAME, orgName);
-                setOrganizationName(orgName);
-              }
-            })
-            .catch((err) => {
-              console.error("Failed to load organization:", err);
-            });
-        }
+      if (storedOrgName && storedOrgId === orgId) {
+        setOrganizationName(storedOrgName);
+      } else {
+        organizationService
+          .getOrganizationNameGraphQL(orgId)
+          .then((orgName) => {
+            if (orgName) {
+              sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
+              sessionStorage.setItem(ORGANIZATION_NAME, orgName);
+              setOrganizationName(orgName);
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to load organization:", err);
+          });
       }
     } else {
       const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);

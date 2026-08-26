@@ -33,6 +33,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
+import { getOrgIdFromPathname } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/OrganizationSelector";
 import { HelpMenu } from "@/components/HelpMenu";
@@ -93,7 +94,7 @@ export default function AppSidebar({
   const navigate = useNavigate();
   const { token } = theme.useToken();
   const params = location.pathname.split("/");
-  const orgIdFromUrl = params.length > 2 && params[1] === "organizations" && params[2] !== "create" ? params[2] : null;
+  const orgIdFromUrl = getOrgIdFromPathname(location.pathname);
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE) || orgIdFromUrl;
   const isSettingsContext = orgIdFromUrl !== null && params[3] === "settings";
   const isWorkspaceDetailContext = orgIdFromUrl !== null && params[3] === "workspaces" && Boolean(params[4]);
