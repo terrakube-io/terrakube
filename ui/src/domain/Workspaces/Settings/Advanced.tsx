@@ -1,7 +1,7 @@
 import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Popconfirm, Space, Typography, message } from "antd";
 import { useNavigate } from "react-router-dom";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { genericHeader } from "../Workspaces";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
@@ -54,7 +54,7 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           },
         }
       )
-      .then(() => {
+      .then(() =>
         axiosInstance.patch(`organization/${organizationId}/workspace/${id}`, body, genericHeader).then((response) => {
           if (response.status === 204) {
             message.success("Workspace deleted successfully");
@@ -62,7 +62,11 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           } else {
             message.error("Workspace deletion failed");
           }
-        });
+        })
+      )
+      .catch((error) => {
+        console.error("error deleting workspace:", error);
+        message.error(getErrorMessage(error));
       });
   };
 
