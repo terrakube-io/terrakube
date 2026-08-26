@@ -243,13 +243,20 @@ const AppLayout = () => {
 
 const App = () => {
   const auth = useAuth();
-  const expiry = auth?.user?.expires_at;
   const basePath = getBasePath();
 
-  // Checking with the expiry time in the localstorage and when it has crossed the access has been revoked so It will clear the local storage and by default with no localstorage object it will route to login page.
-  if (auth.isAuthenticated && auth?.user && expiry !== undefined && Math.floor(Date.now() / 1000) > expiry) {
-    localStorage.clear();
-  }
+  useEffect(() => {
+    const removeExpired = auth.events.addAccessTokenExpired(() => {
+      auth.removeUser();
+    });
+    const removeSignedOut = auth.events.addUserSignedOut(() => {
+      auth.removeUser();
+    });
+    return () => {
+      removeExpired();
+      removeSignedOut();
+    };
+  }, [auth.events, auth.removeUser]);
 
   if (auth.isLoading) {
     return null;
