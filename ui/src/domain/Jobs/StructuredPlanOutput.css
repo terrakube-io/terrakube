@@ -1012,6 +1012,14 @@
   color: #3fb950;
 }
 
+.structured-plan-inProgress {
+  color: rgba(0, 0, 0, 0.65);
+}
+
+[data-theme="dark"] .structured-plan-inProgress {
+  color: rgba(255, 255, 255, 0.65);
+}
+
 @media (max-width: 960px) {
   .structured-plan-toolbar {
     align-items: stretch;
