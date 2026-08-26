@@ -188,6 +188,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                         Edit
                       </Button>,
                       <Popconfirm
+                        okButtonProps={{ danger: true }}
                         title="This will permanently delete this notification configuration. Are you sure?"
                         onConfirm={() => onDelete(item.id)}
                         okText="Yes"

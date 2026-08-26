@@ -105,6 +105,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
               Edit
             </Button>
             <Popconfirm
+              okButtonProps={{ danger: true }}
               onConfirm={() => {
                 onDelete(record.id);
               }}

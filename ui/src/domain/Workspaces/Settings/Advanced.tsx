@@ -94,6 +94,7 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
         }
       >
         <Popconfirm
+          okButtonProps={{ danger: true }}
           onConfirm={() => {
             onDelete(workspace);
           }}

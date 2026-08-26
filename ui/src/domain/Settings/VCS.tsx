@@ -207,6 +207,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
                           </Button>
                           &nbsp;&nbsp;&nbsp;
                           <Popconfirm
+                            okButtonProps={{ danger: true }}
                             onConfirm={() => {
                               onDelete(item.id);
                             }}

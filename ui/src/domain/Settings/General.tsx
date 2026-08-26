@@ -250,6 +250,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
         }
       >
         <Popconfirm
+          okButtonProps={{ danger: true }}
           onConfirm={() => {
             onDelete();
           }}

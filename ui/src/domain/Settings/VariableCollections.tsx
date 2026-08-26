@@ -255,6 +255,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                           Edit
                         </Button>
                         <Popconfirm
+                          okButtonProps={{ danger: true }}
                           title="Delete this variable collection?"
                           description="This will permanently delete this variable collection and all its variables. Are you sure?"
                           onConfirm={(e) => {
