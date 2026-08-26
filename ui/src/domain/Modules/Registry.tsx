@@ -236,8 +236,6 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         { label: "Registry", path: `/organizations/${orgid}/registry` },
       ]}
       fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
       actions={
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
