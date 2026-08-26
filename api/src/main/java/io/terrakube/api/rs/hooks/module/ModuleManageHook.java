@@ -17,6 +17,7 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
+import org.quartz.TriggerKey;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -65,7 +66,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     case POSTCOMMIT:
                         try {
                             log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(), module.getName(), module.getProvider());
-                            moduleRefreshService.createTask(300, module.getId().toString(), true);
+                            moduleRefreshService.createRefreshTask(module.getId().toString(), true);
                         } catch (SchedulerException e) {
                             log.error("Failed to create module refresh task for {}/{}/{}, error {}",
                                     module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
@@ -141,10 +142,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 module.getName(),
                 module.getProvider());
         try {
-            String triggerKey = moduleRefreshService.getJobPrefix() + module.getId();
-            Trigger trigger = scheduler.getTrigger(TriggerBuilder.newTrigger()
-                    .withIdentity(triggerKey)
-                    .build().getKey());
+            Trigger trigger = scheduler
+                    .getTrigger(TriggerKey.triggerKey(moduleRefreshService.getJobPrefix() + module.getId()));
 
             if (trigger != null) {
                 Date nextFireTime = trigger.getNextFireTime();
@@ -157,7 +156,7 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(),
                         module.getName(),
                         module.getProvider());
-                moduleRefreshService.createTask(300, module.getId().toString(), true);
+                moduleRefreshService.createRefreshTask(module.getId().toString(), true);
             }
         } catch (SchedulerException e) {
             log.error("Failed to get next trigger time: {}", e.getMessage());
