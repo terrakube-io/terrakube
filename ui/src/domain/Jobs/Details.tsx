@@ -1,23 +1,16 @@
-import {
-  CheckCircleOutlined,
-  CheckOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
-  CloseOutlined,
-  CommentOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
 import { DateTime } from "luxon";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
+import WorkspaceStatusTag from "../../modules/workspaces/components/WorkspaceStatusTag";
+import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
+import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
@@ -38,7 +31,6 @@ import {
 type Props = {
   jobId: string;
 };
-
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
@@ -264,7 +256,6 @@ export const DetailsJob = ({ jobId }: Props) => {
       return null;
     }
 
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- purely a propagation
     // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
     return (
       <div onClick={(event) => event.stopPropagation()}>
@@ -290,6 +281,8 @@ export const DetailsJob = ({ jobId }: Props) => {
       return renderConsoleOutput(item);
     }
 
+    const isStepRunning = !isTerminalJobStatus(item.status);
+
     const structuredContent = structuredApplyChanges ? (
       <StructuredPlanOutput
         changes={structuredApplyChanges}
@@ -297,9 +290,15 @@ export const DetailsJob = ({ jobId }: Props) => {
         applyMode
         outputs={stepOutputs}
         jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
       />
     ) : structuredChanges ? (
-      <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} jobDiagnostics={stepJobDiagnostics} />
+      <StructuredPlanOutput
+        changes={structuredChanges}
+        outputLog={item.outputLog}
+        jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
+      />
     ) : (
       <div>{parse(template ?? "")}</div>
     );
@@ -321,7 +320,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <span>
         {getIconStatus(item)}
         <h3 style={{ display: "inline" }}>
-          &nbsp; {item.name} {item.status}
+          &nbsp; {item.name} {getWorkspaceStatusText(item.status)}
         </h3>
       </span>
     );
@@ -353,23 +352,12 @@ export const DetailsJob = ({ jobId }: Props) => {
       });
   };
 
+  // Delegates to the same status -> icon/color map WorkspaceStatusTag uses, so a step's icon
+  // always matches the color/shape used everywhere else status is shown for the same status value.
   const getIconStatus = (item: JobStep) => {
-    switch (item.status) {
-      case "completed":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "noChanges":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "notExecuted":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#fa8f37" }} />;
-      case "running":
-        return <SyncOutlined spin style={{ color: "#108ee9", fontSize: "20px" }} />;
-      case "failed":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      case "cancelled":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      default:
-        return <ClockCircleOutlined style={{ fontSize: "20px" }} />;
-    }
+    return cloneElement(getWorkspaceStatusIcon(item.status), {
+      style: { fontSize: "20px", color: statusColors[item.status] },
+    });
   };
 
   const handleApprove = () => {
@@ -626,42 +614,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             ? renderPrCommentErrorAlert(job.data.attributes.prCommentError, job.data.attributes.prNumber)
             : null}
           <div>
-            <Tag
-              icon={
-                job.data.attributes.status === "completed" ? (
-                  <CheckCircleOutlined />
-                ) : job.data.attributes.status === "running" ? (
-                  <SyncOutlined spin />
-                ) : job.data.attributes.status === "waitingApproval" ? (
-                  <ExclamationCircleOutlined />
-                ) : job.data.attributes.status === "cancelled" ? (
-                  <StopOutlined />
-                ) : job.data.attributes.status === "failed" ? (
-                  <StopOutlined />
-                ) : (
-                  <ClockCircleOutlined />
-                )
-              }
-              color={
-                job.data.attributes.status === "completed"
-                  ? "#2eb039"
-                  : job.data.attributes.status === "noChanges"
-                    ? "#2eb039"
-                    : job.data.attributes.status === "notExecuted"
-                      ? "#fa8f37"
-                      : job.data.attributes.status === "running"
-                        ? "#108ee9"
-                        : job.data.attributes.status == "waitingApproval"
-                          ? "#fa8f37"
-                          : job.data.attributes.status == "rejected"
-                            ? "#FB0136"
-                            : job.data.attributes.status == "failed"
-                              ? "#FB0136"
-                              : ""
-              }
-            >
-              {job.data.attributes.status}
-            </Tag>{" "}
+            <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
             <h2 style={{ display: "inline" }}>Triggered via UI</h2>
           </div>
 
@@ -730,20 +683,17 @@ export const DetailsJob = ({ jobId }: Props) => {
           {steps.length > 0 ? (
             steps.map((item) => {
               const stepLabel = renderStepLabel(item);
-
-              if (!shouldStepBeCollapsible(item)) {
-                return (
-                  <Card key={item.id} size="small" style={{ width: "100%" }}>
-                    {stepLabel}
-                  </Card>
-                );
-              }
+              // Steps with nothing to show yet (e.g. a pending approval step) still render through
+              // Collapse rather than a bare Card - a disabled panel keeps the same arrow/label/extra
+              // grid as every expandable step, so rows stay in one aligned column instead of the
+              // Card variant's text sitting flush left of the others.
+              const isCollapsible = shouldStepBeCollapsible(item);
 
               return (
                 <Collapse
                   key={item.id}
                   style={{ width: "100%" }}
-                  activeKey={activeStepKeys[item.id] ?? []}
+                  activeKey={isCollapsible ? (activeStepKeys[item.id] ?? []) : []}
                   onChange={(keys) => {
                     userToggledStepIds.current.add(item.id);
                     setActiveStepKeys((previous) => ({
@@ -755,8 +705,9 @@ export const DetailsJob = ({ jobId }: Props) => {
                     {
                       key: "2",
                       label: stepLabel,
-                      extra: renderStepExtra(item),
-                      children: renderStepContent(item),
+                      collapsible: isCollapsible ? undefined : "disabled",
+                      extra: isCollapsible ? renderStepExtra(item) : undefined,
+                      children: isCollapsible ? renderStepContent(item) : undefined,
                     },
                   ]}
                 />
@@ -771,8 +722,14 @@ export const DetailsJob = ({ jobId }: Props) => {
               <Card
                 title={
                   <span style={{ fontSize: "14px" }}>
-                    <b>Needs Confirmation:</b> Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to
-                    continue.
+                    <b>Needs Confirmation:</b>{" "}
+                    {job.data.attributes.approvalTeam ? (
+                      <>
+                        Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to continue.
+                      </>
+                    ) : (
+                      "Someone must confirm to continue."
+                    )}
                   </span>
                 }
               >

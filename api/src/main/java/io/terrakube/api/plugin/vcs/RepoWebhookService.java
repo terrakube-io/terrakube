@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -36,6 +38,9 @@ import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -53,6 +58,9 @@ public class RepoWebhookService {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     PrCommentService prCommentService;
+    RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
+    ObjectMapper objectMapper;
+    Executor workspaceFanoutExecutor;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -159,8 +167,16 @@ public class RepoWebhookService {
         }
     }
 
+    // @Transactional so repoWebhook.getVcs() (lazily loaded, accessed below by isGitLab/isAzureDevOps
+    // for every provider) has an open session to load through - without it, findById()'s own
+    // implicit per-call transaction closes before this method body runs, leaving vcs an
+    // uninitialized proxy and throwing LazyInitializationException on every delivery. This is safe
+    // for the immediate-dispatch ordering: a Spring transactional proxy commits the transaction
+    // (including repoWebhookDeliveryTransactions.enqueue()'s nested, REQUIRED-propagation insert)
+    // before returning control to the caller, so by the time WebHookController receives the
+    // deliveryId and calls dispatchAsync, the enqueue is already committed and visible.
     @Transactional
-    public void processV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
+    public UUID acceptV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
         RepoWebhook repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId))
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
 
@@ -181,6 +197,19 @@ public class RepoWebhookService {
             throw new SecurityException("HMAC signature verification failed");
         }
 
+        String headersJson;
+        try {
+            headersJson = objectMapper.writeValueAsString(headers);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize webhook headers", e);
+        }
+        return repoWebhookDeliveryTransactions.enqueue(repoWebhook, jsonPayload, headersJson);
+    }
+
+    public void processClaimedDelivery(RepoWebhook repoWebhook, String jsonPayload, Map<String, String> headers) {
+        boolean azureDevOps = isAzureDevOps(repoWebhook);
+        boolean gitlab = isGitLab(repoWebhook);
+
         WebhookResult webhookResult;
         if (azureDevOps) {
             webhookResult = azDevOpsWebhookService.parseAzDevOpsPayload(jsonPayload, headers);
@@ -191,28 +220,59 @@ public class RepoWebhookService {
         }
 
         if (webhookResult.getEvent() != null && webhookResult.getEvent().equals("ping")) {
-            log.info("Received ping for repo webhook {}", repoWebhookId);
+            log.info("Received ping for repo webhook {}", repoWebhook.getId());
             return;
         }
 
         if (!webhookResult.isValid()) {
-            log.warn("Invalid webhook result for repo webhook {}", repoWebhookId);
+            log.warn("Invalid webhook result for repo webhook {}", repoWebhook.getId());
             return;
         }
 
         String normalizedUrl = repoWebhook.getRepositoryUrl();
+
+        // GitHub/GitLab PR file changes are a repo-level fact (which files a PR touched doesn't
+        // depend on whose credentials asked), but processWorkspaceWebhook used to fetch them fresh
+        // per workspace - on a shared webhook with N workspaces, that's N redundant paginated API
+        // calls for the exact same answer. Fetch once here with the repo webhook's own Vcs and let
+        // every workspace below reuse it; processWorkspaceWebhook still fetches per-workspace as a
+        // fallback if this didn't populate anything (no repo-level Vcs, or the fetch came back
+        // empty - which also covers a repo-level credential that can't read this PR, so a workspace
+        // with its own working credentials still gets a chance). Azure DevOps is deliberately
+        // excluded: per-workspace credentials there aren't just a fallback, see the comment in
+        // processWorkspaceWebhook.
+        if (!azureDevOps && webhookResult.getPrFilesUrl() != null && repoWebhook.getVcs() != null) {
+            List<String> prFiles = gitlab
+                    ? gitLabWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                            webhookResult.getPrFilesUrl())
+                    : gitHubWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                            webhookResult.getPrFilesUrl());
+            webhookResult.setFileChanges(prFiles);
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
         log.info("Processing v2 webhook for {} workspaces on repo {}", workspaces.size(), normalizedUrl);
 
-        for (Workspace workspace : workspaces) {
-            try {
-                processWorkspaceWebhook(workspace, webhookResult);
-            } catch (Exception e) {
-                log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(), e.getMessage(), e);
-            }
-        }
+        // Bounded concurrency (workspaceFanoutExecutor, default 4 - see WorkspaceFanoutExecutorConfig)
+        // instead of a fully serial loop: a shared webhook with 35+ workspaces no longer processes
+        // them one at a time, but also can't open unbounded concurrent DB/VCS/executor connections.
+        // join() blocks until every workspace has been attempted (successfully or not - each
+        // failure is caught and logged individually below, same as before), so the caller
+        // (RepoWebhookDispatchService.attemptDelivery) only records this delivery PROCESSED once
+        // every workspace item has actually been accepted.
+        List<CompletableFuture<Void>> tasks = workspaces.stream()
+                .map(workspace -> CompletableFuture.runAsync(() -> {
+                    try {
+                        processWorkspaceWebhook(workspace, webhookResult);
+                    } catch (Exception e) {
+                        log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
+                                e.getMessage(), e);
+                    }
+                }, workspaceFanoutExecutor))
+                .toList();
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
     }
 
     private void processWorkspaceWebhook(Workspace workspace, WebhookResult webhookResult) {
@@ -247,7 +307,13 @@ public class RepoWebhookService {
                         azDevOpsWebhookService.fetchPrFileChanges(
                                 workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
             }
-        } else if (webhookResult.getPrFilesUrl() != null) {
+        } else if (webhookResult.getPrFilesUrl() != null
+                && (webhookResult.getFileChanges() == null || webhookResult.getFileChanges().isEmpty())) {
+            // Fallback only: processClaimedDelivery already tried this once, repo-wide, with the
+            // repo webhook's own Vcs. Reaching here means that either didn't run (no repo-level
+            // Vcs) or came back empty - which could genuinely be a zero-file-change PR, or could be
+            // the repo-level credential lacking access while this workspace's own credential works,
+            // so it's still worth this workspace trying with its own Vcs.
             if (workspace.getVcs() != null) {
                 List<String> prFiles = isGitLab(workspace)
                         ? gitLabWebhookService.fetchPrFileChanges(

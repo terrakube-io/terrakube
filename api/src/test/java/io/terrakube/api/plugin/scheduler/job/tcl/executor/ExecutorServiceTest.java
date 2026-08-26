@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
@@ -36,6 +37,9 @@ class ExecutorServiceTest {
 
     @Mock
     private WorkspaceRepository workspaceRepository;
+
+    @Mock
+    private AddressRepository addressRepository;
 
     @InjectMocks
     private ExecutorService executorService;
@@ -203,7 +207,7 @@ class ExecutorServiceTest {
 
     @Test
     void shouldNotSetTfCliArgsWhenAddressListIsEmpty() {
-        job.setAddress(List.of());
+        when(addressRepository.findByJob(job)).thenReturn(List.of());
         ExecutorContext context = createContext();
 
         ExecutorContext result = executorService.validateJobAddress(context, job);
@@ -216,7 +220,7 @@ class ExecutorServiceTest {
         Address address = new Address();
         address.setName("aws_s3_bucket.bucket");
         address.setType(AddressType.TARGET);
-        job.setAddress(List.of(address));
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
         ExecutorContext result = executorService.validateJobAddress(context, job);
@@ -230,7 +234,7 @@ class ExecutorServiceTest {
         Address address = new Address();
         address.setName("aws_identitystore_user.users[\"name.surname\"]");
         address.setType(AddressType.TARGET);
-        job.setAddress(List.of(address));
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
         ExecutorContext result = executorService.validateJobAddress(context, job);
@@ -244,7 +248,7 @@ class ExecutorServiceTest {
         Address address = new Address();
         address.setName("aws_identitystore_user.users[\"name.surname\"]");
         address.setType(AddressType.REPLACE);
-        job.setAddress(List.of(address));
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
         ExecutorContext result = executorService.validateJobAddress(context, job);
@@ -267,7 +271,7 @@ class ExecutorServiceTest {
         replace.setName("aws_instance.server[\"web-prod\"]");
         replace.setType(AddressType.REPLACE);
 
-        job.setAddress(List.of(target1, target2, replace));
+        when(addressRepository.findByJob(job)).thenReturn(List.of(target1, target2, replace));
 
         ExecutorContext context = createContext();
         ExecutorContext result = executorService.validateJobAddress(context, job);
@@ -284,7 +288,7 @@ class ExecutorServiceTest {
         Address address = new Address();
         address.setName("aws_s3_bucket.bucket");
         address.setType(AddressType.TARGET);
-        job.setAddress(List.of(address));
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
         context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-existing-flag");

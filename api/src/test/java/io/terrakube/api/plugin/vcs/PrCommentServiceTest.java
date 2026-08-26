@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -33,6 +34,7 @@ import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -50,6 +52,7 @@ public class PrCommentServiceTest {
     GitLabWebhookService gitLabWebhookService;
     BitBucketWebhookService bitBucketWebhookService;
     JobRepository jobRepository;
+    StepRepository stepRepository;
     StorageTypeService storageTypeService;
     StreamingService streamingService;
     ObjectMapper objectMapper;
@@ -62,6 +65,7 @@ public class PrCommentServiceTest {
         gitLabWebhookService = mock(GitLabWebhookService.class);
         bitBucketWebhookService = mock(BitBucketWebhookService.class);
         jobRepository = mock(JobRepository.class);
+        stepRepository = mock(StepRepository.class);
         storageTypeService = mock(StorageTypeService.class);
         streamingService = mock(StreamingService.class);
         objectMapper = new ObjectMapper();
@@ -71,9 +75,23 @@ public class PrCommentServiceTest {
                 gitLabWebhookService,
                 bitBucketWebhookService,
                 jobRepository,
+                stepRepository,
                 storageTypeService,
                 streamingService,
                 objectMapper);
+    }
+
+    /**
+     * The real code now reads steps via StepRepository.findByJobId (not the job's lazy
+     * job.getStep() collection - see PrCommentService.fetchStepOutputText), so tests must keep
+     * the mock in sync with whatever steps a job is set up with.
+     */
+    private void setSteps(Job job, List<Step> steps) {
+        job.setStep(steps);
+        // lenient: plenty of tests build a job via createJob() but never exercise the
+        // fetchStepOutputText path (e.g. short-circuit on missing PR number), which would
+        // otherwise trip Mockito's strict-stubbing check.
+        lenient().doReturn(steps).when(stepRepository).findByJobId(job.getId());
     }
 
     private Job createJob(VcsType vcsType, Integer prNumber, JobStatus status) {
@@ -100,7 +118,7 @@ public class PrCommentServiceTest {
         Step step = new Step();
         step.setId(UUID.randomUUID());
         step.setStepNumber(1);
-        job.setStep(List.of(step));
+        setSteps(job, List.of(step));
 
         return job;
     }
@@ -521,7 +539,7 @@ public class PrCommentServiceTest {
         notifyStep.setId(UUID.randomUUID());
         notifyStep.setStepNumber(2);
 
-        job.setStep(List.of(planStep, notifyStep));
+        setSteps(job, List.of(planStep, notifyStep));
 
         doReturn("").when(streamingService).getCurrentLogs(any(), any());
         doReturn("Plan: 2 to add, 0 to change, 0 to destroy.".getBytes(StandardCharsets.UTF_8))
@@ -554,7 +572,7 @@ public class PrCommentServiceTest {
         erroredStep.setId(UUID.randomUUID());
         erroredStep.setStepNumber(2);
 
-        job.setStep(List.of(initStep, erroredStep));
+        setSteps(job, List.of(initStep, erroredStep));
 
         doReturn("").when(streamingService).getCurrentLogs(any(), any());
         doReturn("Initializing the backend...".getBytes(StandardCharsets.UTF_8))
@@ -661,7 +679,7 @@ public class PrCommentServiceTest {
     @Test
     public void postPlanResultHandlesJobWithNoSteps() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
-        job.setStep(List.of());
+        setSteps(job, List.of());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
         doReturn(job).when(jobRepository).save(any());
@@ -752,6 +770,7 @@ public class PrCommentServiceTest {
     public void postPlanResultUpdatesExistingThreadCommentWhenPriorPlanJobExists() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.setId(99);
+        setSteps(job, job.getStep());
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         Job priorJob = createJob(VcsType.GITHUB, 5, JobStatus.completed);
@@ -775,6 +794,7 @@ public class PrCommentServiceTest {
     public void postPlanResultFallsBackToNewCommentWhenUpdateFails() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.setId(99);
+        setSteps(job, job.getStep());
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         Job priorJob = createJob(VcsType.GITHUB, 5, JobStatus.completed);
