@@ -28,7 +28,7 @@ import { VscAzureDevops } from "react-icons/vsc";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import {
   ProjectModel,
   SshKey,
@@ -206,46 +206,52 @@ export const CreateWorkspace = () => {
       axiosInstance.get(`organization/${organizationId}/template`),
       axiosInstance.get(`organization/${organizationId}/vcs`),
       projectService.listProjects(organizationId!),
-    ]).then(([versionsRes, sshRes, templatesRes, vcsRes, projectsRes]) => {
-      // Process versions
-      const tfVersions: string[] = [];
-      if (iacType.id === "tofu") {
-        (versionsRes.data as TofuRelease[]).forEach((release) => {
-          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
-        });
-      } else {
-        for (const version in versionsRes.data.versions) {
-          if (!version.includes("-")) tfVersions.push(version);
+    ])
+      .then(([versionsRes, sshRes, templatesRes, vcsRes, projectsRes]) => {
+        // Process versions
+        const tfVersions: string[] = [];
+        if (iacType.id === "tofu") {
+          (versionsRes.data as TofuRelease[]).forEach((release) => {
+            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+          });
+        } else {
+          for (const version in versionsRes.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
         }
-      }
-      tfVersions.sort(compareVersions).reverse();
-      setTerraformVersions(tfVersions);
-      if (tfVersions.length > 0) {
-        form.setFieldsValue({ terraformVersion: tfVersions[0] });
-      }
-
-      // Set SSH keys
-      setSSHKeys(sshRes.data.data);
-
-      // Set templates
-      setOrgTemplates(templatesRes.data.data);
-      if (templatesRes.data.data.length > 0) {
-        form.setFieldsValue({ defaultTemplate: templatesRes.data.data[0].id });
-      }
-
-      // Set VCS
-      setVCS(vcsRes.data.data);
-
-      // Set projects
-      if (!projectsRes.isError) {
-        setProjectList(projectsRes.data);
-        if (preselectedProjectId) {
-          form.setFieldsValue({ project: preselectedProjectId });
+        tfVersions.sort(compareVersions).reverse();
+        setTerraformVersions(tfVersions);
+        if (tfVersions.length > 0) {
+          form.setFieldsValue({ terraformVersion: tfVersions[0] });
         }
-      }
 
-      setLoading(false);
-    });
+        // Set SSH keys
+        setSSHKeys(sshRes.data.data);
+
+        // Set templates
+        setOrgTemplates(templatesRes.data.data);
+        if (templatesRes.data.data.length > 0) {
+          form.setFieldsValue({ defaultTemplate: templatesRes.data.data[0].id });
+        }
+
+        // Set VCS
+        setVCS(vcsRes.data.data);
+
+        // Set projects
+        if (!projectsRes.isError) {
+          setProjectList(projectsRes.data);
+          if (preselectedProjectId) {
+            form.setFieldsValue({ project: preselectedProjectId });
+          }
+        }
+
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Failed to load workspace creation data:", error);
+        message.error(getErrorMessage(error));
+        setLoading(false);
+      });
   }, []);
   const handleClick = () => {
     setCurrent(2);
