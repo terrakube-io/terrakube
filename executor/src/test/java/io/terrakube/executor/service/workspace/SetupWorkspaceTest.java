@@ -592,6 +592,27 @@ public class SetupWorkspaceTest {
         Assertions.assertEquals(FileNotFoundException.class, e.getCause().getClass());
     }
 
+    // Reproduces the "Run now" gap: a UI-created job on a remote-content workspace whose
+    // job.overrideSource was never populated (see ExecutorService.persistJobOverrideSource on the
+    // api side, which now prevents this from happening in practice). terrakubeClient(null) mirrors
+    // that scenario without needing api-module code in this test.
+    @Test
+    public void reportsClearFailureWhenOverrideSourceIsMissing() throws Exception {
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("ze-org");
+        job.setWorkspaceId("ze-ws");
+        job.setJobId("9041");
+        job.setBranch("remote-content");
+        job.setEnvironmentVariables(new HashMap<String, String>());
+        SetupWorkspace setup = new SetupWorkspaceImpl(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
+                "https://terrakube-api.example.com", terrakubeClient(null));
+
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+
+        Assertions.assertEquals(IOException.class, e.getCause().getClass());
+        Assertions.assertTrue(e.getCause().getMessage().contains("9041"));
+    }
+
     @Test
     public void injectsAwsCredentialsWhenAsked() throws Exception {
         TerraformJob job = successfulTarGzJob();
