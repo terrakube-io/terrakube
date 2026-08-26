@@ -20,13 +20,12 @@ jest.mock("@/components/UserMenu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
+const orgId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+const workspaceId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+const orgPath = `/organizations/${orgId}`;
+const workspacePath = `${orgPath}/workspaces/${workspaceId}`;
 
-const organizations: FlatOrganization[] = [{ id: "org-1", name: "Acme Corp" }];
+const organizations: FlatOrganization[] = [{ id: orgId, name: "Acme Corp" }];
 
 function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSidebar>[0]> = {}) {
   return render(
@@ -45,7 +44,6 @@ function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSid
 
 describe("AppSidebar", () => {
   beforeEach(() => {
-    mockNavigate.mockClear();
     sessionStorage.clear();
   });
 
@@ -57,7 +55,7 @@ describe("AppSidebar", () => {
   });
 
   it("shows Projects/Workspaces/Registry/Settings inside an organization", async () => {
-    renderSidebar("/organizations/org-1/workspaces");
+    renderSidebar(`${orgPath}/workspaces`);
 
     expect(await screen.findByText("Projects")).toBeInTheDocument();
     expect(screen.getByText("Workspaces")).toBeInTheDocument();
@@ -65,13 +63,12 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("navigates to the organizations picker when Organizations is clicked", async () => {
+  it("links Organizations to the organizations picker", async () => {
     renderSidebar("/organizations");
 
     const item = await screen.findByText("Organizations");
-    fireEvent.click(item);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations");
+    expect(item.closest("a")).toHaveAttribute("href", "/organizations");
   });
 
   it("does not treat the /organizations/create route as an organization id", async () => {
@@ -89,24 +86,22 @@ describe("sidebar chrome", () => {
     localStorage.clear();
   });
 
-  it("navigates home when the logo/header is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces");
+  it("links the logo/header home", async () => {
+    renderSidebar(`${orgPath}/workspaces`);
     await screen.findByText("Workspaces");
 
-    fireEvent.click(screen.getByAltText("Terrakube"));
-
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(screen.getByAltText("Terrakube").closest("a")).toHaveAttribute("href", "/");
   });
 
   it("shows the organization switcher in the footer when expanded", async () => {
-    renderSidebar("/organizations/org-1/workspaces");
+    renderSidebar(`${orgPath}/workspaces`);
     await screen.findByText("Workspaces");
 
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
   });
 
   it("has an accessible label on the collapse trigger", async () => {
-    renderSidebar("/organizations/org-1/workspaces");
+    renderSidebar(`${orgPath}/workspaces`);
     await screen.findByText("Workspaces");
 
     expect(screen.getByLabelText("Collapse sidebar")).toBeInTheDocument();
@@ -114,7 +109,7 @@ describe("sidebar chrome", () => {
 
   it("collapses, hides the organization switcher, and persists the preference when the trigger is clicked", async () => {
     const setSpy = jest.spyOn(sidebarPreference, "setStoredSidebarCollapsed");
-    renderSidebar("/organizations/org-1/workspaces");
+    renderSidebar(`${orgPath}/workspaces`);
     await screen.findByText("Workspaces");
 
     fireEvent.click(screen.getByLabelText("Collapse sidebar"));
@@ -131,7 +126,7 @@ describe("settings context", () => {
   });
 
   it("shows the settings sub-nav grouped items instead of the top-level nav", async () => {
-    renderSidebar("/organizations/org-1/settings/general");
+    renderSidebar(`${orgPath}/settings/general`);
 
     expect(await screen.findByText("General")).toBeInTheDocument();
     expect(screen.getByText("Teams")).toBeInTheDocument();
@@ -148,24 +143,24 @@ describe("settings context", () => {
     expect(screen.queryByText("Registry")).not.toBeInTheDocument();
   });
 
-  it("navigates to the settings sub-path when a settings item is clicked", async () => {
-    renderSidebar("/organizations/org-1/settings/general");
+  it("links settings items to their settings sub-path", async () => {
+    renderSidebar(`${orgPath}/settings/general`);
 
-    fireEvent.click(await screen.findByText("Teams"));
+    const item = await screen.findByText("Teams");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/settings/teams");
+    expect(item.closest("a")).toHaveAttribute("href", `${orgPath}/settings/teams`);
   });
 
-  it("navigates back to workspaces when the back link is clicked", async () => {
-    renderSidebar("/organizations/org-1/settings/general");
+  it("links back to workspaces from the back link", async () => {
+    renderSidebar(`${orgPath}/settings/general`);
 
-    fireEvent.click(await screen.findByText("Workspaces"));
+    const backLink = await screen.findByText("Workspaces");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces");
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
   it("does not show a collapse trigger (force-expanded)", async () => {
-    renderSidebar("/organizations/org-1/settings/general");
+    renderSidebar(`${orgPath}/settings/general`);
     await screen.findByText("General");
 
     expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
@@ -179,7 +174,7 @@ describe("workspace-detail context", () => {
   });
 
   it("shows the 6 workspace sections plus the back link instead of the top-level nav", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1");
+    renderSidebar(workspacePath);
 
     expect(await screen.findByText("Overview")).toBeInTheDocument();
     expect(screen.getByText("Runs")).toBeInTheDocument();
@@ -192,50 +187,46 @@ describe("workspace-detail context", () => {
     expect(screen.queryByText("Registry")).not.toBeInTheDocument();
   });
 
-  it("navigates to the bare workspace URL when Overview is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1/runs");
+  it("links Overview to the bare workspace URL", async () => {
+    renderSidebar(`${workspacePath}/runs`);
 
-    fireEvent.click(await screen.findByText("Overview"));
+    const overview = await screen.findByText("Overview");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
+    expect(overview.closest("a")).toHaveAttribute("href", workspacePath);
   });
 
-  it("navigates to the section sub-path when a section is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1");
+  it("links sections to their section sub-path", async () => {
+    renderSidebar(workspacePath);
 
-    fireEvent.click(await screen.findByText("Runs"));
+    const runs = await screen.findByText("Runs");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1/runs");
+    expect(runs.closest("a")).toHaveAttribute("href", `${workspacePath}/runs`);
   });
 
-  it("navigates back to the workspaces list when the back link is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1");
+  it("links back to the workspaces list from the back link", async () => {
+    renderSidebar(workspacePath);
 
-    fireEvent.click(await screen.findByText("Workspaces"));
+    const backLink = await screen.findByText("Workspaces");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces");
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
   it("disables the States item when workspaceManageState is false", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1", { workspaceManageState: false });
+    renderSidebar(workspacePath, { workspaceManageState: false });
     await screen.findByText("Overview");
 
-    fireEvent.click(screen.getByText("States"));
-
-    expect(mockNavigate).not.toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1/states");
+    expect(screen.getByText("States").closest("a")).toBeNull();
   });
 
-  it("allows navigating to States when workspaceManageState is true", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1", { workspaceManageState: true });
+  it("links to States when workspaceManageState is true", async () => {
+    renderSidebar(workspacePath, { workspaceManageState: true });
     await screen.findByText("Overview");
 
-    fireEvent.click(screen.getByText("States"));
-
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1/states");
+    expect(screen.getByText("States").closest("a")).toHaveAttribute("href", `${workspacePath}/states`);
   });
 
   it("does not treat the plain workspaces list route as a workspace-detail context", async () => {
-    renderSidebar("/organizations/org-1/workspaces");
+    renderSidebar(`${orgPath}/workspaces`);
 
     expect(await screen.findByText("Workspaces")).toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
@@ -243,7 +234,7 @@ describe("workspace-detail context", () => {
   });
 
   it("can still be collapsed (with icons) while viewing a workspace's own sections", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1");
+    renderSidebar(workspacePath);
     await screen.findByText("Overview");
 
     expect(screen.getByLabelText("Collapse sidebar")).toBeInTheDocument();
@@ -256,7 +247,7 @@ describe("workspace-settings context", () => {
   });
 
   it("shows the workspace settings sub-nav instead of the org-settings nav or the workspace-detail nav", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1/settings", { workspaceManageState: true });
+    renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
 
     expect(await screen.findByText("General")).toBeInTheDocument();
     expect(screen.getByText("Locking")).toBeInTheDocument();
@@ -271,24 +262,24 @@ describe("workspace-settings context", () => {
     expect(screen.queryByText("Overview")).not.toBeInTheDocument();
   });
 
-  it("navigates to the workspace settings sub-path when an item is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1/settings", { workspaceManageState: true });
+  it("links workspace settings items to their sub-path", async () => {
+    renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
 
-    fireEvent.click(await screen.findByText("Locking"));
+    const locking = await screen.findByText("Locking");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1/settings/locking");
+    expect(locking.closest("a")).toHaveAttribute("href", `${workspacePath}/settings/locking`);
   });
 
-  it("navigates back to the workspace overview when the back link is clicked", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1/settings", { workspaceManageState: true });
+  it("links back to the workspace overview from the back link", async () => {
+    renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
 
-    fireEvent.click(await screen.findByText("Back to Workspace"));
+    const backLink = await screen.findByText("Back to Workspace");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
+    expect(backLink.closest("a")).toHaveAttribute("href", workspacePath);
   });
 
   it("does not show a collapse trigger (force-expanded)", async () => {
-    renderSidebar("/organizations/org-1/workspaces/ws-1/settings", { workspaceManageState: true });
+    renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
     await screen.findByText("General");
 
     expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
@@ -310,20 +301,20 @@ describe("user-settings context", () => {
     expect(screen.queryByText("Organizations")).not.toBeInTheDocument();
   });
 
-  it("navigates to the theme settings path when Theme is clicked", async () => {
+  it("links Theme to the theme settings path", async () => {
     renderSidebar("/settings/tokens");
 
-    fireEvent.click(await screen.findByText("Theme"));
+    const themeItem = await screen.findByText("Theme");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/settings/theme");
+    expect(themeItem.closest("a")).toHaveAttribute("href", "/settings/theme");
   });
 
-  it("navigates home when the back link is clicked", async () => {
+  it("links home from the back link", async () => {
     renderSidebar("/settings/tokens");
 
-    fireEvent.click(await screen.findByText("Home"));
+    const backLink = await screen.findByText("Home");
 
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(backLink.closest("a")).toHaveAttribute("href", "/");
   });
 
   it("does not show a collapse trigger (force-expanded)", async () => {

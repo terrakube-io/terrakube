@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ApiDocsPage } from "../ApiDocsPage";
 import getUserFromStorage from "@/config/authUser";
@@ -18,12 +18,6 @@ jest.mock("@scalar/api-reference-react", () => ({
   ApiReferenceReact: (props: unknown) => apiReferenceMock(props),
 }));
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
-
 const fakeSpec = { openapi: "3.0.1", info: { title: "Elide Service" }, paths: {} };
 
 function renderApiDocsPage() {
@@ -40,7 +34,6 @@ describe("ApiDocsPage", () => {
     mockGetUserFromStorage.mockReset();
     mockAxiosGet.mockReset();
     mockAxiosGet.mockResolvedValue({ data: fakeSpec });
-    mockNavigate.mockClear();
   });
 
   it("fetches the spec from the API's /doc endpoint and passes it to Scalar as content", async () => {
@@ -94,12 +87,10 @@ describe("ApiDocsPage", () => {
     );
   });
 
-  it("navigates back to the app shell when 'Back to Terrakube' is clicked", async () => {
+  it("links 'Back to Terrakube' to the app shell", async () => {
     renderApiDocsPage();
     await waitFor(() => expect(apiReferenceMock).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Back to Terrakube"));
-
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(screen.getByText("Back to Terrakube").closest("a")).toHaveAttribute("href", "/");
   });
 });
