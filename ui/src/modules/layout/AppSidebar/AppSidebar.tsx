@@ -95,7 +95,7 @@ export default function AppSidebar({
   const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const organizationId = isOrgId(storedOrgId) ? storedOrgId : orgIdFromUrl;
   const isSettingsContext = orgIdFromUrl !== null && params[3] === "settings";
-  const isWorkspaceDetailContext = orgIdFromUrl !== null && params[3] === "workspaces" && Boolean(params[4]);
+  const isWorkspaceDetailContext = orgIdFromUrl !== null && params[3] === "workspaces" && isOrgId(params[4]);
   const isWorkspaceSettingsContext = isWorkspaceDetailContext && params[5] === "settings";
   const isUserSettingsContext = params[1] === "settings" && Boolean(params[2]);
   const canCollapse = !isSettingsContext && !isWorkspaceSettingsContext && !isUserSettingsContext;

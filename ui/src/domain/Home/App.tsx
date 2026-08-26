@@ -288,6 +288,14 @@ const router = createBrowserRouter(
           element: <ImportWorkspace />,
         },
         {
+          path: "/organizations/:orgid/workspaces/create",
+          element: <CreateWorkspace />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/import",
+          element: <ImportWorkspace />,
+        },
+        {
           path: "/workspaces/:id",
           element: <WorkspaceDetailsRoute />,
         },

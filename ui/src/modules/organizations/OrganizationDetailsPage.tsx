@@ -161,10 +161,10 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
           <Button icon={<ImportOutlined />}>
-            <Link to="/workspaces/import">Import workspaces</Link>
+            <Link to={`/organizations/${id}/workspaces/import`}>Import workspaces</Link>
           </Button>
           <Button icon={<PlusOutlined />} type="primary">
-            <Link to="/workspaces/create">New workspace</Link>
+            <Link to={`/organizations/${id}/workspaces/create`}>New workspace</Link>
           </Button>
         </Space>
       }
