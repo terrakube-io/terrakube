@@ -250,9 +250,276 @@ const AppLayout = () => {
   );
 };
 
+const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <AppLayout />,
+      children: [
+        {
+          path: "/",
+          element: <OrganizationsPickerPage />,
+        },
+        {
+          path: "/organizations",
+          element: <OrganizationsPickerPage />,
+        },
+        {
+          path: "/organizations/create",
+          element: <CreateOrganizationRoute />,
+        },
+        {
+          path: "/organizations/:id/workspaces",
+          element: <OrganizationsDetailRoute />,
+        },
+        {
+          path: "/organizations/:id/projects",
+          element: <OrganizationsProjectsRoute />,
+        },
+        {
+          path: "/organizations/:orgid/projects/:id",
+          element: <OrganizationsProjectDetailRoute />,
+        },
+        {
+          path: "/workspaces/create",
+          element: <CreateWorkspace />,
+        },
+        {
+          path: "/workspaces/import",
+          element: <ImportWorkspace />,
+        },
+        {
+          path: "/workspaces/:id",
+          element: <WorkspaceDetailsRoute />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id",
+          element: <WorkspaceDetailsRoute />,
+        },
+        {
+          path: "/workspaces/:id/runs",
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/runs",
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
+        },
+        {
+          path: "/workspaces/:id/runs/:runid",
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/runs/:runid",
+          element: <WorkspaceDetailsRoute selectedTab="2" />,
+        },
+        {
+          path: "/workspaces/:id/states",
+          element: <WorkspaceDetailsRoute selectedTab="3" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/states",
+          element: <WorkspaceDetailsRoute selectedTab="3" />,
+        },
+        {
+          path: "/workspaces/:id/variables",
+          element: <WorkspaceDetailsRoute selectedTab="4" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/variables",
+          element: <WorkspaceDetailsRoute selectedTab="4" />,
+        },
+        {
+          path: "/workspaces/:id/schedules",
+          element: <WorkspaceDetailsRoute selectedTab="5" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/schedules",
+          element: <WorkspaceDetailsRoute selectedTab="5" />,
+        },
+        {
+          path: "/workspaces/:id/settings",
+          element: <WorkspaceDetailsRoute selectedTab="6" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings",
+          element: <WorkspaceDetailsRoute selectedTab="6" />,
+        },
+        {
+          path: "/workspaces/:id/settings/general",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/general",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+        },
+        {
+          path: "/workspaces/:id/settings/locking",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/locking",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+        },
+        {
+          path: "/workspaces/:id/settings/sshkey",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/sshkey",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+        },
+        {
+          path: "/workspaces/:id/settings/webhook",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/webhook",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+        },
+        {
+          path: "/workspaces/:id/settings/notifications",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/notifications",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+        },
+        {
+          path: "/workspaces/:id/settings/state-shared",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/state-shared",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+        },
+        {
+          path: "/workspaces/:id/settings/team-access",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/team-access",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+        },
+        {
+          path: "/workspaces/:id/settings/advanced",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/advanced",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+        },
+        {
+          path: "/organizations/:orgid/registry",
+          element: <RegistryRoute />,
+        },
+        {
+          path: "/organizations/:orgid/registry/search",
+          element: <PublicRegistrySearchRoute />,
+        },
+        {
+          path: "/organizations/:orgid/registry/create",
+          element: <CreateModule />,
+        },
+        {
+          path: "/organizations/:orgid/registry/providers/:providerid",
+          element: <ProviderDetailsRoute />,
+        },
+        {
+          path: "/organizations/:orgid/registry/:id",
+          element: <ModuleDetailsRoute />,
+        },
+        {
+          path: "/organizations/:orgid/settings",
+          element: <OrganizationSettings />,
+        },
+        {
+          path: "/organizations/:orgid/settings/general",
+          element: <OrganizationSettings selectedTab="1" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/teams",
+          element: <OrganizationSettings selectedTab="2" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/variables",
+          element: <OrganizationSettings selectedTab="3" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/vcs",
+          element: <OrganizationSettings selectedTab="4" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/vcs/new/:vcsName",
+          element: <OrganizationSettings selectedTab="4" vcsMode="new" />,
+        },
+        {
+          path: "/settings/tokens",
+          element: <UserSettingsPage />,
+        },
+        {
+          path: "/settings/theme",
+          element: <UserSettingsPage />,
+        },
+        {
+          path: "/organizations/:orgid/settings/ssh",
+          element: <OrganizationSettings selectedTab="6" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/tags",
+          element: <OrganizationSettings selectedTab="7" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/agents",
+          element: <OrganizationSettings selectedTab="8" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/federated-credentials",
+          element: <OrganizationSettings selectedTab="11" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/templates",
+          element: <OrganizationSettings selectedTab="5" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/actions",
+          element: <OrganizationSettings selectedTab="10" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/notifications",
+          element: <OrganizationSettings selectedTab="12" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/collection",
+          element: <OrganizationSettings selectedTab="9" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/collection/new",
+          element: <OrganizationSettings selectedTab="9" collectionMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/collection/edit/:collectionid",
+          element: <CollectionSettingsWrapper mode="edit" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/collection/:collectionid",
+          element: <CollectionSettingsWrapper mode="detail" />,
+        },
+      ],
+    },
+    {
+      // Full-bleed: Scalar renders its own sidebar/nav, so this route skips
+      // AppLayout entirely rather than duplicating it alongside ours.
+      path: "/api-docs",
+      element: <ApiDocsPage />,
+    },
+  ],
+  {
+    basename: getBasePath(),
+  }
+);
+
 const App = () => {
   const auth = useAuth();
-  const basePath = getBasePath();
 
   useEffect(() => {
     const removeExpired = auth.events.addAccessTokenExpired(() => {
@@ -274,274 +541,6 @@ const App = () => {
   if (!auth.isAuthenticated) {
     return <Login />;
   }
-
-  const router = createBrowserRouter(
-    [
-      {
-        path: "/",
-        element: <AppLayout />,
-        children: [
-          {
-            path: "/",
-            element: <OrganizationsPickerPage />,
-          },
-          {
-            path: "/organizations",
-            element: <OrganizationsPickerPage />,
-          },
-          {
-            path: "/organizations/create",
-            element: <CreateOrganizationRoute />,
-          },
-          {
-            path: "/organizations/:id/workspaces",
-            element: <OrganizationsDetailRoute />,
-          },
-          {
-            path: "/organizations/:id/projects",
-            element: <OrganizationsProjectsRoute />,
-          },
-          {
-            path: "/organizations/:orgid/projects/:id",
-            element: <OrganizationsProjectDetailRoute />,
-          },
-          {
-            path: "/workspaces/create",
-            element: <CreateWorkspace />,
-          },
-          {
-            path: "/workspaces/import",
-            element: <ImportWorkspace />,
-          },
-          {
-            path: "/workspaces/:id",
-            element: <WorkspaceDetailsRoute />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id",
-            element: <WorkspaceDetailsRoute />,
-          },
-          {
-            path: "/workspaces/:id/runs",
-            element: <WorkspaceDetailsRoute selectedTab="2" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/runs",
-            element: <WorkspaceDetailsRoute selectedTab="2" />,
-          },
-          {
-            path: "/workspaces/:id/runs/:runid",
-            element: <WorkspaceDetailsRoute selectedTab="2" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/runs/:runid",
-            element: <WorkspaceDetailsRoute selectedTab="2" />,
-          },
-          {
-            path: "/workspaces/:id/states",
-            element: <WorkspaceDetailsRoute selectedTab="3" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/states",
-            element: <WorkspaceDetailsRoute selectedTab="3" />,
-          },
-          {
-            path: "/workspaces/:id/variables",
-            element: <WorkspaceDetailsRoute selectedTab="4" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/variables",
-            element: <WorkspaceDetailsRoute selectedTab="4" />,
-          },
-          {
-            path: "/workspaces/:id/schedules",
-            element: <WorkspaceDetailsRoute selectedTab="5" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/schedules",
-            element: <WorkspaceDetailsRoute selectedTab="5" />,
-          },
-          {
-            path: "/workspaces/:id/settings",
-            element: <WorkspaceDetailsRoute selectedTab="6" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings",
-            element: <WorkspaceDetailsRoute selectedTab="6" />,
-          },
-          {
-            path: "/workspaces/:id/settings/general",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/general",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
-          },
-          {
-            path: "/workspaces/:id/settings/locking",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/locking",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
-          },
-          {
-            path: "/workspaces/:id/settings/sshkey",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/sshkey",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
-          },
-          {
-            path: "/workspaces/:id/settings/webhook",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/webhook",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
-          },
-          {
-            path: "/workspaces/:id/settings/notifications",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/notifications",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
-          },
-          {
-            path: "/workspaces/:id/settings/state-shared",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/state-shared",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
-          },
-          {
-            path: "/workspaces/:id/settings/team-access",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/team-access",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
-          },
-          {
-            path: "/workspaces/:id/settings/advanced",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
-          },
-          {
-            path: "/organizations/:orgid/workspaces/:id/settings/advanced",
-            element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
-          },
-          {
-            path: "/organizations/:orgid/registry",
-            element: <RegistryRoute />,
-          },
-          {
-            path: "/organizations/:orgid/registry/search",
-            element: <PublicRegistrySearchRoute />,
-          },
-          {
-            path: "/organizations/:orgid/registry/create",
-            element: <CreateModule />,
-          },
-          {
-            path: "/organizations/:orgid/registry/providers/:providerid",
-            element: <ProviderDetailsRoute />,
-          },
-          {
-            path: "/organizations/:orgid/registry/:id",
-            element: <ModuleDetailsRoute />,
-          },
-          {
-            path: "/organizations/:orgid/settings",
-            element: <OrganizationSettings />,
-          },
-          {
-            path: "/organizations/:orgid/settings/general",
-            element: <OrganizationSettings selectedTab="1" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/teams",
-            element: <OrganizationSettings selectedTab="2" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/variables",
-            element: <OrganizationSettings selectedTab="3" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/vcs",
-            element: <OrganizationSettings selectedTab="4" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/vcs/new/:vcsName",
-            element: <OrganizationSettings selectedTab="4" vcsMode="new" />,
-          },
-          {
-            path: "/settings/tokens",
-            element: <UserSettingsPage />,
-          },
-          {
-            path: "/settings/theme",
-            element: <UserSettingsPage />,
-          },
-          {
-            path: "/organizations/:orgid/settings/ssh",
-            element: <OrganizationSettings selectedTab="6" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/tags",
-            element: <OrganizationSettings selectedTab="7" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/agents",
-            element: <OrganizationSettings selectedTab="8" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/federated-credentials",
-            element: <OrganizationSettings selectedTab="11" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/templates",
-            element: <OrganizationSettings selectedTab="5" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/actions",
-            element: <OrganizationSettings selectedTab="10" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/notifications",
-            element: <OrganizationSettings selectedTab="12" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/collection",
-            element: <OrganizationSettings selectedTab="9" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/collection/new",
-            element: <OrganizationSettings selectedTab="9" collectionMode="new" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/collection/edit/:collectionid",
-            element: <CollectionSettingsWrapper mode="edit" />,
-          },
-          {
-            path: "/organizations/:orgid/settings/collection/:collectionid",
-            element: <CollectionSettingsWrapper mode="detail" />,
-          },
-        ],
-      },
-      {
-        // Full-bleed: Scalar renders its own sidebar/nav, so this route skips
-        // AppLayout entirely rather than duplicating it alongside ours.
-        path: "/api-docs",
-        element: <ApiDocsPage />,
-      },
-    ],
-    {
-      basename: basePath,
-    }
-  );
 
   return (
     <ThemeProvider>
