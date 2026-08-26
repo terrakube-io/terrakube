@@ -39,7 +39,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
 
   useEffect(() => {
     execute();
-  }, []);
+  }, [id]);
 
   const openCreate = () => {
     form.resetFields();

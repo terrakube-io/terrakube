@@ -129,6 +129,8 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   useEffect(() => {
     if (!orgid) return;
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
+    modulesLoaded.current = false;
+    providersLoaded.current = false;
 
     const init = async () => {
       setLoading(true);
