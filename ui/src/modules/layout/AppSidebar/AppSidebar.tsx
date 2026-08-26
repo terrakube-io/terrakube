@@ -33,7 +33,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
-import { getOrgIdFromPathname } from "@/config/orgId";
+import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/OrganizationSelector";
 import { HelpMenu } from "@/components/HelpMenu";
@@ -59,7 +59,7 @@ function ensureOrganizationName(
   setOrgName: (name: string) => void,
   onComplete: () => void
 ) {
-  if (orgId && currentOrgName && currentOrgName !== "select organization") {
+  if (orgId && currentOrgName) {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
     sessionStorage.setItem(ORGANIZATION_NAME, currentOrgName);
     onComplete();
@@ -95,7 +95,8 @@ export default function AppSidebar({
   const { token } = theme.useToken();
   const params = location.pathname.split("/");
   const orgIdFromUrl = getOrgIdFromPathname(location.pathname);
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE) || orgIdFromUrl;
+  const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const organizationId = isOrgId(storedOrgId) ? storedOrgId : orgIdFromUrl;
   const isSettingsContext = orgIdFromUrl !== null && params[3] === "settings";
   const isWorkspaceDetailContext = orgIdFromUrl !== null && params[3] === "workspaces" && Boolean(params[4]);
   const isWorkspaceSettingsContext = isWorkspaceDetailContext && params[5] === "settings";
@@ -104,7 +105,7 @@ export default function AppSidebar({
   const effectiveCollapsed = canCollapse ? collapsed : false;
 
   useEffect(() => {
-    if (organizationId && (!sessionStorage.getItem(ORGANIZATION_NAME) || organizationName === "select organization")) {
+    if (organizationId && !sessionStorage.getItem(ORGANIZATION_NAME)) {
       ensureOrganizationName(organizationId, organizationName, setOrganizationName, () => {});
     }
   }, [organizationId, organizationName, setOrganizationName]);
@@ -113,10 +114,7 @@ export default function AppSidebar({
     organizationService
       .listOrganizationsGraphQL()
       .then((loadedOrganizations: FlatOrganization[]) => {
-        if (
-          orgIdFromUrl &&
-          (!sessionStorage.getItem(ORGANIZATION_NAME) || organizationName === "select organization")
-        ) {
+        if (orgIdFromUrl && !sessionStorage.getItem(ORGANIZATION_NAME)) {
           const foundOrg = loadedOrganizations.find((org) => org.id === orgIdFromUrl);
           if (foundOrg) {
             sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgIdFromUrl);
@@ -126,7 +124,7 @@ export default function AppSidebar({
             ensureOrganizationName(orgIdFromUrl, "", setOrganizationName, () => {});
           }
         } else {
-          setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "select organization");
+          setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "");
         }
       })
       .catch((error) => {

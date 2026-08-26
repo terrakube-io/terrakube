@@ -147,6 +147,19 @@ const AppLayout = () => {
   const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
   const [workspaceManageState, setWorkspaceManageState] = useState(false);
   const { colorScheme, themeMode } = useTheme();
+  const segments = location.pathname.split("/").filter(Boolean);
+  const noOrgContext =
+    segments.length === 0 ||
+    segments[0] === "settings" ||
+    (segments[0] === "organizations" && (segments.length === 1 || segments[1] === "create"));
+
+  useEffect(() => {
+    if (noOrgContext) {
+      sessionStorage.removeItem(ORGANIZATION_NAME);
+      sessionStorage.removeItem(ORGANIZATION_ARCHIVE);
+      setOrganizationName("");
+    }
+  }, [location.pathname, noOrgContext]);
 
   useEffect(() => {
     const orgId = getOrgIdFromPathname(window.location.pathname);
