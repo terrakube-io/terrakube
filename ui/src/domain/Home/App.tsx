@@ -234,7 +234,6 @@ const AppLayout = () => {
           setOrganizationName={setOrganizationName}
           organizations={orgs}
           onOrgChange={handleOrgChange}
-          onManageOrgs={() => navigate("/organizations")}
           workspaceManageState={workspaceManageState}
         />
         <Layout className="app-content-shell">

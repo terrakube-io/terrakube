@@ -36,7 +36,6 @@ function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSid
         setOrganizationName={jest.fn()}
         organizations={organizations}
         onOrgChange={jest.fn()}
-        onManageOrgs={jest.fn()}
         workspaceManageState={true}
         {...overrides}
       />
