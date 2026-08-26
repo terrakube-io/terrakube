@@ -9,7 +9,6 @@ import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { TemplateAttributes } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
-const { Step } = Steps;
 const { Meta } = Card;
 const validateMessages = {
   required: "${label} is required!",
@@ -172,11 +171,13 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
           plan/apply/destroy.
         </Typography.Text>
       </div>
-      <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-        <Step title="Choose Type" />
-        <Step title="Define Template" />
-        <Step title="Configure Settings" />
-      </Steps>
+      <Steps
+        direction="horizontal"
+        size="small"
+        current={current}
+        onChange={handleChange}
+        items={[{ title: "Choose Type" }, { title: "Define Template" }, { title: "Configure Settings" }]}
+      />
       {current == 0 && (
         <SettingsSection maxWidth="100%">
           <Space className="chooseType" direction="vertical">

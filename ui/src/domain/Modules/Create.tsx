@@ -10,7 +10,6 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
 import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
 const { Content } = Layout;
-const { Step } = Steps;
 const validateMessages = {
   required: "${label} is required!",
   types: {
@@ -273,11 +272,13 @@ export const CreateModule = () => {
           <div className="App-text">
             This module will be created under the current organization, {sessionStorage.getItem(ORGANIZATION_NAME)}.
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-            <Step title="Connect to VCS" />
-            <Step title="Choose a repository" />
-            <Step title="Confirm selection" />
-          </Steps>
+          <Steps
+            direction="horizontal"
+            size="small"
+            current={current}
+            onChange={handleChange}
+            items={[{ title: "Connect to VCS" }, { title: "Choose a repository" }, { title: "Confirm selection" }]}
+          />
 
           {current === 0 && (
             <Space className="chooseType" direction="vertical">
