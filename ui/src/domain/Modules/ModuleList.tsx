@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { FlatModule } from "../types";
 import "./Module.css";
 
@@ -19,7 +19,6 @@ type Props = {
 
 export const ModuleList = ({ modules, searchFilter }: Props) => {
   const { orgid } = useParams<Params>();
-  const navigate = useNavigate();
 
   const filteredModules = useMemo(() => {
     if (searchFilter === "") {
@@ -57,56 +56,60 @@ export const ModuleList = ({ modules, searchFilter }: Props) => {
       dataSource={filteredModules}
       pagination={{ defaultPageSize: 5, showTotal: (total, range) => `${range[0]} - ${range[1]} of ${total}` }}
       renderItem={(item) => (
-        <List.Item
-          style={{ cursor: "pointer", padding: "6px 0" }}
-          onClick={() => navigate(`/organizations/${orgid}/registry/${item.id}`)}
-        >
-          <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-            <div className="module-card-body">
-              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                <div
-                  style={{
-                    flexShrink: 0,
-                    width: 36,
-                    height: 36,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {renderLogo(item.provider)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text strong className="module-card-name">
-                    {item.name}
-                  </Typography.Text>
-                  <div className="module-card-desc">
-                    {item.description || "No description provided for this module"}
+        <List.Item style={{ padding: "6px 0" }}>
+          <Link
+            to={`/organizations/${orgid}/registry/${item.id}`}
+            style={{ display: "block", width: "100%", color: "inherit" }}
+          >
+            <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
+              <div className="module-card-body">
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      width: 36,
+                      height: 36,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {renderLogo(item.provider)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Typography.Text strong className="module-card-name">
+                      {item.name}
+                    </Typography.Text>
+                    <div className="module-card-desc">
+                      {item.description || "No description provided for this module"}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid #f0f0f0",
-                padding: "10px 24px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <Space size={16}>
-                <Space size={4}>
-                  <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-                  <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{item.downloadQuantity}</Typography.Text>
+              <div
+                style={{
+                  borderTop: "1px solid #f0f0f0",
+                  padding: "10px 24px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Space size={16}>
+                  <Space size={4}>
+                    <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
+                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+                      {item.downloadQuantity}
+                    </Typography.Text>
+                  </Space>
                 </Space>
-              </Space>
-              <Space size={6}>
-                {renderLogo(item.provider)}
-                <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{item.provider}</Typography.Text>
-              </Space>
-            </div>
-          </Card>
+                <Space size={6}>
+                  {renderLogo(item.provider)}
+                  <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{item.provider}</Typography.Text>
+                </Space>
+              </div>
+            </Card>
+          </Link>
         </List.Item>
       )}
     />

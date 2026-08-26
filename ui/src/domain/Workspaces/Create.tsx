@@ -114,78 +114,60 @@ export const CreateWorkspace = () => {
     name: "Terraform",
   });
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
+  const vcsLink = (vcsType: VcsTypeExtended, connectionType?: VcsConnectionType) =>
+    `/organizations/${organizationId}/settings/vcs/new/${vcsType}${connectionType ? `?connectionType=${connectionType}` : ""}`;
+
   const gitlabItems = [
     {
-      label: "GitLab.com",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB)}>GitLab.com</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB);
-      },
     },
     {
-      label: "GitLab Community Edition",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB_COMMUNITY)}>GitLab Community Edition</Link>,
       key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
-      },
     },
     {
-      label: "GitLab Enterprise Edition",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB_ENTERPRISE)}>GitLab Enterprise Edition</Link>,
       key: "3",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
-      },
     },
   ];
 
   const githubItems = [
     {
-      label: "GitHub.com (GitHub App)",
+      label: (
+        <Link to={vcsLink(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE)}>GitHub.com (GitHub App)</Link>
+      ),
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
-      },
     },
     {
-      label: "GitHub.com (oAuth App)",
+      label: <Link to={vcsLink(VcsTypeExtended.GITHUB)}>GitHub.com (oAuth App)</Link>,
       key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB);
-      },
     },
     {
-      label: "GitHub Enterprise (GitHub App)",
+      label: (
+        <Link to={vcsLink(VcsTypeExtended.GITHUB_ENTERPRISE, VcsConnectionType.STANDALONE)}>
+          GitHub Enterprise (GitHub App)
+        </Link>
+      ),
       key: "3",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE, VcsConnectionType.STANDALONE);
-      },
     },
     {
-      label: "GitHub Enterprise (oAuth App)",
+      label: <Link to={vcsLink(VcsTypeExtended.GITHUB_ENTERPRISE)}>GitHub Enterprise (oAuth App)</Link>,
       key: "4",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
-      },
     },
   ];
 
   const bitBucketItems = [
     {
-      label: "Bitbucket Cloud",
+      label: <Link to={vcsLink(VcsTypeExtended.BITBUCKET)}>Bitbucket Cloud</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.BITBUCKET);
-      },
     },
   ];
 
   const azDevOpsItems = [
     {
-      label: "Azure DevOps Services",
+      label: <Link to={vcsLink(VcsTypeExtended.AZURE_DEVOPS)}>Azure DevOps Services</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.AZURE_DEVOPS);
-      },
     },
   ];
   const navigate = useNavigate();
@@ -359,11 +341,6 @@ export const CreateWorkspace = () => {
   const handleRepoSelect = (repo: VcsRepositorySummary) => {
     setSelectedRepoUrl(repo.url);
     form.setFieldsValue({ source: repo.url });
-  };
-
-  const handleVCSClick = (vcsType: VcsTypeExtended, connectionType?: VcsConnectionType) => {
-    const query = connectionType ? `?connectionType=${connectionType}` : "";
-    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}${query}`);
   };
 
   const handleConnectDifferent = () => {

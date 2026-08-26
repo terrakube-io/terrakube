@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, Pagination, message } from "antd";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -39,7 +39,6 @@ type Props = {
 
 export const VariableCollectionsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
-  const navigate = useNavigate();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,17 +47,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  const handleViewDetails = (id: string) => {
-    navigate(`/organizations/${orgid}/settings/collection/edit/${id}`);
-  };
-
-  const handleEditCollection = (id: string) => {
-    navigate(`/organizations/${orgid}/settings/collection/edit/${id}`);
-  };
-
-  const handleCreateCollection = () => {
-    navigate(`/organizations/${orgid}/settings/collection/new`);
-  };
+  const editCollectionLink = (id: string) => `/organizations/${orgid}/settings/collection/edit/${id}`;
 
   const onDelete = async (id: string) => {
     try {
@@ -189,8 +178,12 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
       </div>
       <SettingsSection maxWidth="100%">
         <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
-          <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />} disabled={!managePermission}>
-            Create variable collection
+          <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
+            {managePermission ? (
+              <Link to={`/organizations/${orgid}/settings/collection/new`}>Create variable collection</Link>
+            ) : (
+              "Create variable collection"
+            )}
           </Button>
         </div>
         <div style={{ marginBottom: "20px", width: "100%" }}>
@@ -218,13 +211,9 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
               dataSource={paginatedCollections}
               renderItem={(item) => (
                 <List.Item>
-                  <Card
-                    hoverable
-                    style={{ width: "100%", cursor: "pointer" }}
-                    onClick={() => handleViewDetails(item.id)}
-                  >
+                  <Card hoverable style={{ width: "100%" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
+                      <Link to={editCollectionLink(item.id)} style={{ display: "block", flex: 1, color: "inherit" }}>
                         <Typography.Title level={4} style={{ margin: 0 }}>
                           {item.attributes.name}
                         </Typography.Title>
@@ -241,18 +230,10 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                             {item.relationships?.variables?.data?.length || 0} variables
                           </span>
                         </Space>
-                      </div>
+                      </Link>
                       <Space>
-                        <Button
-                          type="text"
-                          icon={<EditOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditCollection(item.id);
-                          }}
-                          disabled={!managePermission}
-                        >
-                          Edit
+                        <Button type="text" icon={<EditOutlined />} disabled={!managePermission}>
+                          {managePermission ? <Link to={editCollectionLink(item.id)}>Edit</Link> : "Edit"}
                         </Button>
                         <Popconfirm
                           okButtonProps={{ danger: true }}

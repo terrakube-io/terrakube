@@ -1,7 +1,7 @@
 import { Button, Empty, Flex, Form, Input, Modal, Table, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
@@ -21,7 +21,6 @@ type ProjectForm = {
 
 export default function ProjectsPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { permissions } = useOrgPermissions(id);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -85,12 +84,8 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       dataIndex: "name",
       key: "name",
       render: (_: any, record: ProjectModel) => (
-        <Button
-          type="link"
-          style={{ padding: 0 }}
-          onClick={() => navigate(`/organizations/${id}/projects/${record.id}`)}
-        >
-          {record.name}
+        <Button type="link" style={{ padding: 0 }}>
+          <Link to={`/organizations/${id}/projects/${record.id}`}>{record.name}</Link>
         </Button>
       ),
     },

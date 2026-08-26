@@ -169,10 +169,7 @@ export const WorkspaceDetails = ({
     token: { colorBgContainer },
   } = theme.useToken();
 
-  const handleClick = (jobid: string) => {
-    changeJob(jobid);
-    navigate(`/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`);
-  };
+  const runLink = (jobid: string) => `/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`;
 
   const getOutputValueFromState = (outputName: string): string => {
     const outputValue = (contextState as any)?.values?.outputs?.[outputName];
@@ -578,9 +575,7 @@ export const WorkspaceDetails = ({
                           />
                         ),
                       }}
-                      dataSource={
-                        jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id).slice(0, 1) : []
-                      }
+                      dataSource={jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id).slice(0, 1) : []}
                       renderItem={(item) => (
                         <List.Item>
                           <List.Item.Meta
@@ -595,7 +590,9 @@ export const WorkspaceDetails = ({
                                       className="ant-list-item-meta-title"
                                       style={{ margin: 0 }}
                                     >
-                                      <a onClick={() => handleClick(item.id)}>{item.title}</a>{" "}
+                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
+                                        {item.title}
+                                      </Link>{" "}
                                     </Typography.Title>
                                     <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
                                     <b>{item.via || "UI"}</b>{" "}
@@ -620,7 +617,11 @@ export const WorkspaceDetails = ({
                                 <Row>
                                   <Col span={20}></Col>
                                   <Col>
-                                    <Button onClick={() => handleClick(item.id)}>See details</Button>
+                                    <Button>
+                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
+                                        See details
+                                      </Link>
+                                    </Button>
                                   </Col>
                                 </Row>
                               </div>
@@ -705,7 +706,7 @@ export const WorkspaceDetails = ({
             <DetailsJob jobId={jobId!} />
           </Suspense>
         ) : (
-          <RunList jobs={jobs} onRunClick={handleClick} />
+          <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
         );
       case "3":
         return (
@@ -873,8 +874,7 @@ export const WorkspaceDetails = ({
                     planJob={planJob}
                     resources={resources}
                     disabledReason={
-                      workspace.attributes.source === "empty" &&
-                      workspace.attributes.branch === "remote-content"
+                      workspace.attributes.source === "empty" && workspace.attributes.branch === "remote-content"
                         ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
                         : undefined
                     }

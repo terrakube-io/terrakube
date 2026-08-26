@@ -30,7 +30,7 @@ import {
 } from "@ant-design/icons";
 import { Layout, Menu, Tag, theme } from "antd";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
 import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
@@ -49,7 +49,6 @@ type Props = {
   setOrganizationName: (name: string) => void;
   organizations: FlatOrganization[];
   onOrgChange: (orgId: string) => void;
-  onManageOrgs: () => void;
   workspaceManageState: boolean;
 };
 
@@ -85,13 +84,11 @@ export default function AppSidebar({
   setOrganizationName,
   organizations,
   onOrgChange,
-  onManageOrgs,
   workspaceManageState,
 }: Props) {
   const [collapsed, setCollapsed] = useState(() => getStoredSidebarCollapsed());
   const [defaultSelected, setDefaultSelected] = useState(["organizations"]);
   const location = useLocation();
-  const navigate = useNavigate();
   const { token } = theme.useToken();
   const params = location.pathname.split("/");
   const orgIdFromUrl = getOrgIdFromPathname(location.pathname);
@@ -158,52 +155,14 @@ export default function AppSidebar({
     isUserSettingsContext,
   ]);
 
-  const handleSectionNavigation = (section: string) => {
+  const handleOrgMenuClick = (key: string) => {
     ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/${section}`);
-      setDefaultSelected([section]);
-    });
-  };
-
-  const handleSettingsNavigation = (key: string, path: string) => {
-    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/settings/${path}`);
       setDefaultSelected([key]);
     });
   };
 
-  const handleBackToWorkspaces = () => {
-    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/workspaces`);
-      setDefaultSelected(["workspaces"]);
-    });
-  };
-
-  const handleBackToWorkspace = () => {
-    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/workspaces/${params[4]}`);
-      setDefaultSelected(["overview"]);
-    });
-  };
-
-  const handleWorkspaceSectionNavigation = (key: string, path: string) => {
-    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/workspaces/${params[4]}${path ? `/${path}` : ""}`);
-      setDefaultSelected([key]);
-    });
-  };
-
-  const handleWorkspaceSettingsNavigation = (key: string, path: string) => {
-    ensureOrganizationName(orgIdFromUrl!, organizationName, setOrganizationName, () => {
-      navigate(`/organizations/${orgIdFromUrl}/workspaces/${params[4]}/settings/${path}`);
-      setDefaultSelected([key]);
-    });
-  };
-
-  const handleUserSettingsNavigation = (key: string, path: string) => {
-    navigate(`/settings/${path}`);
-    setDefaultSelected([key]);
-  };
+  const orgBasePath = `/organizations/${orgIdFromUrl}`;
+  const workspaceBasePath = `${orgBasePath}/workspaces/${params[4]}`;
 
   const settingsGroups = [
     {
@@ -272,31 +231,38 @@ export default function AppSidebar({
   const items = isUserSettingsContext
     ? [
         {
-          label: "Home",
+          label: <Link to="/">Home</Link>,
           key: "__back__",
           icon: <LeftOutlined />,
-          onClick: () => navigate("/"),
         },
         {
           type: "group" as const,
           key: "account-settings",
           label: "Account Settings",
           children: [
-            { key: "tokens", label: "Tokens", icon: <KeyOutlined /> },
-            { key: "theme", label: "Theme", icon: <BgColorsOutlined /> },
+            { key: "tokens", name: "Tokens", icon: <KeyOutlined /> },
+            { key: "theme", name: "Theme", icon: <BgColorsOutlined /> },
           ].map((item) => ({
-            ...item,
-            onClick: () => handleUserSettingsNavigation(item.key, item.key),
+            key: item.key,
+            icon: item.icon,
+            label: (
+              <Link to={`/settings/${item.key}`} onClick={() => setDefaultSelected([item.key])}>
+                {item.name}
+              </Link>
+            ),
           })),
         },
       ]
     : isWorkspaceSettingsContext
       ? [
           {
-            label: "Back to Workspace",
+            label: (
+              <Link to={workspaceBasePath} onClick={() => handleOrgMenuClick("overview")}>
+                Back to Workspace
+              </Link>
+            ),
             key: "__back__",
             icon: <LeftOutlined />,
-            onClick: handleBackToWorkspace,
           },
           {
             type: "group" as const,
@@ -304,19 +270,25 @@ export default function AppSidebar({
             label: "Workspace Settings",
             children: workspaceSettingsItems.map((item) => ({
               key: item.key,
-              label: item.label,
               icon: item.icon,
-              onClick: () => handleWorkspaceSettingsNavigation(item.key, item.path),
+              label: (
+                <Link to={`${workspaceBasePath}/settings/${item.path}`} onClick={() => handleOrgMenuClick(item.key)}>
+                  {item.label}
+                </Link>
+              ),
             })),
           },
         ]
       : isSettingsContext
         ? [
             {
-              label: "Workspaces",
+              label: (
+                <Link to={`${orgBasePath}/workspaces`} onClick={() => handleOrgMenuClick("workspaces")}>
+                  Workspaces
+                </Link>
+              ),
               key: "__back__",
               icon: <LeftOutlined />,
-              onClick: handleBackToWorkspaces,
             },
             ...settingsGroups.map((group) => ({
               type: "group" as const,
@@ -324,91 +296,104 @@ export default function AppSidebar({
               label: group.label,
               children: group.items.map((item) => ({
                 key: item.key,
-                label: item.label,
                 icon: item.icon,
-                onClick: () => handleSettingsNavigation(item.key, item.path),
+                label: (
+                  <Link to={`${orgBasePath}/settings/${item.path}`} onClick={() => handleOrgMenuClick(item.key)}>
+                    {item.label}
+                  </Link>
+                ),
               })),
             })),
           ]
         : isWorkspaceDetailContext
           ? [
               {
-                label: "Workspaces",
+                label: (
+                  <Link to={`${orgBasePath}/workspaces`} onClick={() => handleOrgMenuClick("workspaces")}>
+                    Workspaces
+                  </Link>
+                ),
                 key: "__back__",
                 icon: <LeftOutlined />,
-                onClick: handleBackToWorkspaces,
               },
               {
                 key: "overview",
-                label: "Overview",
+                label: (
+                  <Link to={workspaceBasePath} onClick={() => handleOrgMenuClick("overview")}>
+                    Overview
+                  </Link>
+                ),
                 icon: <DashboardOutlined />,
-                onClick: () => handleWorkspaceSectionNavigation("overview", ""),
               },
               {
                 key: "runs",
-                label: "Runs",
+                label: (
+                  <Link to={`${workspaceBasePath}/runs`} onClick={() => handleOrgMenuClick("runs")}>
+                    Runs
+                  </Link>
+                ),
                 icon: <HistoryOutlined />,
-                onClick: () => handleWorkspaceSectionNavigation("runs", "runs"),
               },
               {
                 key: "states",
-                label: "States",
+                label: workspaceManageState ? (
+                  <Link to={`${workspaceBasePath}/states`} onClick={() => handleOrgMenuClick("states")}>
+                    States
+                  </Link>
+                ) : (
+                  "States"
+                ),
                 icon: <DatabaseOutlined />,
                 disabled: !workspaceManageState,
-                onClick: () => handleWorkspaceSectionNavigation("states", "states"),
               },
               {
                 key: "variables",
-                label: "Variables",
+                label: (
+                  <Link to={`${workspaceBasePath}/variables`} onClick={() => handleOrgMenuClick("variables")}>
+                    Variables
+                  </Link>
+                ),
                 icon: <CodeOutlined />,
-                onClick: () => handleWorkspaceSectionNavigation("variables", "variables"),
               },
               {
                 key: "schedules",
-                label: "Schedules",
+                label: (
+                  <Link to={`${workspaceBasePath}/schedules`} onClick={() => handleOrgMenuClick("schedules")}>
+                    Schedules
+                  </Link>
+                ),
                 icon: <ScheduleOutlined />,
-                onClick: () => handleWorkspaceSectionNavigation("schedules", "schedules"),
               },
               {
                 key: "settings",
-                label: "Settings",
+                label: (
+                  <Link to={`${workspaceBasePath}/settings/general`} onClick={() => handleOrgMenuClick("settings")}>
+                    Settings
+                  </Link>
+                ),
                 icon: <SettingOutlined />,
-                onClick: () => handleWorkspaceSectionNavigation("settings", "settings/general"),
               },
             ]
           : orgIdFromUrl
             ? [
-                {
-                  label: "Projects",
-                  key: "projects",
-                  icon: <ProjectOutlined />,
-                  onClick: () => handleSectionNavigation("projects"),
-                },
-                {
-                  label: "Workspaces",
-                  key: "workspaces",
-                  icon: <AppstoreOutlined />,
-                  onClick: () => handleSectionNavigation("workspaces"),
-                },
-                {
-                  label: "Registry",
-                  key: "registry",
-                  icon: <CloudOutlined />,
-                  onClick: () => handleSectionNavigation("registry"),
-                },
-                {
-                  label: "Settings",
-                  key: "settings",
-                  icon: <SettingOutlined />,
-                  onClick: () => handleSectionNavigation("settings"),
-                },
-              ]
+                { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
+                { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
+                { key: "registry", name: "Registry", icon: <CloudOutlined /> },
+                { key: "settings", name: "Settings", icon: <SettingOutlined /> },
+              ].map((item) => ({
+                key: item.key,
+                icon: item.icon,
+                label: (
+                  <Link to={`${orgBasePath}/${item.key}`} onClick={() => handleOrgMenuClick(item.key)}>
+                    {item.name}
+                  </Link>
+                ),
+              }))
             : [
                 {
-                  label: "Organizations",
+                  label: <Link to="/organizations">Organizations</Link>,
                   key: "organizations",
                   icon: <BankOutlined />,
-                  onClick: () => navigate("/organizations"),
                 },
               ];
 
@@ -429,9 +414,9 @@ export default function AppSidebar({
     >
       <div className="app-sidebar-inner">
         <div className={`app-sidebar-header ${effectiveCollapsed ? "app-sidebar-header--collapsed" : ""}`}>
-          <button type="button" className="app-sidebar-home-link" onClick={() => navigate("/")}>
+          <Link to="/" className="app-sidebar-home-link">
             <img src={logo} alt="Terrakube" className="app-sidebar-logo" />
-          </button>
+          </Link>
           <div className="app-sidebar-header-actions">
             {!effectiveCollapsed && (
               <div className="app-sidebar-utility">
@@ -478,7 +463,6 @@ export default function AppSidebar({
               organizationName={organizationName}
               organizations={organizations}
               onOrgChange={onOrgChange}
-              onManageOrgs={onManageOrgs}
               placement="top"
             />
           )}

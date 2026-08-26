@@ -14,7 +14,7 @@ import {
   message,
 } from "antd";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -106,10 +106,6 @@ export const CreateEditCollection = ({
       });
     }
   }, [orgid, collectionid, mode, collectionForm]);
-
-  const handleCancel = () => {
-    navigate(`/organizations/${orgid}/settings/collection`);
-  };
 
   const handleSave = async () => {
     try {
@@ -701,7 +697,9 @@ export const CreateEditCollection = ({
 
           <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
             <Space>
-              <Button onClick={handleCancel}>Cancel</Button>
+              <Button>
+                <Link to={`/organizations/${orgid}/settings/collection`}>Cancel</Link>
+              </Button>
               <Button type="primary" onClick={handleSave} loading={saveLoading} disabled={!managePermission}>
                 {mode === "create" ? "Create variable collection" : "Save Variable Collection"}
               </Button>

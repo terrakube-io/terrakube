@@ -26,7 +26,7 @@ import { IconContext } from "react-icons";
 import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { VcsModel, VcsType, VcsTypeExtended } from "../types";
@@ -230,67 +230,47 @@ export const ImportWorkspace = () => {
     { title: "Connect to Platform" },
     { title: "Import Workspaces" },
   ];
+  const vcsLink = (vcsType: VcsTypeExtended) => `/organizations/${organizationId}/settings/vcs/new/${vcsType}`;
+
   const gitlabItems = [
     {
-      label: "GitLab.com",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB)}>GitLab.com</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB);
-      },
     },
     {
-      label: "GitLab Community Edition",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB_COMMUNITY)}>GitLab Community Edition</Link>,
       key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
-      },
     },
     {
-      label: "GitLab Enterprise Edition",
+      label: <Link to={vcsLink(VcsTypeExtended.GITLAB_ENTERPRISE)}>GitLab Enterprise Edition</Link>,
       key: "3",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
-      },
     },
   ];
 
   const githubItems = [
     {
-      label: "GitHub.com",
+      label: <Link to={vcsLink(VcsTypeExtended.GITHUB)}>GitHub.com</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB);
-      },
     },
     {
-      label: "GitHub Enterprise",
+      label: <Link to={vcsLink(VcsTypeExtended.GITHUB_ENTERPRISE)}>GitHub Enterprise</Link>,
       key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
-      },
     },
   ];
 
   const bitBucketItems = [
     {
-      label: "Bitbucket Cloud",
+      label: <Link to={vcsLink(VcsTypeExtended.BITBUCKET)}>Bitbucket Cloud</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.BITBUCKET);
-      },
     },
   ];
 
   const azDevOpsItems = [
     {
-      label: "Azure DevOps Services",
+      label: <Link to={vcsLink(VcsTypeExtended.AZURE_DEVOPS)}>Azure DevOps Services</Link>,
       key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.AZURE_DEVOPS);
-      },
     },
   ];
-  const navigate = useNavigate();
   useEffect(() => {
     setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) ?? undefined);
     setLoading(true);
@@ -318,10 +298,6 @@ export const ImportWorkspace = () => {
   const handleGitClick = (id: string) => {
     setVcsId(id);
     handleChange(3);
-  };
-
-  const handleVCSClick = (vcsType: VcsTypeExtended) => {
-    navigate(`/organizations/${organizationId}/settings/vcs/new/${vcsType}`);
   };
 
   const handleConnectDifferent = () => {

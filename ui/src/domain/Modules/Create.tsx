@@ -83,9 +83,7 @@ export const CreateModule = () => {
     }
   };
 
-  const handleVCSClick = (vcsType: VcsType) => {
-    navigate(`/organizations/${orgid}/settings/vcs/new/${vcsType}`);
-  };
+  const vcsLink = (vcsType: VcsType) => `/organizations/${orgid}/settings/vcs/new/${vcsType}`;
 
   const handleDifferent = () => {
     setVCSButtonsVisible(false);
@@ -325,41 +323,17 @@ export const CreateModule = () => {
               ) : (
                 <div>
                   <Space direction="horizontal">
-                    <Button
-                      icon={<GithubOutlined />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.GITHUB);
-                      }}
-                      size="large"
-                    >
-                      GitHub
+                    <Button icon={<GithubOutlined />} size="large">
+                      <Link to={vcsLink(VcsType.GITHUB)}>GitHub</Link>
                     </Button>
-                    <Button
-                      icon={<GitlabOutlined />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.GITLAB);
-                      }}
-                      size="large"
-                    >
-                      GitLab
+                    <Button icon={<GitlabOutlined />} size="large">
+                      <Link to={vcsLink(VcsType.GITLAB)}>GitLab</Link>
                     </Button>
-                    <Button
-                      icon={<SiBitbucket />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.BITBUCKET);
-                      }}
-                      size="large"
-                    >
-                      &nbsp;&nbsp;Bitbucket
+                    <Button icon={<SiBitbucket />} size="large">
+                      <Link to={vcsLink(VcsType.BITBUCKET)}>&nbsp;&nbsp;Bitbucket</Link>
                     </Button>
-                    <Button
-                      icon={<VscAzureDevops />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.AZURE_DEVOPS);
-                      }}
-                      size="large"
-                    >
-                      &nbsp;&nbsp;Azure Devops
+                    <Button icon={<VscAzureDevops />} size="large">
+                      <Link to={vcsLink(VcsType.AZURE_DEVOPS)}>&nbsp;&nbsp;Azure Devops</Link>
                     </Button>
                   </Space>
                   <br />
