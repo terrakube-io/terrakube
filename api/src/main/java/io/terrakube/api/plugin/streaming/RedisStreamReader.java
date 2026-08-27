@@ -33,6 +33,18 @@ public class RedisStreamReader {
     }
 
     /**
+     * All records after {@code lastId}, without blocking. Used for the one-shot catch-up a new SSE
+     * subscriber needs before it joins the job's shared broadcaster loop.
+     */
+    @SuppressWarnings("unchecked")
+    public List<MapRecord> readAfterOnce(String streamKey, RecordId lastId) {
+        StreamOffset<String> offset = StreamOffset.create(streamKey, ReadOffset.from(lastId));
+        StreamReadOptions options = StreamReadOptions.empty().count(10_000);
+        List<MapRecord> records = redisTemplate.opsForStream().read(options, offset);
+        return records == null ? Collections.emptyList() : records;
+    }
+
+    /**
      * The last {@code count} records of the stream, in chronological order. Used by the running-step
      * plain GET so it never scans the whole (potentially huge) stream from the start.
      */
