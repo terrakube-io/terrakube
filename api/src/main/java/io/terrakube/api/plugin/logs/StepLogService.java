@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -67,18 +68,31 @@ public class StepLogService {
         }
     }
 
-    private boolean isTerminal(String stepId) {
-        return stepRepository.findById(UUID.fromString(stepId))
-                .map(step -> step.getStatus() == JobStatus.completed
-                        || step.getStatus() == JobStatus.failed
-                        || step.getStatus() == JobStatus.cancelled)
-                .orElse(false);
+    /**
+     * The step's status, or empty when the id is not a known step (or not a UUID at all - the
+     * {@code /tfoutput} endpoint has always allowed path-based access with arbitrary ids).
+     */
+    private Optional<JobStatus> stepStatus(String stepId) {
+        try {
+            return stepRepository.findById(UUID.fromString(stepId)).map(step -> step.getStatus());
+        } catch (IllegalArgumentException notAUuid) {
+            return Optional.empty();
+        }
     }
 
     public StepLog resolve(String organizationId, String jobId, String stepId) {
-        if (!isTerminal(stepId)) {
+        Optional<JobStatus> status = stepStatus(stepId);
+
+        // A step that is running or about to run streams to Redis - the caller serves that live
+        // path instead of a half-written or absent archived object.
+        if (status.filter(s -> s == JobStatus.running || s == JobStatus.pending).isPresent()) {
             return StepLog.missing();
         }
+
+        boolean terminal = status
+                .map(s -> s == JobStatus.completed || s == JobStatus.failed || s == JobStatus.cancelled)
+                .orElse(false);
+
         String key = cacheKey(organizationId, jobId, stepId);
         byte[] hit = cache.getIfPresent(key);
         if (hit != null) {
@@ -91,7 +105,9 @@ public class StepLogService {
             long len = out.getContentLength();
             if (len >= 0 && len <= properties.getCacheableMaxObjectBytes()) {
                 byte[] body = StreamUtils.copyToByteArray(out.getContent());
-                cache.put(key, body);
+                if (terminal) {
+                    cache.put(key, body);
+                }
                 return StepLog.cached(body);
             }
             return StepLog.streamable(len);

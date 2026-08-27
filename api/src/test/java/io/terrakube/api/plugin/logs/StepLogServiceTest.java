@@ -93,4 +93,31 @@ class StepLogServiceTest {
 
         assertFalse(service.resolve("o", "j", stepId.toString()).isExists());
     }
+
+    @Test
+    void unknownStepWithAnExistingObjectIsServedButNotCached() {
+        when(stepRepository.findById(stepId)).thenReturn(Optional.empty());
+        byte[] data = "legacy path access".getBytes();
+        when(storage.getStepOutputStream("o", "j", stepId.toString(), null))
+                .thenReturn(StepOutputStream.of(new ByteArrayInputStream(data), data.length, data.length))
+                .thenReturn(StepOutputStream.of(new ByteArrayInputStream(data), data.length, data.length));
+
+        StepLogService.StepLog first = service.resolve("o", "j", stepId.toString());
+        StepLogService.StepLog second = service.resolve("o", "j", stepId.toString());
+
+        assertArrayEquals(data, first.getBody());
+        assertArrayEquals(data, second.getBody());
+        verify(storage, times(2)).getStepOutputStream("o", "j", stepId.toString(), null);
+    }
+
+    @Test
+    void nonUuidStepIdIsServedFromStorage() {
+        byte[] data = "SAMPLE".getBytes();
+        when(storage.getStepOutputStream("o", "j", "3", null))
+                .thenReturn(StepOutputStream.of(new ByteArrayInputStream(data), data.length, data.length));
+
+        StepLogService.StepLog result = service.resolve("o", "j", "3");
+
+        assertArrayEquals(data, result.getBody());
+    }
 }
