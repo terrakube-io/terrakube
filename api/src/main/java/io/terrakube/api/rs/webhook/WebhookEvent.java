@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.hooks.webhook.WebhookEventManageHook;
 
 import com.yahoo.elide.annotation.Include;
@@ -32,7 +31,6 @@ import lombok.Setter;
 public class WebhookEvent extends GenericAuditFields {
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     private UUID id;
 
     private String branch;

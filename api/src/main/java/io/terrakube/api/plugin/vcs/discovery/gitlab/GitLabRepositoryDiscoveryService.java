@@ -41,7 +41,7 @@ public class GitLabRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         List<VcsGroupSummary> groups = new ArrayList<>();
         groups.add(VcsGroupSummary.builder().id(PERSONAL_NAMESPACE_GROUP).name("My Projects").build());
 
-        String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/groups")
+        String url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/groups")
                 .queryParam("membership", true)
                 .queryParam("per_page", 100)
                 .toUriString();
@@ -61,10 +61,10 @@ public class GitLabRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
     public VcsRepositoryPage listRepositories(Vcs vcs, String group, String search, int page) {
         UriComponentsBuilder builder;
         if (PERSONAL_NAMESPACE_GROUP.equals(group)) {
-            builder = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/projects")
+            builder = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/projects")
                     .queryParam("owned", true);
         } else {
-            builder = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/groups/" + group + "/projects")
+            builder = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/groups/" + group + "/projects")
                     .queryParam("include_subgroups", true);
         }
         builder.queryParam("per_page", PAGE_SIZE).queryParam("page", page).queryParam("order_by", "name");

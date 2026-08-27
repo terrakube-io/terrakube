@@ -54,6 +54,9 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     @Builder.Default
     private long providerManagerCacheMaximumSize = 100;
 
+    @Builder.Default
+    private java.util.function.Function<String, JwtDecoder> jwtDecoderFactory = JwtDecoders::fromIssuerLocation;
+
     private Cache<String, Optional<FederatedConfig>> federatedCache;
     private Cache<String, ProviderManager> providerManagerCache;
 
@@ -95,7 +98,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 if (validateClaims(payloadMap, config.getClaims())) {
                     log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
                     return getProviderManagerCache().get(config.getIssuerUrl(), url ->
-                            new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(url)))
+                            new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
                     );
                 }
             }
@@ -109,7 +112,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat)));
                 break;
             default:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(this.issuerUri)));
+                providerManager = new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri)));
                 break;
         }
         return providerManager;

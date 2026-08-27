@@ -4,7 +4,6 @@ import java.sql.Types;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 
 import com.yahoo.elide.annotation.Include;
 
@@ -25,7 +24,6 @@ import lombok.Setter;
 public class ModuleVersion {
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     

@@ -6,7 +6,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 
 import com.yahoo.elide.annotation.Exclude;
 
@@ -35,7 +34,6 @@ public class RepoWebhookDelivery extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     private UUID id;
 
     // Explicit @JoinColumn: this project's Hibernate physical naming strategy

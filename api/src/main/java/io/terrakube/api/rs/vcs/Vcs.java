@@ -8,7 +8,6 @@ import java.util.UUID;
 import com.yahoo.elide.annotation.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 
 import jakarta.persistence.Column;
@@ -39,7 +38,6 @@ public class Vcs extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

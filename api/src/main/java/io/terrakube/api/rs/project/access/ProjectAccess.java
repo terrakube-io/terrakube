@@ -9,7 +9,6 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.project.Project;
 
 import java.sql.Types;
@@ -27,7 +26,6 @@ public class ProjectAccess {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

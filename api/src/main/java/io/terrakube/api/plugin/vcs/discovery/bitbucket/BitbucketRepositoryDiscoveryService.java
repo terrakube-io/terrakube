@@ -56,7 +56,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     }
 
     private List<VcsGroupSummary> listCloudWorkspaces(Vcs vcs) {
-        String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/workspaces")
+        String url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/workspaces")
                 .queryParam("role", "member")
                 .queryParam("pagelen", 100)
                 .toUriString();
@@ -74,7 +74,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     }
 
     private VcsRepositoryPage listCloudRepositories(Vcs vcs, String group, String search, int page) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/repositories/" + group)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/repositories/" + group)
                 .queryParam("pagelen", PAGE_SIZE)
                 .queryParam("page", page)
                 .queryParam("sort", "name");
@@ -109,7 +109,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     }
 
     private List<VcsGroupSummary> listServerProjects(Vcs vcs, String search) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/projects")
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/projects")
                 .queryParam("limit", 100);
         if (search != null && !search.isBlank()) {
             builder.queryParam("name", search);
@@ -130,7 +130,7 @@ public class BitbucketRepositoryDiscoveryService implements VcsRepositoryDiscove
     private VcsRepositoryPage listServerRepositories(Vcs vcs, String group, String search, int page) {
         int start = (Math.max(page, 1) - 1) * PAGE_SIZE;
         UriComponentsBuilder builder = UriComponentsBuilder
-                .fromHttpUrl(vcs.getApiUrl() + "/projects/" + group + "/repos")
+                .fromUriString(vcs.getApiUrl() + "/projects/" + group + "/repos")
                 .queryParam("start", start)
                 .queryParam("limit", PAGE_SIZE);
         if (search != null && !search.isBlank()) {
