@@ -52,6 +52,16 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
 
     /**
+     * Ids of jobs that reached a terminal status inside the trailing sweep window - used to reclaim
+     * their live-log Redis streams. Native so soft-deleted jobs are included.
+     */
+    @Query(value = "SELECT id FROM job WHERE status IN " +
+            "('completed','failed','cancelled','rejected','noChanges','notExecuted') " +
+            "AND updated_date >= :from AND updated_date < :cutoff", nativeQuery = true)
+    List<Integer> findTerminalJobIdsUpdatedBetween(@Param("from") java.util.Date from,
+                                                   @Param("cutoff") java.util.Date cutoff);
+
+    /**
      * Row-locks the job for the rest of the caller's transaction. Two overlapping Quartz
      * firings for the same job (the ad-hoc trigger fired by ScheduleJobService.createJobContext
      * racing the first tick of its own 30s recurring trigger, or a createJobContextNow one-shot
