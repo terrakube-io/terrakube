@@ -6,7 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.BoundedInputStream;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -36,6 +39,36 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         log.info("Searching: /.terraform-spring-boot/local/tfoutput/{}/{}/{}.tfoutput", organizationId, jobId, stepId);
         String outputFilePath = String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId);
         return getOutputBytes(outputFilePath);
+    }
+
+    @Override
+    public StepOutputStream getStepOutputStream(String organizationId, String jobId, String stepId, ByteRange range) {
+        String path = String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId);
+        File file = new File(FileUtils.getUserDirectoryPath().concat(path));
+        if (!file.exists()) {
+            return StepOutputStream.missing();
+        }
+        long total = file.length();
+        try {
+            if (range == null) {
+                return StepOutputStream.of(new FileInputStream(file), total, total);
+            }
+            long start = range.isSuffix() ? Math.max(0, total - range.getSuffixLength()) : range.getStart();
+            long endInclusive = range.isSuffix() ? total - 1
+                    : (range.getEnd() >= 0 ? Math.min(range.getEnd(), total - 1) : total - 1);
+            if (start >= total) {
+                return StepOutputStream.missing();
+            }
+            long partLength = endInclusive - start + 1;
+            FileInputStream fis = new FileInputStream(file);
+            IOUtils.skipFully(fis, start);
+            InputStream bounded = BoundedInputStream.builder().setInputStream(fis).setMaxCount(partLength).get();
+            String contentRange = "bytes " + start + "-" + endInclusive + "/" + total;
+            return StepOutputStream.partial(bounded, partLength, contentRange, total);
+        } catch (IOException e) {
+            log.error("Failed to open local step output {}: {}", path, e.getMessage());
+            return StepOutputStream.missing();
+        }
     }
 
     @Override

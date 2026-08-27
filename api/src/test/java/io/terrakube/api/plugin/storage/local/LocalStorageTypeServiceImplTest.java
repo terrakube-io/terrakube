@@ -13,6 +13,10 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.Collections;
 
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
+import org.apache.commons.io.IOUtils;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -22,6 +26,55 @@ class LocalStorageTypeServiceImplTest {
     Path tempDir;
 
     private LocalStorageTypeServiceImpl localStorageTypeService = new LocalStorageTypeServiceImpl();
+
+    private File writeStepOutput(String content) throws IOException {
+        File file = tempDir.resolve(".terraform-spring-boot/local/output/o/j/s.tfoutput").toFile();
+        file.getParentFile().mkdirs();
+        java.nio.file.Files.writeString(file.toPath(), content);
+        return file;
+    }
+
+    @Test
+    void getStepOutputStreamReturnsWholeFileWhenNoRange() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            writeStepOutput("hello world");
+
+            try (StepOutputStream result = localStorageTypeService.getStepOutputStream("o", "j", "s", null)) {
+                assertTrue(result.isExists());
+                assertFalse(result.isPartial());
+                assertEquals(11L, result.getContentLength());
+                assertEquals("hello world", new String(IOUtils.toByteArray(result.getContent())));
+            }
+        }
+    }
+
+    @Test
+    void getStepOutputStreamTailsWithSuffixRange() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            writeStepOutput("0123456789");
+
+            try (StepOutputStream result = localStorageTypeService.getStepOutputStream(
+                    "o", "j", "s", ByteRange.parse("bytes=-4").orElseThrow())) {
+                assertTrue(result.isPartial());
+                assertEquals("bytes 6-9/10", result.getContentRange());
+                assertEquals(10L, result.getTotalLength());
+                assertEquals("6789", new String(IOUtils.toByteArray(result.getContent())));
+            }
+        }
+    }
+
+    @Test
+    void getStepOutputStreamReturnsMissingWhenFileAbsent() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            StepOutputStream result = localStorageTypeService.getStepOutputStream("o", "j", "s", null);
+
+            assertFalse(result.isExists());
+        }
+    }
 
     @Test
     void testUploadTerraformStateJson() throws IOException {

@@ -5,12 +5,18 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobListDetails;
+import com.azure.storage.blob.models.BlobRange;
+import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +49,36 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
             log.error(e.getMessage());
         }
         return response;
+    }
+
+    @Override
+    public StepOutputStream getStepOutputStream(String organizationId, String jobId, String stepId, ByteRange range) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+        BlobClient blobClient = containerClient.getBlobClient(
+                String.format("%s/%s/%s.tfoutput", organizationId, jobId, stepId));
+        try {
+            long size = blobClient.getProperties().getBlobSize();
+            if (range == null) {
+                return StepOutputStream.of(blobClient.openInputStream(), size, size);
+            }
+            long start = range.isSuffix() ? Math.max(0, size - range.getSuffixLength()) : range.getStart();
+            long endInclusive = range.isSuffix() ? size - 1
+                    : (range.getEnd() >= 0 ? Math.min(range.getEnd(), size - 1) : size - 1);
+            if (start >= size) {
+                return StepOutputStream.missing();
+            }
+            long count = endInclusive - start + 1;
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            blobClient.downloadStreamWithResponse(buffer, new BlobRange(start, count),
+                    null, null, false, null, null);
+            String contentRange = "bytes " + start + "-" + endInclusive + "/" + size;
+            return StepOutputStream.partial(new ByteArrayInputStream(buffer.toByteArray()), count, contentRange, size);
+        } catch (BlobStorageException e) {
+            if (e.getStatusCode() == 404 || e.getStatusCode() == 416) {
+                return StepOutputStream.missing();
+            }
+            throw e;
+        }
     }
 
     @Override

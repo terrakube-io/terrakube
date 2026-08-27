@@ -6,7 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
 import org.apache.sshd.common.util.io.IoUtils;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -71,6 +74,43 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     @Override
     public byte[] getStepOutput(String organizationId, String jobId, String stepId) {
         return downloadObjectFromBucket(bucketName, String.format(BUCKET_LOCATION_OUTPUT, organizationId, jobId, stepId));
+    }
+
+    @Override
+    public StepOutputStream getStepOutputStream(String organizationId, String jobId, String stepId, ByteRange range) {
+        String key = String.format(BUCKET_LOCATION_OUTPUT, organizationId, jobId, stepId);
+        try {
+            GetObjectRequest.Builder request = GetObjectRequest.builder().bucket(bucketName).key(key);
+            if (range != null) {
+                request.range(range.toHttpHeaderValue());
+            }
+            ResponseInputStream<GetObjectResponse> stream =
+                    s3client.getObject(request.build(), ResponseTransformer.toInputStream());
+            GetObjectResponse resp = stream.response();
+            long partLength = resp.contentLength() == null ? -1L : resp.contentLength();
+            if (range != null && resp.contentRange() != null) {
+                return StepOutputStream.partial(stream, partLength, resp.contentRange(),
+                        parseTotalFromContentRange(resp.contentRange()));
+            }
+            return StepOutputStream.of(stream, partLength, partLength);
+        } catch (NoSuchKeyException e) {
+            return StepOutputStream.missing();
+        } catch (S3Exception e) {
+            if (e.statusCode() == 416) {
+                return StepOutputStream.missing();
+            }
+            log.error("Failed to open step output stream {}: {}", key, e.getMessage());
+            throw e;
+        }
+    }
+
+    private static long parseTotalFromContentRange(String contentRange) {
+        int slash = contentRange.lastIndexOf('/');
+        if (slash < 0) {
+            return -1L;
+        }
+        String tail = contentRange.substring(slash + 1).trim();
+        return "*".equals(tail) ? -1L : Long.parseLong(tail);
     }
 
     @Override
