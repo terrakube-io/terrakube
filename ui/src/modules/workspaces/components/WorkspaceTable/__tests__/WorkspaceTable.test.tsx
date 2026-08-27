@@ -4,12 +4,6 @@ import WorkspaceTable from "../WorkspaceTable";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { JobStatus } from "@/domain/types";
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
-
 const workspaces: WorkspaceListItem[] = [
   {
     id: "ws-1",
@@ -56,7 +50,6 @@ function renderTable(props = {}) {
 
 describe("WorkspaceTable", () => {
   beforeEach(() => {
-    mockNavigate.mockClear();
     defaultProps.onSelectProject.mockClear();
     (defaultProps.onSortChange as jest.Mock).mockClear();
   });
@@ -82,11 +75,10 @@ describe("WorkspaceTable", () => {
     expect(document.querySelector(".workspace-name-line3")).not.toBeInTheDocument();
   });
 
-  it("calls onSelectProject with the project id when the project chip is clicked, without navigating", () => {
+  it("calls onSelectProject with the project id when the project chip is clicked", () => {
     renderTable();
     fireEvent.click(screen.getByText("platform"));
     expect(defaultProps.onSelectProject).toHaveBeenCalledWith("proj-1");
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("shows a lock icon only for locked workspaces", () => {
@@ -116,10 +108,10 @@ describe("WorkspaceTable", () => {
     expect(container.querySelector(".workspace-status-icon .anticon")).toBeInTheDocument();
   });
 
-  it("navigates to the workspace on row click", () => {
+  it("links to the workspace from the row", () => {
     renderTable();
-    fireEvent.click(screen.getByText("billing-api-staging"));
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
+    const link = screen.getByLabelText("Open workspace billing-api-staging");
+    expect(link).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1");
   });
 
   it("truncates the source with a title attribute holding the full path", () => {
@@ -199,14 +191,11 @@ describe("WorkspaceTable", () => {
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("status");
   });
 
-  it("is keyboard-operable: Enter on a sortable header sorts, and on a row navigates", () => {
+  it("is keyboard-operable: Enter on a sortable header sorts", () => {
     renderTable({ sortOption: "status" });
 
     fireEvent.keyDown(screen.getByText("Name"), { key: "Enter" });
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("name_asc");
-
-    fireEvent.keyDown(screen.getByText("billing-api-staging"), { key: " " });
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
   });
 
   describe("grouped mode", () => {

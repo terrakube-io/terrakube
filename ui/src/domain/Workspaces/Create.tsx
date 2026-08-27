@@ -29,6 +29,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import organizationService from "@/modules/organizations/organizationService";
 import {
   ProjectModel,
   SshKey,
@@ -94,7 +95,11 @@ export const CreateWorkspace = () => {
   const [sshKeysVisible, setSSHKeysVisible] = useState(false);
   const [versionControlFlow, setVersionControlFlow] = useState(true);
   const [requiredVcsPush, setRequiredVcsPush] = useState(true);
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const { orgid } = useParams<{ orgid?: string }>();
+  if (orgid) {
+    sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
+  }
+  const organizationId = orgid || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [repoPickerMode, setRepoPickerMode] = useState<"list" | "manual">("list");
   const [discoveryUnsupported, setDiscoveryUnsupported] = useState(false);
   const [vcsGroups, setVcsGroups] = useState<VcsRepositoryGroup[]>([]);
@@ -175,7 +180,24 @@ export const CreateWorkspace = () => {
   const preselectedProjectId = searchParams.get("projectId");
 
   useEffect(() => {
-    setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME));
+    if (!organizationId) {
+      setLoading(false);
+      return;
+    }
+    sessionStorage.setItem(ORGANIZATION_ARCHIVE, organizationId);
+    const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
+    if (storedOrgName) {
+      setOrganizationName(storedOrgName);
+    }
+    if (orgid) {
+      organizationService.getOrganizationNameGraphQL(orgid).then((name) => {
+        if (name) {
+          sessionStorage.setItem(ORGANIZATION_NAME, name);
+          setOrganizationName(name);
+        }
+      });
+    }
+
     setLoading(true);
     getIacTypes();
 
@@ -187,7 +209,7 @@ export const CreateWorkspace = () => {
       axiosInstance.get(`organization/${organizationId}/ssh`),
       axiosInstance.get(`organization/${organizationId}/template`),
       axiosInstance.get(`organization/${organizationId}/vcs`),
-      projectService.listProjects(organizationId!),
+      projectService.listProjects(organizationId),
     ])
       .then(([versionsRes, sshRes, templatesRes, vcsRes, projectsRes]) => {
         // Process versions
@@ -234,7 +256,7 @@ export const CreateWorkspace = () => {
         message.error(getErrorMessage(error));
         setLoading(false);
       });
-  }, []);
+  }, [organizationId, orgid]);
   const handleClick = () => {
     setCurrent(2);
     setVersionControlFlow(true);
