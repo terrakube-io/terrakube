@@ -19,4 +19,10 @@ public class AwsStorageTypeProperties {
     private String region;
     private String endpoint;
     private boolean enableRoleAuthentication;
+
+    // Storage read resilience: a hung object read fails within apiCallTimeout instead of the SDK's
+    // multi-minute default retry ladder. Step-log objects are KB-sized; sub-second is normal.
+    private int apiCallTimeoutSeconds = 10;
+    private int apiCallAttemptTimeoutSeconds = 3;
+    private int maxRetryAttempts = 2;
 }
