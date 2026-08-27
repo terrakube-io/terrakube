@@ -21,4 +21,16 @@ public class LogsProperties {
 
     /** Objects larger than this are streamed through uncached. */
     private long cacheableMaxObjectBytes = 1_048_576L;
+
+    /** Max concurrent step-log SSE connections a single pod will hold before returning 503. */
+    private int sseMaxConnections = 1500;
+
+    /** Redis XREAD block duration for a job's shared broadcaster loop. */
+    private Duration sseJobIdleTimeout = Duration.ofSeconds(2);
+
+    /** A step-log SSE stream is closed after this long; the client reconnects with Last-Event-ID. */
+    private Duration sseMaxStreamDuration = Duration.ofMinutes(30);
+
+    /** How long a job's terminal/non-terminal state is cached for the broadcaster loop. */
+    private Duration jobStatusCacheTtl = Duration.ofSeconds(2);
 }
