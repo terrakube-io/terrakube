@@ -157,6 +157,7 @@ function ProjectGeneralSettings({
           )}
         </div>
         <Popconfirm
+          okButtonProps={{ danger: true }}
           title={
             <p>
               Project will be permanently deleted

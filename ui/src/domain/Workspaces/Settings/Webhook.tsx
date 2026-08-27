@@ -549,6 +549,7 @@ export const WorkspaceWebhook = ({
       render: (_: string, record: any) => (
         <Space size="middle">
           <Popconfirm
+            okButtonProps={{ danger: true }}
             onConfirm={() => {
               onDelete(record);
             }}
@@ -626,6 +627,7 @@ export const WorkspaceWebhook = ({
                   <Space>
                     <Typography.Text type="success">Shared repo webhook active</Typography.Text>
                     <Popconfirm
+                      okButtonProps={{ danger: true }}
                       title="Revert to per-workspace webhook?"
                       description="This will create a new per-workspace webhook on your next save."
                       onConfirm={handleRevertV2}
@@ -644,6 +646,7 @@ export const WorkspaceWebhook = ({
                       Consolidate webhooks across workspaces sharing this repository
                     </Typography.Text>
                     <Popconfirm
+                      okButtonProps={{ danger: true }}
                       title="Migrate to shared webhook? (Experimental)"
                       description="This will replace the per-workspace webhook with a single shared webhook for this repository."
                       onConfirm={handleMigrateV2}

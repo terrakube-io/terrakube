@@ -1,5 +1,6 @@
 import { List, Avatar, Tag, Pagination, Tooltip, Button } from "antd";
 import { UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { Link } from "react-router-dom";
 import { FlatJob } from "../../../domain/types";
 import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
@@ -37,9 +38,10 @@ const safeJsonParse = (jsonString: string | null, fallback: any): any => {
 type Props = {
   jobs: FlatJob[];
   onRunClick: (id: string) => void;
+  runLink: (id: string) => string;
 };
 
-export default function RunList({ jobs, onRunClick }: Props) {
+export default function RunList({ jobs, onRunClick, runLink }: Props) {
   const [currentPage, setCurrentPage] = useState<number>(parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1"));
   const pageSize = 10;
   const [templateNames, setTemplateNames] = useState<{ [key: string]: string }>({});
@@ -109,7 +111,7 @@ export default function RunList({ jobs, onRunClick }: Props) {
     return "Terraform";
   };
 
-  const sortedJobs = filteredJobs.sort((a, b) => parseInt(a.id) - parseInt(b.id)).reverse();
+  const sortedJobs = [...filteredJobs].sort((a, b) => parseInt(b.id) - parseInt(a.id));
   const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Find the job with highest ID to mark as current
@@ -157,9 +159,9 @@ export default function RunList({ jobs, onRunClick }: Props) {
               avatar={<Avatar shape="square" icon={<UserOutlined />} />}
               title={
                 <span>
-                  <Button type="link" onClick={() => onRunClick(item.id)} style={{ color: "inherit", padding: 0 }}>
+                  <Link to={runLink(item.id)} onClick={() => onRunClick(item.id)} style={{ color: "inherit" }}>
                     {item.title}
-                  </Button>
+                  </Link>
                   {item.id === highestId && <Tag style={{ marginLeft: 8 }}>CURRENT</Tag>}
                 </span>
               }

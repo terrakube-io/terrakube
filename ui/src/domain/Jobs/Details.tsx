@@ -33,6 +33,7 @@ type Props = {
 };
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
+const TERMINAL_STEP_STATUSES = TERMINAL_JOB_STATUSES;
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
 
 const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
@@ -106,6 +107,7 @@ export const DetailsJob = ({ jobId }: Props) => {
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
+  const cachedStepLogs = useRef<Map<string, any>>(new Map());
   const contextRequestRef = useRef(0);
   const pollRequestRef = useRef(0);
 
@@ -438,6 +440,16 @@ export const DetailsJob = ({ jobId }: Props) => {
       );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
+      const fetchStepLog = async (stepItem: any) => {
+        const cached = cachedStepLogs.current.get(stepItem.id);
+        if (cached !== undefined) return cached;
+        const log = await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal);
+        if (TERMINAL_STEP_STATUSES.has(stepItem.attributes.status) && !signal.aborted && log !== "No logs available") {
+          cachedStepLogs.current.set(stepItem.id, log);
+        }
+        return log;
+      };
+
       const stepsPromise = Promise.all(
         stepEntries.map(async (stepItem: any) => ({
           id: stepItem.id,
@@ -450,7 +462,7 @@ export const DetailsJob = ({ jobId }: Props) => {
               ? incompleteVariableGuard.rawMessage
               : stepItem.attributes.status === "running"
               ? ""
-              : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
+              : await fetchStepLog(stepItem),
         }))
       );
 
@@ -541,6 +553,7 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   useEffect(() => {
     setLoading(true);
+    cachedStepLogs.current.clear();
     abortJobRequests();
     abortContextRequests();
 

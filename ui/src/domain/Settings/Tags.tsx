@@ -194,6 +194,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
                         Edit
                       </Button>,
                       <Popconfirm
+                        okButtonProps={{ danger: true }}
                         onConfirm={() => {
                           onDelete(item.id);
                         }}

@@ -99,8 +99,8 @@ export default function OrganizationsPickerPage() {
         organizations.length > 0 && (
           <Space>
             <ListViewToggle value={listViewMode} onChange={setListViewMode} />
-            <Button type="primary" onClick={() => navigate("/organizations/create")}>
-              <PlusOutlined /> Create organization
+            <Button type="primary" icon={<PlusOutlined />}>
+              <Link to="/organizations/create">Create organization</Link>
             </Button>
           </Space>
         )

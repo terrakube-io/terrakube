@@ -111,6 +111,7 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
                           Edit
                         </Button>,
                         <Popconfirm
+                          okButtonProps={{ danger: true }}
                           onConfirm={() => {
                             onDelete(item.id);
                           }}

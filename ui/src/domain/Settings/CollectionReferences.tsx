@@ -75,6 +75,7 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
         return (
           <div>
             <Popconfirm
+              okButtonProps={{ danger: true }}
               onConfirm={() => {
                 onDelete(record.id);
               }}

@@ -1,6 +1,6 @@
 import { AutoComplete, Button, Form, Input, Select, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Agent, Template, TofuRelease, Workspace } from "../../types";
 import {
   atomicHeader,
@@ -121,21 +121,23 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       ],
     };
 
-    try {
-      axiosInstance.post("/operations", body, atomicHeader).then((response) => {
+    axiosInstance
+      .post("/operations", body, atomicHeader)
+      .then((response) => {
         if (response.status === 200) {
           message.success("workspace updated successfully");
           onWorkspaceUpdate?.();
         } else {
           message.error("workspace update failed");
         }
+      })
+      .catch((error) => {
+        console.error("error updating workspace:", error);
+        message.error(getErrorMessage(error));
+      })
+      .finally(() => {
         setWaiting(false);
       });
-    } catch (error) {
-      console.error("error updating workspace:", error);
-      message.error("workspace update failed");
-      setWaiting(false);
-    }
 
     let bodyAgent;
 

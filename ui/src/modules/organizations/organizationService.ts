@@ -4,6 +4,7 @@ import { axiosGraphQL } from "@/config/axiosConfig";
 import { FlatOrganization, Organization } from "../../domain/types";
 import { TagModel } from "./types";
 import { WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
+import { isOrgId } from "@/config/orgId";
 
 function computeWorkspaceStatusCounts(edges: { node: { lastJobStatus?: string } }[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -68,6 +69,9 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
 }
 
 async function getOrganizationNameGraphQL(orgId: string): Promise<string | null> {
+  if (!isOrgId(orgId)) {
+    return null;
+  }
   const body = {
     query: `{
       organization(ids: ["${orgId}"]) {

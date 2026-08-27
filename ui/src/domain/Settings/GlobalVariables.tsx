@@ -76,6 +76,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
               Edit
             </Button>
             <Popconfirm
+              okButtonProps={{ danger: true }}
               onConfirm={() => {
                 onDelete(record.id);
               }}

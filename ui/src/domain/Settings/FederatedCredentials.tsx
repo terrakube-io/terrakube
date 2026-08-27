@@ -135,6 +135,7 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
                         Edit
                       </Button>,
                       <Popconfirm
+                        okButtonProps={{ danger: true }}
                         onConfirm={() => onDelete(item.id)}
                         title={
                           <p>

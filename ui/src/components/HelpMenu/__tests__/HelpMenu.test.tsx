@@ -2,12 +2,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { HelpMenu } from "../HelpMenu";
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
-
 function renderHelpMenu() {
   return render(
     <MemoryRouter>
@@ -17,17 +11,14 @@ function renderHelpMenu() {
 }
 
 describe("HelpMenu", () => {
-  beforeEach(() => {
-    mockNavigate.mockClear();
-  });
-
-  it("navigates to /api-docs in-app when API Docs is clicked, instead of opening a new tab", async () => {
+  it("links API Docs to /api-docs in-app, instead of opening a new tab", async () => {
     renderHelpMenu();
 
     fireEvent.click(screen.getByLabelText("help menu"));
-    fireEvent.click(await screen.findByText("API Docs"));
 
-    expect(mockNavigate).toHaveBeenCalledWith("/api-docs");
+    const apiDocsLink = (await screen.findByText("API Docs")).closest("a");
+    expect(apiDocsLink).toHaveAttribute("href", "/api-docs");
+    expect(apiDocsLink).not.toHaveAttribute("target", "_blank");
   });
 
   it("still opens Documentation as an external link in a new tab", async () => {

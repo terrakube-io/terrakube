@@ -2,7 +2,7 @@ import { PoweroffOutlined, QuestionCircleOutlined, UserOutlined } from "@ant-des
 import { Avatar, Dropdown, message } from "antd";
 import { ItemType } from "antd/es/menu/interface";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useAuth } from "../../config/authConfig";
 import getUserFromStorage from "../../config/authUser";
@@ -11,11 +11,6 @@ import "./Home.css";
 export const ProfilePicture = () => {
   const [username, setUsername] = useState<string>();
   const auth = useAuth();
-  const navigate = useNavigate();
-
-  const handleUserSettings = () => {
-    navigate(`/settings/tokens`);
-  };
 
   const signOutClickHandler = () => {
     auth.removeUser();
@@ -47,8 +42,7 @@ export const ProfilePicture = () => {
     {
       key: "user-settings",
       icon: <UserOutlined />,
-      label: "User Settings",
-      onClick: handleUserSettings,
+      label: <Link to="/settings/tokens">User Settings</Link>,
     },
     {
       key: "help",
