@@ -190,7 +190,7 @@ const AppLayout = () => {
         setOrganizationName(storedOrgName);
       }
     }
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
     // Re-fetch on every navigation so newly created/deleted organizations

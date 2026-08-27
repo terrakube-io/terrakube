@@ -89,7 +89,7 @@ describe("OrganizationTable", () => {
 
   it("stores organization id/name in sessionStorage on row click", () => {
     renderTable();
-    fireEvent.click(screen.getByText("acme-platform"));
+    fireEvent.click(screen.getByLabelText("Open organization acme-platform"));
 
     expect(sessionStorage.getItem(ORGANIZATION_ARCHIVE)).toBe("org-1");
     expect(sessionStorage.getItem(ORGANIZATION_NAME)).toBe("acme-platform");
@@ -106,10 +106,12 @@ describe("OrganizationTable", () => {
     expect(sessionStorage.getItem(ORGANIZATION_ARCHIVE)).toBeNull();
   });
 
-  it("is keyboard-operable: Enter on a row navigates", () => {
+  it("links to the organization workspaces page", () => {
     renderTable();
-    fireEvent.keyDown(screen.getByText("acme-platform"), { key: "Enter" });
-    expect(sessionStorage.getItem(ORGANIZATION_ARCHIVE)).toBe("org-1");
+    expect(screen.getByLabelText("Open organization acme-platform")).toHaveAttribute(
+      "href",
+      "/organizations/org-1/workspaces"
+    );
   });
 
   it("shows a Workspaces column header and sorts by workspace count when clicked", () => {

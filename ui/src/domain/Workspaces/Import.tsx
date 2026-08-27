@@ -26,9 +26,10 @@ import { IconContext } from "react-icons";
 import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import organizationService from "@/modules/organizations/organizationService";
 import { VcsModel, VcsType, VcsTypeExtended } from "../types";
 const { Content } = Layout;
 const validateMessages = {
@@ -177,7 +178,11 @@ export const ImportWorkspace = () => {
   const [currentMappingWorkspaceIndex, setCurrentMappingWorkspaceIndex] = useState(0);
   const [stepsHidden, setStepsHidden] = useState(false);
   const [listHidden, setListHidden] = useState(true);
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const { orgid } = useParams<{ orgid?: string }>();
+  if (orgid) {
+    sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
+  }
+  const organizationId = orgid || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const columns = [
     {
       title: "Name",
@@ -272,11 +277,25 @@ export const ImportWorkspace = () => {
     },
   ];
   useEffect(() => {
-    setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) ?? undefined);
+    if (organizationId) {
+      sessionStorage.setItem(ORGANIZATION_ARCHIVE, organizationId);
+    }
+    const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
+    if (storedOrgName) {
+      setOrganizationName(storedOrgName);
+    }
+    if (orgid) {
+      organizationService.getOrganizationNameGraphQL(orgid).then((name) => {
+        if (name) {
+          sessionStorage.setItem(ORGANIZATION_NAME, name);
+          setOrganizationName(name);
+        }
+      });
+    }
     setLoading(true);
     loadVCS();
     getPlatforms();
-  }, []);
+  }, [organizationId, orgid]);
   const handleClick = () => {
     setCurrent(2);
     setVersionControlFlow(true);
