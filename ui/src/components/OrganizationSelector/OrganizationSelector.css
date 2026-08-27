@@ -1,5 +1,5 @@
 .org-selector-button {
-  background-color: #1563ff !important;
+  background-color: var(--ant-color-primary) !important;
   color: white !important;
   border: none !important;
   border-radius: 8px !important;
@@ -18,11 +18,11 @@
 }
 
 .org-selector-button:hover {
-  background-color: #004ce6 !important;
+  background-color: var(--ant-color-primary-hover) !important;
 }
 
 .org-selector-button:focus {
-  outline: 2px solid rgba(21, 99, 255, 0.4);
+  outline: 2px solid color-mix(in srgb, var(--ant-color-primary) 40%, transparent);
   outline-offset: 2px;
 }
 
@@ -43,6 +43,22 @@
   z-index: 1000;
   border: 1px solid #e0e0e0;
   min-width: 100%;
+}
+
+.org-selector-search {
+  margin-bottom: 4px;
+}
+
+.org-selector-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.org-selector-empty {
+  padding: 12px;
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 13px;
 }
 
 .org-selector-item {
@@ -71,7 +87,7 @@
 }
 
 .org-selector-item.selected {
-  background-color: #e6f0ff !important;
+  background-color: var(--ant-color-primary-bg) !important;
   color: #1a1a1a !important;
 }
 
@@ -81,7 +97,7 @@
 }
 
 .org-selector-check {
-  color: #1563ff !important;
+  color: var(--ant-color-primary) !important;
   font-size: 14px !important;
   position: absolute !important;
   right: 12px !important;
@@ -151,7 +167,7 @@
 }
 
 [data-theme="dark"] .org-selector-item.selected {
-  background-color: #21262d !important;
+  background-color: var(--ant-color-primary-bg) !important;
   color: #e6edf3 !important;
 }
 
@@ -167,27 +183,9 @@
   color: #8b949e !important;
 }
 
-/* Color scheme: terrakube (purple) */
-[data-color-scheme="terrakube"] .org-selector-button {
-  background-color: #722ed1 !important;
-}
-
-[data-color-scheme="terrakube"] .org-selector-button:hover {
-  background-color: #5b21b6 !important;
-}
-
-[data-color-scheme="terrakube"] .org-selector-button:focus {
-  outline: 2px solid rgba(114, 46, 209, 0.4);
-}
-
-[data-color-scheme="terrakube"] .org-selector-check {
-  color: #722ed1 !important;
-}
-
-[data-color-scheme="terrakube"] .org-selector-item.selected {
-  background-color: #f3e8ff !important;
-}
-
-[data-color-scheme="terrakube"][data-theme="dark"] .org-selector-item.selected {
-  background-color: #2d1548 !important;
+.org-selector-dropdown--top {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
 }

@@ -7,6 +7,7 @@ import {
   useParams,
   useNavigate,
   useOutletContext,
+  useLocation,
 } from "react-router-dom";
 import { useAuth } from "../../config/authConfig";
 import { getBasePath } from "../../config/basePath";
@@ -14,20 +15,19 @@ import { getThemeConfig } from "../../config/themeConfig";
 import { ThemeProvider, useTheme } from "../../context/ThemeContext";
 import Login from "../Login/Login";
 import "./App.css";
-import MainMenu from "./MainMenu";
-import { HelpMenu } from "@/components/HelpMenu";
+import "./Home.css";
+import AppSidebar from "@/modules/layout/AppSidebar/AppSidebar";
 import LoadingFallback from "@/components/LoadingFallback";
-import { UserMenu } from "@/components/UserMenu";
-import { OrganizationSelector } from "@/components/OrganizationSelector";
-import logo from "./white_logo.png";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
+import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
 import { FlatOrganization } from "../types";
-const { Header, Footer } = Layout;
+const { Footer } = Layout;
 
 type AppRouteContext = {
   organizationName: string;
   setOrganizationName: Dispatch<SetStateAction<string>>;
+  setWorkspaceManageState: Dispatch<SetStateAction<boolean>>;
 };
 
 // Organizations
@@ -69,6 +69,11 @@ const UserSettingsPage = lazy(() =>
   import("@/modules/user/UserSettingsPage").then((module) => ({ default: module.UserSettingsPage }))
 );
 
+// API Docs
+const ApiDocsPage = lazy(() =>
+  import("@/modules/apiDocs/ApiDocsPage").then((module) => ({ default: module.ApiDocsPage }))
+);
+
 // Helper component to extract URL parameters for collection routes
 const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
   const { collectionid } = useParams();
@@ -97,9 +102,22 @@ const OrganizationsProjectDetailRoute = () => {
   return <ProjectDetailPage setOrganizationName={setOrganizationName} organizationName={organizationName} />;
 };
 
-const WorkspaceDetailsRoute = ({ selectedTab }: { selectedTab?: string }) => {
-  const { setOrganizationName } = useAppRouteContext();
-  return <WorkspaceDetails setOrganizationName={setOrganizationName} selectedTab={selectedTab} />;
+const WorkspaceDetailsRoute = ({
+  selectedTab,
+  settingsSection,
+}: {
+  selectedTab?: string;
+  settingsSection?: string;
+}) => {
+  const { setOrganizationName, setWorkspaceManageState } = useAppRouteContext();
+  return (
+    <WorkspaceDetails
+      setOrganizationName={setOrganizationName}
+      setWorkspaceManageState={setWorkspaceManageState}
+      selectedTab={selectedTab}
+      settingsSection={settingsSection}
+    />
+  );
 };
 
 const RegistryRoute = () => {
@@ -124,37 +142,47 @@ const ModuleDetailsRoute = () => {
 
 const AppLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [organizationName, setOrganizationName] = useState<string>("");
   const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
+  const [workspaceManageState, setWorkspaceManageState] = useState(false);
   const { colorScheme, themeMode } = useTheme();
+  const segments = location.pathname.split("/").filter(Boolean);
+  const noOrgContext =
+    segments.length === 0 ||
+    segments[0] === "settings" ||
+    (segments[0] === "organizations" && (segments.length === 1 || segments[1] === "create"));
 
   useEffect(() => {
-    const pathname = window.location.pathname;
-    const paths = pathname.split("/");
-    const orgIdIndex = paths.indexOf("organizations") + 1;
+    if (noOrgContext) {
+      sessionStorage.removeItem(ORGANIZATION_NAME);
+      sessionStorage.removeItem(ORGANIZATION_ARCHIVE);
+      setOrganizationName("");
+    }
+  }, [location.pathname, noOrgContext]);
 
-    if (orgIdIndex > 0 && orgIdIndex < paths.length) {
-      const orgId = paths[orgIdIndex];
-      if (orgId) {
-        const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
-        const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  useEffect(() => {
+    const orgId = getOrgIdFromPathname(window.location.pathname);
 
-        if (storedOrgName && storedOrgId === orgId) {
-          setOrganizationName(storedOrgName);
-        } else {
-          organizationService
-            .getOrganizationNameGraphQL(orgId)
-            .then((orgName) => {
-              if (orgName) {
-                sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
-                sessionStorage.setItem(ORGANIZATION_NAME, orgName);
-                setOrganizationName(orgName);
-              }
-            })
-            .catch((err) => {
-              console.error("Failed to load organization:", err);
-            });
-        }
+    if (orgId) {
+      const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
+      const storedOrgId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+
+      if (storedOrgName && storedOrgId === orgId) {
+        setOrganizationName(storedOrgName);
+      } else {
+        organizationService
+          .getOrganizationNameGraphQL(orgId)
+          .then((orgName) => {
+            if (orgName) {
+              sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
+              sessionStorage.setItem(ORGANIZATION_NAME, orgName);
+              setOrganizationName(orgName);
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to load organization:", err);
+          });
       }
     } else {
       const storedOrgName = sessionStorage.getItem(ORGANIZATION_NAME);
@@ -162,9 +190,11 @@ const AppLayout = () => {
         setOrganizationName(storedOrgName);
       }
     }
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
+    // Re-fetch on every navigation so newly created/deleted organizations
+    // show up in the header dropdown without a full page reload.
     organizationService
       .listOrganizationsGraphQL()
       .then((organizations) => {
@@ -173,7 +203,7 @@ const AppLayout = () => {
       .catch((error) => {
         console.error("Failed to load organizations:", error);
       });
-  }, []);
+  }, [location.pathname]);
 
   const handleOrgChange = (orgId: string) => {
     const org = orgs.find((o) => o.id === orgId);
@@ -182,67 +212,49 @@ const AppLayout = () => {
       sessionStorage.setItem(ORGANIZATION_NAME, org.name);
       setOrganizationName(org.name);
     }
-    navigate(`/organizations/${orgId}/workspaces`);
+
+    // Stay on the same top-level section (workspaces/registry/settings/projects)
+    // under the new organization instead of always bouncing to Workspaces.
+    // Deeper sub-paths (a specific workspace, run, etc.) are dropped since
+    // those resource ids belong to the old organization and won't resolve
+    // under the new one.
+    const knownSections = ["workspaces", "registry", "settings", "projects"];
+    const paths = location.pathname.split("/").filter(Boolean);
+    const orgIdx = paths.indexOf("organizations");
+    const section = orgIdx >= 0 ? paths[orgIdx + 2] : undefined;
+
+    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "workspaces"}`);
   };
 
   return (
     <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
       <Layout className="layout mh-100">
-        <Header>
-          <a>
-            <img className="logo" src={logo} alt="Logo"></img>
-          </a>
-          <OrganizationSelector
-            organizationName={organizationName}
-            organizations={orgs}
-            onOrgChange={handleOrgChange}
-            onManageOrgs={() => navigate("/organizations")}
-          />
-          <div className="menu">
-            <MainMenu
-              organizationName={organizationName}
-              setOrganizationName={setOrganizationName}
-              themeMode={themeMode}
-            />
+        <AppSidebar
+          organizationName={organizationName}
+          setOrganizationName={setOrganizationName}
+          organizations={orgs}
+          onOrgChange={handleOrgChange}
+          workspaceManageState={workspaceManageState}
+        />
+        <Layout className="app-content-shell">
+          <div className="app-content-scroll">
+            <Outlet context={{ organizationName, setOrganizationName, setWorkspaceManageState }} />
+            <Footer style={{ textAlign: "center" }}>
+              Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
+            </Footer>
           </div>
-          <div className="user">
-            <HelpMenu />
-            <UserMenu />
-          </div>
-        </Header>
-        <Outlet context={{ organizationName, setOrganizationName }} />
-        <Footer style={{ textAlign: "center" }}>
-          Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
-        </Footer>
+        </Layout>
       </Layout>
     </ConfigProvider>
   );
 };
 
-const App = () => {
-  const auth = useAuth();
-  const expiry = auth?.user?.expires_at;
-  const basePath = getBasePath();
-
-  // Checking with the expiry time in the localstorage and when it has crossed the access has been revoked so It will clear the local storage and by default with no localstorage object it will route to login page.
-  if (auth.isAuthenticated && auth?.user && expiry !== undefined && Math.floor(Date.now() / 1000) > expiry) {
-    localStorage.clear();
-  }
-
-  if (auth.isLoading) {
-    return null;
-  }
-
-  if (!auth.isAuthenticated) {
-    return <Login />;
-  }
-
-  const router = createBrowserRouter(
-    [
-      {
-        path: "/",
-        element: <AppLayout />,
-        children: [
+const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <AppLayout />,
+      children: [
         {
           path: "/",
           element: <OrganizationsPickerPage />,
@@ -273,6 +285,14 @@ const App = () => {
         },
         {
           path: "/workspaces/import",
+          element: <ImportWorkspace />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/create",
+          element: <CreateWorkspace />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/import",
           element: <ImportWorkspace />,
         },
         {
@@ -332,6 +352,70 @@ const App = () => {
           element: <WorkspaceDetailsRoute selectedTab="6" />,
         },
         {
+          path: "/workspaces/:id/settings/general",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/general",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+        },
+        {
+          path: "/workspaces/:id/settings/locking",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/locking",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+        },
+        {
+          path: "/workspaces/:id/settings/sshkey",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/sshkey",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+        },
+        {
+          path: "/workspaces/:id/settings/webhook",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/webhook",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+        },
+        {
+          path: "/workspaces/:id/settings/notifications",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/notifications",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+        },
+        {
+          path: "/workspaces/:id/settings/state-shared",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/state-shared",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+        },
+        {
+          path: "/workspaces/:id/settings/team-access",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/team-access",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+        },
+        {
+          path: "/workspaces/:id/settings/advanced",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/advanced",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+        },
+        {
           path: "/organizations/:orgid/registry",
           element: <RegistryRoute />,
         },
@@ -364,6 +448,10 @@ const App = () => {
           element: <OrganizationSettings selectedTab="2" />,
         },
         {
+          path: "/organizations/:orgid/settings/variables",
+          element: <OrganizationSettings selectedTab="3" />,
+        },
+        {
           path: "/organizations/:orgid/settings/vcs",
           element: <OrganizationSettings selectedTab="4" />,
         },
@@ -388,8 +476,24 @@ const App = () => {
           element: <OrganizationSettings selectedTab="7" />,
         },
         {
+          path: "/organizations/:orgid/settings/agents",
+          element: <OrganizationSettings selectedTab="8" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/federated-credentials",
+          element: <OrganizationSettings selectedTab="11" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/templates",
+          element: <OrganizationSettings selectedTab="5" />,
+        },
+        {
           path: "/organizations/:orgid/settings/actions",
           element: <OrganizationSettings selectedTab="10" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/notifications",
+          element: <OrganizationSettings selectedTab="12" />,
         },
         {
           path: "/organizations/:orgid/settings/collection",
@@ -407,13 +511,43 @@ const App = () => {
           path: "/organizations/:orgid/settings/collection/:collectionid",
           element: <CollectionSettingsWrapper mode="detail" />,
         },
-        ],
-      },
-    ],
+      ],
+    },
     {
-      basename: basePath,
-    }
-  );
+      // Full-bleed: Scalar renders its own sidebar/nav, so this route skips
+      // AppLayout entirely rather than duplicating it alongside ours.
+      path: "/api-docs",
+      element: <ApiDocsPage />,
+    },
+  ],
+  {
+    basename: getBasePath(),
+  }
+);
+
+const App = () => {
+  const auth = useAuth();
+
+  useEffect(() => {
+    const removeExpired = auth.events.addAccessTokenExpired(() => {
+      auth.removeUser();
+    });
+    const removeSignedOut = auth.events.addUserSignedOut(() => {
+      auth.removeUser();
+    });
+    return () => {
+      removeExpired();
+      removeSignedOut();
+    };
+  }, [auth.events, auth.removeUser]);
+
+  if (auth.isLoading) {
+    return null;
+  }
+
+  if (!auth.isAuthenticated) {
+    return <Login />;
+  }
 
   return (
     <ThemeProvider>

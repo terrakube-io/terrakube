@@ -1,5 +1,6 @@
-import { Breadcrumb, Layout, Menu, Tag, theme } from "antd";
+import { Breadcrumb, Layout } from "antd";
 import { useEffect, useState } from "react";
+import { NavLink, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { ActionSettings } from "./Actions";
 import { GeneralSettings } from "./General";
@@ -10,16 +11,29 @@ import { AgentSettings } from "./Agents";
 import { TagsSettings } from "./Tags";
 import { TeamSettings } from "./Teams";
 import { FederatedCredentials } from "./FederatedCredentials";
+import { OrgNotifications } from "./Notifications";
 import { TemplatesSettings } from "./Templates";
 import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import type { MenuProps } from "antd";
 import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
 
-const { Content, Sider } = Layout;
-type MenuItem = Required<MenuProps>["items"][number];
+const { Content } = Layout;
+
+const SETTINGS_TAB_LABELS: Record<string, string> = {
+  "1": "General",
+  "2": "Teams",
+  "3": "Global Variables",
+  "4": "VCS Providers",
+  "5": "Templates",
+  "6": "SSH Keys",
+  "7": "Tags",
+  "8": "Agents",
+  "9": "Variable Collections",
+  "10": "Actions",
+  "11": "Federated Credentials",
+  "12": "Notifications",
+};
 
 type Props = {
   selectedTab?: string;
@@ -30,11 +44,8 @@ type Props = {
 
 export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "list", collectionId }: Props) => {
   const { orgid } = useParams();
-  const navigate = useNavigate();
-  const location = useLocation();
   const [activeKey, setActiveKey] = useState(selectedTab || "1");
-  const { token } = theme.useToken();
-  const { permissions, loading: permissionsLoading } = useOrgPermissions();
+  const { permissions } = useOrgPermissions();
 
   useEffect(() => {
     if (selectedTab) {
@@ -85,102 +96,33 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
         return <ActionSettings managePermission={permissions.managePermission} />;
       case "11":
         return <FederatedCredentials managePermission={permissions.managePermission} />;
+      case "12":
+        return <OrgNotifications managePermission={permissions.managePermission} />;
       default:
         return <GeneralSettings managePermission={permissions.managePermission} />;
     }
   };
 
-  const handleMenuClick: MenuProps["onClick"] = (e) => {
-    setActiveKey(e.key);
-
-    // Special case for collection tab
-    if (e.key === "9" && location.pathname.includes("/collection/")) {
-      navigate(`/organizations/${orgid}/settings/collection`);
-    }
-  };
-
-  const menuItems: MenuItem[] = [
-    {
-      type: "group",
-      label: "Organization Settings",
-      key: "org-settings",
-      children: [
-        { key: "1", label: "General" },
-        { key: "2", label: "Teams" },
-        { key: "7", label: "Tags" },
-        { key: "3", label: "Global Variables" },
-        { key: "9", label: "Variable Collections" },
-      ],
-    },
-    {
-      type: "group",
-      label: "Version Control",
-      key: "version-control",
-      children: [
-        { key: "4", label: "VCS Providers" },
-        { key: "6", label: "SSH Keys" },
-      ],
-    },
-    {
-      type: "group",
-      label: "Security",
-      key: "security",
-      children: [{ key: "8", label: "Agents" }, { key: "11", label: "Federated Credentials" }],
-    },
-    {
-      type: "group",
-      label: "Integrations",
-      key: "integrations",
-      children: [
-        { key: "5", label: "Templates" },
-        {
-          key: "10",
-          label: (
-            <>
-              Actions <Tag color={token.colorPrimary}>beta</Tag>
-            </>
-          ),
-        },
-      ],
-    },
-  ];
-
   return (
-    <Content style={{ padding: "0 50px", background: token.colorBgContainer }}>
+    <Content style={{ padding: "0 50px" }}>
       <Breadcrumb
         style={{ margin: "16px 0" }}
         items={[
           {
-            title: sessionStorage.getItem(ORGANIZATION_NAME),
+            title: (
+              <NavLink to={`/organizations/${orgid}/workspaces`}>{sessionStorage.getItem(ORGANIZATION_NAME)}</NavLink>
+            ),
           },
           {
-            title: "Settings",
+            title: <NavLink to={`/organizations/${orgid}/settings/general`}>Settings</NavLink>,
+          },
+          {
+            title: SETTINGS_TAB_LABELS[activeKey] ?? "General",
           },
         ]}
       />
 
-      <div className="site-layout-content" style={{ background: token.colorBgContainer, paddingLeft: "0" }}>
-        <Layout style={{ background: token.colorBgContainer }}>
-          <Sider
-            width={200}
-            style={{
-              background: token.colorBgContainer,
-              borderRight: `1px solid ${token.colorBorderSecondary}`,
-              height: "100%",
-              overflow: "auto",
-            }}
-          >
-            <Menu
-              mode="inline"
-              selectedKeys={[activeKey]}
-              style={{ height: "100%" }}
-              items={menuItems}
-              onClick={handleMenuClick}
-            />
-          </Sider>
-          <Content style={{ padding: "0 24px", minHeight: 280 }}>{renderContent()}</Content>
-        </Layout>
-      </div>
+      <div className="site-layout-content">{renderContent()}</div>
     </Content>
   );
 };

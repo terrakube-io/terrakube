@@ -19,10 +19,12 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import io.netty.channel.ChannelOption;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -69,6 +71,7 @@ public class PersistentExecutorService {
                 .responseTimeout(RESPONSE_TIMEOUT);
 
         WebClient webClient = webClientBuilder
+                .clone()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
 
@@ -90,13 +93,23 @@ public class PersistentExecutorService {
                     .toEntity(ExecutorContext.class)
                     .block();
         } catch (Exception ex) {
-            String hint = "";
             if (ex instanceof WebClientRequestException) {
-                hint = String.format(
+                // No response was ever received: connection refused, timed out, or (in Kubernetes,
+                // when every replica is mid-job and REFUSING_TRAFFIC) the Service has no ready
+                // endpoints. This is a capacity problem, not a broken job, so it's retryable.
+                String hint = String.format(
                         " Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).",
                         executorUrlForRequest);
+                throw new ExecutorUnavailableException(new Throwable(ex.getMessage() + hint, ex));
             }
-            throw new ExecutionException(new Throwable(ex.getMessage() + hint, ex));
+            if (ex instanceof WebClientResponseException wcre
+                    && wcre.getStatusCode().equals(HttpStatus.SERVICE_UNAVAILABLE)) {
+                // The executor pod's per-pod capacity gate was already held by another job
+                // (persistent-executor-admission-control) - retryable, not a job failure.
+                throw new ExecutorUnavailableException(new Throwable(
+                        "Executor at " + executorUrlForRequest + " is busy (503), will retry", ex));
+            }
+            throw new ExecutionException(new Throwable(ex.getMessage(), ex));
         }
 
         log.debug("Sending Job: /n {}", executorContext.toBuilder()

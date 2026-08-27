@@ -228,6 +228,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
       align: "right" as const,
       render: (_: any, record: ProjectAccessModel) => (
         <Popconfirm
+          okButtonProps={{ danger: true }}
           title={`Remove team "${record.name}" from this project?`}
           onConfirm={() => onRemove(record.id, record.name)}
           okText="Yes"

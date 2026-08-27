@@ -1,9 +1,10 @@
 import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Popconfirm, Space, Typography, message } from "antd";
 import { useNavigate } from "react-router-dom";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { genericHeader } from "../Workspaces";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 
 const { Text } = Typography;
 
@@ -53,7 +54,7 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           },
         }
       )
-      .then(() => {
+      .then(() =>
         axiosInstance.patch(`organization/${organizationId}/workspace/${id}`, body, genericHeader).then((response) => {
           if (response.status === 204) {
             message.success("Workspace deleted successfully");
@@ -61,7 +62,11 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           } else {
             message.error("Workspace deletion failed");
           }
-        });
+        })
+      )
+      .catch((error) => {
+        console.error("error deleting workspace:", error);
+        message.error(getErrorMessage(error));
       });
   };
 
@@ -70,53 +75,57 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div className="generalSettings">
-      <h1>Destruction and Deletion</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        Destruction and Deletion
+      </Typography.Title>
       <Text type="secondary">
         There are two independent steps for destroying this workspace and any infrastructure associated with it. First,
         any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube,
         including any variables, settings, and alert history can be deleted.
       </Text>
 
-      <h3 style={{ marginBottom: "16px" }}>Delete this Workspace</h3>
-      <div style={{ textAlign: "left", marginBottom: "16px" }}>
-        <Typography.Text type="secondary">
-          <Text strong>Warning!</Text> Deleting this workspace permanently removes all of its variables, settings, alert
-          history, run history, and Terraform state.
-        </Typography.Text>
-      </div>
-      <div style={{ textAlign: "left", marginBottom: "16px" }}>
-        <Typography.Text type="secondary">
-          This workspace is {isLocked ? "locked" : "unlocked"} and is
-          {resourceCount > 0 ? ` managing ${resourceCount} resources` : " not managing any resources"}.
-        </Typography.Text>
-      </div>
-      <Popconfirm
-        onConfirm={() => {
-          onDelete(workspace);
-        }}
-        title={
-          <p>
-            Workspace will be permanently deleted <br /> from this organization.
+      <SettingsSection
+        danger
+        title="Delete this Workspace"
+        description={
+          <>
+            <Text strong>Warning!</Text> Deleting this workspace permanently removes all of its variables, settings,
+            alert history, run history, and Terraform state.
             <br />
-            Are you sure?
-          </p>
+            This workspace is {isLocked ? "locked" : "unlocked"} and is
+            {resourceCount > 0 ? ` managing ${resourceCount} resources` : " not managing any resources"}.
+          </>
         }
-        okText="Yes"
-        cancelText="No"
-        placement="bottom"
       >
-        <Button
-          type="primary"
-          danger
-          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-          disabled={!manageWorkspace}
+        <Popconfirm
+          okButtonProps={{ danger: true }}
+          onConfirm={() => {
+            onDelete(workspace);
+          }}
+          title={
+            <p>
+              Workspace will be permanently deleted <br /> from this organization.
+              <br />
+              Are you sure?
+            </p>
+          }
+          okText="Yes"
+          cancelText="No"
+          placement="bottom"
         >
-          <Space>
-            <DeleteOutlined />
-            Delete from Terrakube
-          </Space>
-        </Button>
-      </Popconfirm>
+          <Button
+            type="primary"
+            danger
+            style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+            disabled={!manageWorkspace}
+          >
+            <Space>
+              <DeleteOutlined />
+              Delete from Terrakube
+            </Space>
+          </Button>
+        </Popconfirm>
+      </SettingsSection>
     </div>
   );
 };

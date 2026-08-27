@@ -6,8 +6,10 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.IdConverter;
+import io.terrakube.api.rs.hooks.webhook.WebhookEventManageHook;
 
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.LifeCycleHookBinding;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -23,6 +25,9 @@ import lombok.Setter;
 @Getter
 @Setter
 @Include
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
 @Entity(name = "webhook_event")
 public class WebhookEvent extends GenericAuditFields {
     @Id
@@ -48,6 +53,9 @@ public class WebhookEvent extends GenericAuditFields {
 
     @Column(name = "pr_workflow_enabled")
     private boolean prWorkflowEnabled = false;
+
+    @Column(name = "pr_apply_enabled")
+    private boolean prApplyEnabled = false;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Webhook webhook;

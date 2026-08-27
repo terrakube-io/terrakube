@@ -1,7 +1,19 @@
 import { apiGet } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import { axiosGraphQL } from "@/config/axiosConfig";
-import { ApiWorkspaceTag, FlatOrganization, Organization } from "../../domain/types";
+import { FlatOrganization, Organization } from "../../domain/types";
+import { TagModel } from "./types";
+import { WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
+import { isOrgId } from "@/config/orgId";
+
+function computeWorkspaceStatusCounts(edges: { node: { lastJobStatus?: string } }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const edge of edges) {
+    const status = edge.node.lastJobStatus || WorkspaceStatusFilter.NeverExecuted;
+    counts[status] = (counts[status] || 0) + 1;
+  }
+  return counts;
+}
 
 async function listOrganizations(): Promise<ApiResponse<Organization[]>> {
   return await apiGet("/api/v1/organization", { dataWrapped: true });
@@ -18,6 +30,14 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
             description
             executionMode
             icon
+            workspace {
+              edges {
+                node {
+                  id
+                  lastJobStatus
+                }
+              }
+            }
           }
         }
       }
@@ -43,10 +63,15 @@ async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
     description: edge.node.description,
     executionMode: edge.node.executionMode,
     icon: edge.node.icon,
+    workspaceCount: edge.node.workspace?.edges?.length,
+    workspaceStatusCounts: computeWorkspaceStatusCounts(edge.node.workspace?.edges ?? []),
   }));
 }
 
 async function getOrganizationNameGraphQL(orgId: string): Promise<string | null> {
+  if (!isOrgId(orgId)) {
+    return null;
+  }
   const body = {
     query: `{
       organization(ids: ["${orgId}"]) {
@@ -76,8 +101,43 @@ async function getOrganizationNameGraphQL(orgId: string): Promise<string | null>
   return data.organization.edges[0].node.name;
 }
 
-async function listOrganizationTags(organizationId: string): Promise<ApiResponse<ApiWorkspaceTag[]>> {
-  return await apiGet(`/api/v1/organization/${organizationId}/tag`, { dataWrapped: true });
+async function listOrganizationTags(organizationId: string): Promise<TagModel[]> {
+  const body = {
+    query: `{
+      organization(ids: ["${organizationId}"]) {
+        edges {
+          node {
+            tag {
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+  };
+
+  const response = await axiosGraphQL.post("", body, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (response.data?.errors?.length) {
+    throw new Error(response.data.errors[0].message || "Failed to load organization tags");
+  }
+
+  const tagEdges = response.data?.data?.organization?.edges?.[0]?.node?.tag?.edges;
+  if (!tagEdges) {
+    return [];
+  }
+
+  return tagEdges.map((edge: any) => ({
+    id: edge.node.id,
+    name: edge.node.name,
+  }));
 }
 
 const methods = {

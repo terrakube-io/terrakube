@@ -6,10 +6,10 @@ import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
+import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
 const { Content } = Layout;
-const { Step } = Steps;
 const validateMessages = {
   required: "${label} is required!",
   types: {
@@ -83,9 +83,7 @@ export const CreateModule = () => {
     }
   };
 
-  const handleVCSClick = (vcsType: VcsType) => {
-    navigate(`/organizations/${orgid}/settings/vcs/new/${vcsType}`);
-  };
+  const vcsLink = (vcsType: VcsType) => `/organizations/${orgid}/settings/vcs/new/${vcsType}`;
 
   const handleDifferent = () => {
     setVCSButtonsVisible(false);
@@ -213,23 +211,23 @@ export const CreateModule = () => {
         }
       })
       .catch((error) => {
-        if (error.response) {
-          if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
-          }
+        if (error.response?.status === 403) {
+          message.error(
+            <span>
+              You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
+              <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
+              <a
+                target="_blank"
+                href="https://docs.terrakube.io/user-guide/organizations/team-management"
+                rel="noreferrer"
+              >
+                Terrakube documentation
+              </a>
+              .
+            </span>
+          );
+        } else {
+          message.error(getErrorMessage(error));
         }
       });
   };
@@ -272,11 +270,13 @@ export const CreateModule = () => {
           <div className="App-text">
             This module will be created under the current organization, {sessionStorage.getItem(ORGANIZATION_NAME)}.
           </div>
-          <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-            <Step title="Connect to VCS" />
-            <Step title="Choose a repository" />
-            <Step title="Confirm selection" />
-          </Steps>
+          <Steps
+            direction="horizontal"
+            size="small"
+            current={current}
+            onChange={handleChange}
+            items={[{ title: "Connect to VCS" }, { title: "Choose a repository" }, { title: "Confirm selection" }]}
+          />
 
           {current === 0 && (
             <Space className="chooseType" direction="vertical">
@@ -323,41 +323,17 @@ export const CreateModule = () => {
               ) : (
                 <div>
                   <Space direction="horizontal">
-                    <Button
-                      icon={<GithubOutlined />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.GITHUB);
-                      }}
-                      size="large"
-                    >
-                      GitHub
+                    <Button icon={<GithubOutlined />} size="large">
+                      <Link to={vcsLink(VcsType.GITHUB)}>GitHub</Link>
                     </Button>
-                    <Button
-                      icon={<GitlabOutlined />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.GITLAB);
-                      }}
-                      size="large"
-                    >
-                      GitLab
+                    <Button icon={<GitlabOutlined />} size="large">
+                      <Link to={vcsLink(VcsType.GITLAB)}>GitLab</Link>
                     </Button>
-                    <Button
-                      icon={<SiBitbucket />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.BITBUCKET);
-                      }}
-                      size="large"
-                    >
-                      &nbsp;&nbsp;Bitbucket
+                    <Button icon={<SiBitbucket />} size="large">
+                      <Link to={vcsLink(VcsType.BITBUCKET)}>&nbsp;&nbsp;Bitbucket</Link>
                     </Button>
-                    <Button
-                      icon={<VscAzureDevops />}
-                      onClick={() => {
-                        handleVCSClick(VcsType.AZURE_DEVOPS);
-                      }}
-                      size="large"
-                    >
-                      &nbsp;&nbsp;Azure Devops
+                    <Button icon={<VscAzureDevops />} size="large">
+                      <Link to={vcsLink(VcsType.AZURE_DEVOPS)}>&nbsp;&nbsp;Azure Devops</Link>
                     </Button>
                   </Space>
                   <br />
@@ -427,10 +403,16 @@ export const CreateModule = () => {
               </Form.Item>
               <Form.Item
                 name="provider"
-                tooltip="e.g. azurerm,aws,google"
+                tooltip="e.g. azurerm, aws, google"
                 label="Provider"
-                rules={[{ required: true }]}
-                extra="The name of a remote system that the module is primarily written to target."
+                rules={[
+                  { required: true },
+                  {
+                    pattern: MODULE_SYSTEM_PATTERN,
+                    message: "Provider must contain only letters and digits (max 64 characters).",
+                  },
+                ]}
+                extra="This is the OpenTofu/Terraform registry system — the last segment of the module address (letters and digits only, e.g. 'aws'). It is not derived from your repository name; for example use 'aws', not 'aws-ecs'."
               >
                 <Input />
               </Form.Item>

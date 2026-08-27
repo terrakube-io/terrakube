@@ -2,6 +2,7 @@ import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "
 import {
   Alert,
   Button,
+  Collapse,
   Form,
   Input,
   message,
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type Props = {
@@ -40,16 +42,17 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
     {
       title: "Key",
       dataIndex: "key",
-      width: "30%",
+      width: "35%",
       key: "key",
       sorter: (a: Variable, b: Variable) => a.attributes.key.localeCompare(b.attributes.key),
       defaultSortOrder: "ascend" as const,
       render: (_: any, record: Variable) => {
         return (
-          <div>
-            {record.attributes.key} &nbsp;&nbsp;&nbsp;&nbsp; <Tag visible={record.attributes.hcl}>HCL</Tag>{" "}
-            <Tag visible={record.attributes.sensitive}>Sensitive</Tag>
-          </div>
+          <Space>
+            {record.attributes.key}
+            {record.attributes.hcl && <Tag color="blue">HCL</Tag>}
+            {record.attributes.sensitive && <Tag color="orange">Sensitive</Tag>}
+          </Space>
         );
       },
     },
@@ -57,23 +60,9 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
       title: "Value",
       dataIndex: "value",
       key: "value",
-      width: "30%",
+      width: "40%",
       render: (_: any, record: Variable) => {
         return record.attributes.sensitive ? <i>Sensitive - write only</i> : <div>{record.attributes.value}</div>;
-      },
-    },
-    {
-      title: "Category",
-      dataIndex: "category",
-      key: "category",
-      width: "15%",
-      sorter: (a: Variable, b: Variable) => {
-        const categoryA = a.attributes.category === "TERRAFORM" ? "terraform" : "env";
-        const categoryB = b.attributes.category === "TERRAFORM" ? "terraform" : "env";
-        return categoryA.localeCompare(categoryB);
-      },
-      render: (_: any, record: Variable) => {
-        return record.attributes.category === "TERRAFORM" ? "terraform" : "env";
       },
     },
     {
@@ -87,6 +76,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
               Edit
             </Button>
             <Popconfirm
+              okButtonProps={{ danger: true }}
               onConfirm={() => {
                 onDelete(record.id);
               }}
@@ -141,6 +131,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
     axiosInstance
       .delete(`organization/${orgid}/globalvar/${id}`)
       .then((response) => {
+        message.success("Global variable deleted successfully");
         loadGlobalVariables();
       })
       .catch((err) => {
@@ -153,10 +144,10 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
       data: {
         type: "globalvar",
         attributes: {
-          key: values.key,
-          value: values.value,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
           sensitive: values.sensitive,
-          description: values.description,
+          description: values.description?.trim(),
           hcl: values.hcl,
           category: values.category,
         },
@@ -170,6 +161,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then((response) => {
+        message.success("Global variable created successfully");
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
@@ -185,9 +177,9 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         type: "globalvar",
         id: variableId,
         attributes: {
-          key: values.key,
-          value: values.value,
-          description: values.description,
+          key: values.key?.trim(),
+          value: typeof values.value === "string" ? values.value.trim() : values.value,
+          description: values.description?.trim(),
           hcl: values.hcl,
           category: values.category,
         },
@@ -201,6 +193,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then((response) => {
+        message.success("Global variable updated successfully");
         loadGlobalVariables();
         setVisible(false);
         form.resetFields();
@@ -231,28 +224,70 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
     loadGlobalVariables();
   }, [orgid]);
 
+  const terraformVariables = globalVariables.filter((v) => v.attributes.category === "TERRAFORM");
+  const envVariables = globalVariables.filter((v) => v.attributes.category !== "TERRAFORM");
+
   return (
     <div className="setting">
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : (
         <>
-          <h1>Global Variables</h1>
+          <Typography.Title level={1} style={{ margin: 0 }}>
+            Global Variables
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary" className="App-text">
               Global Variables allow you to define and apply variables one time across multiple workspaces within an
               organization.
             </Typography.Text>
           </div>
-          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-            Create global variable
-          </Button>
-          <br></br>
+          <SettingsSection maxWidth="100%">
+            <Button
+              type="primary"
+              onClick={onNew}
+              htmlType="button"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+              style={{ marginBottom: 16 }}
+            >
+              Create global variable
+            </Button>
 
-          <h3 style={{ marginTop: "30px" }}>Global Variables</h3>
-          <Spin spinning={loading} tip="Loading Global Variables...">
-            <Table dataSource={globalVariables} columns={VARIABLES_COLUMS(onEdit)} rowKey="key" />
-          </Spin>
+            <Spin spinning={loading} tip="Loading Global Variables...">
+              <Collapse
+                defaultActiveKey={["TERRAFORM", "ENV"]}
+                items={[
+                  {
+                    key: "TERRAFORM",
+                    label: `Terraform Variables (${terraformVariables.length})`,
+                    children: (
+                      <Table
+                        dataSource={terraformVariables}
+                        columns={VARIABLES_COLUMS(onEdit)}
+                        rowKey="key"
+                        pagination={false}
+                        locale={{ emptyText: "No terraform variables defined yet." }}
+                      />
+                    ),
+                  },
+                  {
+                    key: "ENV",
+                    label: `Environment Variables (${envVariables.length})`,
+                    children: (
+                      <Table
+                        dataSource={envVariables}
+                        columns={VARIABLES_COLUMS(onEdit)}
+                        rowKey="key"
+                        pagination={false}
+                        locale={{ emptyText: "No environment variables defined yet." }}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </Spin>
+          </SettingsSection>
 
           <Modal
             width="600px"

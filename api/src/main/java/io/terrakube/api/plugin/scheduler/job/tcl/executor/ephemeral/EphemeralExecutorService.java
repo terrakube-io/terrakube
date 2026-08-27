@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.rs.job.Job;
 
 import java.util.*;
@@ -31,8 +33,10 @@ public class EphemeralExecutorService {
     private static final String SECURITY_CONTEXT = "EPHEMERAL_CONFIG_SECURITY_CONTEXT";
     private static final String EPHEMERAL_CPU_REQUEST = "EPHEMERAL_CPU_REQUEST";
     private static final String EPHEMERAL_MEMORY_REQUEST = "EPHEMERAL_MEMORY_REQUEST";
+    private static final String EPHEMERAL_STORAGE_REQUEST = "EPHEMERAL_STORAGE_REQUEST";
     private static final String EPHEMERAL_CPU_LIMIT = "EPHEMERAL_CPU_LIMIT";
     private static final String EPHEMERAL_MEMORY_LIMIT = "EPHEMERAL_MEMORY_LIMIT";
+    private static final String EPHEMERAL_STORAGE_LIMIT = "EPHEMERAL_STORAGE_LIMIT";
     private static final String EPHEMERAL_JOB_ENV_VARS = "EPHEMERAL_JOB_ENV_VARS";
     private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
     private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
@@ -257,8 +261,10 @@ public class EphemeralExecutorService {
 
         Optional<String> cpuRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_REQUEST));
         Optional<String> memoryRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_REQUEST));
+        Optional<String> storageRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_REQUEST));
         Optional<String> cpuLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_LIMIT));
         Optional<String> memoryLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_LIMIT));
+        Optional<String> storageLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_LIMIT));
 
         ResourceRequirementsBuilder resourceBuilder = new ResourceRequirementsBuilder();
         boolean hasResources = false;
@@ -271,12 +277,20 @@ public class EphemeralExecutorService {
             resourceBuilder.addToRequests("memory", new Quantity(memoryRequestOpt.get()));
             hasResources = true;
         }
+        if (storageRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("ephemeral-storage", new Quantity(storageRequestOpt.get()));
+            hasResources = true;
+        }
         if (cpuLimitOpt.isPresent()) {
             resourceBuilder.addToLimits("cpu", new Quantity(cpuLimitOpt.get()));
             hasResources = true;
         }
         if (memoryLimitOpt.isPresent()) {
             resourceBuilder.addToLimits("memory", new Quantity(memoryLimitOpt.get()));
+            hasResources = true;
+        }
+        if (storageLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("ephemeral-storage", new Quantity(storageLimitOpt.get()));
             hasResources = true;
         }
 
@@ -326,13 +340,47 @@ public class EphemeralExecutorService {
                     .endMetadata().endTemplate().endSpec();
         }
 
+        if (!labels.isEmpty()) {
+            jobBuilder.editSpec().editTemplate().editOrNewMetadata()
+                    .addToLabels(labels)
+                    .endMetadata().endTemplate().endSpec();
+        }
+
         io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = jobBuilder.build();
 
         try {
             kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
+        } catch (KubernetesClientException e) {
+            if (isRetryable(e)) {
+                throw new ExecutorUnavailableException(e);
+            }
+            throw new ExecutionException(e);
         } catch (Exception e) {
             throw new ExecutionException(e);
         }
+    }
+
+    // Mirrors PersistentExecutorService's ExecutorUnavailableException split: treat capacity/
+    // availability signals from the Kubernetes API as retryable, and genuine request/config
+    // rejections (a bad manifest, RBAC denial) as a real failure that retrying will never fix.
+    private boolean isRetryable(KubernetesClientException e) {
+        int code = e.getCode();
+        if (code <= 0) {
+            // No HTTP response reached at all - apiserver unreachable, connection refused, timed out.
+            return true;
+        }
+        if (code == 429 || code >= 500) {
+            // Throttled, or a server-side error - both expected to clear on their own.
+            return true;
+        }
+        if (code == 403) {
+            // Admission control returns 403 both when a ResourceQuota is exhausted (transient -
+            // frees up as other jobs finish) and on RBAC denial (a real config error). Only the
+            // former is worth retrying.
+            String message = e.getMessage();
+            return message != null && message.contains("exceeded quota");
+        }
+        return false;
     }
 
     private Map<String, String> parseKeyValueString(String input) {

@@ -14,8 +14,54 @@
   width: 100%;
 }
 
+/* antd's Input renders an emergent (compounding) height at size="large" while Select
+   uses a single fixed token, so the two drift apart even with matching size props. */
+.workspace-search-input .ant-input-affix-wrapper,
+.workspace-search-input .ant-input-search-button {
+  height: 40px;
+}
+
+/* Compact: search + project picker + group-by-project share one row */
+.workspace-filter-container--compact .workspace-filter-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-filter-container--compact .workspace-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+/* This antd version has no .ant-select-selector wrapper - the .ant-select root itself
+   (matched by this class) is the box, containing .ant-select-content (text) and
+   .ant-select-suffix (arrow). Verified against the actual rendered DOM, not assumed. */
 .workspace-sort-select {
   min-width: 180px;
+  height: 32px;
+  align-items: center;
+}
+
+.workspace-sort-select .ant-select-content {
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+}
+
+.workspace-status-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tk-text-secondary);
+  background: var(--tk-fill-secondary);
+  border-radius: 10px;
+  padding: 0 6px;
+  margin-left: 2px;
+}
+
+.workspace-filter-container--compact .workspace-status-count {
+  font-size: 12.5px;
+  padding: 1px 8px;
 }
 
 /* Bottom row: Status + Tags */
@@ -166,4 +212,109 @@
 /* Segmented control styling */
 .workspace-filter-left .ant-segmented {
   background: transparent;
+}
+
+/* Compact density (used by the "New" list view) */
+.workspace-filter-container--compact {
+  margin-top: 8px;
+}
+
+.workspace-filter-container--compact .workspace-filter-search-row {
+  margin-bottom: 8px;
+}
+
+.workspace-filter-container--compact .workspace-filter-bar {
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+/* Compact-only: project chips + group-by-project toggle row */
+.workspace-filter-projects-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  background: var(--tk-bg-container);
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+}
+
+.workspace-project-select {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.workspace-group-toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Compact-only: removable chips for currently active tag filters */
+.workspace-active-tags-row {
+  margin-top: 8px;
+}
+
+/* Compact-only: status count pills replacing the Segmented control */
+.workspace-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.workspace-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--tk-border-primary);
+  background: var(--tk-bg-container);
+  color: var(--tk-text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.workspace-status-pill:hover {
+  background: var(--tk-fill-secondary);
+}
+
+.workspace-status-pill--active {
+  background: var(--tk-fill-secondary);
+  border-width: 1.5px;
+  color: var(--tk-text-primary);
+}
+
+.workspace-status-pill:focus-visible,
+.workspace-clear-filters:focus-visible {
+  outline: 2px solid #1890ff;
+  outline-offset: 2px;
+}
+
+.workspace-clear-filters {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0969da;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.workspace-clear-filters:hover {
+  text-decoration: underline;
+}
+
+[data-theme="dark"] .workspace-clear-filters {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .workspace-status-pill {
+  background: var(--tk-bg-elevated);
+  border-color: var(--tk-border-primary);
 }

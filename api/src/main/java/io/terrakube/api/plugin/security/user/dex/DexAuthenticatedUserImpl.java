@@ -1,7 +1,7 @@
 package io.terrakube.api.plugin.security.user.dex;
 
 import com.yahoo.elide.core.security.User;
-import io.terrakube.api.repository.FederatedRepository;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +26,7 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
     private GroupService groupService;
 
     @Autowired
-    private FederatedRepository federatedRepository;
+    private FederatedLookupService federatedLookupService;
 
     private JwtAuthenticationToken getSecurityPrincipal(User user) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
@@ -69,7 +69,7 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
             }
         }
 
-        Federated federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
+        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
         if (federated == null) {
             return false;
         }

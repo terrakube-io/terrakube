@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate configuration to automatically update Paketo buildpack versions in Maven pom.xml files",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "custom.regex"
+  ],
+  "commitMessagePrefix": "deps:",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update Paketo buildpack container image references in pom.xml",
+      "fileMatch": [
+        "(^|/)pom\\.xml$"
+      ],
+      "matchStrings": [
+        "<buildpack\\.(?:builder|java|telemetry)>(?<depName>[^:]+):(?<currentValue>[^<]+)<\\/buildpack\\.(?:builder|java|telemetry)>"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackagePatterns": [
+        "^paketobuildpacks/"
+      ],
+      "groupName": "Paketo buildpacks updates",
+      "schedule": [
+        "before 6am on monday"
+      ]
+    }
+  ]
+}

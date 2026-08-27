@@ -121,13 +121,18 @@ public class DynamicCredentialsService {
     }
 
     private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId) {
+        return generateJwt(organizationName, workspaceName, tokenAudience, organizationId, workspaceId, jobId, null);
+    }
+
+    private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId, Map<String, Object> extraClaims) {
         String jwtToken = "";
         if (privateKeyPath != null && !privateKeyPath.isEmpty()) {
             try {
                 Instant now = Instant.now();
-                jwtToken = Jwts.builder()
+                var builder = Jwts.builder()
                         .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
-                        .audience().add(tokenAudience).and()
+                        //.audience().add(tokenAudience).and()
+                        .setAudience(tokenAudience)
                         .id(UUID.randomUUID().toString())
                         .header().add("kid", kid).and()
                         .claim("terrakube_workspace_id", workspaceId)
@@ -137,7 +142,9 @@ public class DynamicCredentialsService {
                         .claim("terrakube_job_id", String.valueOf(jobId))
                         .issuedAt(Date.from(now))
                         .issuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
-                        .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)))
+                        .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)));
+                if (extraClaims != null) extraClaims.forEach(builder::claim);
+                jwtToken = builder
                         .signWith(getPrivateKey(), Jwts.SIG.RS512)
                         .compact();
             } catch (Exception e) {
@@ -152,13 +159,19 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables) {
+        Map<String, Object> extraClaims = null;
+        if (Boolean.parseBoolean(workspaceEnvVariables.get("ENABLE_AWS_SESSION_TAGS"))) {
+            extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
+        }
+
         String awsWebIdentityToken = generateJwt(
                 job.getOrganization().getName(),
                 job.getWorkspace().getName(),
                 workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"),
                 job.getOrganization().getId().toString(),
                 job.getWorkspace().getId().toString(),
-                job.getId()
+                job.getId(),
+                extraClaims
         );
 
         log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);
@@ -219,6 +232,27 @@ public class DynamicCredentialsService {
         // path of the file it wrote (the workspace clone dir is only known there).
 
         return workspaceEnvVariables;
+    }
+
+    private Map<String, Object> buildAwsSessionTags(Job job) {
+        Map<String, List<String>> principalTags = new LinkedHashMap<>();
+        principalTags.put("terrakube:org",       List.of(sanitizeTag(job.getOrganization().getName())));
+        principalTags.put("terrakube:workspace", List.of(sanitizeTag(job.getWorkspace().getName())));
+        var project = job.getWorkspace().getProject();
+        if (project != null) {
+            principalTags.put("terrakube:project", List.of(sanitizeTag(project.getName())));
+        }
+        return Map.of(
+                "principal_tags",      principalTags,
+                "transitive_tag_keys", new ArrayList<>(principalTags.keySet()));
+    }
+
+    private String sanitizeTag(String value) {
+        if (value == null) {
+            return "";
+        }
+        String sanitized = value.replaceAll("[^A-Za-z0-9 _.:/=+@-]", "_");
+        return sanitized.length() > 256 ? sanitized.substring(0, 256) : sanitized;
     }
 
     private PrivateKey getPrivateKey() throws Exception {

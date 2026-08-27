@@ -1,36 +1,51 @@
-import {
-  CheckCircleOutlined,
-  CheckOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
-  CloseOutlined,
-  CommentOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
 import { DateTime } from "luxon";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
-import { useAbortController, usePolling } from "../../hooks";
-import { Job, JobStep } from "../types";
-import { TerminalOutput } from "./TerminalOutput";
+import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
+import WorkspaceStatusTag from "../../modules/workspaces/components/WorkspaceStatusTag";
+import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
+import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
+import { IncludedItem, Job, JobStep, Workspace } from "../types";
+import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { StructuredPlanOutput } from "./StructuredPlanOutput";
-import { StructuredPlanOutputByStep, normalizeStructuredPlanOutput, normalizeUITemplates } from "./structuredPlan";
+import {
+  JobDiagnosticsByStep,
+  StructuredApplyOutputByStep,
+  StructuredOutputsByStep,
+  StructuredPlanOutputByStep,
+  normalizeJobDiagnostics,
+  normalizeStructuredApplyOutput,
+  normalizeStructuredOutputs,
+  normalizeStructuredPlanOutput,
+  normalizeUITemplates,
+} from "./structuredPlan";
 
 type Props = {
   jobId: string;
 };
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
+const TERMINAL_STEP_STATUSES = TERMINAL_JOB_STATUSES;
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
+
+const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
+
+const getStoredUIType = (): "structured" | "console" => {
+  try {
+    return localStorage.getItem(UI_TYPE_STORAGE_KEY) === "console" ? "console" : "structured";
+  } catch {
+    // localStorage can throw in private-browsing/storage-restricted contexts - fall back silently.
+    return "structured";
+  }
+};
 
 type IncompleteVariableGuard = {
   title: string;
@@ -48,12 +63,51 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [workspaceVcsId, setWorkspaceVcsId] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
-  const [uiType, setUIType] = useState("structured");
+  // Controlled per-step Collapse open/closed state, keyed by step id. Was previously driven by
+  // Collapse's uncontrolled defaultActiveKey with `${item.id}-${item.status}` as the element key -
+  // every status transition (pending -> running -> completed) therefore remounted the whole step
+  // subtree, silently closing any row/attribute the user had expanded in StructuredPlanOutput and
+  // resetting its filters. Controlled state keyed by id alone survives status changes; the effect
+  // below still auto-opens a step the moment it starts running, same as before, but only if the
+  // user hasn't already closed it themselves.
+  const [activeStepKeys, setActiveStepKeys] = useState<Record<string, string[]>>({});
+  const initializedStepIds = useRef<Set<string>>(new Set());
+  const userToggledStepIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setActiveStepKeys((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      for (const item of steps) {
+        if (!initializedStepIds.current.has(item.id)) {
+          initializedStepIds.current.add(item.id);
+          next[item.id] = shouldStepBeExpandedByDefault(item) ? ["2"] : [];
+          changed = true;
+        } else if (
+          item.status === "running" &&
+          (next[item.id]?.length ?? 0) === 0 &&
+          !userToggledStepIds.current.has(item.id)
+        ) {
+          next[item.id] = ["2"];
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [steps]);
+
+  const [uiType, setUIType] = useState<"structured" | "console">(getStoredUIType);
   const [uiTemplates, setUITemplates] = useState<Record<string, string>>({});
   const [planStructuredOutput, setPlanStructuredOutput] = useState<StructuredPlanOutputByStep>({});
+  const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
+  const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
+  const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
+  const cachedStepLogs = useRef<Map<string, any>>(new Map());
   const contextRequestRef = useRef(0);
   const pollRequestRef = useRef(0);
 
@@ -154,16 +208,65 @@ export const DetailsJob = ({ jobId }: Props) => {
     );
   };
 
+  const renderPrCommentErrorAlert = (prCommentError: string, prNumber?: number) => {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
+        description={prCommentError}
+      />
+    );
+  };
+
   const handleComingSoon = () => {
     message.info("Coming Soon!");
   };
 
   const onChange = (e: RadioChangeEvent) => {
-    setUIType(e.target.value);
+    const nextUIType = e.target.value as "structured" | "console";
+    setUIType(nextUIType);
+    try {
+      localStorage.setItem(UI_TYPE_STORAGE_KEY, nextUIType);
+    } catch {
+      // ignore storage errors (private browsing, quota, etc.) - preference just won't persist.
+    }
   };
 
   const renderConsoleOutput = (item: JobStep) => {
-    return <TerminalOutput outputLog={item.outputLog} stepName={item.name} isRunning={item.status === "running"} />;
+    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
+  };
+
+  const getStepStructuredData = (item: JobStep) => {
+    const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
+    const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
+    const structuredApplyChanges = applyStructuredOutput[item.id] || applyStructuredOutput[String(item.stepNumber)];
+    const stepOutputs = terraformOutputs[item.id] || terraformOutputs[String(item.stepNumber)];
+    const stepJobDiagnostics = jobDiagnostics[item.id] || jobDiagnostics[String(item.stepNumber)];
+    const hasStructuredView = Boolean(template) || Boolean(structuredChanges) || Boolean(structuredApplyChanges);
+
+    return { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView };
+  };
+
+  const renderStepExtra = (item: JobStep) => {
+    const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
+      return null;
+    }
+
+    if (!getStepStructuredData(item).hasStructuredView) {
+      return null;
+    }
+
+    // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
+    return (
+      <div onClick={(event) => event.stopPropagation()}>
+        <Radio.Group onChange={onChange} value={uiType} size="small">
+          <Radio.Button value="structured">Structured</Radio.Button>
+          <Radio.Button value="console">Console</Radio.Button>
+        </Radio.Group>
+      </div>
+    );
   };
 
   const renderStepContent = (item: JobStep) => {
@@ -173,55 +276,43 @@ export const DetailsJob = ({ jobId }: Props) => {
       return renderConsoleOutput(item);
     }
 
-    const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
-    const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
-    const hasStructuredView = Boolean(template) || Boolean(structuredChanges);
+    const { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView } =
+      getStepStructuredData(item);
 
     if (!hasStructuredView) {
       return renderConsoleOutput(item);
     }
 
-    if (uiType !== "structured") {
-      return (
-        <>
-          <div
-            style={{
-              textAlign: "right",
-              padding: "5px",
-            }}
-          >
-            <Radio.Group onChange={onChange} value={uiType} size="small">
-              <Radio.Button value="structured">Structured</Radio.Button>
-              <Radio.Button value="console">Console</Radio.Button>
-            </Radio.Group>
-          </div>
-          {renderConsoleOutput(item)}
-        </>
-      );
-    }
+    const isStepRunning = !isTerminalJobStatus(item.status);
 
-    let structuredContent = renderConsoleOutput(item);
+    const structuredContent = structuredApplyChanges ? (
+      <StructuredPlanOutput
+        changes={structuredApplyChanges}
+        outputLog={item.outputLog}
+        applyMode
+        outputs={stepOutputs}
+        jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
+      />
+    ) : structuredChanges ? (
+      <StructuredPlanOutput
+        changes={structuredChanges}
+        outputLog={item.outputLog}
+        jobDiagnostics={stepJobDiagnostics}
+        isStepRunning={isStepRunning}
+      />
+    ) : (
+      <div>{parse(template ?? "")}</div>
+    );
 
-    if (structuredChanges) {
-      structuredContent = <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} />;
-    } else if (template) {
-      structuredContent = <div>{parse(template)}</div>;
-    }
-
+    // Keep both mounted and toggle visibility with CSS instead of conditionally rendering one or
+    // the other - unmounting StructuredPlanOutput every time the user flips between structured
+    // and console would reset its internal expanded-row/attribute state, closing any dropdowns
+    // they'd already opened.
     return (
       <>
-        <div
-          style={{
-            textAlign: "right",
-            padding: "5px",
-          }}
-        >
-          <Radio.Group onChange={onChange} value={uiType} size="small">
-            <Radio.Button value="structured">Structured</Radio.Button>
-            <Radio.Button value="console">Console</Radio.Button>
-          </Radio.Group>
-        </div>
-        {structuredContent}
+        <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
+        <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsoleOutput(item)}</div>
       </>
     );
   };
@@ -231,7 +322,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <span>
         {getIconStatus(item)}
         <h3 style={{ display: "inline" }}>
-          &nbsp; {item.name} {item.status}
+          &nbsp; {item.name} {getWorkspaceStatusText(item.status)}
         </h3>
       </span>
     );
@@ -263,23 +354,12 @@ export const DetailsJob = ({ jobId }: Props) => {
       });
   };
 
+  // Delegates to the same status -> icon/color map WorkspaceStatusTag uses, so a step's icon
+  // always matches the color/shape used everywhere else status is shown for the same status value.
   const getIconStatus = (item: JobStep) => {
-    switch (item.status) {
-      case "completed":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "noChanges":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "notExecuted":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#fa8f37" }} />;
-      case "running":
-        return <SyncOutlined spin style={{ color: "#108ee9", fontSize: "20px" }} />;
-      case "failed":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      case "cancelled":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      default:
-        return <ClockCircleOutlined style={{ fontSize: "20px" }} />;
-    }
+    return cloneElement(getWorkspaceStatusIcon(item.status), {
+      style: { fontSize: "20px", color: statusColors[item.status] },
+    });
   };
 
   const handleApprove = () => {
@@ -343,9 +423,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
-        signal,
-      });
+      const response = await axiosInstance.get(
+        `organization/${organizationId}/job/${jobId}?include=step,workspace`,
+        { signal }
+      );
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -354,8 +435,20 @@ export const DetailsJob = ({ jobId }: Props) => {
 
       const included = response.data.included ?? [];
       const stepEntries = included.filter((item: any) => item.type === "step");
-      const workspaceEntry = included.find((item: any) => item.type === "workspace");
+      const workspaceEntry: Workspace | undefined = included.find(
+        (item: IncludedItem<Workspace>) => item.type === "workspace"
+      );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
+
+      const fetchStepLog = async (stepItem: any) => {
+        const cached = cachedStepLogs.current.get(stepItem.id);
+        if (cached !== undefined) return cached;
+        const log = await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal);
+        if (TERMINAL_STEP_STATUSES.has(stepItem.attributes.status) && !signal.aborted && log !== "No logs available") {
+          cachedStepLogs.current.set(stepItem.id, log);
+        }
+        return log;
+      };
 
       const stepsPromise = Promise.all(
         stepEntries.map(async (stepItem: any) => ({
@@ -367,7 +460,9 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
-              : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
+              : stepItem.attributes.status === "running"
+              ? ""
+              : await fetchStepLog(stepItem),
         }))
       );
 
@@ -435,7 +530,14 @@ export const DetailsJob = ({ jobId }: Props) => {
         return;
       }
       setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
-      setPlanStructuredOutput(normalizeStructuredPlanOutput(response?.data?.planStructuredOutput));
+      // Merge (not replace) plan/apply/diagnostics - this REST snapshot can lag behind the live
+      // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
+      // soon as the executor emits them. Replacing wholesale on every 5s poll would intermittently
+      // wipe out a step's just-pushed live data with a stale snapshot that hasn't caught up yet.
+      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput) }));
+      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput) }));
+      setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
+      setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
       if (isAbortError(error)) return;
     }
@@ -451,6 +553,7 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   useEffect(() => {
     setLoading(true);
+    cachedStepLogs.current.clear();
     abortJobRequests();
     abortContextRequests();
 
@@ -472,6 +575,37 @@ export const DetailsJob = ({ jobId }: Props) => {
       immediate: false,
     }
   );
+
+  type LiveStructuredOutput = {
+    phase: "plan" | "apply";
+    changes: Record<string, unknown>;
+    jobDiagnostics: Record<string, unknown>;
+  };
+
+  const isJobRunning = job?.data?.attributes.status === "running";
+  const liveStructuredOutput = useStructuredOutputStream<LiveStructuredOutput | null>({
+    url: `${getPublicApiOrigin()}/context/v1/${jobId}/stream`,
+    enabled: Boolean(jobId) && isJobRunning,
+    initial: null,
+  });
+
+  useEffect(() => {
+    if (liveStructuredOutput == null) {
+      return;
+    }
+
+    // Each push only carries the one step (plan or apply) that just changed, keyed by that
+    // step's id - merge it into the existing per-step maps rather than replacing them wholesale,
+    // otherwise a later push would wipe out an earlier step's already-loaded data.
+    setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(liveStructuredOutput.jobDiagnostics) }));
+
+    if (liveStructuredOutput.phase === "plan") {
+      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(liveStructuredOutput.changes) }));
+    } else {
+      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(liveStructuredOutput.changes) }));
+    }
+  }, [liveStructuredOutput]);
+
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
@@ -489,43 +623,11 @@ export const DetailsJob = ({ jobId }: Props) => {
 
             return renderIncompleteVariableAlert(guard);
           })()}
+          {job.data.attributes.prCommentError
+            ? renderPrCommentErrorAlert(job.data.attributes.prCommentError, job.data.attributes.prNumber)
+            : null}
           <div>
-            <Tag
-              icon={
-                job.data.attributes.status === "completed" ? (
-                  <CheckCircleOutlined />
-                ) : job.data.attributes.status === "running" ? (
-                  <SyncOutlined spin />
-                ) : job.data.attributes.status === "waitingApproval" ? (
-                  <ExclamationCircleOutlined />
-                ) : job.data.attributes.status === "cancelled" ? (
-                  <StopOutlined />
-                ) : job.data.attributes.status === "failed" ? (
-                  <StopOutlined />
-                ) : (
-                  <ClockCircleOutlined />
-                )
-              }
-              color={
-                job.data.attributes.status === "completed"
-                  ? "#2eb039"
-                  : job.data.attributes.status === "noChanges"
-                    ? "#2eb039"
-                    : job.data.attributes.status === "notExecuted"
-                      ? "#fa8f37"
-                      : job.data.attributes.status === "running"
-                        ? "#108ee9"
-                        : job.data.attributes.status == "waitingApproval"
-                          ? "#fa8f37"
-                          : job.data.attributes.status == "rejected"
-                            ? "#FB0136"
-                            : job.data.attributes.status == "failed"
-                              ? "#FB0136"
-                              : ""
-              }
-            >
-              {job.data.attributes.status}
-            </Tag>{" "}
+            <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
             <h2 style={{ display: "inline" }}>Triggered via UI</h2>
           </div>
 
@@ -593,27 +695,32 @@ export const DetailsJob = ({ jobId }: Props) => {
           />
           {steps.length > 0 ? (
             steps.map((item) => {
-              const stepKey = `${item.id}-${item.status}`;
               const stepLabel = renderStepLabel(item);
-
-              if (!shouldStepBeCollapsible(item)) {
-                return (
-                  <Card key={stepKey} size="small" style={{ width: "100%" }}>
-                    {stepLabel}
-                  </Card>
-                );
-              }
+              // Steps with nothing to show yet (e.g. a pending approval step) still render through
+              // Collapse rather than a bare Card - a disabled panel keeps the same arrow/label/extra
+              // grid as every expandable step, so rows stay in one aligned column instead of the
+              // Card variant's text sitting flush left of the others.
+              const isCollapsible = shouldStepBeCollapsible(item);
 
               return (
                 <Collapse
-                  key={stepKey}
+                  key={item.id}
                   style={{ width: "100%" }}
-                  defaultActiveKey={shouldStepBeExpandedByDefault(item) ? ["2"] : []}
+                  activeKey={isCollapsible ? (activeStepKeys[item.id] ?? []) : []}
+                  onChange={(keys) => {
+                    userToggledStepIds.current.add(item.id);
+                    setActiveStepKeys((previous) => ({
+                      ...previous,
+                      [item.id]: Array.isArray(keys) ? keys : [keys],
+                    }));
+                  }}
                   items={[
                     {
                       key: "2",
                       label: stepLabel,
-                      children: renderStepContent(item),
+                      collapsible: isCollapsible ? undefined : "disabled",
+                      extra: isCollapsible ? renderStepExtra(item) : undefined,
+                      children: isCollapsible ? renderStepContent(item) : undefined,
                     },
                   ]}
                 />
@@ -628,8 +735,14 @@ export const DetailsJob = ({ jobId }: Props) => {
               <Card
                 title={
                   <span style={{ fontSize: "14px" }}>
-                    <b>Needs Confirmation:</b> Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to
-                    continue.
+                    <b>Needs Confirmation:</b>{" "}
+                    {job.data.attributes.approvalTeam ? (
+                      <>
+                        Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to continue.
+                      </>
+                    ) : (
+                      "Someone must confirm to continue."
+                    )}
                   </span>
                 }
               >

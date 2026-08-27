@@ -37,4 +37,7 @@ public class ModuleVersion {
     
     @Column(name = "commit_info")
     private String commit;
+
+    @Column(name = "git_tag")
+    private String gitTag;
 }

@@ -12,6 +12,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.token.pat.PatService;
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
@@ -28,6 +29,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 
 import javax.crypto.SecretKey;
@@ -48,6 +50,12 @@ class ServerApplicationTests {
     @MockBean
     protected RedisTemplate<String, Object> redisTemplate;
 
+    // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
+    // container to connect to Redis on every SpringBootTest context startup - CI has no Redis
+    // service, so every test in this hierarchy would fail before this mock existed.
+    @MockBean
+    protected RedisMessageListenerContainer redisMessageListenerContainer;
+
     @MockBean
     protected DownloadReleasesService downloadReleasesService;
 
@@ -61,6 +69,9 @@ class ServerApplicationTests {
 
     @Autowired
     BitBucketWebhookService bitBucketWebhookService;
+
+    @Autowired
+    AzDevOpsWebhookService azDevOpsWebhookService;
 
     @Autowired
     EncryptionService encryptionService;

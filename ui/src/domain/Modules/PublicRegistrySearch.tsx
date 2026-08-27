@@ -12,11 +12,12 @@ import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws, FaGoogle } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
+
 import axiosInstance, { axiosRegistry } from "../../config/axiosConfig";
 
 const { Search } = Input;
@@ -153,7 +154,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         );
         setExistingProviders(providerNames);
 
-        // Fetch existing modules
         const modulesResponse = await axiosInstance.get(`organization/${orgid}?include=module`);
         const moduleNames = new Set<string>();
         if (modulesResponse.data.included) {
@@ -185,10 +185,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const isModuleImported = (module: TerraformRegistryModule): boolean => {
     const key = `${module.name}/${module.provider}`.toLowerCase();
     return existingModules.has(key);
-  };
-
-  const handleBack = () => {
-    navigate(`/organizations/${orgid}/registry`);
   };
 
   const searchProviders = async (query: string) => {
@@ -683,8 +679,8 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         { label: "Public Registry Search", path: `/organizations/${orgid}/registry/search` },
       ]}
       actions={
-        <Button type="default" icon={<ArrowLeftOutlined />} onClick={handleBack}>
-          Back to your registry
+        <Button type="default" icon={<ArrowLeftOutlined />}>
+          <Link to={`/organizations/${orgid}/registry`}>Back to your registry</Link>
         </Button>
       }
     >

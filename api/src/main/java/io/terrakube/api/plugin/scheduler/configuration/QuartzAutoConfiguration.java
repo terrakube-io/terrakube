@@ -5,6 +5,7 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.spi.TriggerFiredBundle;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -39,14 +40,17 @@ public class QuartzAutoConfiguration {
     }
 
     @Bean
-    public SchedulerFactoryBean schedulerFactoryBean(ApplicationContext applicationContext, DataSource dataSource, DataSourceConfigurationProperties dataSourceConfigurationProperties) {
+    public SchedulerFactoryBean schedulerFactoryBean(ApplicationContext applicationContext, DataSource dataSource, DataSourceConfigurationProperties dataSourceConfigurationProperties,
+            @Value("${io.terrakube.api.plugin.scheduler.instanceName:schedulerFactoryBean}") String schedulerInstanceName) {
         SchedulerFactoryBean schedulerFactoryBean = new SchedulerFactoryBean();
         schedulerFactoryBean.setJobFactory(new AutowireCapableBeanJobFactory(applicationContext.getAutowireCapableBeanFactory()));
         schedulerFactoryBean.setDataSource(dataSource);
         Properties properties = new Properties();
         properties.put("org.quartz.jobStore.class","org.springframework.scheduling.quartz.LocalDataSourceJobStore");
         properties.put("org.quartz.jobStore.isClustered","true");
+        properties.put("org.quartz.scheduler.instanceName",schedulerInstanceName);
         properties.put("org.quartz.scheduler.instanceId","AUTO");
+        properties.put("org.quartz.threadPool.threadCount","20");
         switch(dataSourceConfigurationProperties.getType()){
             case SQL_AZURE:
                 properties.put("org.quartz.jobStore.driverDelegateClass","org.quartz.impl.jdbcjobstore.MSSQLDelegate");

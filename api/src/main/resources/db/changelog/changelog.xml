@@ -104,4 +104,22 @@
     <include file="db/changelog/local/changelog-2.31.0-repo-webhooks.xml"/>
     <include file="/db/changelog/local/changelog-2.32.0-project-access.xml"/>
     <include file="/db/changelog/local/changelog-2.32.0-job-step-cascade.xml"/>
+    <include file="/db/changelog/local/changelog-2.32.0-performance-fk-indexes.xml" />
+    <include file="/db/changelog/local/changelog-2.33.0-vcs-token-size.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-github-app-token-size.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-pr-comment-error.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-github-app-token-expiry.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-pr-apply-enabled.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-pr-apply-enabled-fix.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-job-pr-apply-enabled.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-job-command-comment-id.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-job-soft-delete.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-job-status-index.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-module-version-git-tag.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-canonical-module-versions.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-variable-category-not-null.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-notification.xml" />
+    <include file="/db/changelog/local/changelog-2.33.0-job-target-replace-addrs.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-provider-trust-signature.xml"/>
+    <include file="/db/changelog/local/changelog-2.33.0-repo-webhook-delivery.xml" />
 </databaseChangeLog>

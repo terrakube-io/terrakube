@@ -7,6 +7,7 @@ import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.hooks.organization.OrganizationManageHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.ssh.Ssh;
@@ -29,6 +30,7 @@ import java.util.UUID;
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = OrganizationManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
 @Include
@@ -108,4 +110,8 @@ public class Organization {
 
     @Column(name = "icon")
     private String icon;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<NotificationConfiguration> notificationConfiguration;
 }

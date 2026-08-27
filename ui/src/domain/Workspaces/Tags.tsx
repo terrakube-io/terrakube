@@ -1,6 +1,6 @@
-import { Select } from "antd";
+import { message, Select } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { Tag, ApiWorkspaceTag } from "../types";
 type Props = {
   organizationId: string;
@@ -58,10 +58,16 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
             .then((response) => {
               setTags((prev) => [...prev, response.data?.data]);
               addTagToWorkspace(response.data?.data?.id);
+            })
+            .catch((err) => {
+              message.error(getErrorMessage(err));
             });
         } else {
           addTagToWorkspace(existingTagId);
         }
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
   const addTagToWorkspace = (tagId: string) => {
@@ -82,6 +88,9 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
       })
       .then((response) => {
         setCurrentTags((prev) => [...prev, response.data.data]);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
   };
   const handleDeselect = (tagId: string) => {
@@ -92,12 +101,17 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
 
     const id = currentTags.find((x) => x.attributes.tagId === currentTag)?.id;
 
-    axiosInstance.delete(`organization/${organizationId}/workspace/${workspaceId}/workspaceTag/${id}`).then(() => {
-      const currentTagsFilter = currentTags.filter(function (x) {
-        return x.id !== id;
+    axiosInstance
+      .delete(`organization/${organizationId}/workspace/${workspaceId}/workspaceTag/${id}`)
+      .then(() => {
+        const currentTagsFilter = currentTags.filter(function (x) {
+          return x.id !== id;
+        });
+        setCurrentTags(currentTagsFilter);
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
       });
-      setCurrentTags(currentTagsFilter);
-    });
   };
 
   function isGuid(value: string) {
@@ -106,13 +120,25 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
     return match != null;
   }
   const loadTags = () => {
-    axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/workspaceTag`).then((response) => {
-      setCurrentTags(response.data.data);
-      axiosInstance.get(`organization/${organizationId}/tag`).then((res) => {
-        setTags(res.data.data);
+    axiosInstance
+      .get(`organization/${organizationId}/workspace/${workspaceId}/workspaceTag`)
+      .then((response) => {
+        setCurrentTags(response.data.data);
+        axiosInstance
+          .get(`organization/${organizationId}/tag`)
+          .then((res) => {
+            setTags(res.data.data);
+            setLoading(false);
+          })
+          .catch((err) => {
+            message.error(getErrorMessage(err));
+            setLoading(false);
+          });
+      })
+      .catch((err) => {
+        message.error(getErrorMessage(err));
         setLoading(false);
       });
-    });
   };
   useEffect(() => {
     loadTags();

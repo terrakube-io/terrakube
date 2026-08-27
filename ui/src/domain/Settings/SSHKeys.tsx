@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { SshKey } from "../types";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 const { TextArea } = Input;
 
@@ -144,56 +145,68 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : (
         <>
-          <h1>SSH Keys</h1>
+          <Typography.Title level={1} style={{ margin: 0 }}>
+            SSH Keys
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary" className="App-text">
               Terrakube uses these private SSH keys for downloading private Terraform modules with Git-based sources
               during a Terraform run. SSH keys for downloading modules are assigned per-workspace.
             </Typography.Text>
           </div>
-          <Button type="primary" onClick={onNew} htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-            Add a Private SSH Key
-          </Button>
-          <br></br>
+          <SettingsSection maxWidth="100%">
+            <Button
+              type="primary"
+              onClick={onNew}
+              htmlType="button"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+            >
+              Add a Private SSH Key
+            </Button>
 
-          <h3 style={{ marginTop: "30px" }}>SSH Keys</h3>
-          {loading ? (
-            <p>Data loading...</p>
-          ) : (
-            <List
-              itemLayout="horizontal"
-              dataSource={sshKeys}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Popconfirm
-                      onConfirm={() => {
-                        onDelete(item.id);
-                      }}
-                      style={{ width: "20px" }}
-                      title={
-                        <p>
-                          This will permanently delete this SSH Key <br />
-                          Any workspaces configured with this SSH key will no longer use it to download Terraform
-                          modules. <br />
-                          Are you sure?
-                        </p>
-                      }
-                      okText="Yes"
-                      cancelText="No"
-                    >
-                      {" "}
-                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                        Delete
-                      </Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                </List.Item>
-              )}
-            />
-          )}
+            <Typography.Title level={3} style={{ marginTop: "30px" }}>
+              SSH Keys
+            </Typography.Title>
+            {loading ? (
+              <p>Data loading...</p>
+            ) : (
+              <List
+                itemLayout="horizontal"
+                dataSource={sshKeys}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <Popconfirm
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => {
+                          onDelete(item.id);
+                        }}
+                        style={{ width: "20px" }}
+                        title={
+                          <p>
+                            This will permanently delete this SSH Key <br />
+                            Any workspaces configured with this SSH key will no longer use it to download Terraform
+                            modules. <br />
+                            Are you sure?
+                          </p>
+                        }
+                        okText="Yes"
+                        cancelText="No"
+                      >
+                        {" "}
+                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                          Delete
+                        </Button>
+                      </Popconfirm>,
+                    ]}
+                  >
+                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                  </List.Item>
+                )}
+              />
+            )}
+          </SettingsSection>
 
           <Modal
             width="650px"

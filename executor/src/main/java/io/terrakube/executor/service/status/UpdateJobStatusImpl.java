@@ -43,13 +43,17 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 }
             }
 
-            job.getAttributes().setStatus("running");
-            job.getAttributes().setCommitId(commitId);
+            if (job.getAttributes().getStatus().equals("rejected")) {
+                log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
+            } else {
+                job.getAttributes().setStatus("running");
+                job.getAttributes().setCommitId(commitId);
 
-            JobRequest jobRequest = new JobRequest();
-            jobRequest.setData(job);
+                JobRequest jobRequest = new JobRequest();
+                jobRequest.setData(job);
 
-            terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
+                terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
+            }
 
             updateStepLogs(terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId());
         }
@@ -58,22 +62,21 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     @Override
     public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
-            updateStepStatus(successful, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
-            if(!isJobCancelled(terraformJob))
+            String currentJobStatus = getCurrentJobStatus(terraformJob);
+            // A rejected run keeps showing its approval step as failed: onReject command
+            // output is still saved, but its success must not repaint the step as completed.
+            boolean rejected = currentJobStatus.equals("rejected");
+            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
+            if (rejected || currentJobStatus.equals("cancelled"))
+                log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
+            else
                 updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId);
         }
     }
 
-    private boolean isJobCancelled(TerraformJob terraformJob){
-        Job job = terrakubeClient.getJobById(terraformJob.getOrganizationId(), terraformJob.getJobId()).getData();
-        if(job.getAttributes().getStatus().equals("cancelled")) {
-            log.warn("Job {} was cancelled when running executor", terraformJob.getJobId());
-            return true;
-        }
-        else {
-            log.info("Job {} is still active", terraformJob.getJobId());
-            return false;
-        }
+    private String getCurrentJobStatus(TerraformJob terraformJob) {
+        return terrakubeClient.getJobById(terraformJob.getOrganizationId(), terraformJob.getJobId())
+                .getData().getAttributes().getStatus();
     }
 
     private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
@@ -94,7 +97,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                         planChanges = false;
                         break;
                     case 2:
-                        status = "pending";
+                        // A plan that finds changes normally waits "pending" for an approval/apply
+                        // step. But if this plan is the job's only step (a plan-only template),
+                        // there's nothing left to run it against - leaving it "pending" forever
+                        // misreports a finished job as still in progress.
+                        status = job.getRelationships().getStep().getData().size() > 1 ? "pending" : "completed";
                         break;
                 }
             }

@@ -1,0 +1,171 @@
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import WorkspaceFilter from "../WorkspaceFilter";
+import organizationService from "@/modules/organizations/organizationService";
+
+jest.mock("@/modules/organizations/organizationService", () => ({
+  __esModule: true,
+  default: {
+    listOrganizationTags: jest.fn().mockResolvedValue([]),
+  },
+}));
+
+const mockListOrganizationTags = organizationService.listOrganizationTags as jest.Mock;
+
+const baseProps = {
+  organizationId: "org-1",
+  status: "All",
+  onStatusChange: jest.fn(),
+  search: "",
+  onSearchChange: jest.fn(),
+  tagIds: [] as string[],
+  onTagIdsChange: jest.fn(),
+  projectId: null as string | null,
+  onProjectIdChange: jest.fn(),
+  groupByProject: true,
+  onGroupByProjectChange: jest.fn(),
+  onTagsLoaded: jest.fn(),
+  sortOption: "name_asc" as const,
+  onSortChange: jest.fn(),
+};
+
+describe("WorkspaceFilter", () => {
+  beforeEach(() => {
+    Object.values(baseProps).forEach((v) => {
+      if (typeof v === "function") (v as jest.Mock).mockClear?.();
+    });
+    mockListOrganizationTags.mockResolvedValue([]);
+  });
+
+  it("does not apply the compact class by default", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} />);
+    expect(container.querySelector(".workspace-filter-container--compact")).not.toBeInTheDocument();
+  });
+
+  it("applies the compact class when compact is true", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} compact />);
+    expect(container.querySelector(".workspace-filter-container--compact")).toBeInTheDocument();
+  });
+
+  it("legacy mode (compact=false) renders the project dropdown, not chips", () => {
+    render(<WorkspaceFilter {...baseProps} projects={[{ id: "p1", name: "platform" }]} />);
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.queryByText("All projects")).not.toBeInTheDocument();
+  });
+
+  it("compact mode renders a native project select and a group-by-project switch instead of the legacy dropdown", () => {
+    render(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
+    expect(screen.getByText("All projects")).toBeInTheDocument();
+    expect(screen.getByText("Group by project")).toBeInTheDocument();
+    expect(screen.queryByText("Project")).not.toBeInTheDocument();
+  });
+
+  it("selecting a project from the compact select calls onProjectIdChange with that project's id", () => {
+    render(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
+    fireEvent.mouseDown(screen.getByText("All projects"));
+    fireEvent.click(screen.getByText("platform"));
+    expect(baseProps.onProjectIdChange).toHaveBeenCalledWith("p1");
+  });
+
+  it("compact project select can be filtered by typing", () => {
+    const { container } = render(
+      <WorkspaceFilter
+        {...baseProps}
+        compact
+        projects={[
+          { id: "p1", name: "platform" },
+          { id: "p2", name: "billing-project" },
+        ]}
+      />
+    );
+
+    fireEvent.mouseDown(screen.getByText("All projects"));
+    const projectSelect = container.querySelector(".workspace-project-select") as HTMLElement;
+    fireEvent.change(within(projectSelect).getByRole("combobox"), { target: { value: "bill" } });
+
+    expect(screen.getByText("billing-project")).toBeInTheDocument();
+    expect(screen.queryByText("platform")).not.toBeInTheDocument();
+  });
+
+  it("toggling the group-by-project switch calls onGroupByProjectChange", () => {
+    render(<WorkspaceFilter {...baseProps} compact groupByProject={true} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(baseProps.onGroupByProjectChange).toHaveBeenCalledWith(false);
+  });
+
+  it("calls onStatusChange when a status pill is clicked in legacy (non-compact) mode", () => {
+    render(<WorkspaceFilter {...baseProps} />);
+    fireEvent.click(screen.getByText("Failed"));
+    expect(baseProps.onStatusChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("shows a removable chip for each active tag filter, and removing one calls onTagIdsChange without it", async () => {
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
+    render(<WorkspaceFilter {...baseProps} compact tagIds={["tag-1"]} />);
+
+    await waitFor(() => expect(screen.getByText("billing")).toBeInTheDocument());
+
+    const closeIcon = document.querySelector(".ant-tag-close-icon");
+    expect(closeIcon).not.toBeNull();
+    fireEvent.click(closeIcon!);
+
+    expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
+  });
+
+  it("legacy mode commits search on Enter, not on every keystroke", () => {
+    render(<WorkspaceFilter {...baseProps} />);
+    const input = screen.getByPlaceholderText("Search by name...");
+    fireEvent.change(input, { target: { value: "billing" } });
+    expect(baseProps.onSearchChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
+  });
+
+  it("compact mode filters live as you type, without needing Enter", () => {
+    render(<WorkspaceFilter {...baseProps} compact />);
+    const input = screen.getByPlaceholderText("Search by name...");
+    fireEvent.change(input, { target: { value: "billing" } });
+    expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
+  });
+
+  it("compact mode renders status pills", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} compact />);
+    expect(container.querySelector(".workspace-status-pills")).toBeInTheDocument();
+  });
+
+  it("legacy (non-compact) mode also renders status pills, not a segmented control", () => {
+    const { container } = render(<WorkspaceFilter {...baseProps} />);
+    expect(container.querySelector(".workspace-status-pills")).toBeInTheDocument();
+    expect(container.querySelector(".ant-segmented")).not.toBeInTheDocument();
+  });
+
+  it("marks only the active status pill with aria-pressed=true", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="failed" />);
+    expect(screen.getByText("Failed").closest("button")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("All").closest("button")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("clicking a status pill in compact mode calls onStatusChange", () => {
+    render(<WorkspaceFilter {...baseProps} compact />);
+    fireEvent.click(screen.getByText("Failed"));
+    expect(baseProps.onStatusChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("shows counts on status pills when statusCounts is provided", () => {
+    render(<WorkspaceFilter {...baseProps} compact statusCounts={{ All: 12, failed: 3 }} />);
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("does not show a Clear all action when no filters are active", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="All" tagIds={[]} projectId={null} />);
+    expect(screen.queryByText("Clear all")).not.toBeInTheDocument();
+  });
+
+  it("shows a Clear all action when a filter is active, and clicking it resets status, tags and project", () => {
+    render(<WorkspaceFilter {...baseProps} compact status="failed" tagIds={["tag-1"]} projectId="p1" />);
+    fireEvent.click(screen.getByText("Clear all"));
+    expect(baseProps.onStatusChange).toHaveBeenCalledWith("All");
+    expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
+    expect(baseProps.onProjectIdChange).toHaveBeenCalledWith(null);
+  });
+});

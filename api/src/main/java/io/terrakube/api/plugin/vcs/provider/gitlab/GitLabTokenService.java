@@ -49,6 +49,7 @@ public class GitLabTokenService {
 
     private WebClient getWebClient(String endpoint){
         return webClientBuilder
+                .clone()
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .clientConnector(

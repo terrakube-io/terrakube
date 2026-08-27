@@ -16,6 +16,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -26,6 +27,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Builder
 @Getter
@@ -41,6 +43,10 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private PatRepository patRepository;
     private TeamTokenRepository teamTokenRepository;
     private FederatedRepository federatedRepository;
+
+    // Avoids re-fetching issuer metadata from Dex on every request.
+    @Builder.Default
+    private final Map<String, JwtDecoder> decoderCache = new ConcurrentHashMap<>();
 
     @Override
     public AuthenticationManager resolve(HttpServletRequest request) {
@@ -66,7 +72,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         }
 
         if (!federatedIssuer.isEmpty()) {
-            providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(federatedIssuer)));
+            providerManager = new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(federatedIssuer)));
         } else {
             switch (issuer) {
                 case jwtTypePat:
@@ -79,17 +85,37 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
                     break;
                 default:
                     log.debug("Using Dex JWT Authentication Provider");
-                    providerManager = new ProviderManager(new JwtAuthenticationProvider(JwtDecoders.fromIssuerLocation(this.dexIssuerUri)));
+                    providerManager = new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(this.dexIssuerUri)));
                     break;
             }
         }
         return providerManager;
     }
 
+    // computeIfAbsent drops failed mappings, so a failed fetch is retried next request.
+    private JwtDecoder getIssuerDecoder(String issuerUri) {
+        return decoderCache.computeIfAbsent(issuerUri, uri -> {
+            try {
+                return JwtDecoders.fromIssuerLocation(uri);
+            } catch (RuntimeException ex) {
+                log.warn("Unable to load JWT decoder metadata from issuer {}: {}", uri, ex.getMessage());
+                // AuthenticationException -> clean 401 instead of an unhandled 500.
+                throw new AuthenticationServiceException("Unable to reach identity provider", ex);
+            }
+        });
+    }
+
     private JwtDecoder getJwtEncoder(String issuerType) {
+        String cacheKey = "secret:" + issuerType;
+        JwtDecoder cached = decoderCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
         String jwtSecret = (issuerType.equals(jwtTypePat) ? patJwtSecret : internalJwtSecret);
         SecretKey jwtSecretKey = new SecretKeySpec(Decoders.BASE64URL.decode(jwtSecret), "HMACSHA256");
-        return NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        decoderCache.putIfAbsent(cacheKey, decoder);
+        return decoderCache.get(cacheKey);
     }
 
     private String getJwtClaim(HttpServletRequest request, String claim) {

@@ -1,14 +1,30 @@
-import { DeleteOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  message,
+  Popconfirm,
+  Radio,
+  Space,
+  Typography,
+  Spin,
+  ColorPicker,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
-import { Organization } from "../types";
+import { Organization, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
+
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name", "description", "executionMode", "icon");
+type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type GeneralSettingsForm = {
   name: string;
@@ -23,7 +39,7 @@ type Props = {
 
 export const GeneralSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
-  const [organization, setOrganization] = useState<Organization>();
+  const [organization, setOrganization] = useState<SparseOrganization>();
   const [loading, setLoading] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string>();
@@ -99,7 +115,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   useEffect(() => {
     setLoading(true);
     axiosInstance
-      .get(`organization/${orgid}`)
+      .get(`organization/${orgid}?${ORGANIZATION_FIELDS}`)
       .then((response) => {
         setOrganization(response.data.data);
         const iconField = response.data.data.attributes.icon;
@@ -130,21 +146,22 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
-      <h1>General Settings</h1>
+      <Typography.Title level={1} style={{ margin: 0 }}>
+        General Settings
+      </Typography.Title>
+      <Typography.Text type="secondary" className="App-text" style={{ display: "block", marginBottom: 16 }}>
+        Configure general settings for your organization.
+      </Typography.Text>
       {error ? (
         <Alert message="Access Denied" description={error} type="error" showIcon />
       ) : loading || organization === undefined ? (
         <Spin tip="Loading Organization Settings..." />
       ) : (
         <Spin spinning={waiting}>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Configure general settings for your organization.
-            </Typography.Text>
-          </div>
           <Form
             layout="vertical"
             name="form-settings"
+            requiredMark={false}
             onFinish={onFinish}
             initialValues={{
               name: organization.attributes.name,
@@ -152,51 +169,66 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
               executionMode: organization.attributes.executionMode,
             }}
           >
-            <Form.Item name="name" label="Name">
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="description"
-              label="Description"
-              extra={<Typography.Text type="secondary">A brief description of this organization.</Typography.Text>}
+            <SettingsSection title="Identity" description="Basic information about this organization.">
+              <Form.Item name="name" label="Name" rules={organizationNameRules}>
+                <Input />
+              </Form.Item>
+              <Form.Item
+                name="description"
+                label="Description"
+                extra={<Typography.Text type="secondary">A brief description of this organization.</Typography.Text>}
+              >
+                <Input.TextArea rows={3} />
+              </Form.Item>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Execution Mode"
+              description="The default execution mode suggested to new workspaces created in this organization. This is informational only and does not affect existing workspaces."
             >
-              <Input.TextArea rows={3} />
-            </Form.Item>
-            <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces (informational only)">
-              <Radio.Group>
-                <Space direction="vertical">
-                  <Radio value="remote">
-                    <b>Remote</b>
-                    <Typography.Text type="secondary" style={{ display: "block" }}>
-                      Terrakube hosts your plans and applies, allowing you and your team to collaborate and review jobs
-                      in the app.
-                    </Typography.Text>
-                  </Radio>
-                  <Radio value="local">
-                    <b>Local</b>
-                    <Typography.Text type="secondary" style={{ display: "block" }}>
-                      Your planning and applying jobs are performed on your own machines. Terrakube is used just for
-                      storing and syncing the state.
-                    </Typography.Text>
-                  </Radio>
+              <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces">
+                <Radio.Group>
+                  <Space direction="vertical">
+                    <Radio value="remote">
+                      <b>Remote</b>
+                      <Typography.Text type="secondary" style={{ display: "block" }}>
+                        Terrakube hosts your plans and applies, allowing you and your team to collaborate and review
+                        jobs in the app.
+                      </Typography.Text>
+                    </Radio>
+                    <Radio value="local">
+                      <b>Local</b>
+                      <Typography.Text type="secondary" style={{ display: "block" }}>
+                        Your planning and applying jobs are performed on your own machines. Terrakube is used just for
+                        storing and syncing the state.
+                      </Typography.Text>
+                    </Radio>
+                  </Space>
+                </Radio.Group>
+              </Form.Item>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Appearance"
+              description="The icon and color shown for this organization throughout the app."
+            >
+              <Form.Item label="Organization Icon and Color">
+                <Space align="start">
+                  <IconSelector value={icon} color={color} onChange={setIcon} />
+                  <ColorPicker
+                    value={color}
+                    onChange={(colorObj) => setColor(colorObj.toHexString())}
+                    presets={[
+                      {
+                        label: "Recommended",
+                        colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
+                      },
+                    ]}
+                  />
                 </Space>
-              </Radio.Group>
-            </Form.Item>
-            <Form.Item label="Organization Icon and Color">
-              <Space align="start">
-                <IconSelector value={icon} color={color} onChange={setIcon} />
-                <ColorPicker
-                  value={color}
-                  onChange={(colorObj) => setColor(colorObj.toHexString())}
-                  presets={[
-                    {
-                      label: "Recommended",
-                      colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
-                    },
-                  ]}
-                />
-              </Space>
-            </Form.Item>
+              </Form.Item>
+            </SettingsSection>
+
             <Form.Item>
               <Button type="primary" htmlType="submit" disabled={!managePermission}>
                 Update organization
@@ -205,41 +237,45 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           </Form>
         </Spin>
       )}
-      <h1>Destruction and Deletion</h1>
-      <h3>Delete this Organization</h3>
-      <div style={{ textAlign: "left", marginBottom: "16px" }}>
-        <Typography.Text type="secondary" className="App-text">
-          Deleting the <strong>{organization?.attributes?.name}</strong> organization will permanently delete all
-          workspaces associated with it.
-          <br />
-          Please be certain that you understand this. This action cannot be undone.
-        </Typography.Text>
-      </div>
-      <Popconfirm
-        onConfirm={() => {
-          onDelete();
-        }}
-        style={{ width: "100%" }}
-        title={
-          <p>
-            Organization will be permanently deleted and all workspaces will be marked as deleted <br />
+      <SettingsSection
+        danger
+        title="Delete this Organization"
+        description={
+          <>
+            Deleting the <strong>{organization?.attributes?.name}</strong> organization will permanently delete all
+            workspaces associated with it.
             <br />
-            Are you sure?
-          </p>
+            Please be certain that you understand this. This action cannot be undone.
+          </>
         }
-        okText="Yes"
-        cancelText="No"
-        placement="bottom"
       >
-        <Button
-          type="primary"
-          danger
-          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-          disabled={!managePermission}
+        <Popconfirm
+          okButtonProps={{ danger: true }}
+          onConfirm={() => {
+            onDelete();
+          }}
+          style={{ width: "100%" }}
+          title={
+            <p>
+              Organization will be permanently deleted and all workspaces will be marked as deleted <br />
+              <br />
+              Are you sure?
+            </p>
+          }
+          okText="Yes"
+          cancelText="No"
+          placement="bottom"
         >
-          Delete this organization
-        </Button>
-      </Popconfirm>
+          <Button
+            type="primary"
+            danger
+            style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+            disabled={!managePermission}
+          >
+            Delete this organization
+          </Button>
+        </Popconfirm>
+      </SettingsSection>
     </div>
   );
 };

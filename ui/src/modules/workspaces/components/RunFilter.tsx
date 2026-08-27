@@ -1,15 +1,15 @@
-import {
-  BarsOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  PauseCircleOutlined,
-} from "@ant-design/icons";
+import { BarsOutlined } from "@ant-design/icons";
 import { Card, Row, Col, Segmented, theme, Select, Flex } from "antd";
 import { FlatJob, JobStatus } from "../../../domain/types";
-import { useEffect, useState, useMemo, ReactNode } from "react";
+import { cloneElement, useEffect, useState, useMemo } from "react";
+import { statusColors } from "../utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "../utils/workspaceStatusIcon";
+import { getWorkspaceStatusText } from "../utils/workspaceStatusText";
+
+// getWorkspaceStatusIcon returns a bare icon (colored via its parent Tag elsewhere) - here the
+// icon sits directly in a Segmented option with no colored wrapper, so it needs its own color.
+const getColoredStatusIcon = (status: string) =>
+  cloneElement(getWorkspaceStatusIcon(status), { style: { color: statusColors[status] } });
 
 type Props = {
   jobs: FlatJob[];
@@ -22,35 +22,9 @@ type StatusCount = {
   [key: string]: number;
 };
 
-type StatusIconMap = {
-  [key in JobStatus | "All"]: ReactNode;
-};
-
 // Storage keys for persisting filter state
 const RUNS_FILTER_KEY = "runsFilterValue";
 const RUNS_TEMPLATE_FILTER_KEY = "runsTemplateFilter";
-
-// Map status to their icons and colors
-const statusIcons: StatusIconMap = {
-  [JobStatus.Completed]: <CheckCircleOutlined style={{ color: "#2eb039" }} />,
-  [JobStatus.NoChanges]: <CheckCircleOutlined style={{ color: "#2eb039" }} />,
-  [JobStatus.Running]: <SyncOutlined style={{ color: "#108ee9" }} />,
-  [JobStatus.WaitingApproval]: <ExclamationCircleOutlined style={{ color: "#fa8f37" }} />,
-  [JobStatus.Pending]: <PauseCircleOutlined style={{ color: "#808080" }} />,
-  [JobStatus.Cancelled]: <StopOutlined style={{ color: "#FB0136" }} />,
-  [JobStatus.Failed]: <StopOutlined style={{ color: "#FB0136" }} />,
-  [JobStatus.Approved]: <CheckCircleOutlined style={{ color: "#2eb039" }} />,
-  [JobStatus.Queue]: <ClockCircleOutlined style={{ color: "#808080" }} />,
-  [JobStatus.Rejected]: <StopOutlined style={{ color: "#FB0136" }} />,
-  [JobStatus.Unknown]: <ExclamationCircleOutlined style={{ color: "#808080" }} />,
-  [JobStatus.NotExecuted]: <ClockCircleOutlined style={{ color: "#808080" }} />,
-  All: <BarsOutlined />,
-};
-
-// Helper function to capitalize first letter
-const capitalize = (str: string): string => {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-};
 
 // Safely parse JSON with a fallback value
 const safeJsonParse = (jsonString: string | null, fallback: any): any => {
@@ -139,22 +113,22 @@ export default function RunFilter({ jobs, onFiltered, applyFilter, templateNames
 
     // Add the statuses we always want to show first, in the specified order
     for (const status of alwaysShowStatuses) {
-      const displayText = status === "All" ? "All" : capitalize(status);
+      const displayText = status === "All" ? "All" : getWorkspaceStatusText(status);
       options.push({
         label: `${displayText} ${statusCounts[status] || 0}`,
         value: status,
-        icon: statusIcons[status as JobStatus],
+        icon: status === "All" ? <BarsOutlined /> : getColoredStatusIcon(status),
       });
     }
 
     // Add any additional statuses that exist in the data and aren't already added
     Object.keys(statusCounts).forEach((status) => {
       if (!alwaysShowStatuses.includes(status as JobStatus | "All") && statusCounts[status] > 0) {
-        const displayText = status === "All" ? "All" : capitalize(status);
+        const displayText = status === "All" ? "All" : getWorkspaceStatusText(status);
         options.push({
           label: `${displayText} ${statusCounts[status]}`,
           value: status,
-          icon: statusIcons[status as JobStatus],
+          icon: status === "All" ? <BarsOutlined /> : getColoredStatusIcon(status),
         });
       }
     });

@@ -17,33 +17,34 @@
         <java.version>25</java.version>
         <elide.version>7.1.17</elide.version>
         <handlebars.version>4.3.1</handlebars.version>
-        <azure.version>6.4.0</azure.version>
+        <azure.version>6.5.0</azure.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
-        <msal4j.version>1.25.0</msal4j.version>
+        <msal4j.version>1.26.0</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
-        <wiremock.version>4.2.1</wiremock.version>
-        <jgit.version>7.7.0.202606012155-r</jgit.version>
-        <bouncy.castle>1.84</bouncy.castle>
+        <semver4j.version>6.0.0</semver4j.version>
+        <wiremock.version>4.2.2</wiremock.version>
+        <jgit.version>7.7.1.202607240634-r</jgit.version>
+        <bouncy.castle>1.85</bouncy.castle>
         <rest-assured.version>5.5.6</rest-assured.version>
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.13</postgresql.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.46.11</aws-sdk.version>
-        <gcp-libraries-bom.version>26.84.0</gcp-libraries-bom.version>
+        <aws-sdk.version>2.54.2</aws-sdk.version>
+        <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <jedis.version>7.5.2</jedis.version>
+        <jedis.version>8.0.0</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.16</maven-artifact.version>
         <commons-io.version>2.22.0</commons-io.version>
-        <kubernetes-client.version>7.7.0</kubernetes-client.version>
+        <kubernetes-client.version>7.8.0</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.16</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:21.6.0</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.25.0</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.58</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:22.3.0</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.28.1</buildpack.telemetry>
     </properties>
     <build>
         <plugins>
@@ -110,7 +111,19 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-graphql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -129,6 +142,10 @@
             <artifactId>jedis</artifactId>
             <version>${jedis.version}</version>
             <type>jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
         </dependency>
         <dependency>
             <groupId>com.yahoo.elide</groupId>
@@ -153,6 +170,11 @@
             <artifactId>liquibase-core</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.semver4j</groupId>
+            <artifactId>semver4j</artifactId>
+            <version>${semver4j.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
@@ -163,6 +185,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

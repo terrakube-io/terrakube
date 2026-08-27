@@ -49,28 +49,48 @@ function str(a: string | undefined, b: string | undefined): number {
   return A.localeCompare(B, undefined, { sensitivity: "base" });
 }
 
+export function compareByName(a: WorkspaceListItem, b: WorkspaceListItem): number {
+  return str(a.name, b.name);
+}
+
+export function compareByLastRun(a: WorkspaceListItem, b: WorkspaceListItem): number {
+  return parseDate(a.lastRun) - parseDate(b.lastRun);
+}
+
+export function compareByStatus(a: WorkspaceListItem, b: WorkspaceListItem): number {
+  return statusRank(a.lastStatus) - statusRank(b.lastStatus);
+}
+
+export function compareBySource(a: WorkspaceListItem, b: WorkspaceListItem): number {
+  return str(a.source ?? a.normalizedSource, b.source ?? b.normalizedSource);
+}
+
+export function compareByTerraformVersion(a: WorkspaceListItem, b: WorkspaceListItem): number {
+  return str(a.terraformVersion, b.terraformVersion);
+}
+
 export function sortWorkspaces(workspaces: WorkspaceListItem[], option: WorkspaceSortOption): WorkspaceListItem[] {
   const list = [...workspaces];
 
   switch (option) {
     case "name_asc":
-      return list.sort((a, b) => str(a.name, b.name));
+      return list.sort(compareByName);
     case "name_desc":
-      return list.sort((a, b) => str(b.name, a.name));
+      return list.sort((a, b) => -compareByName(a, b));
     case "lastRun_desc":
-      return list.sort((a, b) => parseDate(b.lastRun) - parseDate(a.lastRun));
+      return list.sort((a, b) => -compareByLastRun(a, b));
     case "lastRun_asc":
-      return list.sort((a, b) => parseDate(a.lastRun) - parseDate(b.lastRun));
+      return list.sort(compareByLastRun);
     case "status":
-      return list.sort((a, b) => statusRank(a.lastStatus) - statusRank(b.lastStatus));
+      return list.sort(compareByStatus);
     case "source_asc":
-      return list.sort((a, b) => str(a.source ?? a.normalizedSource, b.source ?? b.normalizedSource));
+      return list.sort(compareBySource);
     case "source_desc":
-      return list.sort((a, b) => str(b.source ?? b.normalizedSource, a.source ?? a.normalizedSource));
+      return list.sort((a, b) => -compareBySource(a, b));
     case "terraformVersion_asc":
-      return list.sort((a, b) => str(a.terraformVersion, b.terraformVersion));
+      return list.sort(compareByTerraformVersion);
     case "terraformVersion_desc":
-      return list.sort((a, b) => str(b.terraformVersion, a.terraformVersion));
+      return list.sort((a, b) => -compareByTerraformVersion(a, b));
     default:
       return list;
   }

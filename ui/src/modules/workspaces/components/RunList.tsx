@@ -1,18 +1,12 @@
 import { List, Avatar, Tag, Pagination, Tooltip, Button } from "antd";
-import {
-  UserOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  CloseSquareOutlined,
-  StopOutlined,
-  SyncOutlined,
-  WarningOutlined,
-} from "@ant-design/icons";
-import { FlatJob, JobStatus } from "../../../domain/types";
+import { UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { Link } from "react-router-dom";
+import { FlatJob } from "../../../domain/types";
 import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter from "./RunFilter";
+import WorkspaceStatusTag from "./WorkspaceStatusTag";
 
 // Storage key for persisting pagination state
 const RUNS_PAGE_KEY = "runsCurrentPage";
@@ -44,9 +38,10 @@ const safeJsonParse = (jsonString: string | null, fallback: any): any => {
 type Props = {
   jobs: FlatJob[];
   onRunClick: (id: string) => void;
+  runLink: (id: string) => string;
 };
 
-export default function RunList({ jobs, onRunClick }: Props) {
+export default function RunList({ jobs, onRunClick, runLink }: Props) {
   const [currentPage, setCurrentPage] = useState<number>(parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1"));
   const pageSize = 10;
   const [templateNames, setTemplateNames] = useState<{ [key: string]: string }>({});
@@ -116,55 +111,7 @@ export default function RunList({ jobs, onRunClick }: Props) {
     return "Terraform";
   };
 
-  const getStatusTagColor = (status: JobStatus): string => {
-    switch (status) {
-      case JobStatus.Completed:
-        return "success";
-      case JobStatus.NoChanges:
-        return "purple";
-      case JobStatus.Running:
-        return "processing";
-      case JobStatus.WaitingApproval:
-        return "warning";
-      case JobStatus.Failed:
-        return "error";
-      case JobStatus.Cancelled:
-        return "error";
-      case JobStatus.Rejected:
-        return "error";
-      default:
-        return "default";
-    }
-  };
-
-  const renderStatusTag = (status: JobStatus) => (
-    <Tag
-      icon={
-        status === JobStatus.Completed ? (
-          <CheckCircleOutlined />
-        ) : status === JobStatus.NoChanges ? (
-          <CheckCircleOutlined />
-        ) : status === JobStatus.Running ? (
-          <SyncOutlined spin />
-        ) : status === JobStatus.WaitingApproval ? (
-          <WarningOutlined />
-        ) : status === JobStatus.Failed ? (
-          <CloseSquareOutlined />
-        ) : status === JobStatus.Cancelled ? (
-          <StopOutlined />
-        ) : status === JobStatus.Rejected ? (
-          <CloseSquareOutlined />
-        ) : (
-          <ClockCircleOutlined />
-        )
-      }
-      color={getStatusTagColor(status)}
-    >
-      {status.toLowerCase()}
-    </Tag>
-  );
-
-  const sortedJobs = filteredJobs.sort((a, b) => parseInt(a.id) - parseInt(b.id)).reverse();
+  const sortedJobs = [...filteredJobs].sort((a, b) => parseInt(b.id) - parseInt(a.id));
   const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Find the job with highest ID to mark as current
@@ -194,7 +141,12 @@ export default function RunList({ jobs, onRunClick }: Props) {
           <List.Item
             actions={[
               <div key="status" style={{ textAlign: "right" }}>
-                {renderStatusTag(item.status)}
+                <WorkspaceStatusTag status={item.status} />
+                {item.prCommentError && (
+                  <Tooltip title={item.prCommentError}>
+                    <WarningOutlined style={{ color: "#fa8f37", marginLeft: 6 }} />
+                  </Tooltip>
+                )}
                 <div>
                   <Tooltip title={formatDate((item as any).createdDate)}>
                     <span className="metadata">{item.latestChange}</span>
@@ -207,9 +159,9 @@ export default function RunList({ jobs, onRunClick }: Props) {
               avatar={<Avatar shape="square" icon={<UserOutlined />} />}
               title={
                 <span>
-                  <Button type="link" onClick={() => onRunClick(item.id)} style={{ color: "inherit", padding: 0 }}>
+                  <Link to={runLink(item.id)} onClick={() => onRunClick(item.id)} style={{ color: "inherit" }}>
                     {item.title}
-                  </Button>
+                  </Link>
                   {item.id === highestId && <Tag style={{ marginLeft: 8 }}>CURRENT</Tag>}
                 </span>
               }

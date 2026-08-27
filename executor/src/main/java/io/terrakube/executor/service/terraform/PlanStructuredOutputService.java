@@ -2,23 +2,15 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.terrakube.client.TerrakubeClient;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import io.terrakube.executor.service.mode.TerraformJob;
-import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -35,39 +27,34 @@ public class PlanStructuredOutputService {
 
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
+    private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
-    private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int READ_TIMEOUT_MS = 10000;
 
-    private final WorkspaceSecurity workspaceSecurity;
+    private final JobContextService jobContextService;
     private final ObjectMapper objectMapper;
-    private final String terrakubeApiUrl;
     TerraformClient terraformClient;
-    TerrakubeClient terrakubeClient;
 
     public PlanStructuredOutputService(
-            WorkspaceSecurity workspaceSecurity,
+            JobContextService jobContextService,
             ObjectMapper objectMapper,
-            @Value("${io.terrakube.api.url}") String terrakubeApiUrl,
-            TerraformClient terraformClient,
-            TerrakubeClient terrakubeClient) {
-        this.workspaceSecurity = workspaceSecurity;
+            TerraformClient terraformClient) {
+        this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
-        this.terrakubeApiUrl = terrakubeApiUrl;
         this.terraformClient = terraformClient;
-        this.terrakubeClient = terrakubeClient;
     }
 
-    public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir) {
+    public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
         try {
             String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
             if (planJson == null || planJson.isBlank()) {
                 return;
             }
 
-            List<Map<String, Object>> changes = buildChangesFromPlanJson(planJson);
+            List<Map<String, Object>> changes = liveChanges != null && !liveChanges.isEmpty()
+                    ? mergeShowJsonDiff(liveChanges, planJson)
+                    : buildChangesFromPlanJson(planJson);
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
-            Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes);
+            Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
             saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
@@ -76,6 +63,38 @@ public class PlanStructuredOutputService {
             log.warn("Unable to publish structured plan output for job {} step {}", terraformJob.getJobId(),
                     terraformJob.getStepId(), e);
         }
+    }
+
+    void publishPlanProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = updateContext(context, stepId, liveChanges, jobDiagnostics);
+            saveContext(organizationId, jobId, updatedContext);
+        } catch (Exception e) {
+            log.warn("Unable to publish live plan progress for job {} step {}", jobId, stepId, e);
+        }
+    }
+
+    List<Map<String, Object>> mergeShowJsonDiff(List<Map<String, Object>> liveChanges, String planJson) throws IOException {
+        List<Map<String, Object>> diffChangesByAddress = buildChangesFromPlanJson(planJson);
+        Map<Object, Map<String, Object>> diffByAddress = new HashMap<>();
+        for (Map<String, Object> diffChange : diffChangesByAddress) {
+            diffByAddress.put(diffChange.get("address"), diffChange);
+        }
+
+        for (Map<String, Object> liveChange : liveChanges) {
+            Map<String, Object> diffChange = diffByAddress.remove(liveChange.get("address"));
+            if (diffChange != null) {
+                liveChange.putAll(diffChange);
+            }
+        }
+
+        // Anything show-json found that the live stream never saw a planned_change for (shouldn't
+        // normally happen, but a defensive fallback beats silently dropping a resource) gets
+        // appended as a new entry.
+        liveChanges.addAll(diffByAddress.values());
+
+        return liveChanges;
     }
 
     String getPlanAsJson(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
@@ -88,12 +107,51 @@ public class PlanStructuredOutputService {
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
                 .tofu(terraformJob.isTofu())
+                // Without this, `show -json` runs with none of the credentials (backend auth,
+                // dynamic cloud credentials) the main plan process was given via
+                // TerraformExecutorServiceImpl.loadTempEnvironmentVariables, and fails against
+                // any backend/provider that needs them even though the plan itself just
+                // succeeded in the same working directory.
+                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
                 .build();
 
         boolean success = terraformClient.showPlanJson(terraformProcessData, (Consumer<String>) planOutput::append, (Consumer<String>) planErrorOutput::append).get();
 
         if (!success) {
             log.warn("Unable to get plan json for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
+            return null;
+        }
+
+        return planOutput.toString();
+    }
+
+    // -json mode never puts the classic attribute-level diff anywhere in the live event stream
+    // (only terse one-line "planned_change" summaries) - that diff has only ever existed in
+    // Terraform's human-text renderer. Rendering it here, post-hoc from the already-computed
+    // plan file, keeps the live JSON stream (structured panel, diagnostics, ephemeral resources,
+    // etc.) while restoring the full diff for the console/raw-log/PR-comment consumers that
+    // depend on it - PrCommentService.fetchStepOutputText in particular reads this same step's
+    // console output expecting exactly this content.
+    String getPlanAsHumanText(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+        TextStringBuilder planOutput = new TextStringBuilder();
+        TextStringBuilder planErrorOutput = new TextStringBuilder();
+
+        TerraformProcessData terraformProcessData = TerraformProcessData
+                .builder()
+                .terraformVersion(terraformJob.getTerraformVersion())
+                .workingDirectory(terraformWorkingDir)
+                .detailExitCode(true)
+                .tofu(terraformJob.isTofu())
+                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
+                .build();
+
+        // appendln (not append): showPlan's Consumer<String> is invoked once per line, same as
+        // plan()/apply()'s JSON line consumers - append with no separator would concatenate every
+        // line together with nothing between them, producing one unreadable run-on line.
+        boolean success = terraformClient.showPlan(terraformProcessData, (Consumer<String>) planOutput::appendln, (Consumer<String>) planErrorOutput::appendln).get();
+
+        if (!success) {
+            log.warn("Unable to render human-readable plan for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
             return null;
         }
 
@@ -135,8 +193,14 @@ public class PlanStructuredOutputService {
             }
             Object beforeValue = changeBlock.get("before");
             Object afterValue = changeBlock.get("after");
-            Object beforeSensitive = changeBlock.get("before_sensitive");
-            Object afterSensitive = changeBlock.get("after_sensitive");
+            Object beforeSensitive = normalizeResourceSensitivities(
+                    (String) change.get("type"),
+                    (String) change.get("address"),
+                    changeBlock.get("before_sensitive"));
+            Object afterSensitive = normalizeResourceSensitivities(
+                    (String) change.get("type"),
+                    (String) change.get("address"),
+                    changeBlock.get("after_sensitive"));
             Object changedSensitive = collectChangedSensitivePaths(
                     beforeValue,
                     afterValue,
@@ -155,7 +219,7 @@ public class PlanStructuredOutputService {
         return result;
     }
 
-    Map<String, Object> updateContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes) {
+    Map<String, Object> updateContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         Map<String, Object> updatedContext = new HashMap<>(context);
 
         Map<String, Object> planStructuredOutput = toMap(updatedContext.get(CONTEXT_PLAN_KEY));
@@ -166,81 +230,19 @@ public class PlanStructuredOutputService {
         terrakubeUi.put(stepId, STRUCTURED_PLAN_MARKER);
         updatedContext.put(CONTEXT_UI_KEY, terrakubeUi);
 
+        Map<String, Object> jobDiagnosticsByStep = toMap(updatedContext.get(CONTEXT_JOB_DIAGNOSTICS_KEY));
+        jobDiagnosticsByStep.put(stepId, jobDiagnostics);
+        updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
+
         return updatedContext;
     }
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
-        HttpURLConnection connection = null;
-        try {
-            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
-            if (jobInfo.getAttributes().getStatus().equals("running")) {
-                log.info("Job {} exists, Terrakube should be able to get the context", jobId);
-            } else {
-                throw new IllegalStateException("Job is not running, cannot get context");
-            }
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "GET");
-            int statusCode = connection.getResponseCode();
-            if (statusCode >= 400) {
-                log.warn("Unable to read context for job {}. Response status: {}", jobInfo.getId(), statusCode);
-                return new HashMap<>();
-            }
-
-            String body = readResponseBody(connection);
-            if (body == null || body.isBlank()) {
-                return new HashMap<>();
-            }
-
-            return objectMapper.readValue(body, new TypeReference<>() {
-            });
-        } catch (Exception ex) {
-            log.warn("Unable to read context for job {}", jobId, ex);
-            return new HashMap<>();
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
+        return jobContextService.getCurrentContext(organizationId, jobId);
     }
 
     private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        HttpURLConnection connection = null;
-        try {
-            io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
-            if (jobInfo.getAttributes().getStatus().equals("running")) {
-                log.info("Job {} exists, Terrakube should be able to save the context", jobId);
-            } else {
-                throw new IllegalStateException("Job is not running, cannot get context");
-            }
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "POST");
-            connection.setDoOutput(true);
-            byte[] data = objectMapper.writeValueAsBytes(context);
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(data);
-            }
-
-            int statusCode = connection.getResponseCode();
-            if (statusCode >= 400) {
-                log.warn("Unable to save context for job {}. Response status: {} Body: {}", jobId, statusCode,
-                        readResponseBody(connection));
-            }
-        } catch (Exception e) {
-            log.warn("Unable to save context for job {}", jobId, e);
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    private HttpURLConnection buildConnection(String endpoint, String method) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
-        connection.setRequestMethod(method);
-        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setUseCaches(false);
-        return connection;
+        jobContextService.saveContext(organizationId, jobId, context);
     }
 
     private Map<String, Object> toMap(Object value) {
@@ -250,22 +252,6 @@ public class PlanStructuredOutputService {
             return typed;
         }
         return new HashMap<>();
-    }
-
-
-    private String readResponseBody(HttpURLConnection connection) throws IOException {
-        InputStream stream = connection.getErrorStream();
-        if (stream == null) {
-            stream = connection.getInputStream();
-        }
-
-        if (stream == null) {
-            return "";
-        }
-
-        try (InputStream responseStream = stream) {
-            return new String(responseStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 
     private String normalizeAction(List<String> actions) {
@@ -296,34 +282,12 @@ public class PlanStructuredOutputService {
         return "unknown";
     }
 
+    Object normalizeResourceSensitivities(String resourceType, String address, Object sensitiveRaw) {
+        return TerraformSensitivitySanitizer.normalizeResourceSensitivities(resourceType, address, sensitiveRaw);
+    }
+
     Object sanitizeSensitiveValues(Object value, Object sensitiveMetadata) {
-        if (Boolean.TRUE.equals(sensitiveMetadata)) {
-            return null;
-        }
-
-        if (value instanceof Map<?, ?> valueMap) {
-            Map<String, Object> sanitizedMap = new HashMap<>();
-            Map<?, ?> sensitiveMap = sensitiveMetadata instanceof Map<?, ?> ? (Map<?, ?>) sensitiveMetadata : Map.of();
-
-            valueMap.forEach((key, entryValue) -> sanitizedMap.put(
-                    String.valueOf(key),
-                    sanitizeSensitiveValues(entryValue, sensitiveMap.get(key))));
-            return sanitizedMap;
-        }
-
-        if (value instanceof List<?> valueList) {
-            List<?> sensitiveList = sensitiveMetadata instanceof List<?> ? (List<?>) sensitiveMetadata : List.of();
-            List<Object> sanitizedList = new ArrayList<>();
-
-            for (int index = 0; index < valueList.size(); index++) {
-                Object sensitiveEntry = index < sensitiveList.size() ? sensitiveList.get(index) : null;
-                sanitizedList.add(sanitizeSensitiveValues(valueList.get(index), sensitiveEntry));
-            }
-
-            return sanitizedList;
-        }
-
-        return value;
+        return TerraformSensitivitySanitizer.sanitizeSensitiveValues(value, sensitiveMetadata);
     }
 
     // Compare raw values before redaction so the UI can hide unchanged secrets

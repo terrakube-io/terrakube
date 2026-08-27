@@ -20,13 +20,22 @@ import javax.sql.DataSource;
 public class DataSourceAutoConfiguration {
 
     @Bean
-    public DataSource getDataSource(DataSourceConfigurationProperties dataSourceConfigurationProperties) {
+    public DataSource getDataSource(DataSourceConfigurationProperties dataSourceConfigurationProperties,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         HikariConfig config = new HikariConfig();
         config.setMaximumPoolSize(dataSourceConfigurationProperties.getPoolSize());
         config.setMinimumIdle(dataSourceConfigurationProperties.getPoolMinIdle());
         config.setConnectionTimeout(dataSourceConfigurationProperties.getPoolConnectionTimeout());
         config.setIdleTimeout(dataSourceConfigurationProperties.getPoolIdleTimeout());
         config.setMaxLifetime(dataSourceConfigurationProperties.getPoolMaxLifetime());
+        // Exposes hikaricp.connections.active/idle/pending/max/min as Prometheus gauges. This
+        // MicrometerMetricsTrackerFactory ships inside HikariCP itself (com.zaxxer.hikari.metrics.
+        // micrometer), not Micrometer - already on the classpath via the existing HikariCP
+        // dependency, no new pom.xml entry needed for it specifically. Set on the config, not the
+        // constructed HikariDataSource, since the pool starts eagerly inside the
+        // HikariDataSource(config) constructor below.
+        config.setMetricsTrackerFactory(
+                new com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory(meterRegistry));
 
         switch (dataSourceConfigurationProperties.getType()) {
             case SQL_AZURE:

@@ -34,3 +34,32 @@ updates:
           - "patch"
     commit-message:
       prefix: "deps"
+
+  # Docker: UI Dockerfile (node builder, nginx runtime, syft SBOM)
+  - package-ecosystem: "docker"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      ui-docker-images:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+
+  # Docker: Dev Container Dockerfile (java devcontainer base image)
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      devcontainer-docker-images:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"

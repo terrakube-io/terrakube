@@ -5,4 +5,6 @@ public interface ProcessLogs {
     public void setupConsumerGroups(String jobId);
 
     public void sendLogs(Integer jobId, String stepId, int lineNumber, String output);
+
+    public void sendStructuredUpdate(Integer jobId, String stepId, String structuredJson);
 }

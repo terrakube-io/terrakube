@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.TemplateRepository;
@@ -36,6 +37,9 @@ public class ScheduleJobTrigger implements org.quartz.Job {
     JobRepository jobRepository;
     TemplateRepository templateRepository;
     ScheduleJobService scheduleJobService;
+    // See ScheduleJob's field of the same name/type: this job's status-setting save() also
+    // bypasses Elide, so JobNotificationHook never fires for it either.
+    JobNotificationTrigger jobNotificationTrigger;
 
     @Transactional
     @Override
@@ -60,12 +64,13 @@ public class ScheduleJobTrigger implements org.quartz.Job {
             job.setStatus(JobStatus.pending);
             job.setCreatedBy("serviceAccount");
             job.setUpdatedBy("serviceAccount");
-            job.setVia(JobVia.Schedule.name());
+            job.setVia(JobVia.SCHEDULE.getValue());
             Date triggerDate = new Date(System.currentTimeMillis());
             job.setCreatedDate(triggerDate);
             job.setUpdatedDate(triggerDate);
 
             job = jobRepository.save(job);
+            jobNotificationTrigger.notifyStatusChanged(job);
             log.info("New jobId: {}", job.getId());
             try {
                 log.info("Creating Job Context: {}", job.getId());

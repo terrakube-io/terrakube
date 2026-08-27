@@ -7,14 +7,18 @@ import {
   CloudServerOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import { ModuleList } from "./ModuleList";
+import ModuleTable from "./components/ModuleTable";
 import { ProviderList } from "../Providers/ProviderList";
+import ProviderTable from "../Providers/components/ProviderTable";
 import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { FlatModule, FlatProvider } from "../types";
 import { ErrorInformation } from "@/modules/api/types";
+import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
 import type { MenuProps } from "antd";
 
 type Params = {
@@ -82,13 +86,13 @@ async function fetchOrgName(orgId: string): Promise<string> {
 
 export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const { orgid } = useParams<Params>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchFilter, setSearchFilter] = useState("");
   const [modules, setModules] = useState<FlatModule[]>([]);
   const [providers, setProviders] = useState<FlatProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
+  const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
 
   // Track which data has been loaded to avoid re-fetching
   const modulesLoaded = useRef(false);
@@ -124,6 +128,8 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   useEffect(() => {
     if (!orgid) return;
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
+    modulesLoaded.current = false;
+    providersLoaded.current = false;
 
     const init = async () => {
       setLoading(true);
@@ -174,15 +180,10 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
     }
   };
 
-  const handleSearchPublicRegistry = () => {
-    navigate(`/organizations/${orgid}/registry/search`);
-  };
-
   const publishMenuItems: MenuProps["items"] = [
     {
       key: "module",
-      label: "Publish module",
-      onClick: () => navigate(`/organizations/${orgid}/registry/create`),
+      label: <Link to={`/organizations/${orgid}/registry/create`}>Publish module</Link>,
     },
   ];
 
@@ -195,7 +196,12 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           Modules
         </span>
       ),
-      children: <ModuleList modules={modules} searchFilter={searchFilter} />,
+      children:
+        listViewMode === "compact" ? (
+          <ModuleTable modules={modules} searchFilter={searchFilter} />
+        ) : (
+          <ModuleList modules={modules} searchFilter={searchFilter} />
+        ),
     },
     {
       key: "providers",
@@ -205,7 +211,12 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
           Providers
         </span>
       ),
-      children: <ProviderList providers={providers} searchFilter={searchFilter} />,
+      children:
+        listViewMode === "compact" ? (
+          <ProviderTable providers={providers} searchFilter={searchFilter} />
+        ) : (
+          <ProviderList providers={providers} searchFilter={searchFilter} />
+        ),
     },
   ];
 
@@ -221,12 +232,11 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         { label: "Registry", path: `/organizations/${orgid}/registry` },
       ]}
       fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
       actions={
         <Space>
-          <Button type="default" icon={<SearchOutlined />} onClick={handleSearchPublicRegistry}>
-            Search public registry
+          <ListViewToggle value={listViewMode} onChange={setListViewMode} />
+          <Button type="default" icon={<SearchOutlined />}>
+            <Link to={`/organizations/${orgid}/registry/search`}>Search public registry</Link>
           </Button>
           <Dropdown menu={{ items: publishMenuItems }} trigger={["click"]}>
             <Button type="primary" icon={<CloudUploadOutlined />}>

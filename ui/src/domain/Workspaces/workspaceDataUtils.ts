@@ -1,10 +1,43 @@
 import { AxiosInstance } from "axios";
 import { DateTime } from "luxon";
-import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import { FlatJob, FlatJobHistory, FlatVariable, Schedule, Template, VcsType, StateOutputValue } from "../types";
+import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
+import {
+  FlatJob,
+  FlatJobHistory,
+  FlatVariable,
+  Resource,
+  Schedule,
+  Template,
+  VcsType,
+  StateOutputValue,
+} from "../types";
 import { getIaCNameById } from "./Workspaces";
 
 export type StateOutputVariableWithName = { name: string } & StateOutputValue;
+
+// parseState/parseOldState mark root-module resources with module: "root_module" (not a real
+// terraform address prefix), while child-module resources carry the module's actual address
+// (e.g. "module.foo"). Reconstructs the full terraform resource address either way.
+export function getResourceAddress(resource: Resource): string {
+  const indexSuffix =
+    resource.index !== undefined && resource.index !== null
+      ? typeof resource.index === "string"
+        ? `["${resource.index}"]`
+        : `[${resource.index}]`
+      : "";
+  const typeAndName = `${resource.type}.${resource.name}${indexSuffix}`;
+  return resource.module && resource.module !== "root_module" ? `${resource.module}.${typeAndName}` : typeAndName;
+}
+
+// Sorted alphabetically so a dropdown built from these options is browsable, not just
+// searchable - state-parse order is otherwise root-module-first then per-module insertion
+// order, which is meaningless to a user scanning the list.
+export function buildResourceOptions(resources: Resource[]): { value: string; label: string }[] {
+  return resources
+    .map((resource) => getResourceAddress(resource))
+    .sort((a, b) => a.localeCompare(b))
+    .map((address) => ({ value: address, label: address }));
+}
 
 export const include = {
   VARIABLE: "variable",
@@ -42,8 +75,10 @@ export async function setupWorkspaceIncludes(
   setGlobalEnvVariables: (val: FlatVariable[]) => void
 ): Promise<void> {
   const variables: FlatVariable[] = [];
+  const jobs: FlatJob[] = [];
   const webhooks: any = {};
   const envVariables: FlatVariable[] = [];
+  const history: FlatJobHistory[] = [];
   const schedule: Schedule[] = [];
   const collectionVariables: any[] = [];
   const collectionEnvVariables: any[] = [];
@@ -78,10 +113,28 @@ export async function setupWorkspaceIncludes(
           })
         );
         break;
-      // job and history are no longer loaded via the workspace include.
-      // They are fetched as paginated, sorted sub-collections (see
-      // loadWorkspaceJobs / loadWorkspaceHistory) so the workspace screen does
-      // not pull the entire run/state history at once.
+      case include.JOB:
+        jobs.push({
+          id: element.id,
+          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          commitId: element.attributes.commitId,
+          stepNumber: element.attributes.stepNumber,
+          latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          ...element.attributes,
+        });
+        setLastRun(element.attributes.updatedDate);
+        break;
+      case include.HISTORY:
+        console.log(element);
+        history.push({
+          id: element.id,
+          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          createdDate: element.attributes.createdDate,
+          ...element.attributes,
+        });
+        break;
+
       case include.SCHEDULE:
         schedule.push({
           id: element.id,
@@ -157,124 +210,44 @@ export async function setupWorkspaceIncludes(
 
   setVariables([...variables].sort(byKey));
   setEnvVariables([...envVariables].sort(byKey));
+  setJobs(jobs);
+  setHistory(history);
   setSchedule(schedule);
   setCollectionVariables([...collectionVariables].sort(byKey));
   setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
   setGlobalVariables([...globalVariables].sort(byKey));
   setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
-}
 
-const JOB_STATUS_COLOR: Record<string, string> = {
-  completed: "#2eb039",
-  noChanges: "#9f37fa",
-  rejected: "#FB0136",
-  failed: "#FB0136",
-  running: "#108ee9",
-  waitingApproval: "#fa8f37",
-};
+  // set state data
+  const lastState = [...history].sort(
+    (a: FlatJobHistory, b: FlatJobHistory) => parseInt(b.jobReference) - parseInt(a.jobReference)
+  )[0];
+  // reload state only if there is a new version
 
-// Default page size used when loading the run/state lists for a workspace.
-export const WORKSPACE_LIST_PAGE_SIZE = 100;
-
-/**
- * Loads the most recent jobs (runs) of a workspace as a sorted, paginated
- * sub-collection instead of pulling the entire history through the workspace
- * include. The list is sorted by id descending so jobs[0] is the latest run.
- */
-export async function loadWorkspaceJobs(
-  axiosInstance: AxiosInstance,
-  organizationId: string,
-  workspaceId: string,
-  iacType: string,
-  setJobs: (val: FlatJob[]) => void,
-  setLastRun: (val: string) => void,
-  pageSize: number = WORKSPACE_LIST_PAGE_SIZE,
-  pageNumber: number = 1
-): Promise<void> {
-  try {
-    const response = await axiosInstance.get(
-      `organization/${organizationId}/workspace/${workspaceId}/job?page[number]=${pageNumber}&page[size]=${pageSize}&sort=-id`
-    );
-    const data = response.data.data ?? [];
-    const jobs: FlatJob[] = data.map((element: any) => ({
-      id: element.id,
-      title: "Queue manually using " + getIaCNameById(iacType),
-      statusColor: JOB_STATUS_COLOR[element.attributes.status] ?? "",
-      commitId: element.attributes.commitId,
-      stepNumber: element.attributes.stepNumber,
-      latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-      ...element.attributes,
-    }));
-    setJobs(jobs);
-    if (data.length > 0) {
-      setLastRun(data[0].attributes.updatedDate);
-    }
-  } catch (err) {
-    console.error("Failed to load workspace jobs:", err);
-  }
-}
-
-/**
- * Loads the most recent state versions (history) of a workspace as a sorted,
- * paginated sub-collection. The current state is derived from the latest entry
- * (highest jobReference) of the returned page and its resources/outputs are
- * loaded when it changed.
- */
-export async function loadWorkspaceHistory(
-  axiosInstance: AxiosInstance,
-  organizationId: string,
-  workspaceId: string,
-  iacType: string,
-  setHistory: (val: FlatJobHistory[]) => void,
-  setCurrentStateId: (val: string) => void,
-  currentStateId: string,
-  setResources: (val: any[]) => void,
-  setOutputs: (val: any[]) => void,
-  setContextState: (val: any) => void,
-  pageSize: number = WORKSPACE_LIST_PAGE_SIZE,
-  pageNumber: number = 1
-): Promise<void> {
-  try {
-    const response = await axiosInstance.get(
-      `organization/${organizationId}/workspace/${workspaceId}/history?page[number]=${pageNumber}&page[size]=${pageSize}&sort=-id`
-    );
-    const history: FlatJobHistory[] = (response.data.data ?? []).map((element: any) => ({
-      id: element.id,
-      title: "Queue manually using " + getIaCNameById(iacType),
-      relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
-      createdDate: element.attributes.createdDate,
-      ...element.attributes,
-    }));
-    setHistory(history);
-
-    const lastState = [...history]
-      .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
-      .reverse()[0];
-
-    // reload state only if there is a new version
-    if (currentStateId !== lastState?.id) {
-      const url = `${
-        new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-      }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
-      try {
-        const permissions = await axiosInstance.get(url);
+  if (currentStateId !== lastState?.id) {
+    const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+    const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
+    const url = `${
+      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
+    }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
+    axiosInstance
+      .get(url)
+      .then((response: any) => {
         loadState(
           lastState,
           axiosInstance,
           setOutputs,
           setResources,
-          workspaceId,
+          sessionStorage.getItem(WORKSPACE_ARCHIVE)!,
           setContextState,
-          permissions.data.manageState
+          response.data.manageState
         );
-      } catch (err) {
+      })
+      .catch((err: any) => {
         console.error("Failed to load workspace permissions for state:", err);
-      }
-    }
-    setCurrentStateId(lastState?.id);
-  } catch (err) {
-    console.error("Failed to load workspace history:", err);
+      });
   }
+  setCurrentStateId(lastState?.id);
 }
 
 export function loadState(
@@ -376,6 +349,7 @@ export function parseState(state: any) {
         type: value.type,
         provider: value.provider_name,
         module: "root_module",
+        index: value.index,
         values: value.values,
         depends_on: value.depends_on,
       });
@@ -386,7 +360,7 @@ export function parseState(state: any) {
 
   // parse child module resources
   if (state?.values?.root_module?.child_modules?.length > 0) {
-    state?.values?.root_module?.child_modules?.forEach((moduleVal: any, index: any) => {
+    state?.values?.root_module?.child_modules?.forEach((moduleVal: any) => {
       if (moduleVal.resources != null)
         for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
           resources.push({
@@ -394,6 +368,7 @@ export function parseState(state: any) {
             type: value.type,
             provider: value.provider_name,
             module: moduleVal.address,
+            index: value.index,
             values: value.values,
             depends_on: value.depends_on,
           });
@@ -453,23 +428,21 @@ export function parseOldState(state: any) {
   console.log("Parsing resources and modules fallback method");
   if (state?.resources != null && state?.resources.length > 0) {
     state?.resources.forEach((value: any) => {
-      if (value.module != null) {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace("provider[", "").replace("]", ""),
-          module: value.module,
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
-        });
-      } else {
-        resources.push({
-          name: value.name,
-          type: value.type,
-          provider: value.provider.replace('provider["', "").replace('"]', ""),
-          module: "root_module",
-          values: value.instances[0].attributes,
-          depends_on: value.instances[0].dependencies,
+      const moduleName = value.module != null ? value.module : "root_module";
+      const provider = value.provider
+        ? value.provider.replace('provider["', "").replace('provider[', "").replace('"]', "").replace(']', "")
+        : "";
+      if (value.instances != null && value.instances.length > 0) {
+        value.instances.forEach((instance: any) => {
+          resources.push({
+            name: value.name,
+            type: value.type,
+            provider: provider,
+            module: moduleName,
+            index: instance.index_key,
+            values: instance.attributes,
+            depends_on: instance.dependencies,
+          });
         });
       }
     });
@@ -481,7 +454,7 @@ export function parseOldState(state: any) {
 }
 
 export function parseChildModules(resources: any, child_modules?: any) {
-  child_modules?.forEach((moduleVal: any, index: number) => {
+  child_modules?.forEach((moduleVal: any) => {
     if (moduleVal.resources != null)
       for (const [_, value] of Object.entries(moduleVal.resources) as [any, any][]) {
         resources.push({
@@ -489,13 +462,14 @@ export function parseChildModules(resources: any, child_modules?: any) {
           type: value.type,
           provider: value.provider_name,
           module: moduleVal.address,
+          index: value.index,
           values: value.values,
           depends_on: value.depends_on,
         });
       }
 
     if (moduleVal.child_modules?.length > 0) {
-      resources = parseChildModules(resources);
+      resources = parseChildModules(resources, moduleVal.child_modules);
     }
   });
 

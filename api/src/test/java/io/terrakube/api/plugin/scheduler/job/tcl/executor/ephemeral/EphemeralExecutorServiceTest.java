@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.Toleration;
 import io.fabric8.kubernetes.api.model.Volume;
@@ -40,6 +43,7 @@ import io.fabric8.kubernetes.client.dsl.V1BatchAPIGroupDSL;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 
@@ -188,11 +192,15 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
-    public void omitsPodTemplateMetadataWhenNoAnnotations() throws ExecutionException {
+    public void setsPodTemplateMetadataWithLabelsWhenNoAnnotations() throws ExecutionException {
         subject().send(job(), context());
 
         verify(namespaced, times(1)).resource(job.capture());
-        assertNull(job.getValue().getSpec().getTemplate().getMetadata());
+        ObjectMeta metadata = job.getValue().getSpec().getTemplate().getMetadata();
+        assertNotNull(metadata);
+        assertEquals("ze-org", metadata.getLabels().get("terrakube.io/organization"));
+        assertEquals("ze-workspace", metadata.getLabels().get("terrakube.io/workspace"));
+        assertTrue(metadata.getAnnotations() == null || metadata.getAnnotations().isEmpty());
     }
 
     @Test
@@ -203,6 +211,32 @@ public class EphemeralExecutorServiceTest {
         Map<String, String> labels = job.getValue().getMetadata().getLabels();
         assertEquals("ze-org", labels.get("terrakube.io/organization"));
         assertEquals("ze-workspace", labels.get("terrakube.io/workspace"));
+    }
+
+    @Test
+    public void setsLabelsOnPodTemplate() throws ExecutionException {
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Map<String, String> labels = job.getValue().getSpec().getTemplate().getMetadata().getLabels();
+        assertEquals("ze-org", labels.get("terrakube.io/organization"));
+        assertEquals("ze-workspace", labels.get("terrakube.io/workspace"));
+    }
+
+    @Test
+    public void propagatesCustomLabelsToPodTemplate() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_LABELS", "team=platform;env=prod");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Map<String, String> jobLabels = job.getValue().getMetadata().getLabels();
+        Map<String, String> podLabels = job.getValue().getSpec().getTemplate().getMetadata().getLabels();
+        assertEquals("platform", jobLabels.get("team"));
+        assertEquals("prod", jobLabels.get("env"));
+        assertEquals("platform", podLabels.get("team"));
+        assertEquals("prod", podLabels.get("env"));
     }
 
     @Test
@@ -265,8 +299,10 @@ public class EphemeralExecutorServiceTest {
         ExecutorContext context = context();
         context.getEnvironmentVariables().put("EPHEMERAL_CPU_REQUEST", "100m");
         context.getEnvironmentVariables().put("EPHEMERAL_MEMORY_REQUEST", "50Mi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_REQUEST", "2Gi");
         context.getEnvironmentVariables().put("EPHEMERAL_CPU_LIMIT", "200m");
         context.getEnvironmentVariables().put("EPHEMERAL_MEMORY_LIMIT", "100Mi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_LIMIT", "4Gi");
 
         subject().send(job(), context);
 
@@ -276,6 +312,24 @@ public class EphemeralExecutorServiceTest {
         assertEquals("200m", container.getResources().getLimits().get("cpu").toString());
         assertEquals("50Mi", container.getResources().getRequests().get("memory").toString());
         assertEquals("100Mi", container.getResources().getLimits().get("memory").toString());
+        assertEquals("2Gi", container.getResources().getRequests().get("ephemeral-storage").toString());
+        assertEquals("4Gi", container.getResources().getLimits().get("ephemeral-storage").toString());
+    }
+
+    @Test
+    public void setStorageResourcesOnly() throws ExecutionException {
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_REQUEST", "2Gi");
+        context.getEnvironmentVariables().put("EPHEMERAL_STORAGE_LIMIT", "4Gi");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals("2Gi", container.getResources().getRequests().get("ephemeral-storage").toString());
+        assertEquals("4Gi", container.getResources().getLimits().get("ephemeral-storage").toString());
+        assertNull(container.getResources().getRequests().get("cpu"));
+        assertNull(container.getResources().getLimits().get("cpu"));
     }
 
     @Test
@@ -347,5 +401,57 @@ public class EphemeralExecutorServiceTest {
         doThrow(new KubernetesClientException("Boom!")).when(resource).serverSideApply();
 
         assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnConnectionLevelFailure() {
+        // No HTTP response reached the apiserver at all - code defaults to 0.
+        doThrow(new KubernetesClientException("connection refused")).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnThrottling() {
+        doThrow(new KubernetesClientException("Too Many Requests", 429, null)).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnServerError() {
+        doThrow(new KubernetesClientException("etcd unavailable", 503, null)).when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void retriesOnResourceQuotaExceeded() {
+        doThrow(new KubernetesClientException(
+                        "jobs.batch is forbidden: exceeded quota: compute-quota, requested: pods=1, used: pods=5, limited: pods=5",
+                        403, null))
+                .when(resource).serverSideApply();
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(job(), context()));
+    }
+
+    @Test
+    public void failsFastOnRbacDenial() {
+        doThrow(new KubernetesClientException(
+                        "jobs.batch is forbidden: User \"system:serviceaccount:ns:sa\" cannot create resource \"jobs\"",
+                        403, null))
+                .when(resource).serverSideApply();
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+        assertFalse(thrown instanceof ExecutorUnavailableException);
+    }
+
+    @Test
+    public void failsFastOnBadRequest() {
+        doThrow(new KubernetesClientException("invalid quantity for resource cpu", 400, null))
+                .when(resource).serverSideApply();
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
+        assertFalse(thrown instanceof ExecutorUnavailableException);
     }
 }

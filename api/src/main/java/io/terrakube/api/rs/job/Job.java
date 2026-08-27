@@ -5,6 +5,7 @@ import java.util.List;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
+import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -17,8 +18,11 @@ import com.yahoo.elide.annotation.Paginate;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
+import org.hibernate.annotations.SQLRestriction;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -40,6 +44,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity(name = "job")
+@SQLRestriction(value = "deleted = false")
 public class Job extends GenericAuditFields {
 
     @Id
@@ -50,6 +55,8 @@ public class Job extends GenericAuditFields {
     private String comments;
 
     @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service")
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobNotificationHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobNotificationHook.class)
     @Enumerated(EnumType.STRING)
     private JobStatus status = JobStatus.pending;
 
@@ -62,6 +69,10 @@ public class Job extends GenericAuditFields {
     @Exclude
     @Column(name = "auto_apply")
     private boolean autoApply = false;
+
+    @Exclude
+    @Column(name = "deleted")
+    private boolean deleted = false;
 
     @Column(name = "terraform_plan")
     private String terraformPlan;
@@ -97,13 +108,27 @@ public class Job extends GenericAuditFields {
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 
-    @Exclude
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
     @Column(name = "pr_number")
     private Integer prNumber;
 
     @Exclude
     @Column(name = "pr_comment_id")
     private String prCommentId;
+
+    @Exclude
+    @Column(name = "command_comment_id")
+    private String commandCommentId;
+
+    @Exclude
+    @Column(name = "pr_apply_enabled")
+    private boolean prApplyEnabled = false;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "pr_comment_error")
+    private String prCommentError;
 
     @ManyToOne
     private Organization organization;
@@ -117,6 +142,18 @@ public class Job extends GenericAuditFields {
 
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Address> address;
+
+    // Requested target/replace resource addresses as submitted on job creation. Consumed by
+    // JobManageHook to create the corresponding Address rows (see the `address` relationship
+    // above), which is what ExecutorService actually reads to build the terraform CLI flags -
+    // these columns are a record of what was requested, not the operational source of truth.
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "target_addrs")
+    private List<String> targetAddrs;
+
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "replace_addrs")
+    private List<String> replaceAddrs;
 
 }
 

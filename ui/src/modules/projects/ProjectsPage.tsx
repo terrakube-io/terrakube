@@ -1,7 +1,7 @@
-import { Button, Form, Input, Modal, Table, message } from "antd";
+import { Button, Empty, Flex, Form, Input, Modal, Table, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
@@ -21,7 +21,6 @@ type ProjectForm = {
 
 export default function ProjectsPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { permissions } = useOrgPermissions(id);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,7 +38,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
 
   useEffect(() => {
     execute();
-  }, []);
+  }, [id]);
 
   const openCreate = () => {
     form.resetFields();
@@ -85,12 +84,8 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       dataIndex: "name",
       key: "name",
       render: (_: any, record: ProjectModel) => (
-        <Button
-          type="link"
-          style={{ padding: 0 }}
-          onClick={() => navigate(`/organizations/${id}/projects/${record.id}`)}
-        >
-          {record.name}
+        <Button type="link" style={{ padding: 0 }}>
+          <Link to={`/organizations/${id}/projects/${record.id}`}>{record.name}</Link>
         </Button>
       ),
     },
@@ -119,12 +114,26 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         </Button>
       }
     >
-      <Table
-        dataSource={projects}
-        columns={columns}
-        rowKey="id"
-        pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
-      />
+      {!loading && projects.length === 0 ? (
+        <Flex justify="center">
+          <Empty
+            className="page-wrapper-no-content"
+            style={{ textAlign: "center" }}
+            description="You have not created any projects yet. Projects let you group related workspaces together."
+          >
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!permissions.manageWorkspace}>
+              Create a new project
+            </Button>
+          </Empty>
+        </Flex>
+      ) : (
+        <Table
+          dataSource={projects}
+          columns={columns}
+          rowKey="id"
+          pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
+        />
+      )}
       <Modal
         title="New project"
         open={modalOpen}

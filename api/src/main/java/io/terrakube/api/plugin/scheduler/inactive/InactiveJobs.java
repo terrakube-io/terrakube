@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
+import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import lombok.AllArgsConstructor;
@@ -33,6 +34,7 @@ public class InactiveJobs implements org.quartz.Job {
     private final JobRepository jobRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final GitHubWebhookService gitHubWebhookService;
+    private final AzDevOpsWebhookService azDevOpsWebhookService;
     private final StepRepository stepRepository;
 
     @Transactional
@@ -95,11 +97,16 @@ public class InactiveJobs implements org.quartz.Job {
         switch (workspaceVcs.getVcsType()) {
             case GITHUB:
                 log.info("Updating VCS information for GITHUB on job {}", job.getId());
-                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
                 break;
             case GITLAB:
                 log.info("Updating VCS information for GITLAB on job {}", job.getId());
-                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown);
+                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
+                break;
+            case AZURE_DEVOPS:
+            case AZURE_SP_MI:
+                log.info("Updating VCS information for AZURE_DEVOPS on job {}", job.getId());
+                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
                 break;
             default:
                 break;
@@ -119,8 +126,8 @@ public class InactiveJobs implements org.quartz.Job {
     }
 
     private boolean isManualOrScheduledJob(Job job) {
-        return JobVia.CLI.name().equals(job.getVia())
-                || JobVia.UI.name().equals(job.getVia())
-                || JobVia.Schedule.name().equals(job.getVia());
+        return JobVia.CLI.getValue().equals(job.getVia())
+                || JobVia.UI.getValue().equals(job.getVia())
+                || JobVia.SCHEDULE.getValue().equals(job.getVia());
     }
 }

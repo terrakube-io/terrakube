@@ -113,6 +113,7 @@ public class TerraformStateAutoConfiguration {
                             .secretKey(awsTerraformStateProperties.getSecretKey())
                             .region(Region.of(awsTerraformStateProperties.getRegion()))
                             .includeBackendKeys(awsTerraformStateProperties.isIncludeBackendKeys())
+                            .useLockfile(awsTerraformStateProperties.isUseLockfile())
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)

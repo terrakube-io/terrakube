@@ -3,6 +3,7 @@ import { Breadcrumb, Typography, Alert, Flex, Spin, theme } from "antd";
 import { Content } from "antd/es/layout/layout";
 import "./PageWrapper.css";
 import { NavLink } from "react-router-dom";
+import { useEffect } from "react";
 import clsx from "classnames";
 
 type Props = {
@@ -38,6 +39,13 @@ export default function PageWrapper({
   const {
     token: { colorBgContainer },
   } = theme.useToken();
+
+  useEffect(() => {
+    document.title = title ? `${title} · Terrakube` : "Terrakube";
+    return () => {
+      document.title = "Terrakube";
+    };
+  }, [title]);
 
   return (
     <Content className="page-wrapper">

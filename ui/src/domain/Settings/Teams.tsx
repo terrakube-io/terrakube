@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
+import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 const roleColors: Record<string, string> = {
@@ -123,75 +124,81 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
         <EditTeam mode={mode} setMode={setMode} teamId={teamId} loadTeams={loadTeams} />
       ) : (
         <>
-          <h1>Team Management</h1>
+          <Typography.Title level={1} style={{ margin: 0 }}>
+            Team Management
+          </Typography.Title>
           <div>
             <Typography.Text type="secondary">
               Teams let you group users into specific categories to enable finer grained access control policies. Each
               team is assigned a role that determines what actions its members can perform within the organization.
             </Typography.Text>
           </div>
-          <Button
-            type="primary"
-            onClick={onNew}
-            htmlType="button"
-            icon={<PlusOutlined />}
-            disabled={!managePermission}
-            style={{ marginTop: 16 }}
-          >
-            Create team
-          </Button>
+          <SettingsSection maxWidth="100%">
+            <Button
+              type="primary"
+              onClick={onNew}
+              htmlType="button"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+            >
+              Create team
+            </Button>
 
-          <h3 style={{ marginTop: 30 }}>Teams</h3>
-          <Spin spinning={loading} tip="Loading Teams...">
-            <List
-              itemLayout="horizontal"
-              dataSource={teams}
-              renderItem={(item) => {
-                const role = (item.attributes.role || "custom") as TeamRole;
-                return (
-                  <List.Item
-                    actions={[
-                      <Button
-                        onClick={() => onEdit(item.id)}
-                        icon={<EditOutlined />}
-                        type="link"
-                        disabled={!managePermission}
-                      >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        onConfirm={() => onDelete(item.id)}
+            <Typography.Title level={3} style={{ marginTop: 30 }}>
+              Teams
+            </Typography.Title>
+            <Spin spinning={loading} tip="Loading Teams...">
+              <List
+                itemLayout="horizontal"
+                dataSource={teams}
+                renderItem={(item) => {
+                  const role = (item.attributes.role || "custom") as TeamRole;
+                  return (
+                    <List.Item
+                      actions={[
+                        <Button
+                          onClick={() => onEdit(item.id)}
+                          icon={<EditOutlined />}
+                          type="link"
+                          disabled={!managePermission}
+                        >
+                          Edit
+                        </Button>,
+                        <Popconfirm
+                          okButtonProps={{ danger: true }}
+                          onConfirm={() => onDelete(item.id)}
+                          title={
+                            <p>
+                              This will permanently delete this team <br />
+                              and any permissions associated with it. <br />
+                              Are you sure?
+                            </p>
+                          }
+                          okText="Yes"
+                          cancelText="No"
+                        >
+                          <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                            Delete
+                          </Button>
+                        </Popconfirm>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />}
                         title={
-                          <p>
-                            This will permanently delete this team <br />
-                            and any permissions associated with it. <br />
-                            Are you sure?
-                          </p>
+                          <Space>
+                            {item.attributes.name}
+                            <Tag color={roleColors[role] || "default"}>{roleLabels[role] || role}</Tag>
+                          </Space>
                         }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />}
-                      title={
-                        <Space>
-                          {item.attributes.name}
-                          <Tag color={roleColors[role] || "default"}>{roleLabels[role] || role}</Tag>
-                        </Space>
-                      }
-                      description={getTeamDescription(item)}
-                    />
-                  </List.Item>
-                );
-              }}
-            />
-          </Spin>
+                        description={getTeamDescription(item)}
+                      />
+                    </List.Item>
+                  );
+                }}
+              />
+            </Spin>
+          </SettingsSection>
         </>
       )}
     </div>

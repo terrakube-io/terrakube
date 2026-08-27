@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { OrganizationSelector } from "../OrganizationSelector";
+import { MemoryRouter } from "react-router-dom";
+import { OrganizationSelector, OrganizationSelectorProps } from "../OrganizationSelector";
 import { FlatOrganization } from "@/domain/types";
 
 const mockOrganizations: FlatOrganization[] = [
@@ -24,8 +25,15 @@ const defaultProps = {
   organizationName: "Acme Corp",
   organizations: mockOrganizations,
   onOrgChange: jest.fn(),
-  onManageOrgs: jest.fn(),
 };
+
+function renderSelector(props: Partial<OrganizationSelectorProps> = {}) {
+  return render(
+    <MemoryRouter>
+      <OrganizationSelector {...defaultProps} {...props} />
+    </MemoryRouter>
+  );
+}
 
 describe("OrganizationSelector", () => {
   beforeEach(() => {
@@ -34,59 +42,69 @@ describe("OrganizationSelector", () => {
 
   describe("Rendering", () => {
     it("renders button with current organization name", () => {
-      render(<OrganizationSelector {...defaultProps} />);
+      renderSelector();
       expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     });
 
     it("renders 'Choose an organization' when organizationName is empty", () => {
-      render(<OrganizationSelector {...defaultProps} organizationName="" />);
+      renderSelector({ organizationName: "" });
       expect(screen.getByText("Choose an organization")).toBeInTheDocument();
     });
 
     it("renders 'Choose an organization' when organizationName is not provided", () => {
-      render(<OrganizationSelector {...defaultProps} organizationName="" />);
+      renderSelector({ organizationName: "" });
       expect(screen.getByText("Choose an organization")).toBeInTheDocument();
     });
   });
 
   describe("Dropdown Interaction", () => {
     it("opens dropdown when button is clicked", () => {
-      render(<OrganizationSelector {...defaultProps} />);
+      renderSelector();
       const button = screen.getByRole("button", { name: /Acme Corp/i });
 
       fireEvent.click(button);
 
-      // After clicking, dropdown should be visible with organization list
-      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+      expect(screen.getAllByText("Acme Corp").length).toBeGreaterThan(1);
       expect(screen.getByText("Dev Team")).toBeInTheDocument();
       expect(screen.getByText("QA Team")).toBeInTheDocument();
     });
 
-    it("displays all organizations in dropdown list", () => {
-      render(<OrganizationSelector {...defaultProps} />);
+    it("displays all organizations in dropdown list, including the current one", () => {
+      renderSelector();
       const button = screen.getByRole("button", { name: /Acme Corp/i });
 
       fireEvent.click(button);
 
       mockOrganizations.forEach((org) => {
-        expect(screen.getByText(org.name)).toBeInTheDocument();
+        expect(screen.getAllByText(org.name).length).toBeGreaterThan(0);
       });
     });
 
-    it("shows 'Manage Organizations' link in dropdown", () => {
-      render(<OrganizationSelector {...defaultProps} />);
+    it("links each organization to its workspaces page", () => {
+      renderSelector();
       const button = screen.getByRole("button", { name: /Acme Corp/i });
 
       fireEvent.click(button);
 
-      expect(screen.getByText("Manage Organizations")).toBeInTheDocument();
+      const devTeamLink = screen.getByText("Dev Team").closest("a");
+      expect(devTeamLink).toHaveAttribute("href", "/organizations/org-2/workspaces");
+    });
+
+    it("shows 'Manage Organizations' link in dropdown", () => {
+      renderSelector();
+      const button = screen.getByRole("button", { name: /Acme Corp/i });
+
+      fireEvent.click(button);
+
+      const manageLink = screen.getByText("Manage Organizations").closest("a");
+      expect(manageLink).toHaveAttribute("href", "/organizations");
     });
   });
 
   describe("Callbacks", () => {
     it("calls onOrgChange with correct orgId when organization is selected", () => {
       const onOrgChange = jest.fn();
-      render(<OrganizationSelector {...defaultProps} onOrgChange={onOrgChange} />);
+      renderSelector({ onOrgChange });
 
       const button = screen.getByRole("button", { name: /Acme Corp/i });
       fireEvent.click(button);
@@ -97,69 +115,70 @@ describe("OrganizationSelector", () => {
       expect(onOrgChange).toHaveBeenCalledWith("org-2");
     });
 
-    it("calls onManageOrgs when 'Manage Organizations' link is clicked", () => {
-      const onManageOrgs = jest.fn();
-      render(<OrganizationSelector {...defaultProps} onManageOrgs={onManageOrgs} />);
-
-      const button = screen.getByRole("button", { name: /Acme Corp/i });
-      fireEvent.click(button);
-
-      const manageLink = screen.getByText("Manage Organizations");
-      fireEvent.click(manageLink);
-
-      expect(onManageOrgs).toHaveBeenCalled();
-    });
-
-    it("does not call onOrgChange when selecting the current organization", () => {
+    it("calls onOrgChange when selecting the current organization", () => {
       const onOrgChange = jest.fn();
-      render(<OrganizationSelector {...defaultProps} onOrgChange={onOrgChange} />);
+      renderSelector({ onOrgChange });
 
       const button = screen.getByRole("button", { name: /Acme Corp/i });
       fireEvent.click(button);
 
-      const acmeOption = screen.getAllByText("Acme Corp")[1]; // Get the dropdown option, not the button
+      const acmeOption = screen.getAllByText("Acme Corp")[1];
       fireEvent.click(acmeOption);
 
-      expect(onOrgChange).not.toHaveBeenCalled();
+      expect(onOrgChange).toHaveBeenCalledWith("org-1");
     });
   });
 
   describe("Edge Cases", () => {
     it("handles empty organizations list gracefully", () => {
-      render(<OrganizationSelector {...defaultProps} organizations={[]} />);
+      renderSelector({ organizations: [] });
 
       const button = screen.getByRole("button", { name: /Acme Corp/i });
       fireEvent.click(button);
 
-      // Should still show "Manage Organizations" link
       expect(screen.getByText("Manage Organizations")).toBeInTheDocument();
     });
 
     it("handles single organization in list", () => {
       const singleOrg = [mockOrganizations[0]];
-      render(<OrganizationSelector {...defaultProps} organizations={singleOrg} />);
+      renderSelector({ organizations: singleOrg });
 
       const button = screen.getByRole("button", { name: /Acme Corp/i });
       fireEvent.click(button);
 
-      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+      expect(screen.getAllByText("Acme Corp").length).toBeGreaterThan(1);
       expect(screen.getByText("Manage Organizations")).toBeInTheDocument();
     });
 
     it("closes dropdown when clicking outside", () => {
-      const { container } = render(<OrganizationSelector {...defaultProps} />);
+      const { container } = renderSelector();
 
       const button = screen.getByRole("button", { name: /Acme Corp/i });
       fireEvent.click(button);
 
-      // Verify dropdown is open
       expect(screen.getByText("Dev Team")).toBeInTheDocument();
 
-      // Click outside
       fireEvent.click(container);
+    });
+  });
 
-      // Dropdown should be closed (Dev Team should not be visible as a separate element)
-      // This test may need adjustment based on actual implementation
+  describe("Placement", () => {
+    it("opens the dropdown upward when placement is 'top'", () => {
+      renderSelector({ placement: "top" });
+      const button = screen.getByRole("button", { name: /Acme Corp/i });
+
+      fireEvent.click(button);
+
+      expect(document.querySelector(".org-selector-dropdown--top")).toBeInTheDocument();
+    });
+
+    it("opens the dropdown downward by default", () => {
+      renderSelector();
+      const button = screen.getByRole("button", { name: /Acme Corp/i });
+
+      fireEvent.click(button);
+
+      expect(document.querySelector(".org-selector-dropdown--top")).not.toBeInTheDocument();
     });
   });
 });

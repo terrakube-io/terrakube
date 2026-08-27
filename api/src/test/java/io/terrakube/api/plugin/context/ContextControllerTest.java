@@ -2,11 +2,13 @@ package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -22,11 +24,15 @@ import static org.mockito.Mockito.when;
 
 class ContextControllerTest {
 
+    private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository) {
+        return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()), Mockito.mock(StreamingService.class));
+    }
+
     @Test
     void rejectsInvalidJsonPayloads() throws IOException {
         StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{");
 
@@ -41,7 +47,7 @@ class ContextControllerTest {
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.cancelled);
         when(jobRepository.findById(1)).thenReturn(Optional.of(job));
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{}");
 
@@ -58,7 +64,7 @@ class ContextControllerTest {
         when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{\"planStructuredOutput\":{}}");
 
@@ -75,7 +81,7 @@ class ContextControllerTest {
         when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{\"planStructuredOutput\":{}}");
 
@@ -127,7 +133,7 @@ class ContextControllerTest {
                   }
                 }
                 """);
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.getContext(22);
 
@@ -147,7 +153,7 @@ class ContextControllerTest {
         when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ObjectMapper());
+        ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, """
                 {
@@ -178,5 +184,79 @@ class ContextControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertFalse(response.getBody().contains("\"value\":\"0\""));
         verify(storageTypeService).saveContext(Mockito.eq(1), Mockito.argThat(savedContext -> !savedContext.contains("\"value\":\"0\"")));
+    }
+
+    @Test
+    void redactsSensitiveValuesFromApplyStructuredOutput() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        ResponseEntity<String> response = controller.saveContext(1, """
+                {
+                  "applyStructuredOutput": {
+                    "step-1": [
+                      {
+                        "address": "aws_instance.example",
+                        "before": {"password": "old-secret"},
+                        "beforeSensitive": {"password": true},
+                        "after": {"password": "new-secret"},
+                        "afterSensitive": {"password": true},
+                        "status": "applied"
+                      }
+                    ]
+                  }
+                }
+                """);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertFalse(response.getBody().contains("old-secret"));
+        assertFalse(response.getBody().contains("new-secret"));
+        assertTrue(response.getBody().contains("\"status\":\"applied\""));
+    }
+
+    @Test
+    void redactsSensitiveValuesFromTerraformOutputs() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        ResponseEntity<String> response = controller.saveContext(1, """
+                {
+                  "terraformOutputs": {
+                    "step-1": [
+                      {"name": "random_value", "value": "sad-otter", "sensitive": false},
+                      {"name": "random_password_result", "value": "top-secret", "sensitive": true}
+                    ]
+                  }
+                }
+                """);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertFalse(response.getBody().contains("top-secret"));
+        assertTrue(response.getBody().contains("\"value\":\"sad-otter\""));
+        assertTrue(response.getBody().contains("\"name\":\"random_password_result\""));
+    }
+
+    @Test
+    void streamEndpointDelegatesToStreamingServiceWithJobId() {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        StreamingService streamingService = Mockito.mock(StreamingService.class);
+        ContextController controller = new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()), streamingService);
+
+        controller.streamContext("42", null);
+
+        verify(streamingService).streamJobContextAsync(Mockito.eq("42"), Mockito.any(), Mockito.eq(RecordId.of("0-0")), Mockito.any());
     }
 }
