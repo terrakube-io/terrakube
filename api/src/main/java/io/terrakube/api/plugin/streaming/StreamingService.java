@@ -1,7 +1,8 @@
 package io.terrakube.api.plugin.streaming;
 
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -22,37 +23,56 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-@AllArgsConstructor
 public class StreamingService {
 
-    RedisTemplate redisTemplate;
+    private static final int DEFAULT_LIVE_TAIL_RECORDS = 5000;
 
-    StepRepository stepRepository;
+    final RedisTemplate redisTemplate;
 
-    RedisStreamReader redisStreamReader;
+    final StepRepository stepRepository;
 
-    JobRepository jobRepository;
+    final RedisStreamReader redisStreamReader;
 
-    public String getCurrentLogs(String stepId, String streamKeySuffix){
+    final JobRepository jobRepository;
+
+    /** Max trailing lines the running-step plain GET returns from the Redis stream. */
+    final int liveTailRecords;
+
+    @Autowired
+    public StreamingService(RedisTemplate redisTemplate, StepRepository stepRepository,
+                            RedisStreamReader redisStreamReader, JobRepository jobRepository,
+                            @Value("${io.terrakube.logs.live-tail-records:5000}") int liveTailRecords) {
+        this.redisTemplate = redisTemplate;
+        this.stepRepository = stepRepository;
+        this.redisStreamReader = redisStreamReader;
+        this.jobRepository = jobRepository;
+        this.liveTailRecords = liveTailRecords;
+    }
+
+    /** Test convenience: the live tail defaults to {@value #DEFAULT_LIVE_TAIL_RECORDS} records. */
+    public StreamingService(RedisTemplate redisTemplate, StepRepository stepRepository,
+                            RedisStreamReader redisStreamReader, JobRepository jobRepository) {
+        this(redisTemplate, stepRepository, redisStreamReader, jobRepository, DEFAULT_LIVE_TAIL_RECORDS);
+    }
+
+    public String getCurrentLogs(String stepId, String streamKeySuffix) {
         TextStringBuilder currentLogs = new TextStringBuilder();
         try {
             // findById (not getReferenceById): callers include ScheduleJob's doRunExecution path,
             // which reads Job/Step outside any open Hibernate session - a lazy getReferenceById
             // proxy would throw "no session" the moment a field like getStatus() below is touched.
             Step step = stepRepository.findById(UUID.fromString(stepId)).orElseThrow();
-            if(!step.getStatus().equals(JobStatus.completed) && !step.getStatus().equals(JobStatus.failed)) {
-                String streamKey = step.getJob().getId() + streamKeySuffix;
-                List<MapRecord> streamData = redisTemplate.opsForStream().read(StreamOffset.fromStart(streamKey), StreamOffset.latest(streamKey));
-                for (MapRecord mapRecord : streamData) {
-                    StringRecord stringRecord = StringRecord.of(mapRecord);
-                    String output = stringRecord.getValue().get("output");
-                    currentLogs.appendln(output);
-                }
-                log.info("Logs Size: {}", currentLogs.size());
+            if (step.getStatus().equals(JobStatus.completed) || step.getStatus().equals(JobStatus.failed)) {
+                return "";
             }
-        } catch (Exception ex ){
-            log.error(ex.getMessage());
-
+            String streamKey = step.getJob().getId() + streamKeySuffix;
+            List<MapRecord> streamData = redisStreamReader.readTail(streamKey, liveTailRecords);
+            for (MapRecord mapRecord : streamData) {
+                StringRecord stringRecord = StringRecord.of(mapRecord);
+                currentLogs.appendln(stringRecord.getValue().get("output"));
+            }
+        } catch (Exception ex) {
+            log.error("getCurrentLogs failed for step {}: {}", stepId, ex.getMessage());
         }
         return currentLogs.toString();
     }

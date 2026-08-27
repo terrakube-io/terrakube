@@ -21,9 +21,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -97,6 +101,49 @@ class StreamingServiceTest {
         // the latter unobservable from a unit test: SseEmitter.send(SseEventBuilder) calls
         // super.send(Set<DataWithMediaType>) via invokespecial, which bypasses any subclass override).
         verify(redisStreamReader).readAfter(eq("42"), eq(RecordId.of("100-0")), any(Duration.class));
+    }
+
+    @Test
+    @Timeout(5)
+    void getCurrentLogsReturnsEmptyForTerminalStepWithoutReadingRedis() {
+        UUID stepId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(7);
+        Step completed = new Step();
+        completed.setId(stepId);
+        completed.setJob(job);
+        completed.setStatus(JobStatus.completed);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(completed));
+
+        StreamingService service = new StreamingService(null, stepRepository, redisStreamReader, jobRepository);
+        String result = service.getCurrentLogs(stepId.toString(), "");
+
+        assertEquals("", result);
+        verifyNoInteractions(redisStreamReader);
+    }
+
+    @Test
+    @Timeout(5)
+    void getCurrentLogsReadsBoundedTailForRunningStep() {
+        UUID stepId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(7);
+        Step running = new Step();
+        running.setId(stepId);
+        running.setJob(job);
+        running.setStatus(JobStatus.running);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(running));
+        when(redisStreamReader.readTail(eq("7"), anyInt()))
+                .thenReturn(List.of(
+                        MapRecord.create("7", Map.of("output", "line A")),
+                        MapRecord.create("7", Map.of("output", "line B"))));
+
+        StreamingService service = new StreamingService(null, stepRepository, redisStreamReader, jobRepository);
+        String result = service.getCurrentLogs(stepId.toString(), "");
+
+        assertTrue(result.contains("line A"));
+        assertTrue(result.contains("line B"));
+        verify(redisStreamReader).readTail(eq("7"), anyInt());
     }
 
     @Test
