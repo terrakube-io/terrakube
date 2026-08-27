@@ -33,4 +33,7 @@ public class LogsProperties {
 
     /** How long a job's terminal/non-terminal state is cached for the broadcaster loop. */
     private Duration jobStatusCacheTtl = Duration.ofSeconds(2);
+
+    /** Approximate cap on a job's live-log Redis stream when logs are ingested via the API. */
+    private long redisMaxLen = 200_000L;
 }
