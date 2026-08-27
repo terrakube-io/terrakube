@@ -26,7 +26,7 @@
 		<jgit.version>7.7.1.202607240634-r</jgit.version>
 		<bouncy.castle>1.85</bouncy.castle>
 		<lombok.version>1.18.46</lombok.version>
-		<groovy.version>5.1.0</groovy.version>
+		<groovy.version>5.1.1</groovy.version>
 		<ivy.version>2.6.0</ivy.version>
 		<jcolor.version>6.0.1</jcolor.version>
 		<aws-sdk.version>2.54.2</aws-sdk.version>
