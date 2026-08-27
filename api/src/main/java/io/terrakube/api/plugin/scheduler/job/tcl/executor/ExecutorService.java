@@ -26,6 +26,7 @@ import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
 import io.terrakube.api.repository.VariableRepository;
@@ -78,6 +79,8 @@ public class ExecutorService {
     TokenService tokenService;
     @Autowired
     WorkspaceRepository workspaceRepository;
+    @Autowired
+    JobRepository jobRepository;
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
@@ -173,6 +176,15 @@ public class ExecutorService {
                             + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
         }
 
+        // A UI "Run now" job only sets overrideBranch, not overrideSource (see
+        // ui/src/domain/Jobs/Create.tsx) - it arrives here relying on the workspace.source
+        // fallback above. The executor's remote-content download path re-reads job.overrideSource
+        // live via the API rather than trusting the dispatch payload (the same convention it
+        // already follows for terraformPlan and job status elsewhere in that module), so without
+        // this it would see overrideSource still null and fail even though a source was resolved
+        // right here.
+        persistJobOverrideSource(job, executorContext.getBranch(), executorContext.getSource());
+
         // For CLI/API driven (remote-content) workspaces, remember the configuration version
         // being applied so a later UI "Run now" re-queues the last applied configuration.
         persistAppliedConfigurationSource(job, flow, executorContext.getSource());
@@ -255,6 +267,48 @@ public class ExecutorService {
     private boolean iacType(Job job) {
         return job.getWorkspace().getIacType() != null && job.getWorkspace().getIacType().equals("terraform") ? false
                 : true;
+    }
+
+    /**
+     * Persists the resolved source directly onto the job for CLI/API driven (remote-content) jobs
+     * whose overrideSource was not already set at creation time. A UI "Run now" job is the case
+     * that matters here: it only sets overrideBranch, so it reaches execute() with
+     * job.overrideSource still null and executorContext.getSource() resolved purely from the
+     * workspace.source fallback above. Genuine CLI-driven runs are unaffected - RemoteTfeService
+     * .createRun already sets job.overrideSource at creation, so this method is a no-op for them.
+     *
+     * Runs for every remote-content flow type (plan, apply, destroy), not just apply: whichever
+     * flow this job runs, the executor still needs a non-null job.overrideSource to download the
+     * tarball. Contrast with persistAppliedConfigurationSource below, which is deliberately
+     * apply-only because it tracks the workspace's *last applied* configuration for future runs,
+     * not what this job itself needs to run right now.
+     *
+     * VCS/SSH backed workspaces are intentionally skipped, matching persistAppliedConfigurationSource
+     * below: the "Run now" branch name field is free text, so a VCS-backed workspace could arrive
+     * here with branch resolved to the literal string "remote-content" (e.g. a mistyped/pasted
+     * value). Without this check, executorContext.getSource() would resolve to the workspace's git
+     * URL (not blank, so it would pass the checks below) and get persisted as job.overrideSource -
+     * turning today's clear "no configuration has been uploaded" failure into a confusing one where
+     * the executor tries to download a git URL as a tarball.
+     */
+    void persistJobOverrideSource(Job job, String branch, String resolvedSource) {
+        if (job.getOverrideSource() != null) {
+            return;
+        }
+        if (!"remote-content".equals(branch)) {
+            return;
+        }
+        Workspace workspace = job.getWorkspace();
+        if (workspace.getVcs() != null || workspace.getSsh() != null) {
+            return;
+        }
+        if (resolvedSource == null || resolvedSource.isBlank()) {
+            return;
+        }
+        log.info("Persisting resolved configuration source onto job {} for remote-content workspace",
+                job.getId());
+        job.setOverrideSource(resolvedSource);
+        jobRepository.save(job);
     }
 
     /**

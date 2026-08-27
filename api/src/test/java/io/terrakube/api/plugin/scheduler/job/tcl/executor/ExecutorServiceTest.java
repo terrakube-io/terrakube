@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.repository.AddressRepository;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
@@ -40,6 +41,9 @@ class ExecutorServiceTest {
 
     @Mock
     private AddressRepository addressRepository;
+
+    @Mock
+    private JobRepository jobRepository;
 
     @InjectMocks
     private ExecutorService executorService;
@@ -111,6 +115,72 @@ class ExecutorServiceTest {
 
         assertThat(terraformVariables).isEmpty();
         assertThat(environmentVariables).isEmpty();
+    }
+
+    @Test
+    void shouldPersistJobOverrideSourceWhenNotAlreadySet() {
+        String resolved = "https://localhost/remote/tfe/v2/configuration-versions/abc/terraformContent.tar.gz";
+
+        executorService.persistJobOverrideSource(job, "remote-content", resolved);
+
+        assertThat(job.getOverrideSource()).isEqualTo(resolved);
+        verify(jobRepository).save(job);
+    }
+
+    @Test
+    void shouldNotPersistJobOverrideSourceWhenAlreadySet() {
+        String original = "https://localhost/remote/tfe/v2/configuration-versions/original/terraformContent.tar.gz";
+        String resolved = "https://localhost/remote/tfe/v2/configuration-versions/abc/terraformContent.tar.gz";
+        job.setOverrideSource(original);
+
+        executorService.persistJobOverrideSource(job, "remote-content", resolved);
+
+        assertThat(job.getOverrideSource()).isEqualTo(original);
+        verify(jobRepository, never()).save(job);
+    }
+
+    @Test
+    void shouldNotPersistJobOverrideSourceForNonRemoteContentBranch() {
+        String resolved = "https://github.com/example/repo.git";
+
+        executorService.persistJobOverrideSource(job, "main", resolved);
+
+        assertThat(job.getOverrideSource()).isNull();
+        verify(jobRepository, never()).save(job);
+    }
+
+    @Test
+    void shouldNotPersistJobOverrideSourceWhenResolvedSourceIsBlank() {
+        executorService.persistJobOverrideSource(job, "remote-content", "  ");
+
+        assertThat(job.getOverrideSource()).isNull();
+        verify(jobRepository, never()).save(job);
+    }
+
+    @Test
+    void shouldNotPersistJobOverrideSourceForVcsWorkspace() {
+        // "Run now"'s branch name field is free text - a VCS workspace could arrive here with
+        // branch resolved to "remote-content" (e.g. mistyped/pasted), with resolvedSource actually
+        // the workspace's git URL via the executorContext.getSource() fallback. Persisting that
+        // as job.overrideSource would make the executor try to download a git URL as a tarball.
+        workspace.setVcs(new Vcs());
+        String gitUrl = "https://github.com/example/repo.git";
+
+        executorService.persistJobOverrideSource(job, "remote-content", gitUrl);
+
+        assertThat(job.getOverrideSource()).isNull();
+        verify(jobRepository, never()).save(job);
+    }
+
+    @Test
+    void shouldNotPersistJobOverrideSourceForSshWorkspace() {
+        workspace.setSsh(new Ssh());
+        String gitUrl = "git@github.com:example/repo.git";
+
+        executorService.persistJobOverrideSource(job, "remote-content", gitUrl);
+
+        assertThat(job.getOverrideSource()).isNull();
+        verify(jobRepository, never()).save(job);
     }
 
     @Test
