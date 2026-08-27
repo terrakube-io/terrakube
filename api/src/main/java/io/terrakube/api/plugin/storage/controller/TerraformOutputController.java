@@ -4,11 +4,14 @@ import io.terrakube.api.plugin.logs.StepLogResponses;
 import io.terrakube.api.plugin.logs.StepLogService;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
+import io.terrakube.api.plugin.streaming.JobLogBroadcasterRegistry;
+import io.terrakube.api.plugin.streaming.SseCapacityExceededException;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
@@ -24,6 +27,8 @@ public class TerraformOutputController {
     private final StepLogService stepLogService;
 
     private final StreamingService streamingService;
+
+    private final JobLogBroadcasterRegistry broadcasterRegistry;
 
     @GetMapping(
             value = "/organization/{organizationId}/job/{jobId}/step/{stepId}",
@@ -67,9 +72,14 @@ public class TerraformOutputController {
             @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
-        SseEmitter emitter = new SseEmitter(0L);
-        streamingService.streamStepLogsAsync(stepId, emitter, parseResumeId(lastEventId), "");
-        return emitter;
+        return broadcasterRegistry.subscribe(jobId, stepId, parseResumeId(lastEventId));
+    }
+
+    @ExceptionHandler(SseCapacityExceededException.class)
+    public ResponseEntity<Void> onSseCapacityExceeded() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "5")
+                .build();
     }
 
     private RecordId parseResumeId(String lastEventId) {

@@ -77,52 +77,6 @@ public class StreamingService {
         return currentLogs.toString();
     }
 
-    @Async
-    public void streamStepLogsAsync(String stepId, SseEmitter emitter, RecordId resumeFrom, String streamKeySuffix) {
-        streamStepLogs(stepId, emitter, resumeFrom, streamKeySuffix);
-    }
-
-    public void streamStepLogs(String stepId, SseEmitter emitter, RecordId resumeFrom, String streamKeySuffix) {
-        try {
-            UUID id = UUID.fromString(stepId);
-            // findById (not getReferenceById) because this loop runs on a separate @Async thread with no
-            // active Hibernate session - a lazy getReferenceById proxy would throw LazyInitializationException
-            // the moment any field (including the eagerly-mapped job association) is accessed here.
-            Step step = stepRepository.findById(id).orElseThrow();
-            String streamKey = String.valueOf(step.getJob().getId()) + streamKeySuffix;
-            RecordId lastId = resumeFrom;
-            int emptyReads = 0;
-
-            while (true) {
-                List<MapRecord> records = redisStreamReader.readAfter(streamKey, lastId, Duration.ofSeconds(2));
-
-                if (records.isEmpty()) {
-                    emptyReads++;
-                    step = stepRepository.findById(id).orElseThrow();
-                    if (isTerminal(step.getStatus())) {
-                        emitter.complete();
-                        return;
-                    }
-                    if (emptyReads % 8 == 0) {
-                        emitter.send(SseEmitter.event().comment("heartbeat"));
-                    }
-                    continue;
-                }
-
-                emptyReads = 0;
-                for (MapRecord record : records) {
-                    lastId = record.getId();
-                    StringRecord stringRecord = StringRecord.of(record);
-                    emitter.send(SseEmitter.event().id(lastId.getValue()).data(stringRecord.getValue().get("output")));
-                }
-            }
-        } catch (IOException e) {
-            log.info("SSE client disconnected for step {}", stepId);
-        } catch (Exception e) {
-            log.error("Error streaming logs for step {}: {}", stepId, e.getMessage());
-            emitter.completeWithError(e);
-        }
-    }
 
     @Async
     public void streamJobContextAsync(String jobId, SseEmitter emitter, RecordId resumeFrom, ContextSanitizer contextSanitizer) {

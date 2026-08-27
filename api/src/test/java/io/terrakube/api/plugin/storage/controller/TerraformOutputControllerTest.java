@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.storage.controller;
 
 import io.terrakube.api.plugin.logs.StepLogService;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
+import io.terrakube.api.plugin.streaming.JobLogBroadcasterRegistry;
+import io.terrakube.api.plugin.streaming.SseCapacityExceededException;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,10 +13,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.ByteArrayInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -24,6 +28,7 @@ class TerraformOutputControllerTest {
 
     @Mock StepLogService stepLogService;
     @Mock StreamingService streamingService;
+    @Mock JobLogBroadcasterRegistry broadcasterRegistry;
 
     @InjectMocks TerraformOutputController controller;
 
@@ -98,5 +103,23 @@ class TerraformOutputControllerTest {
         assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
         assertEquals("bytes 49999996-49999999/50000000",
                 response.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE));
+    }
+
+    @Test
+    void streamOutputDelegatesToTheBroadcasterRegistry() {
+        SseEmitter emitter = new SseEmitter(0L);
+        when(broadcasterRegistry.subscribe(eq("j"), eq("s"), any())).thenReturn(emitter);
+
+        SseEmitter result = controller.streamOutput("o", "j", "s", null);
+
+        assertSame(emitter, result);
+    }
+
+    @Test
+    void sseCapacityExceededMapsTo503WithRetryAfter() {
+        ResponseEntity<Void> response = controller.onSseCapacityExceeded();
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("5", response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER));
     }
 }

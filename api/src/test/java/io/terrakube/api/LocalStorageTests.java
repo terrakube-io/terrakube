@@ -150,10 +150,9 @@ public class LocalStorageTests extends ServerApplicationTests {
 
     @Test
     void streamEndpointConnectsAndClosesCleanlyForUnknownStep() {
-        // Nonexistent step id -> EntityNotFoundException on first Redis/DB access, caught by
-        // StreamingService.streamStepLogs and surfaced as emitter.completeWithError before any bytes are
-        // flushed, so Spring falls back to its default 500 JSON error body instead of text/event-stream.
-        // This smoke test only cares that the request returns promptly (doesn't hang) rather than what's in it.
+        // Unknown job/step -> JobStatusCache treats a missing job as terminal, so the broadcaster
+        // completes the emitter immediately: the SSE connection opens and closes cleanly (200,
+        // empty stream) instead of hanging or 500-ing.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
@@ -162,14 +161,13 @@ public class LocalStorageTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
-                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
+                .statusCode(HttpStatus.OK.value());
     }
 
     @Test
     void streamEndpointAcceptsLastEventIdHeader() {
-        // Same nonexistent-step path as streamEndpointConnectsAndClosesCleanlyForUnknownStep, just confirming
-        // the endpoint still accepts a Last-Event-ID header without erroring on the header parsing itself
-        // (the 500 comes from the unknown step id, not from the header).
+        // Same unknown-step path as streamEndpointConnectsAndClosesCleanlyForUnknownStep, confirming
+        // the endpoint still accepts a Last-Event-ID header without erroring on the header parsing.
         given()
                 .headers(
                         "Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
@@ -178,7 +176,7 @@ public class LocalStorageTests extends ServerApplicationTests {
                 .get("/tfoutput/v1/organization/3/job/3/step/11111111-1111-1111-1111-111111111111/stream")
                 .then()
                 .assertThat()
-                .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
+                .statusCode(HttpStatus.OK.value());
     }
 
 }
