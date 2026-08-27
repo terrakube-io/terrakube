@@ -3600,12 +3600,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react-dom@npm:^19.2.4":
-  version: 19.2.4
-  resolution: "@types/react-dom@npm:19.2.4"
+"@types/react-dom@npm:^19.2.5":
+  version: 19.2.5
+  resolution: "@types/react-dom@npm:19.2.5"
   peerDependencies:
     "@types/react": ^19.2.0
-  checksum: 10c0/b7d854ce17bb51a3a067168268a90f0123d10dc490f63f1ff5409f07ac715febeb8f5b7b473404a9d437106571e0312fc2937a945634d590abfc9aa46a14b01b
+  checksum: 10c0/7a59467b043debf392d109daa1ba672e791f20ce6f24ae81fb54715f890f8119d24967e61e3644b6307428603b695b7d59e69eaf531bd1963a74a6cb462f5f49
   languageName: node
   linkType: hard
 
@@ -4694,7 +4694,7 @@ __metadata:
     "@types/luxon": "npm:^3.7.5"
     "@types/node": "npm:^26.2.0"
     "@types/react": "npm:^19.2.18"
-    "@types/react-dom": "npm:^19.2.4"
+    "@types/react-dom": "npm:^19.2.5"
     "@types/react-vis": "npm:^1.11.15"
     "@typescript-eslint/eslint-plugin": "npm:^8.67.0"
     "@typescript-eslint/parser": "npm:^8.67.0"
@@ -4751,7 +4751,7 @@ __metadata:
     unzipit: "npm:^2.0.1"
     uuid: "npm:^14.0.2"
     vite: "npm:^8.2.2"
-    web-vitals: "npm:^6.1.1"
+    web-vitals: "npm:^6.2.0"
   languageName: unknown
   linkType: soft
 
@@ -12383,10 +12383,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"web-vitals@npm:^6.1.1":
-  version: 6.1.1
-  resolution: "web-vitals@npm:6.1.1"
-  checksum: 10c0/46a65d39d7c73bc06f90b7a6b6ab20a72f1635294ed81a6e0d3bfa32557012005f7abf319bdd128e5bde5185b3e2c9121f7c62d51aebf97d730a56042296bace
+"web-vitals@npm:^6.2.0":
+  version: 6.2.0
+  resolution: "web-vitals@npm:6.2.0"
+  checksum: 10c0/b628d25494c18e4500d6ee01c9dff3dec0156f240fca2771c17789f29092fe1b5a81b2364a08f35e77532148894bc8eec53933012c747b29bdb33daa9b5d0423
   languageName: node
   linkType: hard
 
