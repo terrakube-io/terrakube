@@ -49,7 +49,7 @@ class StreamingServiceTest {
         completed.setStatus(JobStatus.completed);
         when(stepRepository.findById(stepId)).thenReturn(Optional.of(completed));
 
-        StreamingService service = new StreamingService(null, stepRepository, redisStreamReader, jobRepository);
+        StreamingService service = new StreamingService(stepRepository, redisStreamReader, jobRepository, 5000);
         String result = service.getCurrentLogs(stepId.toString(), "");
 
         assertEquals("", result);
@@ -72,7 +72,7 @@ class StreamingServiceTest {
                         MapRecord.create("7", Map.of("output", "line A")),
                         MapRecord.create("7", Map.of("output", "line B"))));
 
-        StreamingService service = new StreamingService(null, stepRepository, redisStreamReader, jobRepository);
+        StreamingService service = new StreamingService(stepRepository, redisStreamReader, jobRepository, 5000);
         String result = service.getCurrentLogs(stepId.toString(), "");
 
         assertTrue(result.contains("line A"));

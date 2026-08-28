@@ -1,10 +1,8 @@
 package io.terrakube.api.plugin.streaming;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.*;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -25,9 +23,7 @@ import java.util.UUID;
 @Slf4j
 public class StreamingService {
 
-    private static final int DEFAULT_LIVE_TAIL_RECORDS = 5000;
-
-    final RedisTemplate redisTemplate;
+    static final int DEFAULT_LIVE_TAIL_RECORDS = 5000;
 
     final StepRepository stepRepository;
 
@@ -38,21 +34,13 @@ public class StreamingService {
     /** Max trailing lines the running-step plain GET returns from the Redis stream. */
     final int liveTailRecords;
 
-    @Autowired
-    public StreamingService(RedisTemplate redisTemplate, StepRepository stepRepository,
-                            RedisStreamReader redisStreamReader, JobRepository jobRepository,
+    public StreamingService(StepRepository stepRepository, RedisStreamReader redisStreamReader,
+                            JobRepository jobRepository,
                             @Value("${io.terrakube.logs.live-tail-records:5000}") int liveTailRecords) {
-        this.redisTemplate = redisTemplate;
         this.stepRepository = stepRepository;
         this.redisStreamReader = redisStreamReader;
         this.jobRepository = jobRepository;
         this.liveTailRecords = liveTailRecords;
-    }
-
-    /** Test convenience: the live tail defaults to {@value #DEFAULT_LIVE_TAIL_RECORDS} records. */
-    public StreamingService(RedisTemplate redisTemplate, StepRepository stepRepository,
-                            RedisStreamReader redisStreamReader, JobRepository jobRepository) {
-        this(redisTemplate, stepRepository, redisStreamReader, jobRepository, DEFAULT_LIVE_TAIL_RECORDS);
     }
 
     public String getCurrentLogs(String stepId, String streamKeySuffix) {
