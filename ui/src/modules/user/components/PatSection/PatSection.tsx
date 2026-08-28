@@ -8,6 +8,7 @@ import { CreateTokenForm } from "@/modules/token/types";
 import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import TokenGrid from "@/modules/token/TokenGrid";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Params = {
   orgid: string;
@@ -34,28 +35,16 @@ export const Tokens = () => {
 
   return (
     <div className="pat-section">
-      <Flex gap="middle" justify="space-between" align="center" className="header-section">
-        <Flex vertical>
-          <Typography.Title level={2} className="title">
-            Tokens
-          </Typography.Title>
-          <Typography.Text type="secondary" className="description">
-            Your API tokens can be used to access the Terrakube API and perform all the actions your user account is
-            entitled to. For more information, see the{" "}
-            <a href="https://docs.terrakube.io/" target="_blank" rel="noreferrer">
-              user API tokens documentation
-            </a>
-            .
-          </Typography.Text>
-          <Typography.Text type="secondary" className="warning-text">
-            Treat these tokens like passwords, as they can be used to access your account without a username, password,
-            or two-factor authentication.
-          </Typography.Text>
-        </Flex>
-        <Button type="primary" onClick={() => setVisible(true)}>
-          Create an API token
-        </Button>
-      </Flex>
+      <SettingsPageHeader
+        title="Tokens"
+        docUrl="https://docs.terrakube.io/user-guide/organizations/api-tokens"
+        description="Your API tokens can be used to access the Terrakube API and perform all the actions your user account is entitled to. Treat them like passwords: they grant access to your account without a username, password, or two-factor authentication."
+        actions={
+          <Button type="primary" onClick={() => setVisible(true)}>
+            Create an API token
+          </Button>
+        }
+      />
 
       {error && (
         <Alert className="alert" message="Failed to load tokens. Please try again later" type="error" showIcon banner />

@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Divider, List, Popconfirm, Row, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { VcsModel, VcsType } from "../types";
@@ -16,28 +16,21 @@ import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 const { Paragraph } = Typography;
 
 type Props = {
-  vcsMode?: string;
+  vcsMode?: "new" | "edit" | "list";
+  vcsId?: string;
   managePermission?: boolean;
 };
 
-export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
+export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) => {
   const { orgid } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "new" | "edit">(
-    vcsMode != null ? (vcsMode as "list" | "new" | "edit") : "list"
-  );
   const [vcs, setVCS] = useState<VcsModel[]>([]);
-  const [editVcsId, setEditVcsId] = useState<string | undefined>(undefined);
 
-  const onAddVCS = () => {
-    setMode("new");
-  };
-
-  const onEditVCS = (id: string) => {
-    setEditVcsId(id);
-    setMode("edit");
-  };
+  const mode: "list" | "new" | "edit" = vcsMode ?? "list";
+  const editVcsId = vcsId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/vcs`);
 
   const renderVCSType = (vcs: VcsType) => {
     switch (vcs) {
@@ -140,15 +133,11 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
             title="VCS Providers"
             description="Connect version control providers so workspaces and modules can read from your repositories."
             actions={
-              <Button
-                type="primary"
-                onClick={onAddVCS}
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Add a VCS Provider
-              </Button>
+              <Link to={`/organizations/${orgid}/settings/vcs/new`}>
+                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+                  Add a VCS Provider
+                </Button>
+              </Link>
             }
           />
           <SettingsSection maxWidth="100%">
@@ -173,14 +162,11 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
                       }
                       actions={[
                         <div key="actions" style={{ float: "right" }}>
-                          <Button
-                            type="default"
-                            icon={<EditOutlined />}
-                            disabled={!managePermission}
-                            onClick={() => onEditVCS(item.id)}
-                          >
-                            Edit Client
-                          </Button>
+                          <Link to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}>
+                            <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
+                              Edit Client
+                            </Button>
+                          </Link>
                           &nbsp;&nbsp;&nbsp;
                           <Popconfirm
                             okButtonProps={{ danger: true }}
@@ -301,9 +287,9 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
           </SettingsSection>
         </div>
       ) : mode === "new" ? (
-        <AddVCS setMode={setMode} loadVCS={loadVCS} />
+        <AddVCS setMode={closeEditor} loadVCS={loadVCS} />
       ) : (
-        <EditVCS vcsId={editVcsId!} setMode={setMode} loadVCS={loadVCS} />
+        <EditVCS vcsId={editVcsId!} setMode={closeEditor} loadVCS={loadVCS} />
       )}
     </div>
   );

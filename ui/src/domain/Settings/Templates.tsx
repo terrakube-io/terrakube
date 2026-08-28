@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, List, message, Popconfirm, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
@@ -14,25 +14,20 @@ import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   key: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
+export const TemplatesSettings = ({ key, editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState("list");
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [templateID, setTemplateID] = useState<string>();
-
-  const onAddVCS = () => {
-    setMode("new");
-  };
-
-  const onEditVCS = (id: string) => {
-    setMode("edit");
-    setTemplateID(id);
-  };
+  const navigate = useNavigate();
+  const mode = editorMode ?? "list";
+  const templateID = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/templates`);
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -72,9 +67,9 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
       {error ? (
         <AccessDeniedAlert description={error} />
       ) : (
-        (mode === "new" && <AddTemplate setMode={setMode} loadTemplates={loadTemplates} />) ||
+        (mode === "new" && <AddTemplate setMode={closeEditor} loadTemplates={loadTemplates} />) ||
         (mode === "edit" && (
-          <EditTemplate setMode={setMode} templateId={templateID} loadTemplates={loadTemplates} />
+          <EditTemplate setMode={closeEditor} templateId={templateID} loadTemplates={loadTemplates} />
         )) || (
           <div>
             <SettingsPageHeader
@@ -82,15 +77,11 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
               title="Templates"
               description="Templates define the job flows a workspace can run, such as plan, apply, or custom steps."
               actions={
-                <Button
-                  type="primary"
-                  onClick={onAddVCS}
-                  htmlType="button"
-                  icon={<PlusOutlined />}
-                  disabled={!managePermission}
-                >
-                  Add a Template
-                </Button>
+                <Link to={`/organizations/${orgid}/settings/templates/new`}>
+                  <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+                    Add a Template
+                  </Button>
+                </Link>
               }
             />
             <SettingsSection maxWidth="100%">
@@ -104,15 +95,8 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
                   renderItem={(item) => (
                     <List.Item
                       actions={[
-                        <Button
-                          onClick={() => {
-                            onEditVCS(item.id);
-                          }}
-                          icon={<EditOutlined />}
-                          type="link"
-                          disabled={!managePermission}
-                        >
-                          Edit
+                        <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
+                          <Link to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}>Edit</Link>
                         </Button>,
                         <Popconfirm
                           okButtonProps={{ danger: true }}

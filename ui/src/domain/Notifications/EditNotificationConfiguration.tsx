@@ -23,6 +23,7 @@ import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   orgId: string;
@@ -61,7 +62,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
   // rather than briefly showing the wrong scope. For create mode this is known immediately
   // from whether a workspaceId was passed in at all.
   const [configWorkspaceId, setConfigWorkspaceId] = useState<string | null | undefined>(
-    mode === "create" ? workspaceId ?? null : undefined
+    mode === "create" ? (workspaceId ?? null) : undefined
   );
   const channelType = Form.useWatch("channelType", form);
   const destinationUrl = Form.useWatch("destinationUrl", form);
@@ -263,9 +264,10 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
 
   return (
     <Spin spinning={loading}>
-      <Typography.Title level={3}>
-        {mode === "create" ? "Add Notification" : "Edit Notification"}
-      </Typography.Title>
+      <SettingsPageHeader
+        title={mode === "create" ? "Add Notification" : "Edit Notification"}
+        description="Send a message to a channel when jobs change state."
+      />
       {configWorkspaceId !== undefined &&
         (configWorkspaceId === null ? (
           <Alert
@@ -337,8 +339,8 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
               label="Signing Secret (optional)"
               help={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  If set, requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so
-                  your endpoint can verify they came from Terrakube.
+                  If set, requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so your
+                  endpoint can verify they came from Terrakube.
                 </Typography.Text>
               }
             >
@@ -353,8 +355,8 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             label="Message style"
             help={
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single
-                compact line instead - useful for high-frequency channels.
+                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single compact
+                line instead - useful for high-frequency channels.
               </Typography.Text>
             }
           >
@@ -429,9 +431,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
                       checked={selectedStatuses.includes(status.value)}
                       onChange={(e) => {
                         setSelectedStatuses((current) =>
-                          e.target.checked
-                            ? [...current, status.value]
-                            : current.filter((s) => s !== status.value)
+                          e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
                         );
                       }}
                     >
@@ -450,7 +450,11 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
                   type={testResult === "success" ? "success" : "error"}
                   showIcon
                   icon={testResult === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                  message={testResult === "success" ? "Test notification delivered successfully" : "Test notification failed to deliver"}
+                  message={
+                    testResult === "success"
+                      ? "Test notification delivered successfully"
+                      : "Test notification failed to deliver"
+                  }
                   closable
                   onClose={() => setTestResult(null)}
                 />

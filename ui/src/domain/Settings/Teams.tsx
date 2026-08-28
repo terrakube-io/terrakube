@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
 import { Avatar, Button, List, message, Popconfirm, Space, Tag, Typography, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
@@ -35,26 +35,21 @@ const roleDescriptions: Record<string, string> = {
 
 type Props = {
   key: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const TeamSettings = ({ key, managePermission = true }: Props) => {
+export const TeamSettings = ({ key, editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "edit" | "create">("list");
-  const [teamId, setTeamId] = useState<string>();
+  const navigate = useNavigate();
+  const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
+  const teamId = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/teams`);
   const { token } = theme.useToken();
-
-  const onEdit = (id: string) => {
-    setMode("edit");
-    setTeamId(id);
-  };
-
-  const onNew = () => {
-    setMode("create");
-  };
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -122,7 +117,7 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
       {error ? (
         <AccessDeniedAlert description={error} />
       ) : mode !== "list" ? (
-        <EditTeam mode={mode} setMode={setMode} teamId={teamId} loadTeams={loadTeams} />
+        <EditTeam mode={mode} setMode={closeEditor} teamId={teamId} loadTeams={loadTeams} />
       ) : (
         <>
           <SettingsPageHeader
@@ -130,15 +125,11 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
             title="Team Management"
             description="Teams let you group users into specific categories to enable finer grained access control policies. Each team is assigned a role that determines what actions its members can perform within the organization."
             actions={
-              <Button
-                type="primary"
-                onClick={onNew}
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Create team
-              </Button>
+              <Link to={`/organizations/${orgid}/settings/teams/new`}>
+                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+                  Create team
+                </Button>
+              </Link>
             }
           />
           <Spin spinning={loading} tip="Loading Teams...">
@@ -150,13 +141,8 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
                 return (
                   <List.Item
                     actions={[
-                      <Button
-                        onClick={() => onEdit(item.id)}
-                        icon={<EditOutlined />}
-                        type="link"
-                        disabled={!managePermission}
-                      >
-                        Edit
+                      <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
+                        <Link to={`/organizations/${orgid}/settings/teams/edit/${item.id}`}>Edit</Link>
                       </Button>,
                       <Popconfirm
                         okButtonProps={{ danger: true }}

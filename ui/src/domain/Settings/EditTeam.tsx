@@ -11,6 +11,7 @@ import { TeamToken } from "../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { TeamPermissionsV2 } from "./TeamPermissionsV2";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   mode: "edit" | "create";
@@ -223,14 +224,15 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
 
   return (
     <div className="setting">
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        {mode === "edit" ? `Team: ${teamName}` : "New Team"}
-      </Typography.Title>
-      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-        {mode === "edit"
-          ? "Update this team's role and permissions to control what its members can do within the organization."
-          : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."}
-      </Typography.Text>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
+        title={mode === "edit" ? `Team: ${teamName}` : "New Team"}
+        description={
+          mode === "edit"
+            ? "Update this team's role and permissions to control what its members can do within the organization."
+            : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."
+        }
+      />
 
       {loading ? (
         <Spin style={{ marginTop: 24, display: "block" }} />

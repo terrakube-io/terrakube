@@ -836,15 +836,12 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       {current == 1 && (
         <SettingsSection>
           <Space className="chooseType" direction="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Set up provider
-            </Typography.Title>
-            <Typography.Text type="secondary" className="paragraph">
-              For additional information about connecting to {renderVCSType(vcsType)} to Terrakube, please read our{" "}
-              <Button className="link" target="_blank" href={getDocsUrl(vcsType)} type="link">
-                documentation&nbsp; <HiOutlineExternalLink />.
-              </Button>
-            </Typography.Text>
+            <SettingsPageHeader
+              divider={false}
+              docUrl={getDocsUrl(vcsType)}
+              title="Set up provider"
+              description={<>Connect {renderVCSType(vcsType)} to Terrakube with the client credentials below.</>}
+            />
             {renderStep1(vcsType)}
             {renderStep2(vcsType)}
             <Form

@@ -6,6 +6,7 @@ import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { DeleteOutlined, EditOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { VariableFormFields } from "@/components/VariableFormFields";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 // Type definitions
 type Collection = {
@@ -540,20 +541,14 @@ export const CreateEditCollection = ({
   return (
     <div className="setting">
       <Spin spinning={loading}>
-        <div style={{ marginBottom: "20px" }}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {mode === "create"
+        <SettingsPageHeader
+          title={
+            mode === "create"
               ? "Create a new organization variable collection"
-              : "Edit organization variable collection"}
-          </Typography.Title>
-        </div>
-
-        <div style={{ marginBottom: "20px" }}>
-          <Typography.Text type="secondary" className="App-text">
-            Variable collections allow you to define and apply variables one time across multiple workspaces within an
-            organization.
-          </Typography.Text>
-        </div>
+              : "Edit organization variable collection"
+          }
+          description="Variable collections allow you to define and apply variables one time across multiple workspaces within an organization."
+        />
 
         <Form
           form={collectionForm}

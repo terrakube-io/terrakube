@@ -24,6 +24,7 @@ import {
 } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
@@ -60,22 +61,27 @@ type EditActionForm = {
 };
 
 type Props = {
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const ActionSettings = ({ managePermission = true }: Props) => {
+export const ActionSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [mode, setMode] = useState("create");
-  const [actionId, setActionId] = useState<string>();
+  const { orgid } = useParams();
+  const navigate = useNavigate();
+  const isEditing = editorMode != null;
+  const mode = editorMode === "new" ? "create" : "edit";
+  const actionId = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/actions`);
   const [actionContent, setActionContent] = useState<string>("");
   const [form] = Form.useForm();
   const editorRef = useRef<IStandaloneCodeEditor>(null);
   const { token } = theme.useToken();
 
-  const ACTIONS_COLUMNS = (onEdit: (id: string) => void) => [
+  const ACTIONS_COLUMNS = () => [
     {
       title: "Name",
       dataIndex: "name",
@@ -111,9 +117,11 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
       key: "action",
       render: (_: string, record: Action) => (
         <div>
-          <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)} disabled={!managePermission}>
-            Edit
-          </Button>
+          <Link to={`/organizations/${orgid}/settings/actions/edit/${record.id}`}>
+            <Button type="link" icon={<EditOutlined />} disabled={!managePermission}>
+              Edit
+            </Button>
+          </Link>
           <Popconfirm
             okButtonProps={{ danger: true }}
             title="Are you sure to delete this action?"
@@ -140,7 +148,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   ];
 
   const onCancel = () => {
-    setIsEditing(false);
+    closeEditor();
     form.resetFields();
     setActionContent("");
     if (editorRef.current) {
@@ -148,40 +156,37 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
     }
   };
 
-  const onEdit = (id: string) => {
-    setMode("edit");
-    setActionId(id);
-    setIsEditing(true);
-    axiosInstance
-      .get(`action/${id}`)
-      .then((response) => {
-        const action = response.data.data;
-        form.setFieldsValue({
-          id: action.id,
-          ...action.attributes,
-          displayCriteria: JSON.parse(action.attributes.displayCriteria),
+  useEffect(() => {
+    if (editorMode === "new") {
+      form.resetFields();
+      setActionContent("");
+      if (editorRef.current) {
+        editorRef.current.setValue("");
+      }
+      return;
+    }
+    if (editorMode === "edit" && editorId) {
+      axiosInstance
+        .get(`action/${editorId}`)
+        .then((response) => {
+          const action = response.data.data;
+          form.setFieldsValue({
+            id: action.id,
+            ...action.attributes,
+            displayCriteria: JSON.parse(action.attributes.displayCriteria),
+          });
+          const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
+          setActionContent(actionDecoded);
+          if (editorRef.current) {
+            editorRef.current.setValue(actionDecoded);
+          }
+        })
+        .catch((err) => {
+          message.error(getErrorMessage(err));
+          closeEditor();
         });
-        const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
-        setActionContent(actionDecoded);
-        if (editorRef.current) {
-          editorRef.current.setValue(actionDecoded);
-        }
-      })
-      .catch((err) => {
-        message.error(getErrorMessage(err));
-        setIsEditing(false);
-      });
-  };
-
-  const onNew = () => {
-    form.resetFields();
-    setIsEditing(true);
-    setMode("create");
-    setActionContent("");
-    if (editorRef.current) {
-      editorRef.current.setValue("");
     }
-  };
+  }, [editorMode, editorId]);
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -215,7 +220,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
       .then(() => {
         message.success("Action created successfully");
         loadActions();
-        setIsEditing(false);
+        closeEditor();
         form.resetFields();
       })
       .catch((err) => {
@@ -243,7 +248,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
       .then(() => {
         message.success("Action updated successfully");
         loadActions();
-        setIsEditing(false);
+        closeEditor();
         form.resetFields();
       })
       .catch((err) => {
@@ -286,9 +291,11 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
         description="Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
         actions={
           !isEditing ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={onNew} disabled={!managePermission}>
-              Create Action
-            </Button>
+            <Link to={`/organizations/${orgid}/settings/actions/new`}>
+              <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
+                Create Action
+              </Button>
+            </Link>
           ) : undefined
         }
       />
@@ -305,7 +312,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
           {loading || !actions ? (
             <LoadingFallback />
           ) : (
-            <Table dataSource={actions} columns={ACTIONS_COLUMNS(onEdit)} rowKey="id" />
+            <Table dataSource={actions} columns={ACTIONS_COLUMNS()} rowKey="id" />
           )}
         </>
       ) : (

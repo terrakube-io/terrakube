@@ -10,8 +10,8 @@ export const UserSettingsPage = () => {
   return (
     <PageWrapper
       title="Account Settings"
+      showTitle={false}
       breadcrumbs={[{ label: "Account Settings" }, { label: isTheme ? "Theme" : "Tokens" }]}
-      width="reading"
     >
       {isTheme ? <ThemeSection /> : <Tokens />}
     </PageWrapper>

@@ -6,6 +6,7 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { FederatedClaim } from "../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   mode: "edit" | "create";
@@ -221,9 +222,11 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   return (
     <Spin spinning={loading}>
       <div className="edit-team">
-        <Typography.Title level={3}>
-          {mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
-        </Typography.Title>
+        <SettingsPageHeader
+          docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
+          title={mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
+          description="Federated credentials let external identity providers exchange OIDC tokens for Terrakube access without storing secrets."
+        />
         <SettingsSection>
           <Form form={form} layout="vertical" onFinish={onFinish}>
             <Form.Item

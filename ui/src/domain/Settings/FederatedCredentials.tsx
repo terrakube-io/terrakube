@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
 import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Federated } from "../types";
 import { EditFederatedCredential } from "./EditFederatedCredential";
@@ -10,27 +10,22 @@ import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const FederatedCredentials = ({ managePermission = true }: Props) => {
+export const FederatedCredentials = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [federated, setFederated] = useState<Federated[]>([]);
   const [claimCounts, setClaimCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "edit" | "create">("list");
-  const [federatedId, setFederatedId] = useState<string>();
+  const navigate = useNavigate();
+  const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
+  const federatedId = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/federated-credentials`);
   const { token } = theme.useToken();
-
-  const onEdit = (id: string) => {
-    setMode("edit");
-    setFederatedId(id);
-  };
-
-  const onNew = () => {
-    setMode("create");
-  };
 
   const onDelete = async (id: string) => {
     try {
@@ -90,7 +85,7 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
       ) : mode !== "list" ? (
         <EditFederatedCredential
           mode={mode}
-          setMode={setMode}
+          setMode={closeEditor}
           federatedId={federatedId}
           loadFederated={loadFederated}
         />
@@ -101,15 +96,11 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
             title="Federated Credentials"
             description="Federated credentials allow you to establish a trust relationship between terrakube and external identity providers, such as GitHub Actions."
             actions={
-              <Button
-                type="primary"
-                onClick={onNew}
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Create federated credential
-              </Button>
+              <Link to={`/organizations/${orgid}/settings/federated-credentials/new`}>
+                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
+                  Create federated credential
+                </Button>
+              </Link>
             }
           />
           <Spin spinning={loading} tip="Loading Federated Credentials...">
@@ -119,14 +110,8 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Button
-                      onClick={() => onEdit(item.id)}
-                      icon={<EditOutlined />}
-                      shape="round"
-                      type="primary"
-                      disabled={!managePermission}
-                    >
-                      Edit
+                    <Button icon={<EditOutlined />} shape="round" type="primary" disabled={!managePermission}>
+                      <Link to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}>Edit</Link>
                     </Button>,
                     <Popconfirm
                       okButtonProps={{ danger: true }}

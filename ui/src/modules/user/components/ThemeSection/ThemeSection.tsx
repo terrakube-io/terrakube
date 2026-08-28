@@ -1,7 +1,8 @@
-import { Card, Flex, Select, Space, Typography } from "antd";
+import { Select, Space, Typography } from "antd";
 import { ColorSchemeOption, ThemeMode } from "../../../../config/themeConfig";
 import { useTheme } from "../../../../context/ThemeContext";
 import "./ThemeSection.css";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const ColorBox = ({ color }: { color: string }) => (
   <span className="color-box" style={{ backgroundColor: color }}></span>
@@ -61,42 +62,36 @@ export const ThemeSection = () => {
 
   return (
     <div className="theme-section">
-      <Flex gap="middle" justify="space-between" align="center">
-        <Flex vertical>
-          <Typography.Title className="title">Theme Settings</Typography.Title>
-          <Typography.Text type="secondary">
-            Customize the appearance of Terrakube by selecting your preferred color scheme and theme mode.
-          </Typography.Text>
-        </Flex>
-      </Flex>
+      <SettingsPageHeader
+        title="Theme Settings"
+        description="Customize the appearance of Terrakube by selecting your preferred color scheme and theme mode."
+      />
 
-      <Card className="theme-card">
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <div>
-            <Typography.Title level={5}>Color Scheme</Typography.Title>
-            <Select
-              value={colorScheme}
-              onChange={handleColorSchemeChange}
-              style={{ width: "100%" }}
-              optionLabelProp="label"
-              options={colorOptions.map((opt) => ({
-                value: opt.value,
-                label: <ColorOption color={opt.color} label={opt.value} />,
-                children: <ColorOption color={opt.color} label={opt.label} />,
-              }))}
-            />
-          </div>
-          <div>
-            <Typography.Title level={5}>Theme Mode</Typography.Title>
-            <Select
-              value={themeMode}
-              onChange={handleThemeModeChange}
-              style={{ width: "100%" }}
-              options={themeModeOptions}
-            />
-          </div>
-        </Space>
-      </Card>
+      <Space direction="vertical" size="large" style={{ width: "100%", maxWidth: 480 }}>
+        <div>
+          <Typography.Title level={5}>Color Scheme</Typography.Title>
+          <Select
+            value={colorScheme}
+            onChange={handleColorSchemeChange}
+            style={{ width: "100%" }}
+            optionLabelProp="label"
+            options={colorOptions.map((opt) => ({
+              value: opt.value,
+              label: <ColorOption color={opt.color} label={opt.value} />,
+              children: <ColorOption color={opt.color} label={opt.label} />,
+            }))}
+          />
+        </div>
+        <div>
+          <Typography.Title level={5}>Theme Mode</Typography.Title>
+          <Select
+            value={themeMode}
+            onChange={handleThemeModeChange}
+            style={{ width: "100%" }}
+            options={themeModeOptions}
+          />
+        </div>
+      </Space>
     </div>
   );
 };

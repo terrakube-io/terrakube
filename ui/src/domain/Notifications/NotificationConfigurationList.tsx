@@ -1,6 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { NotificationConfiguration } from "../types";
@@ -13,15 +14,50 @@ import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 type Props = {
   orgId: string;
   workspaceId?: string;
+  basePath?: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const NotificationConfigurationList = ({ orgId, workspaceId, managePermission = true }: Props) => {
+export const NotificationConfigurationList = ({
+  orgId,
+  workspaceId,
+  basePath,
+  editorMode,
+  editorId,
+  managePermission = true,
+}: Props) => {
   const [configurations, setConfigurations] = useState<NotificationConfiguration[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
-  const [editingId, setEditingId] = useState<string>();
+  const navigate = useNavigate();
+  const [localMode, setLocalMode] = useState<"list" | "create" | "edit">("list");
+  const [localEditingId, setLocalEditingId] = useState<string>();
+  const routed = basePath != null;
+  const mode: "list" | "create" | "edit" = routed
+    ? editorMode === "new"
+      ? "create"
+      : (editorMode ?? "list")
+    : localMode;
+  const editingId = routed ? editorId : localEditingId;
+  const openCreate = () => (routed ? navigate(`${basePath}/new`) : setLocalMode("create"));
+  const openEdit = (id: string) => {
+    if (routed) {
+      navigate(`${basePath}/edit/${id}`);
+    } else {
+      setLocalEditingId(id);
+      setLocalMode("edit");
+    }
+  };
+  const closeEditor = () => {
+    if (routed) {
+      navigate(basePath!);
+    } else {
+      setLocalMode("list");
+      setLocalEditingId(undefined);
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -127,8 +163,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
         mode={mode}
         configId={editingId}
         onDone={() => {
-          setMode("list");
-          setEditingId(undefined);
+          closeEditor();
           load();
         }}
       />
@@ -157,12 +192,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                 : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."
             }
             actions={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-                onClick={() => setMode("create")}
-              >
+              <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission} onClick={openCreate}>
                 {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
               </Button>
             }
@@ -187,10 +217,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                       shape="round"
                       type="primary"
                       disabled={!managePermission}
-                      onClick={() => {
-                        setEditingId(item.id);
-                        setMode("edit");
-                      }}
+                      onClick={() => openEdit(item.id)}
                     >
                       Edit
                     </Button>,

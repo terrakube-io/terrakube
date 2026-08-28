@@ -6,6 +6,7 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   vcsId: string;
@@ -264,17 +265,16 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   return (
     <Spin spinning={loading}>
       <div className="chooseType">
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          Edit VCS Provider
-        </Typography.Title>
-        <Typography.Text type="secondary" className="App-text">
-          Update the {renderVCSType(vcsTypeExtended)} client credentials used by Terrakube to access your version
-          control system. For additional information, please read our{" "}
-          <Button className="link" target="_blank" href={getDocsUrl(vcsTypeExtended)} type="link">
-            documentation&nbsp;
-            <HiOutlineExternalLink />
-          </Button>
-        </Typography.Text>
+        <SettingsPageHeader
+          docUrl={getDocsUrl(vcsTypeExtended)}
+          title="Edit VCS Provider"
+          description={
+            <>
+              Update the {renderVCSType(vcsTypeExtended)} client credentials used by Terrakube to access your version
+              control system.
+            </>
+          }
+        />{" "}
         <br />
         <br />
         <Typography.Text type="secondary">

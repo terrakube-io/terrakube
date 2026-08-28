@@ -80,6 +80,16 @@ const CollectionSettingsWrapper = ({ mode }: { mode: "edit" | "detail" }) => {
   return <OrganizationSettings selectedTab="9" collectionMode={mode} collectionId={collectionid} />;
 };
 
+const VcsEditWrapper = () => {
+  const { vcsid } = useParams();
+  return <OrganizationSettings selectedTab="4" vcsMode="edit" vcsId={vcsid} />;
+};
+
+const SettingsEditorWrapper = ({ selectedTab }: { selectedTab: string }) => {
+  const { entityid } = useParams();
+  return <OrganizationSettings selectedTab={selectedTab} editorMode="edit" editorId={entityid} />;
+};
+
 const useAppRouteContext = () => useOutletContext<AppRouteContext>();
 
 const CreateOrganizationRoute = () => {
@@ -448,12 +458,28 @@ const router = createBrowserRouter(
           element: <OrganizationSettings selectedTab="2" />,
         },
         {
+          path: "/organizations/:orgid/settings/teams/new",
+          element: <OrganizationSettings selectedTab="2" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/teams/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="2" />,
+        },
+        {
           path: "/organizations/:orgid/settings/variables",
           element: <OrganizationSettings selectedTab="3" />,
         },
         {
           path: "/organizations/:orgid/settings/vcs",
           element: <OrganizationSettings selectedTab="4" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/vcs/new",
+          element: <OrganizationSettings selectedTab="4" vcsMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/vcs/edit/:vcsid",
+          element: <VcsEditWrapper />,
         },
         {
           path: "/organizations/:orgid/settings/vcs/new/:vcsName",
@@ -480,6 +506,14 @@ const router = createBrowserRouter(
           element: <OrganizationSettings selectedTab="8" />,
         },
         {
+          path: "/organizations/:orgid/settings/federated-credentials/new",
+          element: <OrganizationSettings selectedTab="11" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/federated-credentials/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="11" />,
+        },
+        {
           path: "/organizations/:orgid/settings/federated-credentials",
           element: <OrganizationSettings selectedTab="11" />,
         },
@@ -488,12 +522,36 @@ const router = createBrowserRouter(
           element: <OrganizationSettings selectedTab="5" />,
         },
         {
+          path: "/organizations/:orgid/settings/templates/new",
+          element: <OrganizationSettings selectedTab="5" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/templates/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="5" />,
+        },
+        {
           path: "/organizations/:orgid/settings/actions",
           element: <OrganizationSettings selectedTab="10" />,
         },
         {
+          path: "/organizations/:orgid/settings/actions/new",
+          element: <OrganizationSettings selectedTab="10" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/actions/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="10" />,
+        },
+        {
           path: "/organizations/:orgid/settings/notifications",
           element: <OrganizationSettings selectedTab="12" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/notifications/new",
+          element: <OrganizationSettings selectedTab="12" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/notifications/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="12" />,
         },
         {
           path: "/organizations/:orgid/settings/collection",
