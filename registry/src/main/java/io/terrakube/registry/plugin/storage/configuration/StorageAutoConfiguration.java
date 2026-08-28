@@ -72,6 +72,8 @@ public class StorageAutoConfiguration {
                         .blobServiceClient(blobServiceClient)
                         .gitService(new GitServiceImpl())
                         .registryHostname(openRegistryProperties.getHostname())
+                        .presignedUrlExpirySeconds(azureStorageServiceProperties.getPresignedUrlExpirySeconds())
+                        .presignedRedirectEnabled(azureStorageServiceProperties.isPresignedRedirectEnabled())
                         .build();
                 break;
             case AwsStorageImpl:
@@ -159,6 +161,8 @@ public class StorageAutoConfiguration {
                             .storage(gcpStorage)
                             .gitService(new GitServiceImpl())
                             .registryHostname(openRegistryProperties.getHostname())
+                            .presignedUrlExpirySeconds(gcpStorageServiceProperties.getPresignedUrlExpirySeconds())
+                            .presignedRedirectEnabled(gcpStorageServiceProperties.isPresignedRedirectEnabled())
                             .build();
                 } catch (IOException e) {
                     log.error(e.getMessage());
