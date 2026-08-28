@@ -45,6 +45,29 @@ function resolveUrl(params: FetchStepLogParams): { url: string; terrakubeApi: bo
   return { url, terrakubeApi: true };
 }
 
+// Cap concurrent archived-log fetches so expanding a 30-step job doesn't fire 30 requests at once
+// (each is a synchronous storage read server-side).
+const MAX_CONCURRENT_FETCHES = 3;
+let inFlight = 0;
+const waiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (inFlight < MAX_CONCURRENT_FETCHES) {
+    inFlight += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => waiters.push(resolve));
+}
+
+function releaseSlot(): void {
+  const next = waiters.shift();
+  if (next) {
+    next();
+  } else {
+    inFlight = Math.max(0, inFlight - 1);
+  }
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
 }
@@ -55,6 +78,15 @@ function statusOf(error: unknown): number | undefined {
 }
 
 export async function fetchStepLog(params: FetchStepLogParams): Promise<FetchStepLogResult> {
+  await acquireSlot();
+  try {
+    return await fetchStepLogInner(params);
+  } finally {
+    releaseSlot();
+  }
+}
+
+async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepLogResult> {
   const { url, terrakubeApi } = resolveUrl(params);
   const client = terrakubeApi ? axiosInstance : axiosClient;
 

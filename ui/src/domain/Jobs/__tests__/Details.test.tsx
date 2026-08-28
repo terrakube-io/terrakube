@@ -250,3 +250,37 @@ describe("DetailsJob SSE reconnect behavior", () => {
     10000
   );
 });
+
+describe("DetailsJob progressive render", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("paints steps before the step-log fetch resolves and never blocks first paint on it", async () => {
+    const logPending = new Promise(() => {}); // stays pending for the whole test
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+      if (url.includes("/tfoutput/")) {
+        return logPending; // never resolves during the assertion window
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [
+            { id: "step-1", type: "step", attributes: { name: "Plan", status: "completed", stepNumber: "1" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    // The step label is on screen even though its log fetch is still pending.
+    await waitFor(() => {
+      expect(screen.getByText(/Plan/)).toBeInTheDocument();
+    });
+  });
+});

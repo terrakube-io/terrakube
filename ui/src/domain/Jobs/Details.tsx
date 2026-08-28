@@ -1,21 +1,19 @@
 import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
 import { AxiosResponse } from "axios";
-import parse from "html-react-parser";
 import { DateTime } from "luxon";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance, { axiosClient } from "../../config/axiosConfig";
+import axiosInstance from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
 import WorkspaceStatusTag from "../../modules/workspaces/components/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
-import { LiveTerminalOutput } from "./LiveTerminalOutput";
-import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
+import { getPublicApiOrigin } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
-import { StructuredPlanOutput } from "./StructuredPlanOutput";
+import { StepConsole } from "./StepConsole";
 import {
   JobDiagnosticsByStep,
   StructuredApplyOutputByStep,
@@ -158,27 +156,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     return stepName === INCOMPLETE_VARIABLE_GUARD_STEP_NAME;
   };
 
-  const outputLog = async (output: string | undefined, status: string, signal: AbortSignal) => {
-    if (output != null) {
-      const outputUrl = getJobOutputRequestUrl(output);
-
-      try {
-        if (isTerrakubeApiUrl(outputUrl)) {
-          const response = await axiosInstance.get(outputUrl, { signal });
-          return response.data;
-        }
-
-        const response = await axiosClient.get(outputUrl, { signal });
-        return response.data;
-      } catch {
-        return "No logs available";
-      }
-    } else {
-      if (status === "running") return "Initializing the backend...";
-      else return "Waiting logs...";
-    }
-  };
-
   const renderIncompleteVariableAlert = (guard: IncompleteVariableGuard) => {
     return (
       <Alert
@@ -231,10 +208,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   };
 
-  const renderConsoleOutput = (item: JobStep) => {
-    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
-  };
-
   const getStepStructuredData = (item: JobStep) => {
     const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
     const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
@@ -269,49 +242,17 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const renderStepContent = (item: JobStep) => {
     const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+    const isGuardStep = guard != null && isIncompleteVariableGuardStep(item.name);
 
-    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
-      return renderConsoleOutput(item);
-    }
-
-    const { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView } =
-      getStepStructuredData(item);
-
-    if (!hasStructuredView) {
-      return renderConsoleOutput(item);
-    }
-
-    const isStepRunning = !isTerminalJobStatus(item.status);
-
-    const structuredContent = structuredApplyChanges ? (
-      <StructuredPlanOutput
-        changes={structuredApplyChanges}
-        outputLog={item.outputLog}
-        applyMode
-        outputs={stepOutputs}
-        jobDiagnostics={stepJobDiagnostics}
-        isStepRunning={isStepRunning}
-      />
-    ) : structuredChanges ? (
-      <StructuredPlanOutput
-        changes={structuredChanges}
-        outputLog={item.outputLog}
-        jobDiagnostics={stepJobDiagnostics}
-        isStepRunning={isStepRunning}
-      />
-    ) : (
-      <div>{parse(template ?? "")}</div>
-    );
-
-    // Keep both mounted and toggle visibility with CSS instead of conditionally rendering one or
-    // the other - unmounting StructuredPlanOutput every time the user flips between structured
-    // and console would reset its internal expanded-row/attribute state, closing any dropdowns
-    // they'd already opened.
     return (
-      <>
-        <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
-        <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsoleOutput(item)}</div>
-      </>
+      <StepConsole
+        item={item}
+        jobId={jobId}
+        organizationId={organizationId ?? ""}
+        guardMessage={isGuardStep ? item.outputLog : undefined}
+        structured={getStepStructuredData(item)}
+        uiType={uiType}
+      />
     );
   };
 
@@ -438,8 +379,11 @@ export const DetailsJob = ({ jobId }: Props) => {
       );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
-      const stepsPromise = Promise.all(
-        stepEntries.map(async (stepItem: any) => ({
+      // Steps render immediately from their entity data; each StepConsole fetches its own log
+      // lazily (on expand) via useStepLog, so first paint never blocks on log fetches and the
+      // 5s poll below refreshes step *status* only.
+      const stepsPromise = Promise.resolve(
+        stepEntries.map((stepItem: any) => ({
           id: stepItem.id,
           stepNumber: stepItem.attributes.stepNumber,
           status: stepItem.attributes.status,
@@ -448,9 +392,7 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
-              : stepItem.attributes.status === "running"
-              ? ""
-              : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
+              : "",
         }))
       );
 
