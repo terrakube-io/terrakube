@@ -1,4 +1,3 @@
-import "../../../testSupport/reactSchedulerFix";
 import { render } from "@testing-library/react";
 import { splitLines, useAnsiLines, __clearAnsiLineCache } from "../ansiChunks";
 

@@ -1,4 +1,3 @@
-import "../../testSupport/reactSchedulerFix";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 class StepLogNotFoundError extends Error {
