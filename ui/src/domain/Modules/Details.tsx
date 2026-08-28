@@ -4,8 +4,6 @@ import {
   CloudOutlined,
   DeleteOutlined,
   DownOutlined,
-  GithubOutlined,
-  GitlabOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
 import {
@@ -28,8 +26,7 @@ import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
-import { SiBitbucket } from "react-icons/si";
-import { VscAzure, VscAzureDevops } from "react-icons/vsc";
+import { VscAzure } from "react-icons/vsc";
 import { useNavigate, useParams } from "react-router-dom";
 import LoadingFallback from "@/components/LoadingFallback";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
@@ -38,6 +35,7 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 
 const Markdown = lazy(async () => {
   const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
@@ -291,29 +289,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       });
   };
 
-  const renderVCSLogo = (vcs?: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "18px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <SiBitbucket />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "18px" }} />;
-    }
-  };
-
   return (
     <PageWrapper
       title={moduleName}
@@ -371,7 +346,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        Source {renderVCSLogo(vcsProvider)}{" "}
+                        Source <VcsLogo type={vcsProvider} />{" "}
                         {module.attributes.source && (
                           <a href={fixSshURL(module.attributes.source)} target="_blank" rel="noopener noreferrer">
                             {new URL(fixSshURL(module.attributes.source)).pathname.replace(".git", "").substring(1)}

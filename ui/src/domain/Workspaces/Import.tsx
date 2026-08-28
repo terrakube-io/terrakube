@@ -28,8 +28,9 @@ import { Link, useParams } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import organizationService from "@/modules/organizations/organizationService";
-import { VcsModel, VcsType, VcsTypeExtended } from "../types";
+import { VcsModel, VcsTypeExtended } from "../types";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 const { Content } = Layout;
 const validateMessages = {
   required: "${label} is required!",
@@ -321,36 +322,6 @@ export const ImportWorkspace = () => {
 
   const handleConnectExisting = () => {
     setVCSButtonsVisible(true);
-  };
-
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
   };
 
   const loadVCS = () => {
@@ -973,7 +944,7 @@ export const ImportWorkspace = () => {
                       return (
                         <Button
                           key={item.id}
-                          icon={renderVCSLogo(item.attributes.vcsType)}
+                          icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
                           onClick={() => {
                             handleGitClick(item.id);
                           }}

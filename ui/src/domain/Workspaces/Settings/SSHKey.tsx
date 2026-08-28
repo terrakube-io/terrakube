@@ -5,6 +5,7 @@ import axiosInstance from "../../../config/axiosConfig";
 import { SshKey, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -68,9 +69,7 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        SSH Key
-      </Typography.Title>
+      <SettingsPageHeader title="SSH Key" />
       <Text type="secondary">
         Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
         not used for cloning the workspace VCS repository or for provisioner connections.

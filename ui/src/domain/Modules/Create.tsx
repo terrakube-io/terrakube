@@ -1,7 +1,6 @@
 import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Select, Space, Steps, message } from "antd";
 import { useEffect, useState } from "react";
-import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -10,6 +9,8 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
 import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 const validateMessages = {
   required: "${label} is required!",
   types: {
@@ -88,36 +89,6 @@ export const CreateModule = () => {
 
   const handleExisting = () => {
     setVCSButtonsVisible(true);
-  };
-
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
   };
 
   const loadVCSProviders = () => {
@@ -209,20 +180,7 @@ export const CreateModule = () => {
       })
       .catch((error) => {
         if (error.response?.status === 403) {
-          message.error(
-            <span>
-              You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
-              <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
-              <a
-                target="_blank"
-                href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                rel="noreferrer"
-              >
-                Terrakube documentation
-              </a>
-              .
-            </span>
-          );
+          message.error(<PermissionErrorMessage action="create Modules" permission="Manage Modules" />);
         } else {
           message.error(getErrorMessage(error));
         }
@@ -287,7 +245,7 @@ export const CreateModule = () => {
                   vcs.map(function (item) {
                     return (
                       <Button
-                        icon={renderVCSLogo(item.attributes.vcsType)}
+                        icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
                         onClick={() => {
                           handleGitClick(item.id);
                         }}

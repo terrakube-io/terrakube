@@ -13,6 +13,8 @@ import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import type { MenuProps } from "antd";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const { Content, Sider } = Layout;
 type MenuItem = Required<MenuProps>["items"][number];
@@ -64,20 +66,7 @@ function ProjectGeneralSettings({
       onSaved();
     } catch (err: any) {
       if (err?.response?.status === 403) {
-        message.error(
-          <span>
-            You are not authorized to update projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-            <a
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/team-management"
-              rel="noreferrer"
-            >
-              Terrakube documentation
-            </a>
-            .
-          </span>
-        );
+        message.error(<PermissionErrorMessage action="update projects" permission="Manage Workspaces" />);
       } else {
         message.error(err?.message ?? "Project update failed");
       }
@@ -94,20 +83,7 @@ function ProjectGeneralSettings({
     } catch (err: any) {
       const statusCode = err?.response?.status;
       if (statusCode === 403) {
-        message.error(
-          <span>
-            You are not authorized to delete projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-            <a
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/team-management"
-              rel="noreferrer"
-            >
-              Terrakube documentation
-            </a>
-            .
-          </span>
-        );
+        message.error(<PermissionErrorMessage action="delete projects" permission="Manage Workspaces" />);
       } else if (statusCode === 423) {
         message.error(
           "Cannot delete project: Workspaces are still associated with this project. Please remove all workspaces first and try again."
@@ -120,8 +96,7 @@ function ProjectGeneralSettings({
 
   return (
     <div style={{ width: "100%" }}>
-      <h1>General Settings</h1>
-      <p>Adjust the name and description for this project.</p>
+      <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>

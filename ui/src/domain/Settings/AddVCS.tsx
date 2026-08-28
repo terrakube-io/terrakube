@@ -13,6 +13,8 @@ import { getUiRedirectUri } from "../../config/basePath";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -771,35 +773,17 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       .catch((error) => {
         if (error.response) {
           if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create VCS Settings. <br /> Please contact your administrator and request the{" "}
-                <b>Manage VCS Settings</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
+            message.error(<PermissionErrorMessage action="create VCS Settings" permission="Manage VCS Settings" />);
           }
         }
       });
   };
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Add VCS Provider
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          To connect workspaces and modules to git repositories containing configurations, Terrakube needs access to
-          your version control system (VCS) provider.
-        </Typography.Text>
-      </div>
+      <SettingsPageHeader
+        title="Add VCS Provider"
+        description="To connect workspaces and modules to git repositories containing configurations, Terrakube needs access to your version control system (VCS) provider."
+      />
       <Steps
         direction="horizontal"
         size="small"

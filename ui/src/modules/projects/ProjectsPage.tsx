@@ -8,6 +8,7 @@ import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
 
 type Props = {
   organizationName: string;
@@ -56,20 +57,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     } catch (err: any) {
       if (err?.errorFields) return;
       if (err?.response?.status === 403) {
-        message.error(
-          <span>
-            You are not authorized to create projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-            <a
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/team-management"
-              rel="noreferrer"
-            >
-              Terrakube documentation
-            </a>
-            .
-          </span>
-        );
+        message.error(<PermissionErrorMessage action="create projects" permission="Manage Workspaces" />);
       } else {
         message.error(err?.message ?? "An error occurred");
       }

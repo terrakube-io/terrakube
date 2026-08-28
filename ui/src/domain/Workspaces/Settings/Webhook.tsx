@@ -21,8 +21,10 @@ import { useEffect, useState } from "react";
 import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
-import { atomicHeader, renderVCSLogo } from "../Workspaces";
+import { atomicHeader } from "../Workspaces";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const isValidRegexList = (str: string | undefined) => {
   if (!str) {
@@ -576,13 +578,10 @@ export const WorkspaceWebhook = ({
 
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Webhook
-      </Typography.Title>
-      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
-        Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works
-        with VCS flow workspace.
-      </Typography.Text>
+      <SettingsPageHeader
+        title="Webhook"
+        description="Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works with VCS flow workspace."
+      />
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
         Use <b>Pattern</b> for simple wildcards like <code>terraform/*</code> or <code>modules/**</code>. Use{" "}
         <b>Regex</b> when you need full regular expression matching. Branch and release matching always use regex.
@@ -610,7 +609,7 @@ export const WorkspaceWebhook = ({
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
-                <Form.Item hidden={!webhookEnabled} label={renderVCSLogo(vcsProvider!)}>
+                <Form.Item hidden={!webhookEnabled} label={<VcsLogo type={vcsProvider!} />}>
                   {migratedV2 ? <Typography.Text type="success">Shared</Typography.Text> : remoteHookId}
                 </Form.Item>
               </Col>

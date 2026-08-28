@@ -1,11 +1,14 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, List, message, Modal, Popconfirm, Select, Space, Typography, theme } from "antd";
+import { Button, Form, Input, List, message, Popconfirm, Select, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Agent } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { CrudFormModal } from "@/modules/layout/CrudFormModal";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Params = {
   orgid: string;
@@ -140,18 +143,13 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Agents
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents
-              to run jobs, you can have as many agents as you want for a single organization.
-            </Typography.Text>
-          </div>
+          <SettingsPageHeader
+            title="Agents"
+            description="Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents to run jobs, you can have as many agents as you want for a single organization."
+          />
           <SettingsSection maxWidth="100%">
             <Button
               type="primary"
@@ -206,44 +204,34 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
             )}
           </SettingsSection>
 
-          <Modal
-            width="650px"
+          <CrudFormModal
             open={visible}
             title={mode === "edit" ? "Edit Terrakube Agent  " + AgentName : "Add a new Terrakube Agent"}
             okText="Save Terrakube Agent "
+            form={form}
+            formName="Agent"
             onCancel={onCancel}
-            cancelText="Cancel"
-            onOk={() => {
-              form
-                .validateFields()
-                .then((values) => {
-                  if (mode === "create") onCreate(values as AddAgentForm);
-                  else onUpdate(values);
-                })
-                .catch((info) => {
-                  console.log("Validate Failed:", info);
-                });
+            onSubmit={(values) => {
+              if (mode === "create") onCreate(values as AddAgentForm);
+              else onUpdate(values);
             }}
+            width="650px"
           >
-            <Space style={{ width: "100%" }} direction="vertical">
-              <Form name="Agent" form={form} layout="vertical">
-                {mode === "create" ? (
-                  <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                ) : (
-                  ""
-                )}
+            {mode === "create" ? (
+              <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+            ) : (
+              ""
+            )}
 
-                <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="url" label="Url" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-              </Form>
-            </Space>
-          </Modal>
+            <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="url" label="Url" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+          </CrudFormModal>
         </>
       )}
     </div>

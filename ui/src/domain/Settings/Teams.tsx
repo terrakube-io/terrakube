@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Space, Tag, Typography, theme, Spin } from "antd";
+import { Avatar, Button, List, message, Popconfirm, Space, Tag, Typography, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -7,6 +7,8 @@ import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const roleColors: Record<string, string> = {
   admin: "red",
@@ -119,20 +121,15 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : mode !== "list" ? (
         <EditTeam mode={mode} setMode={setMode} teamId={teamId} loadTeams={loadTeams} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Team Management
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary">
-              Teams let you group users into specific categories to enable finer grained access control policies. Each
-              team is assigned a role that determines what actions its members can perform within the organization.
-            </Typography.Text>
-          </div>
+          <SettingsPageHeader
+            title="Team Management"
+            description="Teams let you group users into specific categories to enable finer grained access control policies. Each team is assigned a role that determines what actions its members can perform within the organization."
+          />
           <SettingsSection maxWidth="100%">
             <Button
               type="primary"

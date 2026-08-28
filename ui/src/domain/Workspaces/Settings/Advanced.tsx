@@ -5,6 +5,7 @@ import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { genericHeader } from "../Workspaces";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -75,9 +76,7 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Destruction and Deletion
-      </Typography.Title>
+      <SettingsPageHeader title="Destruction and Deletion" />
       <Text type="secondary">
         There are two independent steps for destroying this workspace and any infrastructure associated with it. First,
         any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube,

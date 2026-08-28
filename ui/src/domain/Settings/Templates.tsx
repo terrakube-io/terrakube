@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, List, message, Popconfirm, Typography } from "antd";
+import { Button, List, message, Popconfirm, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -8,6 +8,7 @@ import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 
 type Props = {
   key: string;
@@ -67,7 +68,7 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         (mode === "new" && <AddTemplate setMode={setMode} loadTemplates={loadTemplates} />) ||
         (mode === "edit" && (

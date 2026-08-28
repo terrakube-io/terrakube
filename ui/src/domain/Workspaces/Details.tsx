@@ -61,7 +61,7 @@ import { Schedules } from "../Workspaces/Schedules";
 import { Tags } from "../Workspaces/Tags";
 import { Variables } from "../Workspaces/Variables";
 import { getServiceIcon } from "./Icons.jsx";
-import { getIaCIconById, getIaCNameById, renderVCSLogo } from "./Workspaces";
+import { getIaCIconById, getIaCNameById } from "./Workspaces";
 import "./Workspaces.css";
 import LoadingFallback from "@/components/LoadingFallback";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
@@ -69,6 +69,7 @@ import RunList from "@/modules/workspaces/components/RunList";
 import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -652,7 +653,7 @@ export const WorkspaceDetails = ({
                   isValidUrl(fixSshURL(workspace.attributes.source)) ? (
                     <>
                       {" "}
-                      {renderVCSLogo(vcsProvider)}{" "}
+                      <VcsLogo type={vcsProvider} />{" "}
                       <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
                         {new URL(fixSshURL(workspace.attributes.source))?.pathname?.replace(".git", "")?.substring(1)}
                       </a>

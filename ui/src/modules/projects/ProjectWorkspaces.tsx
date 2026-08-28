@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import workspaceService from "@/modules/workspaces/workspaceService";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Props = {
   orgid: string;
@@ -57,8 +58,10 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
 
   return (
     <div style={{ width: "100%" }}>
-      <h1>Workspaces</h1>
-      <p>Workspaces assigned to this project. To change a workspace&apos;s project, go to the workspace settings.</p>
+      <SettingsPageHeader
+        title="Workspaces"
+        description="Workspaces assigned to this project. To change a workspace's project, go to the workspace settings."
+      />
       <Table
         rowKey="id"
         loading={loading}

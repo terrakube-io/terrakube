@@ -1,10 +1,11 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, message, Modal, Popconfirm, Select, Space, Spin, Table, Typography } from "antd";
+import { Button, Form, Input, message, Popconfirm, Select, Spin, Table, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { CrudFormModal } from "@/modules/layout/CrudFormModal";
 
 // Type definitions for Collection References
 type CollectionReference = {
@@ -215,41 +216,30 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
         </Spin>
       </SettingsSection>
 
-      <Modal
-        width="600px"
+      <CrudFormModal
         open={visible}
         title="Add workspace reference"
         okText="Add reference"
+        form={form}
+        formName="collectionReference"
         onCancel={onCancel}
-        cancelText="Cancel"
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              onCreate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+        onSubmit={(values) => {
+          onCreate(values);
         }}
       >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="collectionReference" form={form} layout="vertical">
-            <Form.Item name="workspaceId" label="Workspace" rules={[{ required: true }]}>
-              <Select placeholder="Select a workspace">
-                {workspaces.map((workspace) => (
-                  <Select.Option key={workspace.id} value={workspace.id}>
-                    {workspace.attributes.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-            <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-              <Input.TextArea rows={3} />
-            </Form.Item>
-          </Form>
-        </Space>
-      </Modal>
+        <Form.Item name="workspaceId" label="Workspace" rules={[{ required: true }]}>
+          <Select placeholder="Select a workspace">
+            {workspaces.map((workspace) => (
+              <Select.Option key={workspace.id} value={workspace.id}>
+                {workspace.attributes.name}
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+          <Input.TextArea rows={3} />
+        </Form.Item>
+      </CrudFormModal>
     </div>
   );
 };

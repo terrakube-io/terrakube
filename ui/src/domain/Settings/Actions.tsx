@@ -29,6 +29,7 @@ import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const validateMessages: any = {
   required: "${label} is required!",
@@ -278,15 +279,10 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Actions
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly
-          from Terrakube.
-        </Typography.Text>
-      </div>
+      <SettingsPageHeader
+        title="Actions"
+        description="Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
+      />
       {error ? (
         <Alert
           message={error.includes("permission") ? "Access Denied" : "Error"}

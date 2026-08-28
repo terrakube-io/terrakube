@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography, theme } from "antd";
+import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -7,6 +7,8 @@ import { Federated } from "../types";
 import { EditFederatedCredential } from "./EditFederatedCredential";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Props = {
   managePermission?: boolean;
@@ -85,7 +87,7 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : mode !== "list" ? (
         <EditFederatedCredential
           mode={mode}
@@ -95,15 +97,10 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
         />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Federated Credentials
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary">
-              Federated credentials allow you to establish a trust relationship between terrakube and external identity
-              providers, such as GitHub Actions.
-            </Typography.Text>
-          </div>
+          <SettingsPageHeader
+            title="Federated Credentials"
+            description="Federated credentials allow you to establish a trust relationship between terrakube and external identity providers, such as GitHub Actions."
+          />
           <SettingsSection maxWidth="100%">
             <Button
               type="primary"

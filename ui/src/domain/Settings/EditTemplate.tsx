@@ -8,6 +8,7 @@ import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Template } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -99,9 +100,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   };
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Edit Template
-      </Typography.Title>
+      <SettingsPageHeader title="Edit Template" />
       <Space className="chooseType" direction="vertical">
         {loading ? (
           <p>Data loading...</p>

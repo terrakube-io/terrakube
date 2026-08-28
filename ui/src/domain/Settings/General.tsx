@@ -1,16 +1,4 @@
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  message,
-  Popconfirm,
-  Radio,
-  Space,
-  Typography,
-  Spin,
-  ColorPicker,
-} from "antd";
+import { Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -19,6 +7,8 @@ import { IconSelector } from "../Organizations/IconSelector";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -146,14 +136,9 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        General Settings
-      </Typography.Title>
-      <Typography.Text type="secondary" className="App-text" style={{ display: "block", marginBottom: 16 }}>
-        Configure general settings for your organization.
-      </Typography.Text>
+      <SettingsPageHeader title="General Settings" description="Configure general settings for your organization." />
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : loading || organization === undefined ? (
         <Spin tip="Loading Organization Settings..." />
       ) : (

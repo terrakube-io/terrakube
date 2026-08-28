@@ -12,6 +12,7 @@ import { Link, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 // Type definitions for Variable Collections
 type Collection = {
@@ -167,15 +168,10 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Variable Collections
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Variable Collections allow you to define and apply variables one time across multiple workspaces within an
-          organization.
-        </Typography.Text>
-      </div>
+      <SettingsPageHeader
+        title="Variable Collections"
+        description="Variable Collections allow you to define and apply variables one time across multiple workspaces within an organization."
+      />
       <SettingsSection maxWidth="100%">
         <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
           <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>

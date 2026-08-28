@@ -4,6 +4,7 @@ import { useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -102,9 +103,7 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Locking
-      </Typography.Title>
+      <SettingsPageHeader title="Locking" />
 
       <SettingsSection>
         {isLocked ? (

@@ -15,6 +15,7 @@ import projectService from "@/modules/projects/projectService";
 import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Props = {
   workspaceData: Workspace;
@@ -180,9 +181,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
 
   return (
     <div style={{ width: "100%" }} className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        General Settings
-      </Typography.Title>
+      <SettingsPageHeader title="General Settings" />
       <p>
         Adjust the settings for this workspace. These settings control how the workspace behaves, including execution
         mode, IaC configuration, and security options.
@@ -332,8 +331,8 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             title="Default Template"
             description={
               <>
-                Template used for the <code>terrakube apply</code> PR comment command, and to pre-fill the template
-                when manually creating a run.
+                Template used for the <code>terrakube apply</code> PR comment command, and to pre-fill the template when
+                manually creating a run.
               </>
             }
           >

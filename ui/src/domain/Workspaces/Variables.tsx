@@ -1,27 +1,25 @@
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
   Collapse,
   Form,
-  Input,
   message,
-  Modal,
   Popconfirm,
-  Radio,
   Space,
   Switch,
   Table,
   Tag,
   Tooltip,
   Typography,
-  Checkbox,
 } from "antd";
 import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { CrudFormModal } from "@/modules/layout/CrudFormModal";
+import { VariableFormFields } from "@/components/VariableFormFields";
 
 const VARIABLES_COLUMS = (
   onEdit: (variable: FlatVariable) => void,
@@ -474,98 +472,28 @@ export const Variables = ({
         <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
       </SettingsSection>
 
-      <Modal
-        width="600px"
+      <CrudFormModal
         open={visible}
         title={mode === "edit" ? "Edit variable " + variableName : "Add variable"}
         okText="Save variable"
-        cancelText="Cancel"
+        form={form}
+        formName="create-org"
         onCancel={onCancel}
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+        onSubmit={(values) => {
+          if (mode === "create") onCreate(values);
+          else onUpdate(values);
         }}
+        validateMessages={validateMessages}
       >
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Form name="create-org" form={form} layout="vertical" validateMessages={validateMessages}>
-            <Typography.Title level={5} style={{ margin: "0 0 15px 0" }}>
-              Select variable category
-            </Typography.Title>
+        <Typography.Title level={5} style={{ margin: "0 0 15px 0" }}>
+          Select variable category
+        </Typography.Title>
 
-            <Form.Item name="category" rules={[{ required: true, message: "Please select a variable category" }]}>
-              <Radio.Group value={category} onChange={(e) => setCategory(e.target.value)}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                  <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
-                    <div>
-                      <div>Terraform variable</div>
-                      <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                        These variables should match the declarations in your configuration. Click the HCL box to use
-                        interpolation or set a non-string value.
-                      </div>
-                    </div>
-                  </Radio>
-
-                  <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
-                    <div>
-                      <div>Environment variable</div>
-                      <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                        These variables are available in the Terraform runtime environment.
-                      </div>
-                    </div>
-                  </Radio>
-                </div>
-              </Radio.Group>
-            </Form.Item>
-
-            <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-
-            <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-              <Input.TextArea rows={3} autoSize={{ minRows: 3, maxRows: 6 }} />
-            </Form.Item>
-
-            <div style={{ display: "flex", gap: "30px", marginBottom: "15px" }}>
-              <Form.Item
-                name="hcl"
-                valuePropName="checked"
-                style={{ marginBottom: 0 }}
-                tooltip={{
-                  title:
-                    "Parse this field as HashiCorp Configuration Language (HCL). This allows you to interpolate values at runtime.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Checkbox>HCL</Checkbox>
-              </Form.Item>
-
-              <Form.Item
-                name="sensitive"
-                valuePropName="checked"
-                style={{ marginBottom: 0 }}
-                tooltip={{
-                  title:
-                    "Sensitive variables are never shown in the UI or API. They may appear in Terraform logs if your configuration is designed to output them.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <Checkbox>Sensitive</Checkbox>
-              </Form.Item>
-            </div>
-
-            <Form.Item name="description" label="Description">
-              <Input.TextArea placeholder="Description (optional)" style={{ width: "100%" }} rows={3} />
-            </Form.Item>
-          </Form>
-        </Space>
-      </Modal>
+        <VariableFormFields
+          category={category ?? undefined}
+          onCategoryChange={(value) => setCategory(value as VariableCategory)}
+        />
+      </CrudFormModal>
     </div>
   );
 };

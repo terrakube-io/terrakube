@@ -9,6 +9,8 @@ import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { TemplateAttributes } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 const { Meta } = Card;
 const validateMessages = {
   required: "${label} is required!",
@@ -142,35 +144,17 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       .catch((error) => {
         if (error.response) {
           if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create Templates. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Templates</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
+            message.error(<PermissionErrorMessage action="create Templates" permission="Manage Templates" />);
           }
         }
       });
   };
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Create a new Template
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Templates allow you to define a custom flow so you can run any tool before or after terraform
-          plan/apply/destroy.
-        </Typography.Text>
-      </div>
+      <SettingsPageHeader
+        title="Create a new Template"
+        description="Templates allow you to define a custom flow so you can run any tool before or after terraform plan/apply/destroy."
+      />
       <Steps
         direction="horizontal"
         size="small"

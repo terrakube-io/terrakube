@@ -1,24 +1,11 @@
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import {
-  Button,
-  Form,
-  Input,
-  message,
-  Modal,
-  Popconfirm,
-  Radio,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  Checkbox,
-} from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { Button, Form, message, Modal, Popconfirm, Spin, Table, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { VariableFormFields } from "@/components/VariableFormFields";
 
 // Type definitions for Collection Items
 type CollectionItem = {
@@ -308,70 +295,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
             Select variable category
           </Typography.Title>
 
-          <Form.Item name="category">
-            <Radio.Group>
-              <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
-                  <div>
-                    <div>Terraform variable</div>
-                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                      These variables should match the declarations in your configuration. Click the HCL box to use
-                      interpolation or set a non-string value.
-                    </div>
-                  </div>
-                </Radio>
-
-                <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
-                  <div>
-                    <div>Environment variable</div>
-                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                      These variables are available in the Terraform runtime environment.
-                    </div>
-                  </div>
-                </Radio>
-              </div>
-            </Radio.Group>
-          </Form.Item>
-
-          <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-            <Input placeholder="Enter key name" />
-          </Form.Item>
-
-          <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} placeholder="Enter variable value" />
-          </Form.Item>
-
-          <div style={{ display: "flex", gap: "30px", marginBottom: "15px" }}>
-            <Form.Item name="hcl" valuePropName="checked" style={{ marginBottom: 0 }}>
-              <Checkbox>
-                <Space>
-                  HCL
-                  <InfoCircleOutlined
-                    style={{ color: "rgba(0,0,0,0.45)" }}
-                    title="When enabled, this field will be processed as HCL code, allowing for variable interpolation and complex data structures during runtime execution."
-                  />
-                </Space>
-              </Checkbox>
-            </Form.Item>
-
-            {mode === "create" && (
-              <Form.Item name="sensitive" valuePropName="checked" style={{ marginBottom: 0 }}>
-                <Checkbox>
-                  <Space>
-                    Sensitive
-                    <InfoCircleOutlined
-                      style={{ color: "rgba(0,0,0,0.45)" }}
-                      title="Mark as sensitive to hide values in the user interface and API responses. Note that these values might still be visible in OpenTofu/Terraform logs if explicitly output by your configuration."
-                    />
-                  </Space>
-                </Checkbox>
-              </Form.Item>
-            )}
-          </div>
-
-          <Form.Item name="description" label="Description (Optional)">
-            <Input.TextArea placeholder="Enter description (optional)" />
-          </Form.Item>
+          <VariableFormFields />
         </Form>
       </Modal>
     </div>

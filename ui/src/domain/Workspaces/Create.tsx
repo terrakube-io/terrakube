@@ -38,13 +38,14 @@ import {
   VcsRepositoryGroup,
   VcsRepositoryPage,
   VcsRepositorySummary,
-  VcsType,
   VcsTypeExtended,
 } from "../types";
 import { compareVersions, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
 import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -370,36 +371,6 @@ export const CreateWorkspace = () => {
     setVCSButtonsVisible(true);
   };
 
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
-  };
-
   const [form] = Form.useForm();
   const handleGitContinueClick = () => {
     setCurrent(4);
@@ -524,20 +495,7 @@ export const CreateWorkspace = () => {
       navigate(`/organizations/${organizationId}/workspaces/${workspaceId}`);
     } catch (error: any) {
       if (error.response?.status === 403) {
-        message.error(
-          <span>
-            You are not authorized to create workspaces. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-            <a
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/team-management"
-              rel="noreferrer"
-            >
-              Terrakube documentation
-            </a>
-            .
-          </span>
-        );
+        message.error(<PermissionErrorMessage action="create workspaces" permission="Manage Workspaces" />);
       } else {
         console.error("Failed to create workspace:", error.response?.status, error.response?.data, error);
         message.error(
@@ -737,7 +695,7 @@ export const CreateWorkspace = () => {
                   vcs.map(function (item) {
                     return (
                       <Button
-                        icon={renderVCSLogo(item.attributes.vcsType)}
+                        icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
                         onClick={() => {
                           handleGitClick(item.id);
                         }}

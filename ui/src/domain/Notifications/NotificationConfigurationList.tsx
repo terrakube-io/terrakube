@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography } from "antd";
+import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage, isPermissionError } from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
@@ -7,6 +7,7 @@ import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 
 type Props = {
   orgId: string;
@@ -76,7 +77,9 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
           };
         });
         const scoped = workspaceId
-          ? all.filter((c) => c.relationships?.workspace?.data === null || c.relationships?.workspace?.data?.id === workspaceId)
+          ? all.filter(
+              (c) => c.relationships?.workspace?.data === null || c.relationships?.workspace?.data?.id === workspaceId
+            )
           : all.filter((c) => c.relationships?.workspace?.data === null);
         setConfigurations(scoped);
         setLoading(false);
@@ -103,9 +106,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
   const primaryConfigs = workspaceId
     ? configurations.filter((c) => c.relationships?.workspace?.data !== null)
     : configurations;
-  const inheritedConfigs = workspaceId
-    ? configurations.filter((c) => c.relationships?.workspace?.data === null)
-    : [];
+  const inheritedConfigs = workspaceId ? configurations.filter((c) => c.relationships?.workspace?.data === null) : [];
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -136,13 +137,15 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
   const renderChannelAvatar = (channelType: NotificationConfiguration["attributes"]["channelType"]) => {
     const meta = CHANNEL_META[channelType];
     const ChannelIcon = meta.icon;
-    return <Avatar style={{ backgroundColor: `${meta.color}1a` }} icon={<ChannelIcon style={{ color: meta.color }} />} />;
+    return (
+      <Avatar style={{ backgroundColor: `${meta.color}1a` }} icon={<ChannelIcon style={{ color: meta.color }} />} />
+    );
   };
 
   return (
     <div>
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
           <Typography.Title level={1} style={{ margin: 0 }}>
@@ -171,7 +174,9 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
               <List
                 itemLayout="horizontal"
                 dataSource={primaryConfigs}
-                locale={{ emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " " }}
+                locale={{
+                  emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " ",
+                }}
                 renderItem={(item) => (
                   <List.Item
                     actions={[
@@ -194,7 +199,13 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                         okText="Yes"
                         cancelText="No"
                       >
-                        <Button icon={<DeleteOutlined />} shape="round" type="primary" danger disabled={!managePermission}>
+                        <Button
+                          icon={<DeleteOutlined />}
+                          shape="round"
+                          type="primary"
+                          danger
+                          disabled={!managePermission}
+                        >
                           Delete
                         </Button>
                       </Popconfirm>,
@@ -206,10 +217,13 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                       description={
                         <>
                           <div>
-                            <Tag color={CHANNEL_META[item.attributes.channelType].color} icon={(() => {
-                              const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                              return <Icon />;
-                            })()}>
+                            <Tag
+                              color={CHANNEL_META[item.attributes.channelType].color}
+                              icon={(() => {
+                                const Icon = CHANNEL_META[item.attributes.channelType].icon;
+                                return <Icon />;
+                              })()}
+                            >
                               {CHANNEL_META[item.attributes.channelType].label}
                             </Tag>
                             {workspaceId && <Tag color="purple">This workspace</Tag>}
@@ -247,10 +261,13 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
                           description={
                             <>
                               <div>
-                                <Tag color={CHANNEL_META[item.attributes.channelType].color} icon={(() => {
-                                  const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                                  return <Icon />;
-                                })()}>
+                                <Tag
+                                  color={CHANNEL_META[item.attributes.channelType].color}
+                                  icon={(() => {
+                                    const Icon = CHANNEL_META[item.attributes.channelType].icon;
+                                    return <Icon />;
+                                  })()}
+                                >
                                   {CHANNEL_META[item.attributes.channelType].label}
                                 </Tag>
                                 <Tag>Org default</Tag>

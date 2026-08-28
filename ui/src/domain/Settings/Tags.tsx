@@ -1,25 +1,14 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Avatar,
-  Button,
-  Form,
-  Input,
-  List,
-  message,
-  Modal,
-  Popconfirm,
-  Space,
-  Typography,
-  theme,
-  Spin,
-} from "antd";
+import { Avatar, Button, Form, Input, List, message, Popconfirm, Typography, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { CrudFormModal } from "@/modules/layout/CrudFormModal";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Props = {
   managePermission?: boolean;
@@ -151,17 +140,13 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Tag Management
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Tags are used to help identify and group together workspaces..
-            </Typography.Text>
-          </div>
+          <SettingsPageHeader
+            title="Tag Management"
+            description="Tags are used to help identify and group together workspaces.."
+          />
           <SettingsSection maxWidth="100%">
             <Button
               type="primary"
@@ -228,41 +213,30 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
             </Spin>
           </SettingsSection>
 
-          <Modal
-            width="600px"
+          <CrudFormModal
             open={visible}
             title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
             okText="Save tag"
+            form={form}
+            formName="tag"
             onCancel={onCancel}
-            cancelText="Cancel"
-            onOk={() => {
-              form
-                .validateFields()
-                .then((values) => {
-                  if (mode === "create") onCreate(values);
-                  else onUpdate(values);
-                })
-                .catch((info) => {
-                  console.log("Validate Failed:", info);
-                });
+            onSubmit={(values) => {
+              if (mode === "create") onCreate(values);
+              else onUpdate(values);
             }}
           >
-            <Space style={{ width: "100%" }} direction="vertical">
-              <Form name="tag" form={form} layout="vertical">
-                <Form.Item
-                  name="name"
-                  tooltip={{
-                    title: "Must be a valid tag name",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  label="Name"
-                  rules={[{ required: true }]}
-                >
-                  <Input />
-                </Form.Item>
-              </Form>
-            </Space>
-          </Modal>
+            <Form.Item
+              name="name"
+              tooltip={{
+                title: "Must be a valid tag name",
+                icon: <InfoCircleOutlined />,
+              }}
+              label="Name"
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+          </CrudFormModal>
         </>
       )}
     </div>

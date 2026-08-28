@@ -1,9 +1,6 @@
-import { DeleteOutlined, EditOutlined, GithubOutlined, GitlabOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Divider, List, Popconfirm, Row, Typography, message } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Divider, List, Popconfirm, Row, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { IconContext } from "react-icons";
-import { SiBitbucket } from "react-icons/si";
-import { VscAzureDevops } from "react-icons/vsc";
 import { useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -12,6 +9,8 @@ import { AddVCS } from "./AddVCS";
 import { EditVCS } from "./EditVCS";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import VcsLogo from "@/modules/workspaces/components/VcsLogo";
 const { Paragraph } = Typography;
 
 type Props = {
@@ -36,33 +35,6 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
   const onEditVCS = (id: string) => {
     setEditVcsId(id);
     setMode("edit");
-  };
-
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
   };
 
   const renderVCSType = (vcs: VcsType) => {
@@ -158,7 +130,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : mode === "list" ? (
         <div>
           {" "}
@@ -191,7 +163,8 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
                       style={{ width: "100%" }}
                       title={
                         <span>
-                          {renderVCSLogo(item.attributes.vcsType)}&nbsp;&nbsp;
+                          <VcsLogo type={item.attributes.vcsType} size={20} />
+                          &nbsp;&nbsp;
                           {item.attributes.name}
                         </span>
                       }

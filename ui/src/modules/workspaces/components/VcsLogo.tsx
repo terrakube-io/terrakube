@@ -5,30 +5,32 @@ import { VscAzureDevops } from "react-icons/vsc";
 import { VcsType } from "../../../domain/types";
 
 type Props = {
-  type: VcsType;
+  type?: VcsType;
+  size?: number;
 };
-export default function VcsLogo({ type }: Props) {
+
+export default function VcsLogo({ type, size = 18 }: Props) {
   switch (type) {
     case VcsType.GITLAB:
-      return <GitlabOutlined style={{ fontSize: "18px" }} />;
+      return <GitlabOutlined style={{ fontSize: `${size}px` }} />;
     case VcsType.BITBUCKET:
       return (
-        <IconContext.Provider value={{ size: "18px" }}>
+        <IconContext.Provider value={{ size: `${size}px` }}>
           <SiBitbucket />
           &nbsp;
         </IconContext.Provider>
       );
     case VcsType.AZURE_DEVOPS:
       return (
-        <IconContext.Provider value={{ size: "18px" }}>
+        <IconContext.Provider value={{ size: `${size}px` }}>
           <VscAzureDevops />
           &nbsp;
         </IconContext.Provider>
       );
     case VcsType.GITHUB:
-      return <GithubOutlined style={{ fontSize: "18px" }} />;
+      return <GithubOutlined style={{ fontSize: `${size}px` }} />;
 
     default:
-      return <SiGit />;
+      return <SiGit size={size} />;
   }
 }

@@ -31,6 +31,7 @@ import workspaceAccessService, {
 } from "@/modules/workspaces/workspaceAccessService";
 import { Workspace } from "../../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
 
 type Props = {
   workspace: Workspace;
@@ -391,9 +392,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div style={{ width: "100%" }}>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Team Access
-      </Typography.Title>
+      <SettingsPageHeader title="Team Access" />
       <p>Teams granted access to this workspace via the Terrakube UI or the terrakube_workspace_access resource.</p>
 
       <SettingsSection maxWidth="100%">
