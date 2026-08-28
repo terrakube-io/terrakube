@@ -1,5 +1,6 @@
 import { ErrorInformation } from "@/modules/api/types";
-import { Breadcrumb, Typography, Alert, Flex, Spin, theme } from "antd";
+import { Breadcrumb, Typography, Flex, Spin, theme } from "antd";
+import { ErrorState } from "@/components/feedback/ErrorState";
 import { Content } from "antd/es/layout/layout";
 import "./PageWrapper.css";
 import { NavLink } from "react-router-dom";
@@ -74,14 +75,7 @@ export default function PageWrapper({
           )}
 
           {errorInfo && (
-            <Alert
-              className="page-wrapper-alert"
-              title={errorInfo.title}
-              description={errorInfo.message}
-              type="error"
-              showIcon
-              banner
-            />
+            <ErrorState title={errorInfo.title} message={errorInfo.message} onRetry={() => window.location.reload()} />
           )}
 
           {loading ? (

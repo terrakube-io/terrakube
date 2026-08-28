@@ -1,5 +1,5 @@
 import { Layout, ConfigProvider } from "antd";
-import { lazy, Suspense, useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { lazy, Suspense, useState, useEffect, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import {
   RouterProvider,
   createBrowserRouter,
@@ -18,6 +18,9 @@ import "./App.css";
 import "./Home.css";
 import AppSidebar from "@/components/layout/AppSidebar/AppSidebar";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import ErrorBoundary from "@/components/feedback/ErrorBoundary/ErrorBoundary";
+import { ErrorState } from "@/components/feedback/ErrorState";
+import { getBackendError, subscribeBackendStatus } from "@/modules/api/backendStatus";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
@@ -156,6 +159,7 @@ const AppLayout = () => {
   const [organizationName, setOrganizationName] = useState<string>("");
   const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
   const [workspaceManageState, setWorkspaceManageState] = useState(false);
+  const backendError = useSyncExternalStore(subscribeBackendStatus, getBackendError);
   const { colorScheme, themeMode } = useTheme();
   const segments = location.pathname.split("/").filter(Boolean);
   const noOrgContext =
@@ -248,7 +252,22 @@ const AppLayout = () => {
         />
         <Layout className="app-content-shell">
           <div className="app-content-scroll">
-            <Outlet context={{ organizationName, setOrganizationName, setWorkspaceManageState }} />
+            {backendError ? (
+              <ErrorState
+                status={backendError}
+                message={
+                  backendError === 500
+                    ? "The Terrakube API returned an unexpected error. Try again, and check the API logs if it keeps happening."
+                    : "The Terrakube API is not responding. Check that the backend is running, then try again."
+                }
+                onRetry={() => window.location.reload()}
+                showHomeLink={false}
+              />
+            ) : (
+              <ErrorBoundary key={location.pathname}>
+                <Outlet context={{ organizationName, setOrganizationName, setWorkspaceManageState }} />
+              </ErrorBoundary>
+            )}
             <Footer style={{ textAlign: "center" }}>
               Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
             </Footer>
@@ -569,6 +588,10 @@ const router = createBrowserRouter(
           path: "/organizations/:orgid/settings/collection/:collectionid",
           element: <CollectionSettingsWrapper mode="detail" />,
         },
+        {
+          path: "*",
+          element: <ErrorState status={404} message="This page does not exist or has moved." />,
+        },
       ],
     },
     {
@@ -609,9 +632,11 @@ const App = () => {
 
   return (
     <ThemeProvider>
-      <Suspense fallback={<LoadingFallback />}>
-        <RouterProvider router={router} />
-      </Suspense>
+      <ErrorBoundary catchGlobal>
+        <Suspense fallback={<LoadingFallback />}>
+          <RouterProvider router={router} />
+        </Suspense>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 };
