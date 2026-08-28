@@ -1,6 +1,5 @@
-import { Breadcrumb, Layout } from "antd";
 import { useEffect, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { ActionSettings } from "./Actions";
 import { GeneralSettings } from "./General";
@@ -17,8 +16,7 @@ import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
 import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
-
-const { Content } = Layout;
+import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
 
 const SETTINGS_TAB_LABELS: Record<string, string> = {
   "1": "General",
@@ -104,25 +102,15 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
   };
 
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: (
-              <NavLink to={`/organizations/${orgid}/workspaces`}>{sessionStorage.getItem(ORGANIZATION_NAME)}</NavLink>
-            ),
-          },
-          {
-            title: <NavLink to={`/organizations/${orgid}/settings/general`}>Settings</NavLink>,
-          },
-          {
-            title: SETTINGS_TAB_LABELS[activeKey] ?? "General",
-          },
-        ]}
-      />
-
-      <div className="site-layout-content">{renderContent()}</div>
-    </Content>
+    <PageWrapper
+      title="Organization Settings"
+      breadcrumbs={[
+        { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
+        { label: "Settings", path: `/organizations/${orgid}/settings/general` },
+        { label: SETTINGS_TAB_LABELS[activeKey] ?? "General" },
+      ]}
+    >
+      {renderContent()}
+    </PageWrapper>
   );
 };

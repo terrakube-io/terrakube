@@ -7,12 +7,6 @@
 }
 
 /* Registry page — centered, constrained width, matches the standard page-width cap */
-.registry-centered {
-  max-width: 1600px;
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
-}
 
 /* Module card — Leaa-inspired: white card, soft shadow, no border */
 .module-card.ant-card {
@@ -285,6 +279,3 @@
   margin: 24px 0;
 }
 
-.site-layout-content {
-  padding: 0 24px;
-}

@@ -156,7 +156,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         { label: organizationName, path: "/" },
         { label: "Workspaces", path: `/organizations/${id}/workspaces` },
       ]}
-      fluid
       actions={
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />

@@ -672,6 +672,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   return (
     <PageWrapper
       title="Public Registry Search"
+      width="reading"
       subTitle="Search and import modules and providers from the Terraform Registry"
       breadcrumbs={[
         { label: organizationName, path: "/" },
@@ -684,7 +685,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         </Button>
       }
     >
-      <div className="registry-centered" style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 24 }}>
         <Search
           placeholder="Search Terraform Registry..."
           allowClear

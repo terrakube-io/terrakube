@@ -145,9 +145,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
         { label: "Providers", path: `/organizations/${orgid}/registry?tab=providers` },
         { label: shortName || "...", path: `/organizations/${orgid}/registry/providers/${providerid}` },
       ]}
-      fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
+      width="reading"
     >
       {provider && (
         <div>

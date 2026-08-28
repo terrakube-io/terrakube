@@ -309,7 +309,6 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         { label: "Projects", path: `/organizations/${orgid}/projects` },
         { label: project?.name ?? "Project", path: `/organizations/${orgid}/projects/${id}` },
       ]}
-      fluid
     >
       <Layout style={{ background: token.colorBgContainer }}>
         <Sider

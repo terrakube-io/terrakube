@@ -6,19 +6,24 @@
   padding: 24px;
 }
 
-.page-wrapper-inner-fluid {
-  width: 90%;
-  max-width: 1600px;
+.page-wrapper-inner {
   margin: auto;
+  margin-top: 20px;
 }
-.page-wrapper-inner-contained {
+
+.page-wrapper-inner-fluid {
   width: 90%;
   max-width: 1600px;
 }
 
-.page-wrapper-inner {
-  margin: auto;
-  margin-top: 20px;
+.page-wrapper-inner-reading {
+  width: 100%;
+  max-width: 1100px;
+}
+
+.page-wrapper-inner-form {
+  width: 100%;
+  max-width: 760px;
 }
 
 .page-wrapper-title {
@@ -33,10 +38,6 @@
   margin-top: 50px;
 }
 
-.page-wrapper-no-content {
-  margin-top: 50px;
-  max-width: 350px;
-}
 .page-wrapper-crumbs {
   margin: 16px 0;
   .active {

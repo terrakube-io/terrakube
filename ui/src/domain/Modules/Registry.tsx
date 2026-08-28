@@ -231,7 +231,6 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },
       ]}
-      fluid
       actions={
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />

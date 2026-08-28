@@ -326,9 +326,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         { label: "Registry", path: `/organizations/${orgid}/registry` },
         { label: moduleName, path: `/organizations/${orgid}/registry/${id}` },
       ]}
-      fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
+      width="reading"
     >
       {module && (
         <div>

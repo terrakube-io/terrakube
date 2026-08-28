@@ -107,7 +107,6 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         { label: organizationName, path: "/" },
         { label: "Projects", path: `/organizations/${id}/projects` },
       ]}
-      fluid
       actions={
         <Button icon={<PlusOutlined />} type="primary" onClick={openCreate} disabled={!permissions.manageWorkspace}>
           New project
