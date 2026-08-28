@@ -6,7 +6,7 @@ import {
   SyncOutlined,
   HourglassOutlined,
 } from "@ant-design/icons";
-import { Button, Flex, Typography, Popconfirm, Tag, theme } from "antd";
+import { Button, Flex, Typography, Tag, theme } from "antd";
 import { DateTime } from "luxon";
 import { UserToken } from "@/modules/user/types";
 import { relativeTime } from "@/modules/utils/dates";
@@ -74,16 +74,7 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
             </Flex>
           </Flex>
 
-          <Popconfirm
-            title="Delete token?"
-            description="This operation is irreversible. Are you sure you want to proceed?"
-            onConfirm={() => onDelete(token.id)}
-            okText="Yes"
-            cancelText="No"
-            okButtonProps={{ danger: true }}
-          >
-            <Button type="text" icon={<DeleteOutlined />} danger loading={loading} />
-          </Popconfirm>
+          <Button type="text" icon={<DeleteOutlined />} danger loading={loading} onClick={() => onDelete(token.id)} />
         </Flex>
       </Flex>
 

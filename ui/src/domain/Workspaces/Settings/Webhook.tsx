@@ -22,6 +22,7 @@ import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import VcsLogo from "@/components/VcsLogo";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
@@ -83,6 +84,7 @@ export const WorkspaceWebhook = ({
   const workspaceId = workspace.id;
   const [remoteHookId, setRemoteHookId] = useState("");
   const [migratedV2, setMigratedV2] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<any | null>(null);
   const webhookId = workspace.relationships.webhook?.data?.id;
 
   useEffect(() => {
@@ -550,27 +552,14 @@ export const WorkspaceWebhook = ({
       width: isMobile ? 90 : 110,
       render: (_: string, record: any) => (
         <Space size="middle">
-          <Popconfirm
-            okButtonProps={{ danger: true }}
-            onConfirm={() => {
-              onDelete(record);
-            }}
-            style={{ width: "20px" }}
-            title={
-              <p>
-                This will permanently delete this trigger from the webhook
-                <br />
-                Are you sure?
-              </p>
-            }
-            okText="Yes"
-            cancelText="No"
+          <Button
+            type="link"
+            size={isMobile ? "middle" : "small"}
             disabled={!manageWorkspace}
+            onClick={() => setPendingDelete(record)}
           >
-            <Button type="link" size={isMobile ? "middle" : "small"}>
-              Delete
-            </Button>
-          </Popconfirm>
+            Delete
+          </Button>
         </Space>
       ),
     },
@@ -685,6 +674,20 @@ export const WorkspaceWebhook = ({
           </Form>
         </Spin>
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete webhook trigger"
+        message="This will permanently delete this trigger from the webhook."
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            onDelete(pendingDelete);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

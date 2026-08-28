@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Divider, List, Popconfirm, Row, Typography, message } from "antd";
+import { Button, Card, Col, Divider, List, Row, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
@@ -13,6 +13,7 @@ import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import VcsLogo from "@/components/VcsLogo";
 import LoadingFallback from "@/components/LoadingFallback";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 const { Paragraph } = Typography;
 
 type Props = {
@@ -27,6 +28,7 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [vcs, setVCS] = useState<VcsModel[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<VcsModel | null>(null);
 
   const mode: "list" | "new" | "edit" = vcsMode ?? "list";
   const editVcsId = vcsId;
@@ -168,28 +170,15 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
                             </Button>
                           </Link>
                           &nbsp;&nbsp;&nbsp;
-                          <Popconfirm
-                            okButtonProps={{ danger: true }}
-                            onConfirm={() => {
-                              onDelete(item.id);
-                            }}
-                            style={{ width: "100px" }}
-                            title={
-                              <p>
-                                Deleting this {renderVCSType(item.attributes.vcsType)} client will disconnect <br /> any
-                                workspaces currently using it. <br /> This means that VCS changes will not trigger{" "}
-                                <br /> jobs on those workspaces. <br />
-                                Are you sure?
-                              </p>
-                            }
-                            okText="Yes"
-                            cancelText="Cancel"
+                          <Button
+                            type="primary"
+                            icon={<DeleteOutlined />}
+                            danger
+                            disabled={!managePermission}
+                            onClick={() => setPendingDelete(item)}
                           >
-                            {" "}
-                            <Button type="primary" icon={<DeleteOutlined />} danger disabled={!managePermission}>
-                              Delete Client
-                            </Button>
-                          </Popconfirm>
+                            Delete Client
+                          </Button>
                           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                         </div>,
                       ]}
@@ -285,6 +274,23 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
               />
             )}
           </SettingsSection>
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete VCS provider"
+            message={
+              <>
+                Deleting the {pendingDelete && renderVCSType(pendingDelete.attributes.vcsType)} client{" "}
+                <strong>{pendingDelete?.attributes.name}</strong> will disconnect any workspaces currently using it.
+                This means that VCS changes will not trigger jobs on those workspaces.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </div>
       ) : mode === "new" ? (
         <AddVCS setMode={closeEditor} loadVCS={loadVCS} />

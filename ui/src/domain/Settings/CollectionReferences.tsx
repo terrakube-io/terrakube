@@ -1,11 +1,12 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, message, Popconfirm, Select, Spin, Table, Typography } from "antd";
+import { Button, Form, Input, message, Select, Spin, Table, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { CrudFormModal } from "@/components/CrudFormModal";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import CollectionReferenceFormModal, { ReferenceFormValues } from "./components/CollectionReferenceFormModal";
 
 // Type definitions for Collection References
 type CollectionReference = {
@@ -30,11 +31,6 @@ type Workspace = {
   };
 };
 
-type ReferenceFormValues = {
-  workspaceId: string;
-  description: string;
-};
-
 type Props = {
   collectionId: string;
   collectionName: string;
@@ -49,6 +45,7 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
   const [visible, setVisible] = useState(false);
   const [form] = Form.useForm<ReferenceFormValues>();
   const [workspacesMap, setWorkspacesMap] = useState<{ [key: string]: string }>({});
+  const [pendingDelete, setPendingDelete] = useState<CollectionReference | null>(null);
 
   const REFERENCE_COLUMNS = [
     {
@@ -75,26 +72,9 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
       render: (_: any, record: CollectionReference) => {
         return (
           <div>
-            <Popconfirm
-              okButtonProps={{ danger: true }}
-              onConfirm={() => {
-                onDelete(record.id);
-              }}
-              title={
-                <p>
-                  This will remove the association between <br />
-                  this collection and the workspace. <br />
-                  Are you sure?
-                </p>
-              }
-              okText="Yes"
-              cancelText="No"
-            >
-              {" "}
-              <Button icon={<DeleteOutlined />} type="link" danger>
-                Delete
-              </Button>
-            </Popconfirm>
+            <Button icon={<DeleteOutlined />} type="link" danger onClick={() => setPendingDelete(record)}>
+              Delete
+            </Button>
           </div>
         );
       },
@@ -216,30 +196,37 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
         </Spin>
       </SettingsSection>
 
-      <CrudFormModal
+      <CollectionReferenceFormModal
         open={visible}
-        title="Add workspace reference"
-        okText="Add reference"
+        workspaces={workspaces}
         form={form}
-        formName="collectionReference"
         onCancel={onCancel}
         onSubmit={(values) => {
           onCreate(values);
         }}
-      >
-        <Form.Item name="workspaceId" label="Workspace" rules={[{ required: true }]}>
-          <Select placeholder="Select a workspace">
-            {workspaces.map((workspace) => (
-              <Select.Option key={workspace.id} value={workspace.id}>
-                {workspace.attributes.name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
-        <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-          <Input.TextArea rows={3} />
-        </Form.Item>
-      </CrudFormModal>
+      />
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete workspace reference"
+        message={
+          <>
+            Deleting the reference to the workspace{" "}
+            <strong>
+              {pendingDelete &&
+                (workspacesMap[pendingDelete.relationships.workspace.data.id] ||
+                  pendingDelete.relationships.workspace.data.id)}
+            </strong>{" "}
+            will remove the association between this collection and the workspace.
+          </>
+        }
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

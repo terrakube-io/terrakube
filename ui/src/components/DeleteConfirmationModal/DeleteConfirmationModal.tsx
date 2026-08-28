@@ -5,7 +5,7 @@ type Props = {
   open: boolean;
   title: string;
   message: React.ReactNode;
-  confirmValue: string;
+  confirmValue?: string;
   okText?: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -32,16 +32,20 @@ export default function DeleteConfirmationModal({
       title={title}
       open={open}
       okText={okText}
-      okButtonProps={{ danger: true, disabled: confirmation !== confirmValue }}
+      okButtonProps={{ danger: true, disabled: confirmValue !== undefined && confirmation !== confirmValue }}
       onOk={() => close(onConfirm)}
       onCancel={() => close(onCancel)}
     >
       <Space orientation="vertical" style={{ width: "100%" }}>
         <Typography.Text>{message}</Typography.Text>
-        <Typography.Text>
-          Type <Typography.Text strong>{confirmValue}</Typography.Text> to confirm.
-        </Typography.Text>
-        <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder={confirmValue} />
+        {confirmValue !== undefined && (
+          <>
+            <Typography.Text>
+              Type <Typography.Text strong>{confirmValue}</Typography.Text> to confirm.
+            </Typography.Text>
+            <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder={confirmValue} />
+          </>
+        )}
       </Space>
     </Modal>
   );

@@ -6,13 +6,14 @@ import {
   AppstoreOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, Pagination, message } from "antd";
+import { Alert, Button, Card, Input, List, Space, Spin, Typography, Pagination, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 // Type definitions for Variable Collections
 type Collection = {
@@ -44,6 +45,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Collection | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -231,29 +233,19 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                         <Button type="text" icon={<EditOutlined />} disabled={!managePermission}>
                           {managePermission ? <Link to={editCollectionLink(item.id)}>Edit</Link> : "Edit"}
                         </Button>
-                        <Popconfirm
-                          okButtonProps={{ danger: true }}
-                          title="Delete this variable collection?"
-                          description="This will permanently delete this variable collection and all its variables. Are you sure?"
-                          onConfirm={(e) => {
-                            e?.stopPropagation();
-                            onDelete(item.id);
+                        <Button
+                          danger
+                          type="text"
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDelete(item);
                           }}
-                          onCancel={(e) => e?.stopPropagation()}
-                          okText="Yes"
-                          cancelText="No"
+                          loading={deleteLoading === item.id}
+                          disabled={!managePermission}
                         >
-                          <Button
-                            danger
-                            type="text"
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => e.stopPropagation()}
-                            loading={deleteLoading === item.id}
-                            disabled={!managePermission}
-                          >
-                            Delete
-                          </Button>
-                        </Popconfirm>
+                          Delete
+                        </Button>
                       </Space>
                     </div>
                   </Card>
@@ -276,6 +268,23 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
           </Spin>
         )}
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete variable collection"
+        message={
+          <>
+            Deleting the variable collection <strong>{pendingDelete?.attributes.name}</strong> and all its variables
+            cannot be undone.
+          </>
+        }
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

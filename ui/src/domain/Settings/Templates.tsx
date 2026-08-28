@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, List, message, Popconfirm, Typography } from "antd";
+import { Button, List, message, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -11,6 +11,7 @@ import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import LoadingFallback from "@/components/LoadingFallback";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   editorMode?: "new" | "edit";
@@ -23,6 +24,7 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<Template | null>(null);
   const navigate = useNavigate();
   const mode = editorMode ?? "list";
   const templateID = editorId;
@@ -97,26 +99,15 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
                         <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
                           <Link to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}>Edit</Link>
                         </Button>,
-                        <Popconfirm
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => {
-                            onDelete(item.id);
-                          }}
-                          style={{ width: "20px" }}
-                          title={
-                            <p>
-                              This will permanently delete this template. <br />
-                              Are you sure?
-                            </p>
-                          }
-                          okText="Yes"
-                          cancelText="No"
+                        <Button
+                          icon={<DeleteOutlined />}
+                          type="link"
+                          danger
+                          disabled={!managePermission}
+                          onClick={() => setPendingDelete(item)}
                         >
-                          {" "}
-                          <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                            Delete
-                          </Button>
-                        </Popconfirm>,
+                          Delete
+                        </Button>,
                       ]}
                     >
                       <List.Item.Meta title={item.attributes.name} description={item.attributes.description} />
@@ -125,6 +116,21 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
                 />
               )}
             </SettingsSection>
+            <DeleteConfirmationModal
+              open={pendingDelete !== null}
+              title="Delete template"
+              message={
+                <>
+                  Deleting the template <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                </>
+              }
+              okText="Delete"
+              onConfirm={() => {
+                if (pendingDelete) onDelete(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              onCancel={() => setPendingDelete(null)}
+            />
           </div>
         )
       )}

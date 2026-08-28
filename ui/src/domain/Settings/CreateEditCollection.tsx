@@ -1,12 +1,12 @@
-import { Button, Col, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, Col, Form, Input, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { DeleteOutlined, EditOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import { VariableFormFields } from "@/components/VariableFormFields";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
 
 // Type definitions
 type Collection = {
@@ -44,7 +44,7 @@ export const CreateEditCollection = ({
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([]);
   const [variables, setVariables] = useState<any[]>([]);
-  const [variableForm] = Form.useForm();
+  const [variableForm] = Form.useForm<CollectionVariableFormValues>();
   const [collectionForm] = Form.useForm();
   const [addingVariable, setAddingVariable] = useState(false);
   const [variableMode, setVariableMode] = useState<"create" | "edit">("create");
@@ -223,10 +223,16 @@ export const CreateEditCollection = ({
     }
   };
 
-  const handleUpdateVariable = async () => {
+  const closeVariableModal = () => {
+    setAddingVariable(false);
+    setVariableMode("create");
+    setEditingVariableId("");
+    variableForm.resetFields();
+  };
+
+  const handleUpdateVariable = async (values: CollectionVariableFormValues) => {
     try {
       setVariableLoading(true);
-      const values = await variableForm.validateFields();
 
       // Update local state for temp variables
       if (editingVariableId.startsWith("temp-")) {
@@ -280,10 +286,7 @@ export const CreateEditCollection = ({
         }
       }
 
-      variableForm.resetFields();
-      setAddingVariable(false);
-      setVariableMode("create");
-      setEditingVariableId("");
+      closeVariableModal();
     } catch (error) {
       console.error("Failed to update variable:", error);
       message.error("Failed to update variable");
@@ -292,10 +295,9 @@ export const CreateEditCollection = ({
     }
   };
 
-  const handleAddVariable = async () => {
+  const handleAddVariable = async (values: CollectionVariableFormValues) => {
     try {
       setVariableLoading(true);
-      const values = await variableForm.validateFields();
 
       // Add variable to local state
       const newVariable = {
@@ -345,10 +347,7 @@ export const CreateEditCollection = ({
         message.success("Variable added to collection");
       }
 
-      variableForm.resetFields();
-      setAddingVariable(false);
-      setVariableMode("create");
-      setEditingVariableId("");
+      closeVariableModal();
     } catch (error) {
       console.error("Failed to add variable:", error);
       message.error("Failed to add variable");
@@ -448,59 +447,6 @@ export const CreateEditCollection = ({
     },
   ];
 
-  // Replace the Card for adding a variable with a Modal
-  const addVariableModal = (
-    <Modal
-      title={variableMode === "edit" ? "Edit variable" : "Add variable"}
-      open={addingVariable}
-      onCancel={() => {
-        setAddingVariable(false);
-        setVariableMode("create");
-        setEditingVariableId("");
-        variableForm.resetFields();
-      }}
-      footer={[
-        <Button
-          key="cancel"
-          onClick={() => {
-            setAddingVariable(false);
-            setVariableMode("create");
-            setEditingVariableId("");
-            variableForm.resetFields();
-          }}
-        >
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          onClick={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
-          loading={variableLoading}
-        >
-          {variableMode === "edit" ? "Save changes" : "Add variable"}
-        </Button>,
-      ]}
-      width={600}
-      closeIcon={<CloseCircleOutlined />}
-    >
-      <Form
-        form={variableForm}
-        layout="vertical"
-        initialValues={{
-          category: "TERRAFORM",
-          hcl: false,
-          sensitive: false,
-        }}
-      >
-        <Typography.Title level={5} style={{ margin: "20px 0 15px 0" }}>
-          Select variable category
-        </Typography.Title>
-
-        <VariableFormFields />
-      </Form>
-    </Modal>
-  );
-
   const variableListing = (
     <div>
       <div style={{ marginBottom: "15px" }}>
@@ -533,7 +479,14 @@ export const CreateEditCollection = ({
           Add variable
         </Button>
 
-        {addVariableModal}
+        <CollectionVariableModal
+          open={addingVariable}
+          mode={variableMode}
+          form={variableForm}
+          confirmLoading={variableLoading}
+          onCancel={closeVariableModal}
+          onSubmit={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
+        />
       </div>
     </div>
   );

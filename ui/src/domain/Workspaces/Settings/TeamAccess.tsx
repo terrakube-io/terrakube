@@ -12,7 +12,6 @@ import {
   Checkbox,
   Flex,
   Form,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -23,6 +22,7 @@ import {
   message,
   theme,
 } from "antd";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import workspaceAccessService, {
@@ -136,6 +136,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     approveJob: false,
   });
   const [savingRole, setSavingRole] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<WorkspaceAccessModel | null>(null);
   const [form] = Form.useForm<AddTeamForm>();
   const addRole = Form.useWatch("role", form);
   const addFormRef = useRef<HTMLDivElement>(null);
@@ -369,19 +370,15 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       align: "right" as const,
       width: 120,
       render: (_: any, record: WorkspaceAccessModel) => (
-        <Popconfirm
-          okButtonProps={{ danger: true }}
-          title={`Remove team "${record.name}" from this workspace?`}
-          onConfirm={() => onRemove(record.id, record.name)}
-          okText="Yes"
-          cancelText="No"
-          placement="left"
+        <Button
+          danger
+          icon={<DeleteOutlined />}
+          size="small"
           disabled={!canManage}
+          onClick={() => setPendingDelete(record)}
         >
-          <Button danger icon={<DeleteOutlined />} size="small" disabled={!canManage}>
-            Remove
-          </Button>
-        </Popconfirm>
+          Remove
+        </Button>
       ),
     },
   ];
@@ -495,6 +492,20 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
           or project-level permissions they already have.
         </Typography.Text>
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Remove team access"
+        message={`Remove team "${pendingDelete?.name}" from this workspace?`}
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            onRemove(pendingDelete.id, pendingDelete.name);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

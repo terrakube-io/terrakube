@@ -7,21 +7,7 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Editor, type OnMount } from "@monaco-editor/react";
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  message,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tooltip,
-  Typography,
-  theme,
-} from "antd";
+import { Alert, Button, Form, Input, message, Select, Space, Switch, Table, Tooltip, Typography, theme } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -32,6 +18,7 @@ import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 import LoadingFallback from "@/components/LoadingFallback";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const validateMessages: any = {
   required: "${label} is required!",
@@ -70,6 +57,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Action | null>(null);
   const { orgid } = useParams();
   const navigate = useNavigate();
   const isEditing = editorMode != null;
@@ -122,17 +110,15 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
               Edit
             </Button>
           </Link>
-          <Popconfirm
-            okButtonProps={{ danger: true }}
-            title="Are you sure to delete this action?"
-            onConfirm={() => onDelete(record.id)}
-            okText="Yes"
-            cancelText="No"
+          <Button
+            danger
+            type="link"
+            icon={<DeleteOutlined />}
+            disabled={!managePermission}
+            onClick={() => setPendingDelete(record)}
           >
-            <Button danger type="link" icon={<DeleteOutlined />} disabled={!managePermission}>
-              Delete
-            </Button>
-          </Popconfirm>
+            Delete
+          </Button>
           <Tooltip title="Open the documentation for this Action">
             <Button
               icon={<QuestionCircleOutlined />}
@@ -314,6 +300,21 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
           ) : (
             <Table dataSource={actions} columns={ACTIONS_COLUMNS()} rowKey="id" />
           )}
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete action"
+            message={
+              <>
+                Deleting the action <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       ) : (
         <div>

@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography, theme } from "antd";
+import { Avatar, Button, List, message, Spin, Tag, Typography, theme } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -8,6 +8,7 @@ import { EditFederatedCredential } from "./EditFederatedCredential";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   editorMode?: "new" | "edit";
@@ -21,6 +22,7 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
   const [claimCounts, setClaimCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<Federated | null>(null);
   const navigate = useNavigate();
   const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
   const federatedId = editorId;
@@ -113,28 +115,16 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
                     <Button icon={<EditOutlined />} shape="round" type="primary" disabled={!managePermission}>
                       <Link to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}>Edit</Link>
                     </Button>,
-                    <Popconfirm
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => onDelete(item.id)}
-                      title={
-                        <p>
-                          This will permanently delete this federated credential. <br />
-                          Are you sure?
-                        </p>
-                      }
-                      okText="Yes"
-                      cancelText="No"
+                    <Button
+                      icon={<DeleteOutlined />}
+                      shape="round"
+                      type="primary"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
                     >
-                      <Button
-                        icon={<DeleteOutlined />}
-                        shape="round"
-                        type="primary"
-                        danger
-                        disabled={!managePermission}
-                      >
-                        Delete
-                      </Button>
-                    </Popconfirm>,
+                      Delete
+                    </Button>,
                   ]}
                 >
                   <List.Item.Meta
@@ -160,6 +150,22 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
               )}
             />
           </Spin>
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete federated credential"
+            message={
+              <>
+                Deleting the federated credential <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

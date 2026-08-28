@@ -1,27 +1,23 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, List, message, Popconfirm } from "antd";
+import { Button, Form, Input, List, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Agent } from "../types";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { CrudFormModal } from "@/components/CrudFormModal";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 import LoadingFallback from "@/components/LoadingFallback";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import AgentFormModal, { AddAgentFormValues, UpdateAgentFormValues } from "./components/AgentFormModal";
 
 type Params = {
   orgid: string;
 };
 
-type AddAgentForm = {
-  name?: string;
-} & UpdateAgentForm;
+type AddAgentForm = AddAgentFormValues;
 
-type UpdateAgentForm = {
-  description: string;
-  url: string;
-};
+type UpdateAgentForm = UpdateAgentFormValues;
 
 type Props = {
   managePermission?: boolean;
@@ -36,6 +32,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
   const [AgentName, setAgentName] = useState<string>();
   const [mode, setMode] = useState("create");
   const [AgentId] = useState([]);
+  const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [form] = Form.useForm<AddAgentForm | UpdateAgentForm>();
 
   const onCancel = () => {
@@ -172,27 +169,15 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Popconfirm
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => {
-                        onDelete(item.id);
-                      }}
-                      style={{ width: "20px" }}
-                      title={
-                        <p>
-                          This will permanently delete this Terrakube Agent <br />
-                          <br />
-                          Are you sure?
-                        </p>
-                      }
-                      okText="Yes"
-                      cancelText="No"
+                    <Button
+                      icon={<DeleteOutlined />}
+                      type="link"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
                     >
-                      {" "}
-                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                        Delete
-                      </Button>
-                    </Popconfirm>,
+                      Delete
+                    </Button>,
                   ]}
                 >
                   <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
@@ -201,34 +186,33 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
             />
           )}
 
-          <CrudFormModal
+          <AgentFormModal
             open={visible}
-            title={mode === "edit" ? "Edit Terrakube Agent  " + AgentName : "Add a new Terrakube Agent"}
-            okText="Save Terrakube Agent "
+            mode={mode === "create" ? "create" : "edit"}
+            agentName={AgentName}
             form={form}
-            formName="Agent"
             onCancel={onCancel}
             onSubmit={(values) => {
               if (mode === "create") onCreate(values as AddAgentForm);
               else onUpdate(values);
             }}
-            width="650px"
-          >
-            {mode === "create" ? (
-              <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            ) : (
-              ""
-            )}
+          />
 
-            <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="url" label="Url" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-          </CrudFormModal>
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete agent pool"
+            message={
+              <>
+                Deleting the agent pool <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

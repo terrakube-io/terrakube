@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography } from "antd";
+import { Avatar, Button, List, message, Spin, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "@/config/axiosConfig";
@@ -7,6 +7,7 @@ import { apiPost } from "@/modules/api/apiWrapper";
 import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
@@ -34,6 +35,7 @@ export const NotificationConfigurationList = ({
   const navigate = useNavigate();
   const [localMode, setLocalMode] = useState<"list" | "create" | "edit">("list");
   const [localEditingId, setLocalEditingId] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<NotificationConfiguration | null>(null);
   const routed = basePath != null;
   const mode: "list" | "create" | "edit" = routed
     ? editorMode === "new"
@@ -221,23 +223,16 @@ export const NotificationConfigurationList = ({
                     >
                       Edit
                     </Button>,
-                    <Popconfirm
-                      okButtonProps={{ danger: true }}
-                      title="This will permanently delete this notification configuration. Are you sure?"
-                      onConfirm={() => onDelete(item.id)}
-                      okText="Yes"
-                      cancelText="No"
+                    <Button
+                      icon={<DeleteOutlined />}
+                      shape="round"
+                      type="primary"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
                     >
-                      <Button
-                        icon={<DeleteOutlined />}
-                        shape="round"
-                        type="primary"
-                        danger
-                        disabled={!managePermission}
-                      >
-                        Delete
-                      </Button>
-                    </Popconfirm>,
+                      Delete
+                    </Button>,
                   ]}
                 >
                   <List.Item.Meta
@@ -316,6 +311,20 @@ export const NotificationConfigurationList = ({
               </>
             )}
           </Spin>
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete notification configuration"
+            message={`This will permanently delete the notification configuration "${pendingDelete?.attributes.name}".`}
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) {
+                onDelete(pendingDelete.id);
+              }
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

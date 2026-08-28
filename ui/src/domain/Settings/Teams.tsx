@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Popconfirm, Space, Tag, Typography, theme, Spin } from "antd";
+import { Avatar, Button, List, message, Space, Tag, Typography, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -8,6 +8,7 @@ import { EditTeam } from "./EditTeam";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const roleColors: Record<string, string> = {
   admin: "red",
@@ -44,6 +45,7 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<Team | null>(null);
   const navigate = useNavigate();
   const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
   const teamId = editorId;
@@ -143,23 +145,15 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
                       <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
                         <Link to={`/organizations/${orgid}/settings/teams/edit/${item.id}`}>Edit</Link>
                       </Button>,
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => onDelete(item.id)}
-                        title={
-                          <p>
-                            This will permanently delete this team <br />
-                            and any permissions associated with it. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
+                      <Button
+                        icon={<DeleteOutlined />}
+                        type="link"
+                        danger
+                        disabled={!managePermission}
+                        onClick={() => setPendingDelete(item)}
                       >
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
+                        Delete
+                      </Button>,
                     ]}
                   >
                     <List.Item.Meta
@@ -177,6 +171,23 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
               }}
             />
           </Spin>
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete team"
+            message={
+              <>
+                Deleting the team <strong>{pendingDelete?.attributes.name}</strong> and any permissions associated with
+                it cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

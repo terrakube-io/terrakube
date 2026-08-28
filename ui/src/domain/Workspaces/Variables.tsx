@@ -7,7 +7,6 @@ import {
   message,
   Popconfirm,
   Space,
-  Switch,
   Table,
   Tag,
   Tooltip,
@@ -18,8 +17,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import { CrudFormModal } from "@/components/CrudFormModal";
-import { VariableFormFields } from "@/components/VariableFormFields";
+import WorkspaceVariableFormModal from "./components/WorkspaceVariableFormModal";
 
 const VARIABLES_COLUMS = (
   onEdit: (variable: FlatVariable) => void,
@@ -230,10 +228,6 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
     },
   },
 ];
-
-const validateMessages = {
-  required: "${label} is required!",
-};
 
 type Props = {
   vars: FlatVariable[];
@@ -472,28 +466,19 @@ export const Variables = ({
         <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
       </SettingsSection>
 
-      <CrudFormModal
+      <WorkspaceVariableFormModal
         open={visible}
-        title={mode === "edit" ? "Edit variable " + variableName : "Add variable"}
-        okText="Save variable"
+        mode={mode === "create" ? "create" : "edit"}
+        variableName={variableName}
+        category={category}
+        onCategoryChange={setCategory}
         form={form}
-        formName="create-org"
         onCancel={onCancel}
         onSubmit={(values) => {
           if (mode === "create") onCreate(values);
           else onUpdate(values);
         }}
-        validateMessages={validateMessages}
-      >
-        <Typography.Title level={5} style={{ margin: "0 0 15px 0" }}>
-          Select variable category
-        </Typography.Title>
-
-        <VariableFormFields
-          category={category ?? undefined}
-          onCategoryChange={(value) => setCategory(value as VariableCategory)}
-        />
-      </CrudFormModal>
+      />
     </div>
   );
 };

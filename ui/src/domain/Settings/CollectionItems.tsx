@@ -1,11 +1,12 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import { Button, Form, message, Modal, Popconfirm, Spin, Table, Tag, Typography } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Form, message, Spin, Table, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { VariableFormFields } from "@/components/VariableFormFields";
+import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 
 // Type definitions for Collection Items
 type CollectionItem = {
@@ -14,15 +15,6 @@ type CollectionItem = {
 };
 
 type CollectionItemAttributes = {
-  key: string;
-  value?: string;
-  hcl: boolean;
-  category: string;
-  description: string;
-  sensitive: boolean;
-};
-
-type CollectionItemFormValues = {
   key: string;
   value?: string;
   hcl: boolean;
@@ -43,9 +35,10 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const [itemKey, setItemKey] = useState<string>("");
-  const [mode, setMode] = useState("create");
+  const [mode, setMode] = useState<"create" | "edit">("create");
   const [itemId, setItemId] = useState<string>("");
-  const [form] = Form.useForm<CollectionItemFormValues>();
+  const [pendingDelete, setPendingDelete] = useState<CollectionItem | null>(null);
+  const [form] = Form.useForm<CollectionVariableFormValues>();
 
   const ITEM_COLUMNS = (onEdit: (id: string) => void) => [
     {
@@ -91,26 +84,9 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
             <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)}>
               Edit
             </Button>
-            <Popconfirm
-              okButtonProps={{ danger: true }}
-              onConfirm={() => {
-                onDelete(record.id);
-              }}
-              title={
-                <p>
-                  This will permanently delete this variable <br />
-                  from the collection. <br />
-                  Are you sure?
-                </p>
-              }
-              okText="Yes"
-              cancelText="No"
-            >
-              {" "}
-              <Button danger type="link" icon={<DeleteOutlined />}>
-                Delete
-              </Button>
-            </Popconfirm>
+            <Button danger type="link" icon={<DeleteOutlined />} onClick={() => setPendingDelete(record)}>
+              Delete
+            </Button>
           </div>
         );
       },
@@ -162,7 +138,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
       });
   };
 
-  const onCreate = (values: CollectionItemFormValues) => {
+  const onCreate = (values: CollectionVariableFormValues) => {
     const body = {
       data: {
         type: "item",
@@ -194,7 +170,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
       });
   };
 
-  const onUpdate = (values: CollectionItemFormValues) => {
+  const onUpdate = (values: CollectionVariableFormValues) => {
     const body = {
       data: {
         type: "item",
@@ -265,39 +241,32 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         </Spin>
       </SettingsSection>
 
-      <Modal
-        width="600px"
+      <CollectionVariableModal
         open={visible}
-        title={mode === "edit" ? "Edit variable" : "Add variable"}
-        okText={mode === "edit" ? "Save changes" : "Add variable"}
+        mode={mode}
+        form={form}
         onCancel={onCancel}
-        cancelText="Cancel"
-        closeIcon={<CloseCircleOutlined />}
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+        onSubmit={(values) => {
+          if (mode === "create") onCreate(values);
+          else onUpdate(values);
         }}
-      >
-        <Form
-          name="collectionItem"
-          form={form}
-          layout="vertical"
-          initialValues={{ category: "TERRAFORM", hcl: false, sensitive: false }}
-        >
-          <Typography.Title level={5} style={{ margin: "20px 0 15px 0" }}>
-            Select variable category
-          </Typography.Title>
+      />
 
-          <VariableFormFields />
-        </Form>
-      </Modal>
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete variable"
+        message={
+          <>
+            Deleting the variable <strong>{pendingDelete?.attributes.key}</strong> from the collection cannot be undone.
+          </>
+        }
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

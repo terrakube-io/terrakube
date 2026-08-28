@@ -1,21 +1,20 @@
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Avatar, Button, Form, Input, List, message, Popconfirm, theme, Spin } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
+import { Avatar, Button, Form, List, message, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { CrudFormModal } from "@/components/CrudFormModal";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import TagFormModal, { TagFormValues } from "./components/TagFormModal";
 
 type Props = {
   managePermission?: boolean;
 };
 
-type AddTagForm = {
-  name: string;
-};
+type AddTagForm = TagFormValues;
 
 export const TagsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
@@ -26,6 +25,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   const [tagName, setTagName] = useState<string>();
   const [mode, setMode] = useState("create");
   const [tagId, setTagId] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<Tag | null>(null);
   const [form] = Form.useForm<AddTagForm>();
   const { token } = theme.useToken();
 
@@ -175,29 +175,15 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
                     >
                       Edit
                     </Button>,
-                    <Popconfirm
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => {
-                        onDelete(item.id);
-                      }}
-                      style={{ width: "20px" }}
-                      title={
-                        <p>
-                          Deleting this tag will also remove it <br />
-                          from all the Workspaces that use it.
-                          <br />
-                          This action cannot be undone. <br />
-                          Are you sure?
-                        </p>
-                      }
-                      okText="Yes"
-                      cancelText="No"
+                    <Button
+                      icon={<DeleteOutlined />}
+                      type="link"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
                     >
-                      {" "}
-                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                        Delete
-                      </Button>
-                    </Popconfirm>,
+                      Delete
+                    </Button>,
                   ]}
                 >
                   <List.Item.Meta
@@ -209,30 +195,34 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
             />
           </Spin>
 
-          <CrudFormModal
+          <TagFormModal
             open={visible}
-            title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
-            okText="Save tag"
+            mode={mode === "create" ? "create" : "edit"}
+            tagName={tagName}
             form={form}
-            formName="tag"
             onCancel={onCancel}
             onSubmit={(values) => {
               if (mode === "create") onCreate(values);
               else onUpdate(values);
             }}
-          >
-            <Form.Item
-              name="name"
-              tooltip={{
-                title: "Must be a valid tag name",
-                icon: <InfoCircleOutlined />,
-              }}
-              label="Name"
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-          </CrudFormModal>
+          />
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete tag"
+            message={
+              <>
+                Deleting the tag <strong>{pendingDelete?.attributes.name}</strong> cannot be undone. It will also be
+                removed from all the workspaces that use it.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

@@ -11,6 +11,9 @@ type Props<T> = {
   onSubmit: (values: T) => void;
   width?: string | number;
   validateMessages?: Record<string, unknown>;
+  closeIcon?: React.ReactNode;
+  confirmLoading?: boolean;
+  initialValues?: Record<string, unknown>;
   children: React.ReactNode;
 };
 
@@ -24,6 +27,9 @@ export default function CrudFormModal<T>({
   onSubmit,
   width = "600px",
   validateMessages,
+  closeIcon,
+  confirmLoading,
+  initialValues,
   children,
 }: Props<T>) {
   return (
@@ -34,14 +40,27 @@ export default function CrudFormModal<T>({
       okText={okText}
       onCancel={onCancel}
       cancelText="Cancel"
+      closeIcon={closeIcon}
+      confirmLoading={confirmLoading}
       onOk={() => {
-        form.validateFields().then((values) => {
-          onSubmit(values);
-        });
+        form
+          .validateFields()
+          .then((values) => {
+            onSubmit(values);
+          })
+          .catch((info) => {
+            console.log("Validate Failed:", info);
+          });
       }}
     >
       <Space style={{ width: "100%" }} orientation="vertical">
-        <Form name={formName} form={form} layout="vertical" validateMessages={validateMessages}>
+        <Form
+          name={formName}
+          form={form}
+          layout="vertical"
+          validateMessages={validateMessages}
+          initialValues={initialValues}
+        >
           {children}
         </Form>
       </Space>
