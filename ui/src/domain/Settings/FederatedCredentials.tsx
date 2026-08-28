@@ -2,7 +2,8 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant
 import { Avatar, Button, List, message, Tag, Typography, theme } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Federated } from "../types";
 import { EditFederatedCredential } from "./EditFederatedCredential";
@@ -99,11 +100,14 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
             title="Federated Credentials"
             description="Federated credentials allow you to establish a trust relationship between terrakube and external identity providers, such as GitHub Actions."
             actions={
-              <Link to={`/organizations/${orgid}/settings/federated-credentials/new`}>
-                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-                  Create federated credential
-                </Button>
-              </Link>
+              <LinkButton
+                to={`/organizations/${orgid}/settings/federated-credentials/new`}
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create federated credential
+              </LinkButton>
             }
           />
           <Loading loading={loading} description="Loading Federated Credentials...">
@@ -113,9 +117,15 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Button icon={<EditOutlined />} shape="round" type="primary" disabled={!managePermission}>
-                      <Link to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}>Edit</Link>
-                    </Button>,
+                    <LinkButton
+                      to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}
+                      icon={<EditOutlined />}
+                      shape="round"
+                      type="primary"
+                      disabled={!managePermission}
+                    >
+                      Edit
+                    </LinkButton>,
                     <Button
                       icon={<DeleteOutlined />}
                       shape="round"

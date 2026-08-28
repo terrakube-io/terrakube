@@ -1,6 +1,6 @@
-import { ReloadOutlined } from "@ant-design/icons";
+import { DisconnectOutlined, FileSearchOutlined, LockOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Result, Space } from "antd";
-import { Link } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 
 export type ErrorStateProps = {
   title?: React.ReactNode;
@@ -10,19 +10,18 @@ export type ErrorStateProps = {
   showHomeLink?: boolean;
 };
 
-const resultStatus = (status?: number | string): "404" | "403" | "500" | "error" => {
+const resultIcon = (status?: number | string): React.ReactNode | undefined => {
   switch (String(status)) {
     case "404":
-      return "404";
+      return <FileSearchOutlined style={{ color: "var(--tk-text-tertiary)" }} />;
     case "403":
-      return "403";
-    case "500":
+      return <LockOutlined style={{ color: "var(--tk-text-tertiary)" }} />;
     case "502":
     case "503":
     case "504":
-      return "500";
+      return <DisconnectOutlined style={{ color: "var(--ant-color-error)" }} />;
     default:
-      return "error";
+      return undefined;
   }
 };
 
@@ -53,7 +52,8 @@ export default function ErrorState({ title, message, status, onRetry, showHomeLi
       }}
     >
       <Result
-        status={resultStatus(status)}
+        status="error"
+        icon={resultIcon(status)}
         title={title ?? defaultTitle(status)}
         subTitle={message}
         extra={
@@ -63,11 +63,7 @@ export default function ErrorState({ title, message, status, onRetry, showHomeLi
                 Try again
               </Button>
             )}
-            {showHomeLink && (
-              <Link to="/">
-                <Button>Back to home</Button>
-              </Link>
-            )}
+            {showHomeLink && <LinkButton to="/">Back to home</LinkButton>}
           </Space>
         }
       />

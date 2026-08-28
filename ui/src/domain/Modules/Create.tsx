@@ -3,7 +3,8 @@ import { Button, Form, Input, Select, Space, Steps, message } from "antd";
 import { useEffect, useState } from "react";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
@@ -51,7 +52,7 @@ export const CreateModule = () => {
       loadSSHKeys();
       loadVCSProviders();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGitClick = (id: string) => {
     if (id === "git") {
@@ -267,18 +268,18 @@ export const CreateModule = () => {
           ) : (
             <div>
               <Space orientation="horizontal">
-                <Button icon={<GithubOutlined />} size="large">
-                  <Link to={vcsLink(VcsType.GITHUB)}>GitHub</Link>
-                </Button>
-                <Button icon={<GitlabOutlined />} size="large">
-                  <Link to={vcsLink(VcsType.GITLAB)}>GitLab</Link>
-                </Button>
-                <Button icon={<SiBitbucket />} size="large">
-                  <Link to={vcsLink(VcsType.BITBUCKET)}>&nbsp;&nbsp;Bitbucket</Link>
-                </Button>
-                <Button icon={<VscAzureDevops />} size="large">
-                  <Link to={vcsLink(VcsType.AZURE_DEVOPS)}>&nbsp;&nbsp;Azure Devops</Link>
-                </Button>
+                <LinkButton to={vcsLink(VcsType.GITHUB)} icon={<GithubOutlined />} size="large">
+                  GitHub
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.GITLAB)} icon={<GitlabOutlined />} size="large">
+                  GitLab
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.BITBUCKET)} icon={<SiBitbucket />} size="large">
+                  Bitbucket
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.AZURE_DEVOPS)} icon={<VscAzureDevops />} size="large">
+                  Azure DevOps
+                </LinkButton>
               </Space>
               <br />
               <Button onClick={handleExisting} className="link" type="link">

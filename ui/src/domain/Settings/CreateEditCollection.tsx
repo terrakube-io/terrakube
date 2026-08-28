@@ -1,6 +1,7 @@
 import { Button, Col, Form, Input, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance from "../../config/axiosConfig";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -576,9 +577,7 @@ export const CreateEditCollection = ({
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "30px" }}>
             <Space>
-              <Button>
-                <Link to={`/organizations/${orgid}/settings/collection`}>Cancel</Link>
-              </Button>
+              <LinkButton to={`/organizations/${orgid}/settings/collection`}>Cancel</LinkButton>
               <Button type="primary" onClick={handleSave} loading={saveLoading} disabled={!managePermission}>
                 {mode === "create" ? "Create variable collection" : "Save Variable Collection"}
               </Button>

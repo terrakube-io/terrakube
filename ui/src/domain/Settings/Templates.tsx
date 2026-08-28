@@ -1,7 +1,8 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, List, message, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
@@ -78,11 +79,14 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
               title="Templates"
               description="Templates define the job flows a workspace can run, such as plan, apply, or custom steps."
               actions={
-                <Link to={`/organizations/${orgid}/settings/templates/new`}>
-                  <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-                    Add a Template
-                  </Button>
-                </Link>
+                <LinkButton
+                  to={`/organizations/${orgid}/settings/templates/new`}
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  disabled={!managePermission}
+                >
+                  Add a Template
+                </LinkButton>
               }
             />
             <SettingsSection maxWidth="100%">
@@ -96,9 +100,14 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
                   renderItem={(item) => (
                     <List.Item
                       actions={[
-                        <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
-                          <Link to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}>Edit</Link>
-                        </Button>,
+                        <LinkButton
+                          to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}
+                          icon={<EditOutlined />}
+                          type="link"
+                          disabled={!managePermission}
+                        >
+                          Edit
+                        </LinkButton>,
                         <Button
                           icon={<DeleteOutlined />}
                           type="link"

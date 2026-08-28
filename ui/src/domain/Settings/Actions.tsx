@@ -26,7 +26,8 @@ import {
 } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
@@ -122,11 +123,14 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       key: "action",
       render: (_: string, record: Action) => (
         <div>
-          <Link to={`/organizations/${orgid}/settings/actions/edit/${record.id}`}>
-            <Button type="link" icon={<EditOutlined />} disabled={!managePermission}>
-              Edit
-            </Button>
-          </Link>
+          <LinkButton
+            to={`/organizations/${orgid}/settings/actions/edit/${record.id}`}
+            type="link"
+            icon={<EditOutlined />}
+            disabled={!managePermission}
+          >
+            Edit
+          </LinkButton>
           <Button
             danger
             type="link"
@@ -289,11 +293,14 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
         }
         actions={
           !isEditing ? (
-            <Link to={`/organizations/${orgid}/settings/actions/new`}>
-              <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
-                Create Action
-              </Button>
-            </Link>
+            <LinkButton
+              to={`/organizations/${orgid}/settings/actions/new`}
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={!managePermission}
+            >
+              Create Action
+            </LinkButton>
           ) : undefined
         }
       />

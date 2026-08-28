@@ -2,7 +2,8 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-d
 import { Avatar, Button, List, message, Space, Tag, Typography, theme } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
@@ -127,11 +128,14 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
             title="Team Management"
             description="Teams let you group users into specific categories to enable finer grained access control policies. Each team is assigned a role that determines what actions its members can perform within the organization."
             actions={
-              <Link to={`/organizations/${orgid}/settings/teams/new`}>
-                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-                  Create team
-                </Button>
-              </Link>
+              <LinkButton
+                to={`/organizations/${orgid}/settings/teams/new`}
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create team
+              </LinkButton>
             }
           />
           <Loading loading={loading} description="Loading Teams...">
@@ -143,9 +147,14 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
                 return (
                   <List.Item
                     actions={[
-                      <Button icon={<EditOutlined />} type="link" disabled={!managePermission}>
-                        <Link to={`/organizations/${orgid}/settings/teams/edit/${item.id}`}>Edit</Link>
-                      </Button>,
+                      <LinkButton
+                        to={`/organizations/${orgid}/settings/teams/edit/${item.id}`}
+                        icon={<EditOutlined />}
+                        type="link"
+                        disabled={!managePermission}
+                      >
+                        Edit
+                      </LinkButton>,
                       <Button
                         icon={<DeleteOutlined />}
                         type="link"

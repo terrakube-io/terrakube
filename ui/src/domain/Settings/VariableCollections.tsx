@@ -10,6 +10,7 @@ import { Alert, Button, Card, Input, List, Space, Typography, Pagination, messag
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -175,13 +176,14 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
         title="Variable Collections"
         description="Variable Collections allow you to define and apply variables one time across multiple workspaces within an organization."
         actions={
-          <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
-            {managePermission ? (
-              <Link to={`/organizations/${orgid}/settings/collection/new`}>Create variable collection</Link>
-            ) : (
-              "Create variable collection"
-            )}
-          </Button>
+          <LinkButton
+            to={`/organizations/${orgid}/settings/collection/new`}
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={!managePermission}
+          >
+            Create variable collection
+          </LinkButton>
         }
       />
       <SettingsSection maxWidth="100%">
@@ -231,9 +233,14 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                         </Space>
                       </Link>
                       <Space>
-                        <Button type="text" icon={<EditOutlined />} disabled={!managePermission}>
-                          {managePermission ? <Link to={editCollectionLink(item.id)}>Edit</Link> : "Edit"}
-                        </Button>
+                        <LinkButton
+                          to={editCollectionLink(item.id)}
+                          type="text"
+                          icon={<EditOutlined />}
+                          disabled={!managePermission}
+                        >
+                          Edit
+                        </LinkButton>
                         <Button
                           danger
                           type="text"

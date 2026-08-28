@@ -1,7 +1,8 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Divider, Flex, List, Row, Space, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { VcsModel, VcsType } from "../types";
@@ -135,11 +136,14 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
             title="VCS Providers"
             description="Connect version control providers so workspaces and modules can read from your repositories."
             actions={
-              <Link to={`/organizations/${orgid}/settings/vcs/new`}>
-                <Button type="primary" htmlType="button" icon={<PlusOutlined />} disabled={!managePermission}>
-                  Add a VCS Provider
-                </Button>
-              </Link>
+              <LinkButton
+                to={`/organizations/${orgid}/settings/vcs/new`}
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Add a VCS Provider
+              </LinkButton>
             }
           />
           <SettingsSection maxWidth="100%">
@@ -165,11 +169,14 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
                       actions={[
                         <Flex key="actions" justify="flex-end" style={{ paddingInline: 24 }}>
                           <Space>
-                            <Link to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}>
-                              <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
-                                Edit Client
-                              </Button>
-                            </Link>
+                            <LinkButton
+                              to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}
+                              type="default"
+                              icon={<EditOutlined />}
+                              disabled={!managePermission}
+                            >
+                              Edit Client
+                            </LinkButton>
                             <Button
                               type="primary"
                               icon={<DeleteOutlined />}
