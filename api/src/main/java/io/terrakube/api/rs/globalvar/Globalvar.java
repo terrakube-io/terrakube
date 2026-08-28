@@ -4,7 +4,6 @@ import com.yahoo.elide.annotation.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.parameters.Category;
 
@@ -24,7 +23,6 @@ public class Globalvar {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

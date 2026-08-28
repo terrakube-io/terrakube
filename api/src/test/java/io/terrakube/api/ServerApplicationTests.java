@@ -25,7 +25,7 @@ import org.quartz.Scheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -47,16 +47,16 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 @ActiveProfiles("test")
 class ServerApplicationTests {
 
-    @MockBean
+    @MockitoBean
     protected RedisTemplate<String, Object> redisTemplate;
 
     // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
     // container to connect to Redis on every SpringBootTest context startup - CI has no Redis
     // service, so every test in this hierarchy would fail before this mock existed.
-    @MockBean
+    @MockitoBean
     protected RedisMessageListenerContainer redisMessageListenerContainer;
 
-    @MockBean
+    @MockitoBean
     protected DownloadReleasesService downloadReleasesService;
 
     @Mock

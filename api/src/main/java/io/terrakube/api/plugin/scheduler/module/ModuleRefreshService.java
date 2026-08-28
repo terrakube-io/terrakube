@@ -13,7 +13,8 @@ import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.module.ModuleVersion;
-import jakarta.annotation.PostConstruct;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import jakarta.transaction.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,7 @@ public class ModuleRefreshService extends ScheduleServiceBase {
     @Autowired
     private OrganizationRepository organizationRepository;
 
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initModuleRefreshJob() {
         List<Module> modules = moduleRepository.findByOrganizationIn(organizationRepository.findAll()); // this will return only enabled organization modules

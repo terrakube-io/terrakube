@@ -3,7 +3,6 @@ package io.terrakube.api.rs.workspace;
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.ExecutionMode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
@@ -47,7 +46,6 @@ public class Workspace extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

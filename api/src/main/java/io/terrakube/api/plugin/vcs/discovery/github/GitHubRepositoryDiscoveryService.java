@@ -85,7 +85,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         if (search != null && !search.isBlank()) {
             String scopedGroup = PERSONAL_ACCOUNT_GROUP.equals(group) ? null : group;
             String query = search + " in:name" + (scopedGroup != null ? " user:" + scopedGroup : "");
-            url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/search/repositories")
+            url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/search/repositories")
                     .queryParam("q", query)
                     .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
@@ -103,13 +103,13 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         }
 
         if (PERSONAL_ACCOUNT_GROUP.equals(group)) {
-            url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/user/repos")
+            url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/user/repos")
                     .queryParam("affiliation", "owner")
                     .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
         } else {
-            url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/orgs/" + group + "/repos")
+            url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/orgs/" + group + "/repos")
                     .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
@@ -158,7 +158,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         }
 
         if (search == null || search.isBlank()) {
-            String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/installation/repositories")
+            String url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/installation/repositories")
                     .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                     .queryParam("page", page)
                     .toUriString();
@@ -177,7 +177,7 @@ public class GitHubRepositoryDiscoveryService implements VcsRepositoryDiscoveryP
         // installations), each "page" the UI asks for maps directly to one provider page that we
         // filter here; hasMore reflects whether that provider page was full, so repeatedly clicking
         // "Load more" keeps scanning forward until the whole installation has been covered.
-        String url = UriComponentsBuilder.fromHttpUrl(vcs.getApiUrl() + "/installation/repositories")
+        String url = UriComponentsBuilder.fromUriString(vcs.getApiUrl() + "/installation/repositories")
                 .queryParam(PARAM_PER_PAGE, PAGE_SIZE)
                 .queryParam("page", page)
                 .toUriString();

@@ -4,7 +4,7 @@ import io.terrakube.api.repository.AccessRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.HttpStatus;
 
 import static io.restassured.RestAssured.given;
@@ -23,7 +23,7 @@ class LimitedAccessLookupTests extends ServerApplicationTests {
     private static final String SIMPLE_ORGANIZATION = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
     private static final String SIMPLE_WORKSPACE = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
 
-    @SpyBean
+    @MockitoSpyBean
     AccessRepository accessRepository;
 
     @BeforeEach

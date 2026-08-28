@@ -6,7 +6,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.job.Job;
 
 import jakarta.persistence.Column;
@@ -29,7 +28,6 @@ public class NotificationOutbox extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
