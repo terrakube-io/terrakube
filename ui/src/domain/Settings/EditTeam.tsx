@@ -261,7 +261,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
 
             <TeamPermissionsV2 managePermissions={true} />
 
-            <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Flex justify="flex-end" style={{ maxWidth: 960, marginBottom: 32 }}>
               <Space orientation="horizontal">
                 <Button onClick={onCancel} type="default">
                   Cancel
@@ -279,7 +279,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
         <SettingsSection
           title="Team API Tokens"
           description="Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation."
-          maxWidth="100%"
+          maxWidth={960}
           extra={
             <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
               <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">

@@ -115,6 +115,14 @@ const roleDescriptions: Record<TeamRole, { label: string; color: string; icon: R
     },
   };
 
+const roleAccents: Record<TeamRole, string> = {
+  admin: "#f5222d",
+  write: "#fa8c16",
+  plan: "#1677ff",
+  read: "#8c8c8c",
+  custom: "#722ed1",
+};
+
 const permissionCategories: PermissionCategory[] = [
   {
     category: "Run Access",
@@ -251,8 +259,12 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
               {(Object.entries(roleDescriptions) as [TeamRole, (typeof roleDescriptions)["admin"]][]).map(
                 ([key, desc]) => (
                   <Col key={key} xs={24} md={12}>
-                    <Radio value={key} className="execution-mode-option">
-                      <Space align="start">
+                    <Radio
+                      value={key}
+                      className="execution-mode-option role-option"
+                      style={{ "--role-accent": roleAccents[key] } as React.CSSProperties}
+                    >
+                      <Space align="center">
                         <Tag color={desc.color} icon={desc.icon}>
                           {desc.label}
                         </Tag>

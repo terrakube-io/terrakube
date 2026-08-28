@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Divider, List, Row, Typography, message } from "antd";
+import { Button, Card, Col, Divider, Flex, List, Row, Space, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
@@ -163,24 +163,24 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
                         </span>
                       }
                       actions={[
-                        <div key="actions" style={{ float: "right" }}>
-                          <Link to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}>
-                            <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
-                              Edit Client
+                        <Flex key="actions" justify="flex-end" style={{ paddingInline: 24 }}>
+                          <Space>
+                            <Link to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}>
+                              <Button type="default" icon={<EditOutlined />} disabled={!managePermission}>
+                                Edit Client
+                              </Button>
+                            </Link>
+                            <Button
+                              type="primary"
+                              icon={<DeleteOutlined />}
+                              danger
+                              disabled={!managePermission}
+                              onClick={() => setPendingDelete(item)}
+                            >
+                              Delete Client
                             </Button>
-                          </Link>
-                          &nbsp;&nbsp;&nbsp;
-                          <Button
-                            type="primary"
-                            icon={<DeleteOutlined />}
-                            danger
-                            disabled={!managePermission}
-                            onClick={() => setPendingDelete(item)}
-                          >
-                            Delete Client
-                          </Button>
-                          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                        </div>,
+                          </Space>
+                        </Flex>,
                       ]}
                     >
                       <div className="paragraph">

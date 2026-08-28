@@ -7,11 +7,27 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Editor, type OnMount } from "@monaco-editor/react";
-import { Alert, Button, Form, Input, message, Select, Space, Switch, Table, Tooltip, Typography, theme } from "antd";
+import {
+  Alert,
+  Button,
+  Col,
+  Flex,
+  Form,
+  Input,
+  message,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  theme,
+} from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
@@ -98,7 +114,8 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       title: "Active",
       dataIndex: "active",
       key: "active",
-      render: (_: string, record: Action) => <Switch checked={record.attributes.active} disabled />,
+      render: (_: string, record: Action) =>
+        record.attributes.active ? <Tag color="green">Active</Tag> : <Tag>Inactive</Tag>,
     },
     {
       title: "Actions",
@@ -119,15 +136,6 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
           >
             Delete
           </Button>
-          <Tooltip title="Open the documentation for this Action">
-            <Button
-              icon={<QuestionCircleOutlined />}
-              target="_blank"
-              rel="noreferrer"
-              href={"https://docs.terrakube.io/user-guide/workspaces/actions/built-in-actions/" + record.id}
-              type="link"
-            ></Button>
-          </Tooltip>
         </div>
       ),
     },
@@ -273,8 +281,12 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
     <div className="setting">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces/actions"
-        title="Actions"
-        description="Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
+        title={isEditing ? (mode === "edit" ? "Edit Action" : "Create New Action") : "Actions"}
+        description={
+          isEditing
+            ? undefined
+            : "Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
+        }
         actions={
           !isEditing ? (
             <Link to={`/organizations/${orgid}/settings/actions/new`}>
@@ -318,107 +330,116 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
         </>
       ) : (
         <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {mode === "edit" ? "Edit Action" : "Create New Action"}
-          </Typography.Title>
-          <SettingsSection>
-            {mode === "edit" ? (
-              <Tooltip title="Open the documentation for this Action">
-                <Button
-                  icon={<QuestionCircleOutlined />}
-                  target="_blank"
-                  rel="noreferrer"
-                  href={"https://docs.terrakube.io/user-guide/workspaces/actions/built-in-actions/" + actionId}
-                  type="link"
-                >
-                  Action Documentation
-                </Button>
-              </Tooltip>
-            ) : (
-              <Tooltip title="See a quick start guide in how to create Actions">
-                <Button
-                  icon={<QuestionCircleOutlined />}
-                  target="_blank"
-                  rel="noreferrer"
-                  href={"https://docs.terrakube.io/user-guide/workspaces/actions/developing-actions/quick-start"}
-                  type="link"
-                >
-                  Actions Documentation
-                </Button>
-              </Tooltip>
-            )}
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={(values) => {
-                if (mode === "create") onCreate(values);
-                else onUpdate(values);
-              }}
-              validateMessages={validateMessages}
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={(values) => {
+              if (mode === "create") onCreate(values);
+              else onUpdate(values);
+            }}
+            validateMessages={validateMessages}
+          >
+            <SettingsSection
+              maxWidth={960}
+              title="General"
+              description="Identify the action and choose where it appears in the UI."
+              extra={
+                mode === "create" ? (
+                  <Button
+                    icon={<QuestionCircleOutlined />}
+                    target="_blank"
+                    rel="noreferrer"
+                    href={"https://docs.terrakube.io/user-guide/workspaces/actions/developing-actions/quick-start"}
+                    type="link"
+                  >
+                    Actions Documentation
+                  </Button>
+                ) : undefined
+              }
             >
-              <Form.Item name="id" label="ID" rules={[{ required: true }]}>
-                <Input disabled={mode !== "create"} />
-              </Form.Item>
-              <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name="type"
-                label="Type"
-                tooltip={{
-                  title:
-                    "Defines the section where this action will appear. Check the docs to see the specific area where the action will be rendered.",
-                  icon: <InfoCircleOutlined />,
-                }}
-                rules={[{ required: true }]}
-              >
-                <Select placeholder="Please select a type">
-                  <Select.Option value="Workspace/Action">Workspace/Action</Select.Option>
-                  <Select.Option value="Workspace/ResourceDrawer/Action">Workspace/ResourceDrawer/Action</Select.Option>
-                  <Select.Option value="Workspace/ResourceDrawer/Tab">Workspace/ResourceDrawer/Tab</Select.Option>
-                </Select>
-              </Form.Item>
-              <Form.Item
-                name="label"
-                label="Label"
-                tooltip={{
-                  title:
-                    "For tabs, this will be displayed as the tab name. For action buttons, it should be displayed as the button name.",
-                  icon: <InfoCircleOutlined />,
-                }}
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name="category"
-                label="Category"
-                tooltip={{
-                  title:
-                    "This helps to organize the actions based on their function. Example: General, Azure, Cost, Monitoring.",
-                  icon: <InfoCircleOutlined />,
-                }}
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name="version"
-                label="Version"
-                tooltip={{
-                  title: "Must follow semantic versioning (e.g., 1.0.0).",
-                  icon: <InfoCircleOutlined />,
-                }}
-                rules={[
-                  { required: true },
-                  {
-                    pattern: new RegExp(/^([0-9]+)\.([0-9]+)\.([0-9]+)$/),
-                    message: "Version must be in semver format (e.g., 1.0.0)",
-                  },
-                ]}
-              >
-                <Input />
-              </Form.Item>
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form.Item name="id" label="ID" rules={[{ required: true }]}>
+                    <Input disabled={mode !== "create"} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="type"
+                    label="Type"
+                    tooltip={{
+                      title:
+                        "Defines the section where this action will appear. Check the docs to see the specific area where the action will be rendered.",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                    rules={[{ required: true }]}
+                  >
+                    <Select placeholder="Please select a type">
+                      <Select.Option value="Workspace/Action">Workspace/Action</Select.Option>
+                      <Select.Option value="Workspace/ResourceDrawer/Action">
+                        Workspace/ResourceDrawer/Action
+                      </Select.Option>
+                      <Select.Option value="Workspace/ResourceDrawer/Tab">Workspace/ResourceDrawer/Tab</Select.Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="label"
+                    label="Label"
+                    tooltip={{
+                      title:
+                        "For tabs, this will be displayed as the tab name. For action buttons, it should be displayed as the button name.",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                    rules={[{ required: true }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="category"
+                    label="Category"
+                    tooltip={{
+                      title:
+                        "This helps to organize the actions based on their function. Example: General, Azure, Cost, Monitoring.",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                    rules={[{ required: true }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="version"
+                    label="Version"
+                    tooltip={{
+                      title: "Must follow semantic versioning (e.g., 1.0.0).",
+                      icon: <InfoCircleOutlined />,
+                    }}
+                    rules={[
+                      { required: true },
+                      {
+                        pattern: new RegExp(/^([0-9]+)\.([0-9]+)\.([0-9]+)$/),
+                        message: "Version must be in semver format (e.g., 1.0.0)",
+                      },
+                    ]}
+                  >
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Form.Item
                 name="description"
                 label="Description"
@@ -427,8 +448,18 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
                   icon: <InfoCircleOutlined />,
                 }}
               >
-                <Input.TextArea />
+                <Input.TextArea rows={2} />
               </Form.Item>
+              <Form.Item name="active" valuePropName="checked" label="Active" style={{ marginBottom: 0 }}>
+                <Switch />
+              </Form.Item>
+            </SettingsSection>
+
+            <SettingsSection
+              maxWidth={960}
+              title="Display Criteria"
+              description="Control when the action is displayed and pass settings to it."
+            >
               <Form.List name="displayCriteria">
                 {(fields, { add, remove }) => (
                   <>
@@ -500,41 +531,35 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
                   </>
                 )}
               </Form.List>
-              <Form.Item
-                label="Action"
-                tooltip={{
-                  title:
-                    "A JavaScript function equivalent to a React component. Receives the context with some data related to the context. This varies by type, please check the docs.",
-                  icon: <InfoCircleOutlined />,
-                }}
-              >
-                <div className="editor">
-                  <Editor
-                    height="40vh"
-                    onMount={handleEditorDidMount}
-                    defaultLanguage="javascript"
-                    theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                    options={monacoOptions}
-                  />
-                </div>
-              </Form.Item>
-              <Form.Item name="active" valuePropName="checked" label="Active">
-                <Switch />
-              </Form.Item>
-              <Form.Item>
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <Space>
-                    <Button type="default" onClick={onCancel}>
-                      Cancel
-                    </Button>
-                    <Button type="primary" htmlType="submit" disabled={!managePermission}>
-                      Save
-                    </Button>
-                  </Space>
-                </div>
-              </Form.Item>
-            </Form>
-          </SettingsSection>
+            </SettingsSection>
+
+            <SettingsSection
+              maxWidth={960}
+              title="Action Code"
+              description="A JavaScript function equivalent to a React component. It receives a context object whose content varies by type, please check the docs."
+            >
+              <div className="editor">
+                <Editor
+                  height="40vh"
+                  onMount={handleEditorDidMount}
+                  defaultLanguage="javascript"
+                  theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
+                  options={monacoOptions}
+                />
+              </div>
+            </SettingsSection>
+
+            <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+              <Space>
+                <Button type="default" onClick={onCancel}>
+                  Cancel
+                </Button>
+                <Button type="primary" htmlType="submit" disabled={!managePermission}>
+                  Save
+                </Button>
+              </Space>
+            </Flex>
+          </Form>
         </div>
       )}
     </div>

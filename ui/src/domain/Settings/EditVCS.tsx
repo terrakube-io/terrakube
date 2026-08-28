@@ -1,6 +1,5 @@
-import { Button, Col, Flex, Form, Input, Row, Space, Spin, Typography, message } from "antd";
+import { Button, Col, Flex, Form, Input, Row, Space, Spin, message } from "antd";
 import { useEffect, useState } from "react";
-import { HiOutlineExternalLink } from "react-icons/hi";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
@@ -70,9 +69,9 @@ const renderVCSType = (vcs: VcsTypeExtended): string => {
     case "BITBUCKET_SERVER":
       return "BitBucket Server";
     case "AZURE_DEVOPS":
-      return "Azure Devops";
+      return "Azure DevOps";
     case "AZURE_DEVOPS_SERVER":
-      return "Azure Devops Server";
+      return "Azure DevOps Server";
     case "GITHUB_ENTERPRISE":
       return "GitHub Enterprise";
     case "GITHUB_APP":
@@ -274,15 +273,15 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
               control system.
             </>
           }
-        />{" "}
-        <br />
-        <br />
-        <Typography.Text type="secondary">
-          <b>Provider:</b> {renderVCSType(vcsTypeExtended)}&nbsp;&nbsp;
-          <b>Connection type:</b> {connectionType === VcsConnectionType.OAUTH ? "OAuth App" : "GitHub App (Standalone)"}
-        </Typography.Text>
-        <SettingsSection maxWidth={960}>
-          <Form form={form} layout="vertical" onFinish={onFinish}>
+        />
+        <Form form={form} layout="vertical" onFinish={onFinish}>
+          <SettingsSection
+            maxWidth={960}
+            title="Provider details"
+            description={`${renderVCSType(vcsTypeExtended)} connection using ${
+              connectionType === VcsConnectionType.OAUTH ? "an OAuth App" : "a GitHub App (standalone)"
+            }.`}
+          >
             <Row gutter={16}>
               <Col xs={24} md={12}>
                 <Form.Item name="name" label="Name" rules={[{ required: true }]}>
@@ -321,35 +320,38 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
                 </Form.Item>
               </Col>
             </Row>
-            <Form.Item
-              name="clientSecret"
-              label={getSecretIdName(vcsTypeExtended, connectionType)}
-              hidden={secretHidden}
-              extra="Leave blank to keep the existing secret"
-            >
-              <Input.Password />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="clientSecret"
+                  label={getSecretIdName(vcsTypeExtended, connectionType)}
+                  hidden={secretHidden}
+                  extra="Leave blank to keep the existing secret"
+                >
+                  <Input.Password />
+                </Form.Item>
+              </Col>
+            </Row>
             <Form.Item
               name="privateKey"
               label={getSecretIdName(vcsTypeExtended, connectionType)}
               hidden={connectionType === VcsConnectionType.OAUTH}
               extra="Leave blank to keep the existing private key"
               rules={[{ validator: validatePrivateKeyFormat }]}
+              style={{ marginBottom: 0 }}
             >
               <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
             </Form.Item>
-            <Form.Item>
-              <Flex justify="flex-end">
-                <Space>
-                  <Button onClick={onCancel}>Cancel</Button>
-                  <Button type="primary" htmlType="submit">
-                    Update
-                  </Button>
-                </Space>
-              </Flex>
-            </Form.Item>
-          </Form>
-        </SettingsSection>
+          </SettingsSection>
+          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Space>
+              <Button onClick={onCancel}>Cancel</Button>
+              <Button type="primary" htmlType="submit">
+                Update
+              </Button>
+            </Space>
+          </Flex>
+        </Form>
       </div>
     </Spin>
   );

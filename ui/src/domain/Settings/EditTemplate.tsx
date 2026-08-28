@@ -1,5 +1,6 @@
+import { InfoCircleOutlined } from "@ant-design/icons";
 import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Alert, Button, Flex, Form, Input, message, Space, theme, Typography } from "antd";
+import { Alert, Button, Col, Flex, Form, Input, message, Row, Space, theme } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -99,6 +100,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
         message.error(getErrorMessage(err));
       });
   };
+
   return (
     <div>
       <SettingsPageHeader
@@ -106,55 +108,69 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
         title="Edit Template"
         description="Update this template's job flow definition."
       />
-      <Space className="chooseType" orientation="vertical">
-        {loading ? (
-          <LoadingFallback />
-        ) : error ? (
-          <Alert title="Error" description={error} type="error" showIcon />
-        ) : template ? (
-          <SettingsSection>
-            <Form
-              initialValues={{ name: template.attributes.name, description: template.attributes.description }}
-              onFinish={onFinish}
-              validateMessages={validateMessages}
-              name="create-vcs"
-              layout="vertical"
-            >
-              <Form.Item
-                name="name"
-                label="Name"
-                extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item name="description" label="Description">
-                <Input.TextArea />
-              </Form.Item>
-              <Form.Item name="tcl" label="Template">
-                <div className="editor">
-                  <Editor
-                    height="40vh"
-                    onMount={handleEditorDidMount}
-                    onValidate={handleEditorValidation}
-                    defaultLanguage="yaml"
-                    defaultValue={tcl}
-                    theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                    options={monacoOptions}
-                  />
-                </div>
-              </Form.Item>
-              <Flex justify="flex-end">
-                <Button type="primary" htmlType="submit">
-                  Save Template
-                </Button>
-              </Flex>
-            </Form>
+      {loading ? (
+        <LoadingFallback />
+      ) : error ? (
+        <Alert title="Error" description={error} type="error" showIcon />
+      ) : template ? (
+        <Form
+          initialValues={{ name: template.attributes.name, description: template.attributes.description }}
+          onFinish={onFinish}
+          validateMessages={validateMessages}
+          name="edit-template"
+          layout="vertical"
+        >
+          <SettingsSection maxWidth={960} title="General">
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  tooltip={{
+                    title: "A name for your Template. This will appear in the workspaces when you execute a new job.",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="description" label="Description" style={{ marginBottom: 0 }}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
           </SettingsSection>
-        ) : (
-          <p>Failed to load template...</p>
-        )}
-      </Space>
+
+          <SettingsSection
+            maxWidth={960}
+            title="Template Definition"
+            description="The YAML flow executed by this template. You can run any tool before or after terraform plan, apply or destroy."
+          >
+            <div className="editor">
+              <Editor
+                height="45vh"
+                onMount={handleEditorDidMount}
+                onValidate={handleEditorValidation}
+                defaultLanguage="yaml"
+                defaultValue={tcl}
+                theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
+                options={monacoOptions}
+              />
+            </div>
+          </SettingsSection>
+
+          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Space>
+              <Button onClick={() => setMode("list")}>Cancel</Button>
+              <Button type="primary" htmlType="submit">
+                Save Template
+              </Button>
+            </Space>
+          </Flex>
+        </Form>
+      ) : (
+        <p>Failed to load template...</p>
+      )}
     </div>
   );
 };

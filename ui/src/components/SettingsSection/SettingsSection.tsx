@@ -39,7 +39,7 @@ export default function SettingsSection({ title, description, children, danger, 
   }
 
   return (
-    <section className="settings-section">
+    <section className="settings-section" style={{ maxWidth }}>
       {(title || extra) && (
         <div className="settings-section-header">
           {title && (
@@ -55,9 +55,7 @@ export default function SettingsSection({ title, description, children, danger, 
           {description}
         </Typography.Text>
       )}
-      <div className="settings-section-content" style={{ maxWidth }}>
-        {children}
-      </div>
+      <div className="settings-section-content">{children}</div>
     </section>
   );
 }
