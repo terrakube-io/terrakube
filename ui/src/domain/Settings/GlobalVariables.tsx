@@ -18,11 +18,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { CrudFormModal } from "@/modules/layout/CrudFormModal";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { CrudFormModal } from "@/components/CrudFormModal";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   managePermission?: boolean;

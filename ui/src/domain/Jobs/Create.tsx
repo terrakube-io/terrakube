@@ -6,6 +6,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance from "../../config/axiosConfig";
 import { Resource, Template } from "../types";
 import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
+import LoadingFallback from "@/components/LoadingFallback";
 
 const validateMessages = { required: "${label} is required!" };
 
@@ -168,7 +169,7 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
               initialValue={defaultTemplate}
             >
               {loading || !templates ? (
-                <p>Data loading...</p>
+                <LoadingFallback />
               ) : (
                 <Select>
                   {templates.map((item) => (

@@ -1,6 +1,6 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Alert, Button, Divider, Form, Input, Space, Spin, Tooltip, Typography, message, theme } from "antd";
-import CreatePatModal from "@/modules/token/modals/CreatePatModal";
+import CreatePatModal from "@/components/CreatePatModal";
 import { CreateTokenForm } from "@/modules/user/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { TeamPermissionsV2 } from "./TeamPermissionsV2";
 

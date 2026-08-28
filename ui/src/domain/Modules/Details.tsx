@@ -22,20 +22,20 @@ import {
   Typography,
 } from "antd";
 import { Buffer } from "buffer";
-import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
 import { useNavigate, useParams } from "react-router-dom";
 import LoadingFallback from "@/components/LoadingFallback";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
+import { relativeTime } from "@/modules/utils/dates";
 
 const Markdown = lazy(async () => {
   const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
@@ -342,8 +342,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         </Dropdown>
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        <ClockCircleOutlined /> Published{" "}
-                        {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
+                        <ClockCircleOutlined /> Published {relativeTime(module.attributes.createdDate)}
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         Source <VcsLogo type={vcsProvider} />{" "}

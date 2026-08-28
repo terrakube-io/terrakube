@@ -16,7 +16,7 @@ import { ThemeProvider, useTheme } from "../../context/ThemeContext";
 import Login from "../Login/Login";
 import "./App.css";
 import "./Home.css";
-import AppSidebar from "@/modules/layout/AppSidebar/AppSidebar";
+import AppSidebar from "@/components/AppSidebar/AppSidebar";
 import LoadingFallback from "@/components/LoadingFallback";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { getOrgIdFromPathname } from "../../config/orgId";

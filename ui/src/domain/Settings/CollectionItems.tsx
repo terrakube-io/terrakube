@@ -3,7 +3,7 @@ import { Button, Form, message, Modal, Popconfirm, Spin, Table, Tag, Typography 
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { VariableFormFields } from "@/components/VariableFormFields";
 

@@ -27,9 +27,10 @@ import { useEffect, useRef, useState } from "react";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import LoadingFallback from "@/components/LoadingFallback";
 
 const validateMessages: any = {
   required: "${label} is required!",
@@ -300,7 +301,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
             Actions
           </Typography.Title>
           {loading || !actions ? (
-            <p>Data loading...</p>
+            <LoadingFallback />
           ) : (
             <Table dataSource={actions} columns={ACTIONS_COLUMNS(onEdit)} rowKey="id" />
           )}

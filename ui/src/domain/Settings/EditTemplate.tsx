@@ -6,9 +6,10 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Template } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import LoadingFallback from "@/components/LoadingFallback";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -103,7 +104,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
       <SettingsPageHeader title="Edit Template" />
       <Space className="chooseType" direction="vertical">
         {loading ? (
-          <p>Data loading...</p>
+          <LoadingFallback />
         ) : error ? (
           <Alert message="Error" description={error} type="error" showIcon />
         ) : template ? (

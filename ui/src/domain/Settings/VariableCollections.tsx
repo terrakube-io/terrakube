@@ -10,9 +10,9 @@ import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, 
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 // Type definitions for Variable Collections
 type Collection = {

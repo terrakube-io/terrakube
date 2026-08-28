@@ -14,8 +14,8 @@ import {
 import projectService from "@/modules/projects/projectService";
 import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   workspaceData: Workspace;

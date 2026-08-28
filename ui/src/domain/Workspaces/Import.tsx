@@ -29,8 +29,9 @@ import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionType
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import organizationService from "@/modules/organizations/organizationService";
 import { VcsModel, VcsTypeExtended } from "../types";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import VcsLogo from "@/components/VcsLogo";
+import LoadingFallback from "@/components/LoadingFallback";
 const { Content } = Layout;
 const validateMessages = {
   required: "${label} is required!",
@@ -938,7 +939,7 @@ export const ImportWorkspace = () => {
               <div>
                 <Space direction="horizontal">
                   {loading || vcs.length === 0 ? (
-                    <p>Data loading...</p>
+                    <LoadingFallback />
                   ) : (
                     vcs.map(function (item) {
                       return (

@@ -8,9 +8,9 @@ import { OrganizationModel } from "./types";
 import { ErrorInformation } from "@/modules/api/types";
 import OrganizationGrid from "./components/OrganizationGrid/OrganizationGrid";
 import OrganizationTable from "./components/OrganizationTable/OrganizationTable";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
-import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import ListViewToggle from "@/components/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/ListViewToggle/listViewPreference";
 
 export default function OrganizationsPickerPage() {
   const [organizations, setOrganizations] = useState<OrganizationModel[]>([]);

@@ -30,8 +30,8 @@ import workspaceAccessService, {
   WorkspaceAccessPermissions,
 } from "@/modules/workspaces/workspaceAccessService";
 import { Workspace } from "../../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   workspace: Workspace;

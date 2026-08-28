@@ -5,10 +5,10 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const roleColors: Record<string, string> = {
   admin: "red",

@@ -4,11 +4,11 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Organization, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";

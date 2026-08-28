@@ -3,9 +3,9 @@ import { Button, Form, Input, message, Popconfirm, Select, Spin, Table, Typograp
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { CrudFormModal } from "@/modules/layout/CrudFormModal";
+import { CrudFormModal } from "@/components/CrudFormModal";
 
 // Type definitions for Collection References
 type CollectionReference = {

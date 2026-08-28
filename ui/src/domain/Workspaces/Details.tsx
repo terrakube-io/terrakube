@@ -30,7 +30,6 @@ import {
   Input,
 } from "antd";
 
-import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useJobStatusSubscription, usePolling } from "../../hooks";
 import { IconContext } from "react-icons";
@@ -64,12 +63,13 @@ import { getServiceIcon } from "./Icons.jsx";
 import { getIaCIconById, getIaCNameById } from "./Workspaces";
 import "./Workspaces.css";
 import LoadingFallback from "@/components/LoadingFallback";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import RunList from "@/modules/workspaces/components/RunList";
-import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
+import { relativeTime } from "@/modules/utils/dates";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -889,7 +889,7 @@ export const WorkspaceDetails = ({
 
               <Typography.Text>
                 <ClockCircleOutlined /> Updated{" "}
-                <span style={{ fontWeight: "500" }}>{DateTime.fromISO(lastRun).toRelative() ?? "never executed"}</span>
+                <span style={{ fontWeight: "500" }}>{relativeTime(lastRun) ?? "never executed"}</span>
               </Typography.Text>
 
               <span>

@@ -3,7 +3,7 @@ import { Button, Form, Popconfirm, Select, Space, Spin, Table, Tag, Tooltip, Typ
 import { useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import projectService, { ProjectAccessModel } from "./projectService";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   orgid: string;

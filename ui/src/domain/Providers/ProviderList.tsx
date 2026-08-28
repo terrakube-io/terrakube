@@ -1,10 +1,11 @@
 import { CloudOutlined, LinkOutlined } from "@ant-design/icons";
-import { Card, Empty, List, Space, Typography } from "antd";
+import { Empty, List, Typography } from "antd";
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "./types";
 import "../Modules/Module.css";
+import { RegistryCard } from "@/components/RegistryCard";
 
 type Params = {
   orgid: string;
@@ -75,48 +76,23 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
               to={`/organizations/${orgid}/registry/providers/${item.id}`}
               style={{ display: "block", width: "100%", color: "inherit" }}
             >
-              <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-                <div className="module-card-body">
-                  <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <div
-                      style={{
-                        flexShrink: 0,
-                        width: 36,
-                        height: 36,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <CloudOutlined style={{ fontSize: 18, color: "#7b61ff" }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Typography.Text strong className="module-card-name">
-                        {item.name}
-                      </Typography.Text>
-                      <div className="module-card-desc">
-                        {descriptionText || "No description provided for this provider"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    borderTop: "1px solid #f0f0f0",
-                    padding: "10px 24px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <Space size={16}>
-                    {item.latestVersion && (
-                      <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-                        {formatVersion(item.latestVersion)}
-                      </Typography.Text>
-                    )}
-                  </Space>
-                  <Space size={6}>
+              <RegistryCard
+                icon={
+                  <>
+                    <CloudOutlined style={{ fontSize: 18, color: "#7b61ff" }} />
+                  </>
+                }
+                title={item.name}
+                description={descriptionText || "No description provided for this provider"}
+                footerLeft={
+                  item.latestVersion && (
+                    <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+                      {formatVersion(item.latestVersion)}
+                    </Typography.Text>
+                  )
+                }
+                footerRight={
+                  <>
                     {source && (
                       <Typography.Link
                         href={source.repoUrl}
@@ -132,9 +108,9 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
                     <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                       provider
                     </Typography.Text>
-                  </Space>
-                </div>
-              </Card>
+                  </>
+                }
+              />
             </Link>
           </List.Item>
         );

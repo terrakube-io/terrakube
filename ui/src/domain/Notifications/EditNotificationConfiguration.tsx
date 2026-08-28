@@ -22,7 +22,7 @@ import { JobStatus, NotificationChannelType, NotificationMessageStyle, Template 
 import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 
 type Props = {
   orgId: string;

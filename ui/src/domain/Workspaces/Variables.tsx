@@ -17,8 +17,8 @@ import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
-import { CrudFormModal } from "@/modules/layout/CrudFormModal";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import { CrudFormModal } from "@/components/CrudFormModal";
 import { VariableFormFields } from "@/components/VariableFormFields";
 
 const VARIABLES_COLUMS = (

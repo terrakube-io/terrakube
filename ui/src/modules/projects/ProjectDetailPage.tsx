@@ -2,7 +2,7 @@ import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import projectService, { ProjectAccessModel } from "./projectService";
 import { apiGet } from "@/modules/api/apiWrapper";
 import ProjectWorkspaces from "./ProjectWorkspaces";
@@ -14,7 +14,7 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import type { MenuProps } from "antd";
 import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const { Content, Sider } = Layout;
 type MenuItem = Required<MenuProps>["items"][number];

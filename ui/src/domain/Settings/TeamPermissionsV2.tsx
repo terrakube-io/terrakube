@@ -8,7 +8,7 @@ import {
   CodeOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 
 type TeamPermissionsV2Props = {
   managePermissions: boolean;

@@ -4,8 +4,8 @@ import { Link } from "react-router-dom";
 import axiosInstance from "../../../config/axiosConfig";
 import { SshKey, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const { Text } = Typography;
 

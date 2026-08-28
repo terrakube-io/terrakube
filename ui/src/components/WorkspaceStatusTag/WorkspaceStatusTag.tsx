@@ -1,7 +1,7 @@
 import { Tag } from "antd";
-import { statusColors } from "../utils/workspaceStatusColors";
-import { getWorkspaceStatusIcon } from "../utils/workspaceStatusIcon";
-import { getWorkspaceStatusText } from "../utils/workspaceStatusText";
+import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
+import { getWorkspaceStatusText } from "@/modules/workspaces/utils/workspaceStatusText";
 
 type Props = {
   status?: string;

@@ -15,12 +15,11 @@ import {
 } from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
-import { DateTime } from "luxon";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosClient } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
-import WorkspaceStatusTag from "../../modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
@@ -40,6 +39,7 @@ import {
   normalizeStructuredPlanOutput,
   normalizeUITemplates,
 } from "./structuredPlan";
+import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   jobId: string;
@@ -663,9 +663,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                   <span>
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
-                    {job.data.attributes.createdDate
-                      ? DateTime.fromISO(job.data.attributes.createdDate || "").toRelative()
-                      : ""}
+                    {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
                   </span>
                 ),
                 children: (

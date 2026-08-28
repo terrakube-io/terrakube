@@ -22,9 +22,9 @@ import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
-import { SettingsPageHeader } from "@/modules/layout/SettingsPageHeader";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import VcsLogo from "@/components/VcsLogo";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 const isValidRegexList = (str: string | undefined) => {
   if (!str) {

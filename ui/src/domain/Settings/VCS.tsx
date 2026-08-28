@@ -7,10 +7,11 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { VcsModel, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
 import { EditVCS } from "./EditVCS";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
+import LoadingFallback from "@/components/LoadingFallback";
 const { Paragraph } = Typography;
 
 type Props = {
@@ -150,7 +151,7 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
           <br />
           <SettingsSection maxWidth="100%">
             {loading ? (
-              <p>Data loading...</p>
+              <LoadingFallback />
             ) : (
               <List
                 className="vcsList"

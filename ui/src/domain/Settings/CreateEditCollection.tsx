@@ -2,7 +2,7 @@ import { Button, Form, Input, Modal, Select, Space, Spin, Table, Tag, Typography
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { DeleteOutlined, EditOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { VariableFormFields } from "@/components/VariableFormFields";

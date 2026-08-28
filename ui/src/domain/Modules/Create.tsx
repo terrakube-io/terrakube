@@ -8,9 +8,10 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
 import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
+import LoadingFallback from "@/components/LoadingFallback";
 const validateMessages = {
   required: "${label} is required!",
   types: {
@@ -240,7 +241,7 @@ export const CreateModule = () => {
                   &nbsp;Git
                 </Button>
                 {loading ? (
-                  <p>Data loading...</p>
+                  <LoadingFallback />
                 ) : (
                   vcs.map(function (item) {
                     return (

@@ -1,5 +1,5 @@
 import { CloudOutlined, DownloadOutlined } from "@ant-design/icons";
-import { Card, List, Space, Typography } from "antd";
+import { List, Space, Typography } from "antd";
 import { useMemo } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
@@ -7,6 +7,7 @@ import { VscAzure } from "react-icons/vsc";
 import { Link, useParams } from "react-router-dom";
 import { FlatModule } from "../types";
 import "./Module.css";
+import { RegistryCard } from "@/components/RegistryCard";
 
 type Params = {
   orgid: string;
@@ -61,56 +62,29 @@ export const ModuleList = ({ modules, searchFilter }: Props) => {
             to={`/organizations/${orgid}/registry/${item.id}`}
             style={{ display: "block", width: "100%", color: "inherit" }}
           >
-            <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-              <div className="module-card-body">
-                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div
-                    style={{
-                      flexShrink: 0,
-                      width: 36,
-                      height: 36,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {renderLogo(item.provider)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Typography.Text strong className="module-card-name">
-                      {item.name}
-                    </Typography.Text>
-                    <div className="module-card-desc">
-                      {item.description || "No description provided for this module"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div
-                style={{
-                  borderTop: "1px solid #f0f0f0",
-                  padding: "10px 24px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <Space size={16}>
+            <RegistryCard
+              icon={renderLogo(item.provider)}
+              title={item.name}
+              description={item.description || "No description provided for this module"}
+              footerLeft={
+                <>
                   <Space size={4}>
                     <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
                     <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                       {item.downloadQuantity}
                     </Typography.Text>
                   </Space>
-                </Space>
-                <Space size={6}>
+                </>
+              }
+              footerRight={
+                <>
                   {renderLogo(item.provider)}
                   <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                     {item.provider}
                   </Typography.Text>
-                </Space>
-              </div>
-            </Card>
+                </>
+              }
+            />
           </Link>
         </List.Item>
       )}

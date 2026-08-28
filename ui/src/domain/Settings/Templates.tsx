@@ -6,9 +6,10 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import LoadingFallback from "@/components/LoadingFallback";
 
 type Props = {
   key: string;
@@ -92,7 +93,7 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
             <br />
             <SettingsSection maxWidth="100%">
               {loading ? (
-                <p>Data loading...</p>
+                <LoadingFallback />
               ) : (
                 <List
                   className="vcsList"

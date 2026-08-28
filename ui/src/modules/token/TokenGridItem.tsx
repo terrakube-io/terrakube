@@ -9,6 +9,7 @@ import {
 import { Button, Flex, Typography, Popconfirm, Tag, theme } from "antd";
 import { DateTime } from "luxon";
 import { UserToken } from "@/modules/user/types";
+import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   token: UserToken;
@@ -101,9 +102,7 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
         <Flex gap="middle" align="center">
           <Flex gap="small" align="center">
             <ClockCircleOutlined />
-            <span>
-              Created {token.createdDate ? DateTime.fromISO(token.createdDate).toRelative() : "Unknown"} by user
-            </span>
+            <span>Created {relativeTime(token.createdDate) ?? "Unknown"} by user</span>
           </Flex>
           <Flex gap="small" align="center">
             <UserOutlined />

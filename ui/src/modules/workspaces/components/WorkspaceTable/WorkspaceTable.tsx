@@ -6,19 +6,19 @@ import {
   CaretUpOutlined,
   CaretDownOutlined,
 } from "@ant-design/icons";
-import { DateTime } from "luxon";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
-import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
 import IacTypeLogo from "@/modules/workspaces/components/IacTypeLogo";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
 import "./WorkspaceTable.css";
+import { relativeTime } from "@/modules/utils/dates";
 
 const GROUP_PREVIEW_SIZE = 10;
 
@@ -143,7 +143,7 @@ function WorkspaceRow({
       </div>
       <div className="workspace-col-run">
         <ClockCircleOutlined />
-        <span>{item.lastRun ? DateTime.fromISO(item.lastRun).toRelative() : "Never Executed"}</span>
+        <span>{relativeTime(item.lastRun) ?? "Never Executed"}</span>
       </div>
       <div className="workspace-col-version">
         <IacTypeLogo type={item.iacType} />

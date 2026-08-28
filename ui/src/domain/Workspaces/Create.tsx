@@ -43,9 +43,10 @@ import {
 import { compareVersions, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/VcsLogo";
+import LoadingFallback from "@/components/LoadingFallback";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -690,7 +691,7 @@ export const CreateWorkspace = () => {
                   &nbsp;Git
                 </Button>
                 {loading ? (
-                  <p>Data loading...</p>
+                  <LoadingFallback />
                 ) : (
                   vcs.map(function (item) {
                     return (

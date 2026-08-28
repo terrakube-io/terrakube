@@ -6,7 +6,7 @@ import { apiPost } from "@/modules/api/apiWrapper";
 import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 
 type Props = {

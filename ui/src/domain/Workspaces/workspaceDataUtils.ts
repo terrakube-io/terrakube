@@ -1,5 +1,4 @@
 import { AxiosInstance } from "axios";
-import { DateTime } from "luxon";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import {
   FlatJob,
@@ -12,6 +11,7 @@ import {
   StateOutputValue,
 } from "../types";
 import { getIaCNameById } from "./Workspaces";
+import { relativeTime } from "@/modules/utils/dates";
 
 export type StateOutputVariableWithName = { name: string } & StateOutputValue;
 
@@ -119,7 +119,7 @@ export async function setupWorkspaceIncludes(
           title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
-          latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          latestChange: relativeTime(element.attributes.createdDate),
           ...element.attributes,
         });
         setLastRun(element.attributes.updatedDate);
@@ -129,7 +129,7 @@ export async function setupWorkspaceIncludes(
         history.push({
           id: element.id,
           title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          relativeDate: relativeTime(element.attributes.createdDate),
           createdDate: element.attributes.createdDate,
           ...element.attributes,
         });

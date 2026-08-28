@@ -5,7 +5,7 @@ import axiosInstance from "../../config/axiosConfig";
 import { IconSelector } from "./IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import { useState } from "react";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import "./Organizations.css";
 
 const validateMessages = {
