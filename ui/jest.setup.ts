@@ -40,18 +40,30 @@ window.getComputedStyle = ((elt: Element) => originalGetComputedStyle(elt)) as t
 class FakeMessagePort {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   private peer!: FakeMessagePort;
+  private listeners = new Set<(event: { data: unknown }) => void>();
   _link(peer: FakeMessagePort) {
     this.peer = peer;
   }
+  private deliver(data: unknown) {
+    const event = { data };
+    this.onmessage?.(event);
+    this.listeners.forEach((fn) => fn(event));
+  }
   postMessage(data: unknown) {
-    setTimeout(() => {
-      this.peer.onmessage?.({ data });
-    }, 0);
+    setTimeout(() => this.peer.deliver(data), 0);
   }
   start() {}
   close() {}
-  addEventListener() {}
-  removeEventListener() {}
+  addEventListener(type: string, fn: (event: { data: unknown }) => void) {
+    if (type === "message") {
+      this.listeners.add(fn);
+    }
+  }
+  removeEventListener(type: string, fn: (event: { data: unknown }) => void) {
+    if (type === "message") {
+      this.listeners.delete(fn);
+    }
+  }
 }
 class FakeMessageChannel {
   port1 = new FakeMessagePort();
