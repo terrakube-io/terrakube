@@ -20,7 +20,8 @@ type UseStepLogResult = {
   retry: () => void;
 };
 
-// Longer than the API's own storage timeout so the client never bails before the server does.
+// Bounded by attempt count, not a wall-clock budget: 1 initial try + these backoff delays. Each
+// delay is longer than the API's own storage timeout so the client never bails before the server.
 const RETRY_DELAYS_MS = [2000, 4000];
 const TAIL_BYTES = 256 * 1024;
 
@@ -41,31 +42,31 @@ export function useStepLog({
   const [truncated, setTruncated] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
-  const requestRef = useRef(0);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  const run = useCallback(() => {
+  useEffect(() => {
     if (!enabled) {
+      setState("idle");
       return;
     }
 
-    if (stepLogCache.has(stepId)) {
-      setText(stepLogCache.get(stepId) ?? "");
+    const cached = stepLogCache.get(stepId);
+    if (cached != null) {
+      setText(cached);
       setTruncated(false);
       setState("success");
       return;
     }
 
-    const requestId = ++requestRef.current;
     const controller = new AbortController();
-    setState("loading");
-
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    setState("loading");
 
     const attemptFetch = (tries: number) => {
       fetchStepLog({ output, jobId, organizationId, stepId, signal: controller.signal, tailBytes: TAIL_BYTES })
         .then((result) => {
-          if (cancelled || requestId !== requestRef.current) {
+          if (cancelled) {
             return;
           }
           if (result.text.length === 0) {
@@ -80,23 +81,20 @@ export function useStepLog({
           }
         })
         .catch((error: unknown) => {
-          if (cancelled || requestId !== requestRef.current || isAbortError(error)) {
+          if (cancelled || isAbortError(error)) {
             return;
           }
-          // eslint-disable-next-line no-console
           console.warn("[stepLog]", stepId, error);
 
           if (error instanceof StepLogNotFoundError) {
-            // A running step's log may simply not be archived yet.
+            // A step that hasn't finished may simply have no archived log yet.
             setState(isTerminal ? "error" : "empty");
             return;
           }
-
           if (error instanceof StepLogFetchError && tries < RETRY_DELAYS_MS.length) {
             retryTimer = setTimeout(() => attemptFetch(tries + 1), RETRY_DELAYS_MS[tries]);
             return;
           }
-
           setState("error");
         });
     };
@@ -110,17 +108,7 @@ export function useStepLog({
         clearTimeout(retryTimer);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, stepId, output, jobId, organizationId, isTerminal, attempt]);
-
-  useEffect(() => {
-    const teardown = run();
-    return teardown;
-  }, [run]);
-
-  const retry = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
 
   return { state, text, truncated, retry };
 }
