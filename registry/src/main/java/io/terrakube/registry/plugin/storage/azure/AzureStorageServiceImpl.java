@@ -119,8 +119,13 @@ public class AzureStorageServiceImpl implements StorageService {
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
 
             BlobSasPermission permissions = new BlobSasPermission().setReadPermission(true);
+            // startTime is set 60 seconds in the past to tolerate clock skew between the registry
+            // host and Azure Storage. Without it, a client whose clock is even slightly ahead of
+            // the server's can receive AuthenticationFailed ("Signature not valid yet") for an
+            // otherwise valid SAS token issued right now.
             BlobServiceSasSignatureValues sasValues = new BlobServiceSasSignatureValues(
-                    OffsetDateTime.now().plusSeconds(presignedUrlExpirySeconds), permissions);
+                    OffsetDateTime.now().plusSeconds(presignedUrlExpirySeconds), permissions)
+                    .setStartTime(OffsetDateTime.now().minusMinutes(1));
 
             String sasToken = blobClient.generateSas(sasValues);
             // Never log the SAS token itself — it carries the signature query string.

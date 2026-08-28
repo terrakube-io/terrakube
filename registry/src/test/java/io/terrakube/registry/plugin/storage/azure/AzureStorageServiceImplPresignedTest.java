@@ -16,7 +16,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.Optional;
+
+import org.mockito.ArgumentCaptor;
+import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -216,5 +220,51 @@ class AzureStorageServiceImplPresignedTest {
         assertThrows(StorageUnavailableException.class,
                 () -> service.searchModule("org", "module", "azure", download));
         verifyNoInteractions(gitService);
+    }
+
+    // ---- Clock skew tolerance: startTime must be set ~1 minute before expiryTime ----
+
+    @Test
+    void getPresignedDownloadUrl_sasStartTimeIsOneMinuteBeforeExpiry() {
+        BlobServiceClient blobServiceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        GitService gitService = mock(GitService.class);
+
+        when(blobServiceClient.getBlobContainerClient("registry")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        when(blobClient.getBlobUrl())
+                .thenReturn("https://myaccount.blob.core.windows.net/registry/org/module/azure/1.0.0/module.zip");
+
+        // Capture the BlobServiceSasSignatureValues passed to generateSas so we can assert
+        // that the clock skew startTime grace window is set correctly.
+        ArgumentCaptor<BlobServiceSasSignatureValues> sasCaptor =
+                ArgumentCaptor.forClass(BlobServiceSasSignatureValues.class);
+        when(blobClient.generateSas(sasCaptor.capture())).thenReturn("sv=2021-06-08&sig=REDACTED");
+
+        OffsetDateTime before = OffsetDateTime.now();
+        AzureStorageServiceImpl service = buildServiceWithRedirect(blobServiceClient, gitService, true);
+        service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+        OffsetDateTime after = OffsetDateTime.now();
+
+        BlobServiceSasSignatureValues captured = sasCaptor.getValue();
+
+        // startTime must be set (non-null) for clock skew protection.
+        assertNotNull(captured.getStartTime(),
+                "SAS startTime must be set to provide clock skew tolerance");
+
+        // startTime should be at most 1 minute before the test start (i.e. in the past).
+        assertTrue(captured.getStartTime().isBefore(before) || captured.getStartTime().isEqual(before),
+                "SAS startTime must be at or before the call time to tolerate clients ahead of the server clock");
+
+        // expiryTime should be at least (before + expirySeconds - 1s) to allow a 1-second
+        // execution margin without being flaky.
+        assertTrue(captured.getExpiryTime().isAfter(before.plusSeconds(299)),
+                "SAS expiryTime must reflect the configured presignedUrlExpirySeconds (300s)");
+
+        // The clock skew window: startTime must be at least 59 seconds before expiryTime,
+        // which means the full effective validity is expirySeconds + ~60s.
+        assertTrue(captured.getExpiryTime().minusSeconds(59).isAfter(captured.getStartTime()),
+                "SAS expiryTime should be at least 59 seconds after startTime (60s skew window)");
     }
 }
