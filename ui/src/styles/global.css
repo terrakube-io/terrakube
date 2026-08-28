@@ -12,13 +12,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-[data-theme="dark"] a {
+[data-theme="dark"] a:where(:not(.ant-btn)) {
   color: var(--tk-accent);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
-[data-theme="dark"] a:hover {
+[data-theme="dark"] a:where(:not(.ant-btn)):hover {
   color: #79c0ff;
   text-decoration: underline;
 }
