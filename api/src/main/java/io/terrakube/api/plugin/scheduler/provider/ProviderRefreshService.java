@@ -6,7 +6,8 @@ import io.terrakube.api.repository.ProviderRepository;
 import io.terrakube.api.repository.ProviderVersionRepository;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.provider.implementation.Version;
-import jakarta.annotation.PostConstruct;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import jakarta.transaction.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +52,7 @@ public class ProviderRefreshService extends ScheduleServiceBase {
      * Providers that already have versions are considered up-to-date (the periodic job
      * will pick up new versions on its next run).
      */
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initProviderRefreshJobs() {
         List<Provider> providers = providerRepository.findByOrganizationIn(

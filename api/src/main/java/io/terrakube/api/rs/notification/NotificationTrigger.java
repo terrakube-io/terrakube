@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.job.JobStatus;
 
 import com.yahoo.elide.annotation.Include;
@@ -30,7 +29,6 @@ import lombok.Setter;
 public class NotificationTrigger extends GenericAuditFields {
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

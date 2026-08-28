@@ -2,7 +2,6 @@ package io.terrakube.api.rs.project;
 
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import jakarta.persistence.*;
@@ -27,7 +26,6 @@ public class Project extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

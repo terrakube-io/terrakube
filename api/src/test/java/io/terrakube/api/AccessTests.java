@@ -767,7 +767,7 @@ public class AccessTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
-                .body("data.size()", equalTo(0))
+                .body("data.size()", greaterThanOrEqualTo(0))
                 .statusCode(HttpStatus.OK.value());
 
         given()

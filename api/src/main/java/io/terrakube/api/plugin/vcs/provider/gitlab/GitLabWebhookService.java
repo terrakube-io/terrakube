@@ -455,7 +455,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         ResponseEntity<String> response;
         if (remoteHookId == null) {
-            URI gitlabUri = UriComponentsBuilder.fromHttpUrl(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks").build(true).toUri();
+            URI gitlabUri = UriComponentsBuilder.fromUriString(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks").build(true).toUri();
             // Make the request using the GitLab API only when the entity is saved
             response = restTemplate.exchange(
                     gitlabUri, HttpMethod.POST, entity, String.class);
@@ -473,7 +473,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 log.info("GitLab Hook created successfully for workspace {}/{} with id {}", workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
             }
         } else {
-            URI gitlabUri = UriComponentsBuilder.fromHttpUrl(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks/" + webhook.getRemoteHookId()).build(true).toUri();
+            URI gitlabUri = UriComponentsBuilder.fromUriString(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks/" + webhook.getRemoteHookId()).build(true).toUri();
             response = restTemplate.exchange(
                     gitlabUri, HttpMethod.PUT, entity, String.class);
             log.info("GitLab Hook updating Status {} for workspace {}/{} with id {}", response.getStatusCode(), workspace.getOrganization().getName(), workspace.getName(), remoteHookId);

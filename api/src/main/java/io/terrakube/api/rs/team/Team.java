@@ -4,7 +4,6 @@ import java.sql.Types;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.Organization;
 
 import com.yahoo.elide.annotation.CreatePermission;
@@ -33,7 +32,6 @@ public class Team {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

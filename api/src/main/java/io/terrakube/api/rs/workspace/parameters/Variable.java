@@ -5,7 +5,6 @@ import com.yahoo.elide.annotation.ReadPermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -20,7 +19,6 @@ public class Variable {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

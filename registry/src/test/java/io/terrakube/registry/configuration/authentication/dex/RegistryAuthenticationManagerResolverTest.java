@@ -30,6 +30,9 @@ class RegistryAuthenticationManagerResolverTest {
     @Mock
     private HttpServletRequest request;
 
+    @Mock
+    private org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder;
+
     private RegistryAuthenticationManagerResolver resolver;
 
     private final String issuerUri = "https://dex.example.com";
@@ -41,6 +44,12 @@ class RegistryAuthenticationManagerResolverTest {
                 .internalSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
                 .issuerUri(issuerUri)
                 .terrakubeClient(terrakubeClient)
+                .jwtDecoderFactory(url -> {
+                    if (url.equals(issuerUri)) {
+                        throw new IllegalArgumentException("Unable to resolve the Configuration with the provided Issuer of \"" + url + "\"");
+                    }
+                    return jwtDecoder;
+                })
                 .build();
     }
 

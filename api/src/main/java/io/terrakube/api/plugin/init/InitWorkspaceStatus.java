@@ -6,7 +6,8 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
-import jakarta.annotation.PostConstruct;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,7 @@ public class InitWorkspaceStatus {
     private final WorkspaceRepository workspaceRepository;
     private final JobRepository jobRepository;
 
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initWorkspaceStatus() {
         organizationRepository.findAll().forEach(organization -> {

@@ -172,7 +172,7 @@ public class WorkspaceService {
         int currentPage = 1;
 
         while (true) {
-            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(apiUrl)
                     .pathSegment("organizations")
                     .pathSegment(organization)
                     .pathSegment("workspaces");
@@ -204,7 +204,7 @@ public class WorkspaceService {
         int currentPage = 1;
 
         while (true) {
-            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(apiUrl)
                     .pathSegment("workspaces")
                     .pathSegment(workspaceId)
                     .pathSegment("varsets");
@@ -257,7 +257,7 @@ public class WorkspaceService {
     }
 
     public List<VariableData> getVariables(String apiToken, String apiUrl, String workspaceName) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(apiUrl)
                 .pathSegment("workspaces")
                 .pathSegment(workspaceName)
                 .pathSegment("vars");
@@ -290,7 +290,7 @@ public class WorkspaceService {
 
     public StateVersion.Attributes getCurrentState(String apiToken, String apiUrl, String workspaceId) {
         try {
-            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(apiUrl)
                     .pathSegment("workspaces")
                     .pathSegment(workspaceId)
                     .pathSegment("current-state-version");
@@ -309,7 +309,7 @@ public class WorkspaceService {
     }
 
     public List<TagAttributes> getTags(String apiToken, String apiUrl, String workspaceId) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(apiUrl)
                 .pathSegment("workspaces")
                 .pathSegment(workspaceId)
                 .pathSegment("relationships")

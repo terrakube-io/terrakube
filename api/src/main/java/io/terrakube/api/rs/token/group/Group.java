@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -26,7 +25,6 @@ import lombok.Setter;
 public class Group extends GenericAuditFields {
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
