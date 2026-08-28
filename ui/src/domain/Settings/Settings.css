@@ -13,20 +13,8 @@
   justify-content: space-between;
 }
 
-.createOrganization {
-  width: 50%;
-  margin: auto;
-  margin-top: 20px;
-}
-
-.ant-tabs-nav-list {
-  padding-right: 80px;
-}
-
 .setting {
-  margin-left: 40px;
-  margin-right: 100px;
-  padding-bottom: 100px;
+  padding-bottom: 40px;
 }
 
 .addVCS {
@@ -48,17 +36,6 @@ ul.disc-list {
   list-style-type: disc;
 }
 
-/* Limit form input width in settings */
-.setting .ant-form-item {
-  max-width: 500px;
-}
-
-.setting .ant-input,
-.setting .ant-input-textarea,
-.setting textarea.ant-input {
-  max-width: 500px;
-}
-
 /* Dark mode for VCS form */
 [data-theme="dark"] .editor {
   border-color: var(--tk-border-primary);
@@ -72,4 +49,176 @@ ul.disc-list {
 
 [data-theme="dark"] .ant-steps-item-description {
   color: var(--tk-text-secondary) !important;
+}
+
+.execution-mode-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+}
+
+.execution-mode-option.ant-radio-wrapper-checked {
+  border-color: var(--tk-accent);
+}
+
+.ant-card.template-card {
+  height: 280px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tk-border-primary);
+  box-shadow: var(--tk-shadow-sm);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.ant-card.template-card:hover {
+  border-color: var(--tk-accent);
+  box-shadow: var(--tk-shadow-md);
+  transform: translateY(-2px);
+}
+
+.template-card .ant-card-body {
+  flex: 1;
+  overflow: hidden;
+}
+
+.vcs-provider-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 110px;
+  background-color: transparent;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  color: var(--tk-text-primary);
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: var(--tk-shadow-sm);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.vcs-provider-card:hover {
+  border-color: var(--tk-accent);
+  box-shadow: var(--tk-shadow-md);
+  transform: translateY(-2px);
+}
+
+.vcs-provider-card .vcs-provider-icon {
+  font-size: 28px;
+}
+
+.vcs-provider-card .vcs-provider-caret {
+  font-size: 11px;
+  color: var(--tk-text-tertiary);
+}
+
+.vcs-guide-step {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.vcs-guide-step:last-child {
+  margin-bottom: 0;
+}
+
+.vcs-guide-step-number {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--tk-accent-tint);
+  color: var(--tk-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vcs-guide-step-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.vcs-guide-step-content > .ant-typography {
+  margin: 0;
+  line-height: 24px;
+}
+
+.vcs-guide-values .ant-descriptions-item-label {
+  width: 220px;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.vcs-guide-values .ant-descriptions-item-content .ant-typography {
+  font-size: 14px;
+}
+
+.vcs-guide-values ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.vcs-guide-values ul li {
+  margin-bottom: 4px;
+}
+
+.vcs-guide-values ul li:last-child {
+  margin-bottom: 0;
+}
+
+.template-card .template-card-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 140px;
+  padding: 16px;
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+
+.template-card .template-card-cover img {
+  max-height: 100%;
+  max-width: 75%;
+  object-fit: contain;
+}
+
+.role-option.ant-radio-wrapper .ant-radio {
+  border-color: var(--role-accent, var(--tk-border-primary));
+}
+
+.role-option.ant-radio-wrapper:hover:not(.ant-radio-wrapper-disabled) .ant-radio {
+  border-color: var(--role-accent, var(--tk-accent));
+}
+
+.role-option.ant-radio-wrapper-checked {
+  border-color: var(--role-accent, var(--tk-accent));
+}
+
+.role-option.ant-radio-wrapper .ant-radio.ant-radio-checked {
+  border-color: var(--role-accent, var(--tk-accent));
+  background-color: var(--role-accent, var(--tk-accent));
+}
+
+.role-option.ant-radio-wrapper:hover .ant-radio-checked:not(.ant-radio-disabled) {
+  border-color: var(--role-accent, var(--tk-accent));
+  background-color: var(--role-accent, var(--tk-accent));
 }

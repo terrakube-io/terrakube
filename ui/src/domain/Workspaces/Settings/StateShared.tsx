@@ -1,10 +1,11 @@
-import { Button, Checkbox, Divider, Form, Input, Typography, message, Table, Space, Select } from "antd";
+import { Button, Checkbox, Divider, Flex, Form, Input, Typography, message, Table, Space, Select } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -184,9 +185,11 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        State Shared
-      </Typography.Title>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces/share-workspace-state"
+        title="State Shared"
+        description="Allow other workspaces in the organization to read this workspace's state."
+      />
       <Text type="secondary">Configure how the state is shared across workspaces.</Text>
       <SettingsSection maxWidth="100%">
         <Divider />
@@ -204,9 +207,11 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             <Checkbox>Allow all workspaces in the organization to access this workspace state</Checkbox>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={waiting}>
-              Update Workspace
-            </Button>
+            <Flex justify="flex-end">
+              <Button type="primary" htmlType="submit" loading={waiting}>
+                Update Workspace
+              </Button>
+            </Flex>
           </Form.Item>
         </Form>
         {!globalRemoteState && (

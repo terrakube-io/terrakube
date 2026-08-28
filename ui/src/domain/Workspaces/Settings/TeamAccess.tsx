@@ -10,9 +10,8 @@ import {
   Button,
   Card,
   Checkbox,
-  Empty,
+  Flex,
   Form,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -23,6 +22,7 @@ import {
   message,
   theme,
 } from "antd";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import workspaceAccessService, {
@@ -30,7 +30,9 @@ import workspaceAccessService, {
   WorkspaceAccessPermissions,
 } from "@/modules/workspaces/workspaceAccessService";
 import { Workspace } from "../../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Props = {
   workspace: Workspace;
@@ -134,6 +136,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     approveJob: false,
   });
   const [savingRole, setSavingRole] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<WorkspaceAccessModel | null>(null);
   const [form] = Form.useForm<AddTeamForm>();
   const addRole = Form.useWatch("role", form);
   const addFormRef = useRef<HTMLDivElement>(null);
@@ -252,7 +255,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
         const r = ROLES.find((x) => x.value === opt.value);
         if (!r) return opt.label;
         return (
-          <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+          <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
             <Tag color={r.color}>{r.label}</Tag>
             <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
               {r.description}
@@ -288,7 +291,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       render: (role: string, record: WorkspaceAccessModel) => {
         if (canManage && editingId === record.id) {
           return (
-            <Space direction="vertical" size={8}>
+            <Space orientation="vertical" size={8}>
               {renderRoleSelect(editingRole, setEditingRole)}
               {editingRole === "custom" && (
                 <Space wrap size={12}>
@@ -367,19 +370,15 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       align: "right" as const,
       width: 120,
       render: (_: any, record: WorkspaceAccessModel) => (
-        <Popconfirm
-          okButtonProps={{ danger: true }}
-          title={`Remove team "${record.name}" from this workspace?`}
-          onConfirm={() => onRemove(record.id, record.name)}
-          okText="Yes"
-          cancelText="No"
-          placement="left"
+        <Button
+          danger
+          icon={<DeleteOutlined />}
+          size="small"
           disabled={!canManage}
+          onClick={() => setPendingDelete(record)}
         >
-          <Button danger icon={<DeleteOutlined />} size="small" disabled={!canManage}>
-            Remove
-          </Button>
-        </Popconfirm>
+          Remove
+        </Button>
       ),
     },
   ];
@@ -391,9 +390,11 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div style={{ width: "100%" }}>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Team Access
-      </Typography.Title>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
+        title="Team Access"
+        description="Grant teams specific permissions on this workspace."
+      />
       <p>Teams granted access to this workspace via the Terrakube UI or the terrakube_workspace_access resource.</p>
 
       <SettingsSection maxWidth="100%">
@@ -412,8 +413,8 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
             scroll={{ x: 996 }}
             locale={{
               emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                <EmptyState
+                  simple
                   description={
                     canManage
                       ? "No teams have been granted workspace-level access."
@@ -425,7 +426,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
                       Add a team
                     </Button>
                   )}
-                </Empty>
+                </EmptyState>
               ),
             }}
             style={{ marginBottom: 32 }}
@@ -476,9 +477,11 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
               )}
 
               <Form.Item style={{ marginBottom: 0 }}>
-                <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
-                  Add Team
-                </Button>
+                <Flex justify="flex-end">
+                  <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+                    Add Team
+                  </Button>
+                </Flex>
               </Form.Item>
             </Form>
           </Card>
@@ -489,6 +492,20 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
           or project-level permissions they already have.
         </Typography.Text>
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Remove team access"
+        message={`Remove team "${pendingDelete?.name}" from this workspace?`}
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            onRemove(pendingDelete.id, pendingDelete.name);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

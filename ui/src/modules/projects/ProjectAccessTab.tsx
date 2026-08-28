@@ -3,6 +3,7 @@ import { Button, Form, Popconfirm, Select, Space, Spin, Table, Tag, Tooltip, Typ
 import { useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import projectService, { ProjectAccessModel } from "./projectService";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgid: string;
@@ -179,7 +180,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
                       <Tag color={r.color}>{r.label}</Tag>
                       <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
                         {r.description}
@@ -246,8 +247,11 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
 
   return (
     <div style={{ width: "100%" }}>
-      <h1>Team Access</h1>
-      <p>Grant teams access to all workspaces within this project.</p>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/projects/team-access"
+        title="Team Access"
+        description="Grant teams access to all workspaces within this project."
+      />
 
       <Spin spinning={loading}>
         <Table
@@ -290,7 +294,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
                       <Tag color={r.color}>{r.label}</Tag>
                       <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
                         {r.description}

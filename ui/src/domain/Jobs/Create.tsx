@@ -6,6 +6,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance from "../../config/axiosConfig";
 import { Resource, Template } from "../types";
 import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 const validateMessages = { required: "${label} is required!" };
 
@@ -153,9 +154,9 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
             .catch(() => {});
         }}
       >
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <div>
-            <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "#1677ff" }} />
+            <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "var(--tk-accent)" }} />
             <Typography.Text type="secondary">
               You will be redirected to the run details page to see this job executed.
             </Typography.Text>
@@ -168,7 +169,7 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
               initialValue={defaultTemplate}
             >
               {loading || !templates ? (
-                <p>Data loading...</p>
+                <LoadingFallback />
               ) : (
                 <Select>
                   {templates.map((item) => (

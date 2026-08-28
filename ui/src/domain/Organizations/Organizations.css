@@ -13,20 +13,6 @@
   justify-content: space-between;
 }
 
-.createOrganization {
-  width: 50%;
-  margin: auto;
-  margin-top: 20px;
-}
-
-.ant-tabs-nav-list {
-  padding-right: 50px;
-}
-
-.setting {
-  margin-left: 40px;
-  margin-right: 80px;
-}
 .workspaceWrapper {
   width: 80%;
   margin: auto;

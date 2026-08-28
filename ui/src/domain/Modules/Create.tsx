@@ -1,15 +1,18 @@
 import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Breadcrumb, Button, Form, Input, Layout, Select, Space, Steps, message, theme } from "antd";
+import { Button, Form, Input, Select, Space, Steps, message } from "antd";
 import { useEffect, useState } from "react";
-import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SshKey, VcsModel, VcsType } from "../types";
 import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
-const { Content } = Layout;
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import VcsLogo from "@/components/display/VcsLogo";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 const validateMessages = {
   required: "${label} is required!",
   types: {
@@ -33,9 +36,6 @@ type Params = {
 
 export const CreateModule = () => {
   const { orgid } = useParams<Params>();
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
   const [current, setCurrent] = useState(0);
   const [step3Hidden, setStep3Hidden] = useState(true);
   const [step2Hidden, setStep2Hidden] = useState(true);
@@ -52,7 +52,7 @@ export const CreateModule = () => {
       loadSSHKeys();
       loadVCSProviders();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGitClick = (id: string) => {
     if (id === "git") {
@@ -91,36 +91,6 @@ export const CreateModule = () => {
 
   const handleExisting = () => {
     setVCSButtonsVisible(true);
-  };
-
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-            &nbsp;&nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
   };
 
   const loadVCSProviders = () => {
@@ -212,20 +182,7 @@ export const CreateModule = () => {
       })
       .catch((error) => {
         if (error.response?.status === 403) {
-          message.error(
-            <span>
-              You are not authorized to create Modules. <br /> Please contact your administrator and request the{" "}
-              <b>Manage Modules</b> permission. <br /> For more information, visit the{" "}
-              <a
-                target="_blank"
-                href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                rel="noreferrer"
-              >
-                Terrakube documentation
-              </a>
-              .
-            </span>
-          );
+          message.error(<PermissionErrorMessage action="create Modules" permission="Manage Modules" />);
         } else {
           message.error(getErrorMessage(error));
         }
@@ -248,213 +205,195 @@ export const CreateModule = () => {
   };
 
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: sessionStorage.getItem(ORGANIZATION_NAME),
-          },
-          {
-            title: <Link to={`/organizations/${orgid}/registry`}>Modules</Link>,
-          },
-          {
-            title: "New Module",
-          },
-        ]}
+    <PageWrapper
+      title="New Module"
+      subTitle={`This module will be created under the current organization, ${sessionStorage.getItem(ORGANIZATION_NAME)}.`}
+      breadcrumbs={[
+        { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
+        { label: "Registry", path: `/organizations/${orgid}/registry` },
+        { label: "New" },
+      ]}
+      width="reading"
+    >
+      <Steps
+        direction="horizontal"
+        size="small"
+        current={current}
+        onChange={handleChange}
+        items={[{ title: "Connect to VCS" }, { title: "Choose a repository" }, { title: "Confirm selection" }]}
       />
 
-      <div className="site-layout-content" style={{ background: colorBgContainer }}>
-        <div className="createWorkspace">
-          <h2>Add Module</h2>
-          <div className="App-text">
-            This module will be created under the current organization, {sessionStorage.getItem(ORGANIZATION_NAME)}.
+      {current === 0 && (
+        <Space className="chooseType" orientation="vertical">
+          <h3>Connect to a version control provider</h3>
+          <div className="workflowDescription2 App-text">
+            Choose the version control provider that hosts your module source code.
           </div>
-          <Steps
-            direction="horizontal"
-            size="small"
-            current={current}
-            onChange={handleChange}
-            items={[{ title: "Connect to VCS" }, { title: "Choose a repository" }, { title: "Confirm selection" }]}
-          />
-
-          {current === 0 && (
-            <Space className="chooseType" direction="vertical">
-              <h3>Connect to a version control provider</h3>
-              <div className="workflowDescription2 App-text">
-                Choose the version control provider that hosts your module source code.
-              </div>
-              {vcsButtonsVisible ? (
-                <div>
-                  <Space direction="horizontal">
-                    <Button
-                      icon={<SiGit />}
-                      onClick={() => {
-                        handleGitClick("git");
-                      }}
-                      size="large"
-                    >
-                      &nbsp;Git
-                    </Button>
-                    {loading ? (
-                      <p>Data loading...</p>
-                    ) : (
-                      vcs.map(function (item) {
-                        return (
-                          <Button
-                            icon={renderVCSLogo(item.attributes.vcsType)}
-                            onClick={() => {
-                              handleGitClick(item.id);
-                            }}
-                            size="large"
-                            key={item.id}
-                          >
-                            &nbsp;{item.attributes.name}
-                          </Button>
-                        );
-                      })
-                    )}
-                  </Space>
-                  <br />
-                  <Button onClick={handleDifferent} className="link" type="link">
-                    Connect to a different VCS
-                  </Button>
-                </div>
-              ) : (
-                <div>
-                  <Space direction="horizontal">
-                    <Button icon={<GithubOutlined />} size="large">
-                      <Link to={vcsLink(VcsType.GITHUB)}>GitHub</Link>
-                    </Button>
-                    <Button icon={<GitlabOutlined />} size="large">
-                      <Link to={vcsLink(VcsType.GITLAB)}>GitLab</Link>
-                    </Button>
-                    <Button icon={<SiBitbucket />} size="large">
-                      <Link to={vcsLink(VcsType.BITBUCKET)}>&nbsp;&nbsp;Bitbucket</Link>
-                    </Button>
-                    <Button icon={<VscAzureDevops />} size="large">
-                      <Link to={vcsLink(VcsType.AZURE_DEVOPS)}>&nbsp;&nbsp;Azure Devops</Link>
-                    </Button>
-                  </Space>
-                  <br />
-                  <Button onClick={handleExisting} className="link" type="link">
-                    Use an existing VCS connection
-                  </Button>
-                </div>
-              )}
-            </Space>
+          {vcsButtonsVisible ? (
+            <div>
+              <Space orientation="horizontal">
+                <Button
+                  icon={<SiGit />}
+                  onClick={() => {
+                    handleGitClick("git");
+                  }}
+                  size="large"
+                >
+                  &nbsp;Git
+                </Button>
+                {loading ? (
+                  <LoadingFallback />
+                ) : (
+                  vcs.map(function (item) {
+                    return (
+                      <Button
+                        icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
+                        onClick={() => {
+                          handleGitClick(item.id);
+                        }}
+                        size="large"
+                        key={item.id}
+                      >
+                        &nbsp;{item.attributes.name}
+                      </Button>
+                    );
+                  })
+                )}
+              </Space>
+              <br />
+              <Button onClick={handleDifferent} className="link" type="link">
+                Connect to a different VCS
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <Space orientation="horizontal">
+                <LinkButton to={vcsLink(VcsType.GITHUB)} icon={<GithubOutlined />} size="large">
+                  GitHub
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.GITLAB)} icon={<GitlabOutlined />} size="large">
+                  GitLab
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.BITBUCKET)} icon={<SiBitbucket />} size="large">
+                  Bitbucket
+                </LinkButton>
+                <LinkButton to={vcsLink(VcsType.AZURE_DEVOPS)} icon={<VscAzureDevops />} size="large">
+                  Azure DevOps
+                </LinkButton>
+              </Space>
+              <br />
+              <Button onClick={handleExisting} className="link" type="link">
+                Use an existing VCS connection
+              </Button>
+            </div>
           )}
+        </Space>
+      )}
 
-          <Form
-            form={form}
-            name="create-module"
-            layout="vertical"
-            onFinish={onFinish}
-            validateMessages={validateMessages}
+      <Form form={form} name="create-module" layout="vertical" onFinish={onFinish} validateMessages={validateMessages}>
+        <Space hidden={step2Hidden} className="chooseType" orientation="vertical">
+          <h3>Choose a repository</h3>
+          <div className="workflowDescription2 App-text">
+            Choose the repository that hosts your module source code. The format of your repository name should be{" "}
+            <b>{"terraform-<PROVIDER>-<NAME>"}</b>.
+          </div>
+          <Form.Item
+            name="source"
+            label="Git repo"
+            tooltip="e.g. https://github.com/Terrakube/terraform-sample-repository.git or git@github.com:AzBuilder/terraform-azurerm-webapp-sample.git"
+            extra=" Git repo must be a valid git url using either https or ssh protocol."
+            rules={[
+              {
+                required: true,
+                pattern: new RegExp("((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"),
+              },
+            ]}
           >
-            <Space hidden={step2Hidden} className="chooseType" direction="vertical">
-              <h3>Choose a repository</h3>
-              <div className="workflowDescription2 App-text">
-                Choose the repository that hosts your module source code. The format of your repository name should be{" "}
-                <b>{"terraform-<PROVIDER>-<NAME>"}</b>.
-              </div>
-              <Form.Item
-                name="source"
-                label="Git repo"
-                tooltip="e.g. https://github.com/Terrakube/terraform-sample-repository.git or git@github.com:AzBuilder/terraform-azurerm-webapp-sample.git"
-                extra=" Git repo must be a valid git url using either https or ssh protocol."
-                rules={[
-                  {
-                    required: true,
-                    pattern: new RegExp(
-                      "((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"
-                    ),
-                  },
-                ]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item>
-                <Button onClick={handleGitContinueClick} type="primary">
-                  Continue
-                </Button>
-              </Form.Item>
-            </Space>
+            <Input />
+          </Form.Item>
+          <Form.Item>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button onClick={handleGitContinueClick} type="primary">
+                Continue
+              </Button>
+            </div>
+          </Form.Item>
+        </Space>
 
-            <Space hidden={step3Hidden} className="chooseType" direction="vertical">
-              <h3>Confirm selection</h3>
-              <Form.Item
-                name="name"
-                label="Module Name"
-                rules={[
-                  { required: true },
-                  {
-                    max: 32,
-                    message: "Value should be less than 32 character",
-                  },
-                ]}
-                extra="The name of your module generally names the abstraction that the module is intending to create."
-              >
-                <Input />
-              </Form.Item>
+        <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
+          <h3>Confirm selection</h3>
+          <Form.Item
+            name="name"
+            label="Module Name"
+            rules={[
+              { required: true },
+              {
+                max: 32,
+                message: "Value should be less than 32 character",
+              },
+            ]}
+            extra="The name of your module generally names the abstraction that the module is intending to create."
+          >
+            <Input />
+          </Form.Item>
 
-              <Form.Item name="description" label="Module Description" rules={[{ required: true }]}>
-                <Input.TextArea placeholder="(description)" />
-              </Form.Item>
-              <Form.Item
-                name="provider"
-                tooltip="e.g. azurerm, aws, google"
-                label="Provider"
-                rules={[
-                  { required: true },
-                  {
-                    pattern: MODULE_SYSTEM_PATTERN,
-                    message: "Provider must contain only letters and digits (max 64 characters).",
-                  },
-                ]}
-                extra="This is the OpenTofu/Terraform registry system — the last segment of the module address (letters and digits only, e.g. 'aws'). It is not derived from your repository name; for example use 'aws', not 'aws-ecs'."
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name="tagPrefix"
-                label="Tag prefix for modules"
-                rules={[{ required: false }]}
-                extra="Leave the field empty unless you are using a monorepository configuration. Example vmlinux/"
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name="folder"
-                label="Folder for the terraform module inside the repository"
-                rules={[{ required: false }]}
-                extra="Leave the field empty unless you are using a monorepository configuration"
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                hidden={!sshKeysVisible}
-                name="sshKey"
-                label="SSH Key"
-                tooltip="Select an SSH Key that will be used to clone this repo."
-                extra="To use the SSH support in modules the source should be used like git@github.com:AzBuilder/terrakube-docker-compose.git"
-                rules={[{ required: false }]}
-              >
-                <Select placeholder="select SSH Key" style={{ width: 250 }}>
-                  {sshKeys.map(function (sshKey) {
-                    return <Select.Option key={sshKey?.id}>{sshKey?.attributes?.name}</Select.Option>;
-                  })}
-                </Select>
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" htmlType="submit">
-                  Publish Module
-                </Button>
-              </Form.Item>
-            </Space>
-          </Form>
-        </div>
-      </div>
-    </Content>
+          <Form.Item name="description" label="Module Description" rules={[{ required: true }]}>
+            <Input.TextArea placeholder="(description)" />
+          </Form.Item>
+          <Form.Item
+            name="provider"
+            tooltip="e.g. azurerm, aws, google"
+            label="Provider"
+            rules={[
+              { required: true },
+              {
+                pattern: MODULE_SYSTEM_PATTERN,
+                message: "Provider must contain only letters and digits (max 64 characters).",
+              },
+            ]}
+            extra="This is the OpenTofu/Terraform registry system — the last segment of the module address (letters and digits only, e.g. 'aws'). It is not derived from your repository name; for example use 'aws', not 'aws-ecs'."
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="tagPrefix"
+            label="Tag prefix for modules"
+            rules={[{ required: false }]}
+            extra="Leave the field empty unless you are using a monorepository configuration. Example vmlinux/"
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="folder"
+            label="Folder for the terraform module inside the repository"
+            rules={[{ required: false }]}
+            extra="Leave the field empty unless you are using a monorepository configuration"
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            hidden={!sshKeysVisible}
+            name="sshKey"
+            label="SSH Key"
+            tooltip="Select an SSH Key that will be used to clone this repo."
+            extra="To use the SSH support in modules the source should be used like git@github.com:AzBuilder/terrakube-docker-compose.git"
+            rules={[{ required: false }]}
+          >
+            <Select placeholder="select SSH Key" style={{ width: 250 }}>
+              {sshKeys.map(function (sshKey) {
+                return <Select.Option key={sshKey?.id}>{sshKey?.attributes?.name}</Select.Option>;
+              })}
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button type="primary" htmlType="submit">
+                Publish Module
+              </Button>
+            </div>
+          </Form.Item>
+        </Space>
+      </Form>
+    </PageWrapper>
   );
 };

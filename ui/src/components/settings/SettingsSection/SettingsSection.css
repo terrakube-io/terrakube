@@ -1,0 +1,32 @@
+.settings-section {
+  margin-bottom: 32px;
+}
+
+.settings-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.settings-section-description {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.settings-section-content {
+  width: 100%;
+}
+
+.settings-section-danger {
+  border-color: var(--ant-color-error);
+}
+
+.settings-section-danger .ant-card-head {
+  border-bottom-color: color-mix(in srgb, var(--ant-color-error) 30%, transparent);
+}
+
+.settings-section-danger .ant-card-head-title .ant-typography {
+  color: var(--ant-color-error);
+}

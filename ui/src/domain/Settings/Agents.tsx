@@ -1,24 +1,23 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, List, message, Modal, Popconfirm, Select, Space, Typography, theme } from "antd";
+import { Button, Form, List, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Agent } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { Loading } from "@/components/feedback/Loading";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import AgentFormModal, { AddAgentFormValues, UpdateAgentFormValues } from "./components/AgentFormModal";
 
 type Params = {
   orgid: string;
 };
 
-type AddAgentForm = {
-  name?: string;
-} & UpdateAgentForm;
+type AddAgentForm = AddAgentFormValues;
 
-type UpdateAgentForm = {
-  description: string;
-  url: string;
-};
+type UpdateAgentForm = UpdateAgentFormValues;
 
 type Props = {
   managePermission?: boolean;
@@ -33,6 +32,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
   const [AgentName, setAgentName] = useState<string>();
   const [mode, setMode] = useState("create");
   const [AgentId] = useState([]);
+  const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [form] = Form.useForm<AddAgentForm | UpdateAgentForm>();
 
   const onCancel = () => {
@@ -140,110 +140,79 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Agents
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents
-              to run jobs, you can have as many agents as you want for a single organization.
-            </Typography.Text>
-          </div>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create agent pool
-            </Button>
-            <br></br>
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/getting-started/deployment/self-hosted-agents"
+            title="Agents"
+            description="Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents to run jobs, you can have as many agents as you want for a single organization."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create agent pool
+              </Button>
+            }
+          />
+          <br></br>
+          {loading ? (
+            <Loading loading description="Loading agents..." />
+          ) : (
+            <List
+              itemLayout="horizontal"
+              dataSource={Agents}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      icon={<DeleteOutlined />}
+                      type="link"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
+                    >
+                      Delete
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                </List.Item>
+              )}
+            />
+          )}
 
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              Agents
-            </Typography.Title>
-            {loading ? (
-              <p>Data loading...</p>
-            ) : (
-              <List
-                itemLayout="horizontal"
-                dataSource={Agents}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            This will permanently delete this Terrakube Agent <br />
-                            <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                  </List.Item>
-                )}
-              />
-            )}
-          </SettingsSection>
-
-          <Modal
-            width="650px"
+          <AgentFormModal
             open={visible}
-            title={mode === "edit" ? "Edit Terrakube Agent  " + AgentName : "Add a new Terrakube Agent"}
-            okText="Save Terrakube Agent "
+            mode={mode === "create" ? "create" : "edit"}
+            agentName={AgentName}
+            form={form}
             onCancel={onCancel}
-            cancelText="Cancel"
-            onOk={() => {
-              form
-                .validateFields()
-                .then((values) => {
-                  if (mode === "create") onCreate(values as AddAgentForm);
-                  else onUpdate(values);
-                })
-                .catch((info) => {
-                  console.log("Validate Failed:", info);
-                });
+            onSubmit={(values) => {
+              if (mode === "create") onCreate(values as AddAgentForm);
+              else onUpdate(values);
             }}
-          >
-            <Space style={{ width: "100%" }} direction="vertical">
-              <Form name="Agent" form={form} layout="vertical">
-                {mode === "create" ? (
-                  <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                ) : (
-                  ""
-                )}
+          />
 
-                <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="url" label="Url" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-              </Form>
-            </Space>
-          </Modal>
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete agent pool"
+            message={
+              <>
+                Deleting the agent pool <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

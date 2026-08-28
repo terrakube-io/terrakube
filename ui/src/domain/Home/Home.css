@@ -24,11 +24,6 @@
   overflow-y: auto;
 }
 
-.site-layout-content {
-  min-height: 600px;
-  padding: 24px;
-}
-
 .avatar-hover-effect {
   cursor: pointer;
   color: rgba(255, 255, 255, 0.65);

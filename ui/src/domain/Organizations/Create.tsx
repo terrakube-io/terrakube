@@ -1,12 +1,12 @@
-import { Breadcrumb, Button, Form, Input, Layout, message, theme, Typography, Space, ColorPicker } from "antd";
+import { Button, Form, Input, message, Space, ColorPicker } from "antd";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { IconSelector } from "./IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import { useState } from "react";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import "./Organizations.css";
-const { Content } = Layout;
 
 const validateMessages = {
   required: "${label} is required!",
@@ -27,9 +27,6 @@ type Props = {
 
 export const CreateOrganization = ({ setOrganizationName }: Props) => {
   const navigate = useNavigate();
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
 
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
@@ -95,65 +92,51 @@ export const CreateOrganization = ({ setOrganizationName }: Props) => {
   };
 
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: "Organizations",
-          },
-          {
-            title: "New",
-          },
-        ]}
-      />
-      <div className="site-layout-content" style={{ background: colorBgContainer }}>
-        <div className="createOrganization">
-          <h1>Create a new organization</h1>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Organizations are privately shared spaces for teams to collaborate on infrastructure.
-            </Typography.Text>
+    <PageWrapper
+      title="New Organization"
+      subTitle="Organizations are privately shared spaces for teams to collaborate on infrastructure."
+      breadcrumbs={[{ label: "Organizations", path: "/" }, { label: "New" }]}
+      width="form"
+    >
+      <Form layout="vertical" name="create-org" onFinish={onFinish} validateMessages={validateMessages}>
+        <Form.Item
+          name="name"
+          label="Organization name"
+          tooltip="e.g. company-name"
+          extra=" Organization names must be unique and will be part of your resource names used in various tools, for example development, production, finance."
+          rules={organizationNameRules}
+        >
+          <Input />
+        </Form.Item>
+
+        <Form.Item name="description" label="Description">
+          <Input.TextArea />
+        </Form.Item>
+
+        <Form.Item label="Organization Icon and Color">
+          <Space align="start">
+            <IconSelector value={icon} color={color} onChange={setIcon} />
+            <ColorPicker
+              value={color}
+              onChange={(colorObj) => setColor(colorObj.toHexString())}
+              presets={[
+                {
+                  label: "Recommended",
+                  colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
+                },
+              ]}
+            />
+          </Space>
+        </Form.Item>
+
+        <Form.Item>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button type="primary" htmlType="submit" loading={submitting} disabled={submitting}>
+              Create organization
+            </Button>
           </div>
-          <Form layout="vertical" name="create-org" onFinish={onFinish} validateMessages={validateMessages}>
-            <Form.Item
-              name="name"
-              label="Organization name"
-              tooltip="e.g. company-name"
-              extra=" Organization names must be unique and will be part of your resource names used in various tools, for example development, production, finance."
-              rules={organizationNameRules}
-            >
-              <Input />
-            </Form.Item>
-
-            <Form.Item name="description" label="Description">
-              <Input.TextArea />
-            </Form.Item>
-
-            <Form.Item label="Organization Icon and Color">
-              <Space align="start">
-                <IconSelector value={icon} color={color} onChange={setIcon} />
-                <ColorPicker
-                  value={color}
-                  onChange={(colorObj) => setColor(colorObj.toHexString())}
-                  presets={[
-                    {
-                      label: "Recommended",
-                      colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
-                    },
-                  ]}
-                />
-              </Space>
-            </Form.Item>
-
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={submitting} disabled={submitting}>
-                Create organization
-              </Button>
-            </Form.Item>
-          </Form>
-        </div>
-      </div>
-    </Content>
+        </Form.Item>
+      </Form>
+    </PageWrapper>
   );
 };

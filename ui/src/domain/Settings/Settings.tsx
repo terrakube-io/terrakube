@@ -1,6 +1,5 @@
-import { Breadcrumb, Layout } from "antd";
 import { useEffect, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { ActionSettings } from "./Actions";
 import { GeneralSettings } from "./General";
@@ -17,8 +16,22 @@ import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
 import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 
-const { Content } = Layout;
+const SETTINGS_TAB_PATHS: Record<string, string> = {
+  "1": "general",
+  "2": "teams",
+  "3": "variables",
+  "4": "vcs",
+  "5": "templates",
+  "6": "ssh",
+  "7": "tags",
+  "8": "agents",
+  "9": "collection",
+  "10": "actions",
+  "11": "federated-credentials",
+  "12": "notifications",
+};
 
 const SETTINGS_TAB_LABELS: Record<string, string> = {
   "1": "General",
@@ -37,12 +50,23 @@ const SETTINGS_TAB_LABELS: Record<string, string> = {
 
 type Props = {
   selectedTab?: string;
-  vcsMode?: "new" | "list";
+  vcsMode?: "new" | "edit" | "list";
+  vcsId?: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   collectionMode?: "list" | "new" | "edit" | "detail";
   collectionId?: string;
 };
 
-export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "list", collectionId }: Props) => {
+export const OrganizationSettings = ({
+  selectedTab,
+  vcsMode,
+  vcsId,
+  editorMode,
+  editorId,
+  collectionMode = "list",
+  collectionId,
+}: Props) => {
   const { orgid } = useParams();
   const [activeKey, setActiveKey] = useState(selectedTab || "1");
   const { permissions } = useOrgPermissions();
@@ -77,13 +101,27 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
       case "1":
         return <GeneralSettings managePermission={permissions.managePermission} />;
       case "2":
-        return <TeamSettings key={activeKey} managePermission={permissions.managePermission} />;
+        return (
+          <TeamSettings
+            key={activeKey}
+            editorMode={editorMode}
+            editorId={editorId}
+            managePermission={permissions.managePermission}
+          />
+        );
       case "3":
         return <GlobalVariablesSettings managePermission={permissions.managePermission} />;
       case "4":
-        return <VCSSettings vcsMode={vcsMode} managePermission={permissions.manageVcs} />;
+        return <VCSSettings vcsMode={vcsMode} vcsId={vcsId} managePermission={permissions.manageVcs} />;
       case "5":
-        return <TemplatesSettings key={activeKey} managePermission={permissions.manageTemplate} />;
+        return (
+          <TemplatesSettings
+            key={activeKey}
+            editorMode={editorMode}
+            editorId={editorId}
+            managePermission={permissions.manageTemplate}
+          />
+        );
       case "6":
         return <SSHKeysSettings managePermission={permissions.manageVcs} />;
       case "7":
@@ -93,36 +131,52 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
       case "9":
         return renderCollectionContent();
       case "10":
-        return <ActionSettings managePermission={permissions.managePermission} />;
+        return (
+          <ActionSettings editorMode={editorMode} editorId={editorId} managePermission={permissions.managePermission} />
+        );
       case "11":
-        return <FederatedCredentials managePermission={permissions.managePermission} />;
+        return (
+          <FederatedCredentials
+            editorMode={editorMode}
+            editorId={editorId}
+            managePermission={permissions.managePermission}
+          />
+        );
       case "12":
-        return <OrgNotifications managePermission={permissions.managePermission} />;
+        return (
+          <OrgNotifications
+            editorMode={editorMode}
+            editorId={editorId}
+            managePermission={permissions.managePermission}
+          />
+        );
       default:
         return <GeneralSettings managePermission={permissions.managePermission} />;
     }
   };
 
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: (
-              <NavLink to={`/organizations/${orgid}/workspaces`}>{sessionStorage.getItem(ORGANIZATION_NAME)}</NavLink>
-            ),
-          },
-          {
-            title: <NavLink to={`/organizations/${orgid}/settings/general`}>Settings</NavLink>,
-          },
-          {
-            title: SETTINGS_TAB_LABELS[activeKey] ?? "General",
-          },
-        ]}
-      />
-
-      <div className="site-layout-content">{renderContent()}</div>
-    </Content>
+    <PageWrapper
+      title="Organization Settings"
+      showTitle={false}
+      breadcrumbs={[
+        { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
+        { label: "Settings", path: `/organizations/${orgid}/settings/general` },
+        {
+          label: SETTINGS_TAB_LABELS[activeKey] ?? "General",
+          ...(editorMode || vcsMode === "new" || vcsMode === "edit" || collectionMode !== "list"
+            ? { path: `/organizations/${orgid}/settings/${SETTINGS_TAB_PATHS[activeKey] ?? "general"}` }
+            : {}),
+        },
+        ...(editorMode || vcsMode === "new" || vcsMode === "edit"
+          ? [{ label: editorMode === "new" || vcsMode === "new" ? "New" : "Edit" }]
+          : []),
+        ...(collectionMode === "new" || collectionMode === "edit"
+          ? [{ label: collectionMode === "new" ? "New" : "Edit" }]
+          : []),
+      ]}
+    >
+      {renderContent()}
+    </PageWrapper>
   );
 };

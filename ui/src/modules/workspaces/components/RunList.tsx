@@ -6,7 +6,8 @@ import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter from "./RunFilter";
-import WorkspaceStatusTag from "./WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
+import { formatDateTime } from "@/modules/utils/dates";
 
 // Storage key for persisting pagination state
 const RUNS_PAGE_KEY = "runsCurrentPage";
@@ -14,16 +15,6 @@ const RUNS_FILTER_KEY = "runsFilterValue";
 const RUNS_TEMPLATE_FILTER_KEY = "runsTemplateFilter";
 
 // Helper function to format date
-const formatDate = (dateString?: string) => {
-  if (!dateString) return "";
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  } catch {
-    return dateString;
-  }
-};
-
 // Safely parse JSON with a fallback value
 const safeJsonParse = (jsonString: string | null, fallback: any): any => {
   if (!jsonString) return fallback;
@@ -148,7 +139,7 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                   </Tooltip>
                 )}
                 <div>
-                  <Tooltip title={formatDate((item as any).createdDate)}>
+                  <Tooltip title={formatDateTime((item as any).createdDate)}>
                     <span className="metadata">{item.latestChange}</span>
                   </Tooltip>
                 </div>

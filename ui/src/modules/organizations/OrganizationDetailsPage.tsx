@@ -1,11 +1,12 @@
-import { Button, Flex, List, Space } from "antd";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import { Flex, List, Space } from "antd";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { JobStatus } from "@/domain/types";
 import { Link, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { useOrganizationJobStatusSubscription, usePolling } from "@/hooks";
@@ -13,8 +14,8 @@ import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionType
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
 import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/WorkspaceTable";
-import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
+import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import { useWorkspaceFilterState } from "@/modules/workspaces/hooks/useWorkspaceFilterState";
 import { filterWorkspaces, WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
 import {
@@ -156,16 +157,15 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         { label: organizationName, path: "/" },
         { label: "Workspaces", path: `/organizations/${id}/workspaces` },
       ]}
-      fluid
       actions={
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
-          <Button icon={<ImportOutlined />}>
-            <Link to={`/organizations/${id}/workspaces/import`}>Import workspaces</Link>
-          </Button>
-          <Button icon={<PlusOutlined />} type="primary">
-            <Link to={`/organizations/${id}/workspaces/create`}>New workspace</Link>
-          </Button>
+          <LinkButton to={`/organizations/${id}/workspaces/import`} icon={<ImportOutlined />}>
+            Import workspaces
+          </LinkButton>
+          <LinkButton to={`/organizations/${id}/workspaces/create`} icon={<PlusOutlined />} type="primary">
+            New workspace
+          </LinkButton>
         </Space>
       }
     >

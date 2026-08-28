@@ -1,25 +1,65 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Spin, Tag, Typography } from "antd";
+import { Avatar, Button, List, message, Tag, Typography } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgId: string;
   workspaceId?: string;
+  basePath?: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const NotificationConfigurationList = ({ orgId, workspaceId, managePermission = true }: Props) => {
+export const NotificationConfigurationList = ({
+  orgId,
+  workspaceId,
+  basePath,
+  editorMode,
+  editorId,
+  managePermission = true,
+}: Props) => {
   const [configurations, setConfigurations] = useState<NotificationConfiguration[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
-  const [editingId, setEditingId] = useState<string>();
+  const navigate = useNavigate();
+  const [localMode, setLocalMode] = useState<"list" | "create" | "edit">("list");
+  const [localEditingId, setLocalEditingId] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<NotificationConfiguration | null>(null);
+  const routed = basePath != null;
+  const mode: "list" | "create" | "edit" = routed
+    ? editorMode === "new"
+      ? "create"
+      : (editorMode ?? "list")
+    : localMode;
+  const editingId = routed ? editorId : localEditingId;
+  const openCreate = () => (routed ? navigate(`${basePath}/new`) : setLocalMode("create"));
+  const openEdit = (id: string) => {
+    if (routed) {
+      navigate(`${basePath}/edit/${id}`);
+    } else {
+      setLocalEditingId(id);
+      setLocalMode("edit");
+    }
+  };
+  const closeEditor = () => {
+    if (routed) {
+      navigate(basePath!);
+    } else {
+      setLocalMode("list");
+      setLocalEditingId(undefined);
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -76,7 +116,9 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
           };
         });
         const scoped = workspaceId
-          ? all.filter((c) => c.relationships?.workspace?.data === null || c.relationships?.workspace?.data?.id === workspaceId)
+          ? all.filter(
+              (c) => c.relationships?.workspace?.data === null || c.relationships?.workspace?.data?.id === workspaceId
+            )
           : all.filter((c) => c.relationships?.workspace?.data === null);
         setConfigurations(scoped);
         setLoading(false);
@@ -93,7 +135,6 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, workspaceId]);
 
   // On the org-level page (no workspaceId), "configurations" is already org-scoped only (see
@@ -103,9 +144,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
   const primaryConfigs = workspaceId
     ? configurations.filter((c) => c.relationships?.workspace?.data !== null)
     : configurations;
-  const inheritedConfigs = workspaceId
-    ? configurations.filter((c) => c.relationships?.workspace?.data === null)
-    : [];
+  const inheritedConfigs = workspaceId ? configurations.filter((c) => c.relationships?.workspace?.data === null) : [];
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -125,8 +164,7 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
         mode={mode}
         configId={editingId}
         onDone={() => {
-          setMode("list");
-          setEditingId(undefined);
+          closeEditor();
           load();
         }}
       />
@@ -136,141 +174,156 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
   const renderChannelAvatar = (channelType: NotificationConfiguration["attributes"]["channelType"]) => {
     const meta = CHANNEL_META[channelType];
     const ChannelIcon = meta.icon;
-    return <Avatar style={{ backgroundColor: `${meta.color}1a` }} icon={<ChannelIcon style={{ color: meta.color }} />} />;
+    return (
+      <Avatar style={{ backgroundColor: `${meta.color}1a` }} icon={<ChannelIcon style={{ color: meta.color }} />} />
+    );
   };
 
   return (
     <div>
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Notifications
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {workspaceId
-              ? "Notifications configured specifically for this workspace, plus any organization-wide defaults - both apply together."
-              : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."}
-          </Typography.Text>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-              onClick={() => setMode("create")}
-            >
-              {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
-            </Button>
-            <Spin spinning={loading}>
-              {workspaceId && (
-                <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                  This workspace's notifications
-                </Typography.Title>
-              )}
-              <List
-                itemLayout="horizontal"
-                dataSource={primaryConfigs}
-                locale={{ emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " " }}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button
-                        icon={<EditOutlined />}
-                        shape="round"
-                        type="primary"
-                        disabled={!managePermission}
-                        onClick={() => {
-                          setEditingId(item.id);
-                          setMode("edit");
-                        }}
-                      >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        title="This will permanently delete this notification configuration. Are you sure?"
-                        onConfirm={() => onDelete(item.id)}
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button icon={<DeleteOutlined />} shape="round" type="primary" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={renderChannelAvatar(item.attributes.channelType)}
-                      title={item.attributes.name}
-                      description={
-                        <>
-                          <div>
-                            <Tag color={CHANNEL_META[item.attributes.channelType].color} icon={(() => {
+          <SettingsPageHeader
+            title="Notifications"
+            description={
+              workspaceId
+                ? "Notifications configured specifically for this workspace, plus any organization-wide defaults - both apply together."
+                : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."
+            }
+            actions={
+              <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission} onClick={openCreate}>
+                {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
+              </Button>
+            }
+          />
+          <Loading loading={loading} description="Loading notifications...">
+            {workspaceId && (
+              <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
+                This workspace's notifications
+              </Typography.Title>
+            )}
+            <List
+              itemLayout="horizontal"
+              dataSource={primaryConfigs}
+              locale={{
+                emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " ",
+              }}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      icon={<EditOutlined />}
+                      shape="round"
+                      type="primary"
+                      disabled={!managePermission}
+                      onClick={() => openEdit(item.id)}
+                    >
+                      Edit
+                    </Button>,
+                    <Button
+                      icon={<DeleteOutlined />}
+                      shape="round"
+                      type="primary"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
+                    >
+                      Delete
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={renderChannelAvatar(item.attributes.channelType)}
+                    title={item.attributes.name}
+                    description={
+                      <>
+                        <div>
+                          <Tag
+                            color={CHANNEL_META[item.attributes.channelType].color}
+                            icon={(() => {
                               const Icon = CHANNEL_META[item.attributes.channelType].icon;
                               return <Icon />;
-                            })()}>
-                              {CHANNEL_META[item.attributes.channelType].label}
-                            </Tag>
-                            {workspaceId && <Tag color="purple">This workspace</Tag>}
-                            {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                          </div>
-                          {item.attributes.description && (
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {item.attributes.description}
-                            </Typography.Text>
-                          )}
-                        </>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
+                            })()}
+                          >
+                            {CHANNEL_META[item.attributes.channelType].label}
+                          </Tag>
+                          {workspaceId && <Tag color="purple">This workspace</Tag>}
+                          {!item.attributes.active && <Tag color="default">Disabled</Tag>}
+                        </div>
+                        {item.attributes.description && (
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {item.attributes.description}
+                          </Typography.Text>
+                        )}
+                      </>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
 
-              {workspaceId && (
-                <>
-                  <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                    Also applies here (organization-wide)
-                  </Typography.Title>
-                  <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
-                    Managed at the organization level - edit these from the organization's notification settings.
-                  </Typography.Text>
-                  <List
-                    itemLayout="horizontal"
-                    dataSource={inheritedConfigs}
-                    locale={{ emptyText: "No organization-wide defaults apply here." }}
-                    renderItem={(item) => (
-                      <List.Item>
-                        <List.Item.Meta
-                          avatar={renderChannelAvatar(item.attributes.channelType)}
-                          title={item.attributes.name}
-                          description={
-                            <>
-                              <div>
-                                <Tag color={CHANNEL_META[item.attributes.channelType].color} icon={(() => {
+            {workspaceId && (
+              <>
+                <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
+                  Also applies here (organization-wide)
+                </Typography.Title>
+                <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
+                  Managed at the organization level - edit these from the organization's notification settings.
+                </Typography.Text>
+                <List
+                  itemLayout="horizontal"
+                  dataSource={inheritedConfigs}
+                  locale={{ emptyText: "No organization-wide defaults apply here." }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={renderChannelAvatar(item.attributes.channelType)}
+                        title={item.attributes.name}
+                        description={
+                          <>
+                            <div>
+                              <Tag
+                                color={CHANNEL_META[item.attributes.channelType].color}
+                                icon={(() => {
                                   const Icon = CHANNEL_META[item.attributes.channelType].icon;
                                   return <Icon />;
-                                })()}>
-                                  {CHANNEL_META[item.attributes.channelType].label}
-                                </Tag>
-                                <Tag>Org default</Tag>
-                                {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                              </div>
-                              {item.attributes.description && (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {item.attributes.description}
-                                </Typography.Text>
-                              )}
-                            </>
-                          }
-                        />
-                      </List.Item>
-                    )}
-                  />
-                </>
-              )}
-            </Spin>
-          </SettingsSection>
+                                })()}
+                              >
+                                {CHANNEL_META[item.attributes.channelType].label}
+                              </Tag>
+                              <Tag>Org default</Tag>
+                              {!item.attributes.active && <Tag color="default">Disabled</Tag>}
+                            </div>
+                            {item.attributes.description && (
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                {item.attributes.description}
+                              </Typography.Text>
+                            )}
+                          </>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </>
+            )}
+          </Loading>
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete notification configuration"
+            message={`This will permanently delete the notification configuration "${pendingDelete?.attributes.name}".`}
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) {
+                onDelete(pendingDelete.id);
+              }
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

@@ -1,11 +1,11 @@
-import { Button, Form, Input, Space, Spin, Typography, message } from "antd";
+import { Button, Col, Flex, Form, Input, Row, Space, Spin, message } from "antd";
 import { useEffect, useState } from "react";
-import { HiOutlineExternalLink } from "react-icons/hi";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   vcsId: string;
@@ -69,9 +69,9 @@ const renderVCSType = (vcs: VcsTypeExtended): string => {
     case "BITBUCKET_SERVER":
       return "BitBucket Server";
     case "AZURE_DEVOPS":
-      return "Azure Devops";
+      return "Azure DevOps";
     case "AZURE_DEVOPS_SERVER":
-      return "Azure Devops Server";
+      return "Azure DevOps Server";
     case "GITHUB_ENTERPRISE":
       return "GitHub Enterprise";
     case "GITHUB_APP":
@@ -264,78 +264,94 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   return (
     <Spin spinning={loading}>
       <div className="chooseType">
-        <Typography.Title level={1} style={{ margin: 0 }}>
-          Edit VCS Provider
-        </Typography.Title>
-        <Typography.Text type="secondary" className="App-text">
-          Update the {renderVCSType(vcsTypeExtended)} client credentials used by Terrakube to access your version
-          control system. For additional information, please read our{" "}
-          <Button className="link" target="_blank" href={getDocsUrl(vcsTypeExtended)} type="link">
-            documentation&nbsp;
-            <HiOutlineExternalLink />
-          </Button>
-        </Typography.Text>
-        <br />
-        <br />
-        <Typography.Text type="secondary">
-          <b>Provider:</b> {renderVCSType(vcsTypeExtended)}&nbsp;&nbsp;
-          <b>Connection type:</b> {connectionType === VcsConnectionType.OAUTH ? "OAuth App" : "GitHub App (Standalone)"}
-        </Typography.Text>
-        <SettingsSection>
-          <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="endpoint"
-              label="HTTPS URL"
-              hidden={httpsHidden(vcsTypeExtended)}
-              rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="apiUrl"
-              label="API URL"
-              hidden={apiUrlHidden(vcsTypeExtended)}
-              rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="clientId"
-              label={getClientIdName(vcsTypeExtended, connectionType)}
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="clientSecret"
-              label={getSecretIdName(vcsTypeExtended, connectionType)}
-              hidden={secretHidden}
-              extra="Leave blank to keep the existing secret"
-            >
-              <Input.Password />
-            </Form.Item>
+        <SettingsPageHeader
+          docUrl={getDocsUrl(vcsTypeExtended)}
+          title="Edit VCS Provider"
+          description={
+            <>
+              Update the {renderVCSType(vcsTypeExtended)} client credentials used by Terrakube to access your version
+              control system.
+            </>
+          }
+        />
+        <Form form={form} layout="vertical" onFinish={onFinish}>
+          <SettingsSection
+            maxWidth={960}
+            title="Provider details"
+            description={`${renderVCSType(vcsTypeExtended)} connection using ${
+              connectionType === VcsConnectionType.OAUTH ? "an OAuth App" : "a GitHub App (standalone)"
+            }.`}
+          >
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="clientId"
+                  label={getClientIdName(vcsTypeExtended, connectionType)}
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="endpoint"
+                  label="HTTPS URL"
+                  hidden={httpsHidden(vcsTypeExtended)}
+                  rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="apiUrl"
+                  label="API URL"
+                  hidden={apiUrlHidden(vcsTypeExtended)}
+                  rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="clientSecret"
+                  label={getSecretIdName(vcsTypeExtended, connectionType)}
+                  hidden={secretHidden}
+                  extra="Leave blank to keep the existing secret"
+                >
+                  <Input.Password />
+                </Form.Item>
+              </Col>
+            </Row>
             <Form.Item
               name="privateKey"
               label={getSecretIdName(vcsTypeExtended, connectionType)}
               hidden={connectionType === VcsConnectionType.OAUTH}
               extra="Leave blank to keep the existing private key"
               rules={[{ validator: validatePrivateKeyFormat }]}
+              style={{ marginBottom: 0 }}
             >
               <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
             </Form.Item>
-            <Form.Item>
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  Update
-                </Button>
-                <Button onClick={onCancel}>Cancel</Button>
-              </Space>
-            </Form.Item>
-          </Form>
-        </SettingsSection>
+          </SettingsSection>
+          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Space>
+              <Button onClick={onCancel}>Cancel</Button>
+              <Button type="primary" htmlType="submit">
+                Update
+              </Button>
+            </Space>
+          </Flex>
+        </Form>
       </div>
     </Spin>
   );

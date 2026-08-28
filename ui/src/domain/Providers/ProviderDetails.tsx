@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconContext } from "react-icons";
 import { RiFolderHistoryLine } from "react-icons/ri";
 import { useNavigate, useParams } from "react-router-dom";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import { getProvider, deleteProviderCascade } from "./providerService";
 import { ProviderModel, ProviderVersionModel } from "./types";
@@ -145,9 +145,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
         { label: "Providers", path: `/organizations/${orgid}/registry?tab=providers` },
         { label: shortName || "...", path: `/organizations/${orgid}/registry/providers/${providerid}` },
       ]}
-      fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
+      width="reading"
     >
       {provider && (
         <div>
@@ -285,7 +283,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                   Helpful links
                 </Typography.Text>
                 <div style={{ marginTop: 8 }}>
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     {namespace && shortName && (
                       <Typography.Link
                         href={`https://registry.terraform.io/providers/${namespace}/${shortName}/latest/docs`}
