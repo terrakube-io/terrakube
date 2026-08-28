@@ -13,6 +13,7 @@ import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspace
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
 import { getPublicApiOrigin } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
+import { isTerminalStatus } from "./stepStatus";
 import { StepConsole } from "./StepConsole";
 import {
   JobDiagnosticsByStep,
@@ -30,7 +31,6 @@ type Props = {
   jobId: string;
 };
 
-const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
 
 const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
@@ -111,13 +111,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
 
-  const isTerminalJobStatus = (status?: string) => {
-    if (!status) {
-      return false;
-    }
-
-    return TERMINAL_JOB_STATUSES.has(status);
-  };
 
   const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
     if (jobOutput == null) {
@@ -500,7 +493,7 @@ export const DetailsJob = ({ jobId }: Props) => {
     },
     {
       interval: 5000,
-      enabled: Boolean(jobId) && !isTerminalJobStatus(job?.data?.attributes.status),
+      enabled: Boolean(jobId) && !isTerminalStatus(job?.data?.attributes.status),
       immediate: false,
     }
   );

@@ -15,9 +15,17 @@ jest.mock("../../../config/axiosConfig", () => ({
 }));
 
 jest.mock("../TerminalOutput", () => ({
-  TerminalOutput: ({ outputLog, truncated }: { outputLog: string; truncated?: boolean }) => (
+  TerminalOutput: ({
+    outputLog,
+    truncated,
+    emptyLabel,
+  }: {
+    outputLog: string;
+    truncated?: boolean;
+    emptyLabel?: string;
+  }) => (
     <div data-testid="terminal" data-truncated={String(!!truncated)}>
-      {outputLog}
+      {outputLog.length > 0 ? outputLog : (emptyLabel ?? "")}
     </div>
   ),
 }));
@@ -46,32 +54,23 @@ describe("LiveTerminalOutput", () => {
     expect(screen.getByTestId("terminal")).toHaveTextContent("streamed line");
   });
 
-  it("falls back to the static outputLog while the stream has not sent anything yet", () => {
+  it("shows a waiting placeholder until the running stream sends something", () => {
     (useLogStream as jest.Mock).mockReturnValue({ text: "" });
 
     render(
-      <LiveTerminalOutput
-        jobId="1"
-        organizationId="org-1"
-        item={makeStep({ status: JobStatus.Running, outputLog: "Initializing the backend..." })}
-      />
+      <LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Running })} />
     );
 
-    expect(screen.getByTestId("terminal")).toHaveTextContent("Initializing the backend...");
+    expect(screen.getByTestId("terminal")).toHaveTextContent("Waiting for output");
   });
 
-  it("renders the static outputLog for a completed step without connecting the stream", () => {
+  it("does not connect the stream for a non-running step", () => {
     (useLogStream as jest.Mock).mockReturnValue({ text: "" });
 
     render(
-      <LiveTerminalOutput
-        jobId="1"
-        organizationId="org-1"
-        item={makeStep({ status: JobStatus.Completed, output: "some-url", outputLog: "final output" })}
-      />
+      <LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Completed })} />
     );
 
-    expect(screen.getByTestId("terminal")).toHaveTextContent("final output");
     expect(useLogStream).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
 

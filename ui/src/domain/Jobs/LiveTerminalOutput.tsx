@@ -3,6 +3,7 @@ import axiosInstance from "../../config/axiosConfig";
 import { useLogStream, usePolling } from "../../hooks";
 import { splitLines } from "./ansiChunks";
 import { getPublicApiOrigin } from "./outputUrl";
+import { isRunningStatus } from "./stepStatus";
 import { TerminalOutput } from "./TerminalOutput";
 import { JobStep } from "../types";
 
@@ -19,7 +20,7 @@ const LIVE_TAIL_LINES = 5000;
 const POLL_INTERVAL_MS = 3000;
 
 export const LiveTerminalOutput = ({ jobId, organizationId, item }: Props) => {
-  const isRunning = item.status === "running";
+  const isRunning = isRunningStatus(item.status);
   const stepBaseUrl = `${getPublicApiOrigin()}/tfoutput/v1/organization/${organizationId}/job/${jobId}/step/${item.id}`;
 
   const [sseFailed, setSseFailed] = useState(false);
@@ -50,14 +51,13 @@ export const LiveTerminalOutput = ({ jobId, organizationId, item }: Props) => {
     return { tailed: liveText, truncated: false };
   }, [liveText]);
 
-  const outputLog = isRunning && tailed.length > 0 ? tailed : item.outputLog;
-
   return (
     <TerminalOutput
-      outputLog={outputLog}
+      outputLog={tailed}
       stepName={item.name}
       isRunning={isRunning}
-      truncated={isRunning && truncated}
+      emptyLabel="Waiting for output…"
+      truncated={truncated}
     />
   );
 };
