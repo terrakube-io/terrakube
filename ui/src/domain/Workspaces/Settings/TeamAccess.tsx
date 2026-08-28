@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Flex,
   Form,
   Popconfirm,
   Select,
@@ -253,7 +254,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
         const r = ROLES.find((x) => x.value === opt.value);
         if (!r) return opt.label;
         return (
-          <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+          <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
             <Tag color={r.color}>{r.label}</Tag>
             <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
               {r.description}
@@ -289,7 +290,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       render: (role: string, record: WorkspaceAccessModel) => {
         if (canManage && editingId === record.id) {
           return (
-            <Space direction="vertical" size={8}>
+            <Space orientation="vertical" size={8}>
               {renderRoleSelect(editingRole, setEditingRole)}
               {editingRole === "custom" && (
                 <Space wrap size={12}>
@@ -479,9 +480,11 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
               )}
 
               <Form.Item style={{ marginBottom: 0 }}>
-                <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
-                  Add Team
-                </Button>
+                <Flex justify="flex-end">
+                  <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+                    Add Team
+                  </Button>
+                </Flex>
               </Form.Item>
             </Form>
           </Card>

@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, Col, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
@@ -560,30 +560,35 @@ export const CreateEditCollection = ({
             scope: "specific",
           }}
         >
-          <SettingsSection title="Configure settings">
-            <Form.Item
-              name="name"
-              label="Name"
-              rules={[{ required: true, message: "Please enter a name for the collection" }]}
-            >
-              <Input placeholder="Collection name" />
-            </Form.Item>
+          <SettingsSection title="Configure settings" maxWidth={960}>
+            <Row gutter={16}>
+              <Col xs={24} md={16}>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  rules={[{ required: true, message: "Please enter a name for the collection" }]}
+                >
+                  <Input placeholder="Collection name" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item
+                  name="priority"
+                  label="Priority"
+                  rules={[{ required: true, message: "Please enter a priority" }]}
+                  tooltip="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
+                >
+                  <Input type="number" min={1} max={100} defaultValue={10} />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Form.Item name="description" label="Description (Optional)">
               <Input.TextArea rows={3} placeholder="Describe the purpose of this collection" />
             </Form.Item>
-
-            <Form.Item
-              name="priority"
-              label="Priority"
-              rules={[{ required: true, message: "Please enter a priority" }]}
-              help="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
-            >
-              <Input type="number" min={1} max={100} defaultValue={10} />
-            </Form.Item>
           </SettingsSection>
 
-          <SettingsSection title="Variable collection scope">
+          <SettingsSection title="Variable collection scope" maxWidth={960}>
             <div style={{ marginBottom: "10px" }}>
               <Typography.Text strong>Apply to workspaces</Typography.Text>
             </div>
@@ -616,7 +621,7 @@ export const CreateEditCollection = ({
             )}
           </SettingsSection>
 
-          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "30px" }}>
             <Space>
               <Button>
                 <Link to={`/organizations/${orgid}/settings/collection`}>Cancel</Link>

@@ -130,9 +130,11 @@ export const CreateOrganization = ({ setOrganizationName }: Props) => {
         </Form.Item>
 
         <Form.Item>
-          <Button type="primary" htmlType="submit" loading={submitting} disabled={submitting}>
-            Create organization
-          </Button>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button type="primary" htmlType="submit" loading={submitting} disabled={submitting}>
+              Create organization
+            </Button>
+          </div>
         </Form.Item>
       </Form>
     </PageWrapper>

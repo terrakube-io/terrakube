@@ -1,4 +1,4 @@
-import { Button, Form, Input, Space, Spin, Typography, message } from "antd";
+import { Button, Col, Flex, Form, Input, Row, Space, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
 import { useParams } from "react-router-dom";
@@ -281,34 +281,46 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
           <b>Provider:</b> {renderVCSType(vcsTypeExtended)}&nbsp;&nbsp;
           <b>Connection type:</b> {connectionType === VcsConnectionType.OAUTH ? "OAuth App" : "GitHub App (Standalone)"}
         </Typography.Text>
-        <SettingsSection>
+        <SettingsSection maxWidth={960}>
           <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="endpoint"
-              label="HTTPS URL"
-              hidden={httpsHidden(vcsTypeExtended)}
-              rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="apiUrl"
-              label="API URL"
-              hidden={apiUrlHidden(vcsTypeExtended)}
-              rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="clientId"
-              label={getClientIdName(vcsTypeExtended, connectionType)}
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="clientId"
+                  label={getClientIdName(vcsTypeExtended, connectionType)}
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="endpoint"
+                  label="HTTPS URL"
+                  hidden={httpsHidden(vcsTypeExtended)}
+                  rules={[{ required: !httpsHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="apiUrl"
+                  label="API URL"
+                  hidden={apiUrlHidden(vcsTypeExtended)}
+                  rules={[{ required: !apiUrlHidden(vcsTypeExtended) }, { validator: validateUrlFormat }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
             <Form.Item
               name="clientSecret"
               label={getSecretIdName(vcsTypeExtended, connectionType)}
@@ -327,12 +339,14 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
               <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
             </Form.Item>
             <Form.Item>
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  Update
-                </Button>
-                <Button onClick={onCancel}>Cancel</Button>
-              </Space>
+              <Flex justify="flex-end">
+                <Space>
+                  <Button onClick={onCancel}>Cancel</Button>
+                  <Button type="primary" htmlType="submit">
+                    Update
+                  </Button>
+                </Space>
+              </Flex>
             </Form.Item>
           </Form>
         </SettingsSection>

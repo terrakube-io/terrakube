@@ -283,7 +283,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                   Helpful links
                 </Typography.Text>
                 <div style={{ marginTop: 8 }}>
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     {namespace && shortName && (
                       <Typography.Link
                         href={`https://registry.terraform.io/providers/${namespace}/${shortName}/latest/docs`}

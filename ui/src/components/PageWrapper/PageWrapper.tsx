@@ -76,7 +76,7 @@ export default function PageWrapper({
           {errorInfo && (
             <Alert
               className="page-wrapper-alert"
-              message={errorInfo.title}
+              title={errorInfo.title}
               description={errorInfo.message}
               type="error"
               showIcon

@@ -1,5 +1,5 @@
 import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Alert, Button, Form, Input, message, Space, theme, Typography } from "antd";
+import { Alert, Button, Flex, Form, Input, message, Space, theme, Typography } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -106,11 +106,11 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
         title="Edit Template"
         description="Update this template's job flow definition."
       />
-      <Space className="chooseType" direction="vertical">
+      <Space className="chooseType" orientation="vertical">
         {loading ? (
           <LoadingFallback />
         ) : error ? (
-          <Alert message="Error" description={error} type="error" showIcon />
+          <Alert title="Error" description={error} type="error" showIcon />
         ) : template ? (
           <SettingsSection>
             <Form
@@ -144,9 +144,11 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
                   />
                 </div>
               </Form.Item>
-              <Button type="primary" htmlType="submit">
-                Save Template
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit">
+                  Save Template
+                </Button>
+              </Flex>
             </Form>
           </SettingsSection>
         ) : (

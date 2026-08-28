@@ -1,4 +1,5 @@
-import { Button, Form, Input, message, Popconfirm, Radio, Space, Typography, Spin, ColorPicker } from "antd";
+import { Button, Col, Flex, Form, Input, message, Radio, Row, Space, Typography, Spin, ColorPicker } from "antd";
+import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -36,6 +37,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   const [form] = Form.useForm();
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   const onFinish = (values: GeneralSettingsForm) => {
     setWaiting(true);
@@ -158,50 +160,18 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
               executionMode: organization.attributes.executionMode,
             }}
           >
-            <SettingsSection title="Identity" description="Basic information about this organization.">
+            <SettingsSection
+              maxWidth={960}
+              title="Identity"
+              description="Basic information about this organization, and the icon and color shown for it throughout the app."
+            >
               <Form.Item name="name" label="Name" rules={organizationNameRules}>
                 <Input />
               </Form.Item>
-              <Form.Item
-                name="description"
-                label="Description"
-                extra={<Typography.Text type="secondary">A brief description of this organization.</Typography.Text>}
-              >
-                <Input.TextArea rows={3} />
+              <Form.Item name="description" label="Description" tooltip="A brief description of this organization.">
+                <Input.TextArea rows={3} autoSize={{ minRows: 2, maxRows: 4 }} />
               </Form.Item>
-            </SettingsSection>
-
-            <SettingsSection
-              title="Execution Mode"
-              description="The default execution mode suggested to new workspaces created in this organization. This is informational only and does not affect existing workspaces."
-            >
-              <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces">
-                <Radio.Group>
-                  <Space direction="vertical">
-                    <Radio value="remote">
-                      <b>Remote</b>
-                      <Typography.Text type="secondary" style={{ display: "block" }}>
-                        Terrakube hosts your plans and applies, allowing you and your team to collaborate and review
-                        jobs in the app.
-                      </Typography.Text>
-                    </Radio>
-                    <Radio value="local">
-                      <b>Local</b>
-                      <Typography.Text type="secondary" style={{ display: "block" }}>
-                        Your planning and applying jobs are performed on your own machines. Terrakube is used just for
-                        storing and syncing the state.
-                      </Typography.Text>
-                    </Radio>
-                  </Space>
-                </Radio.Group>
-              </Form.Item>
-            </SettingsSection>
-
-            <SettingsSection
-              title="Appearance"
-              description="The icon and color shown for this organization throughout the app."
-            >
-              <Form.Item label="Organization Icon and Color">
+              <Form.Item label="Icon and Color">
                 <Space align="start">
                   <IconSelector value={icon} color={color} onChange={setIcon} />
                   <ColorPicker
@@ -218,10 +188,43 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
               </Form.Item>
             </SettingsSection>
 
-            <Form.Item>
-              <Button type="primary" htmlType="submit" disabled={!managePermission}>
-                Update organization
-              </Button>
+            <SettingsSection
+              maxWidth={960}
+              title="Execution Mode"
+              description="The default execution mode suggested to new workspaces created in this organization. This is informational only and does not affect existing workspaces."
+            >
+              <Form.Item name="executionMode" label="Default Execution Mode for New Workspaces">
+                <Radio.Group style={{ width: "100%" }}>
+                  <Row gutter={16}>
+                    <Col xs={24} md={12}>
+                      <Radio value="remote" className="execution-mode-option">
+                        <b>Remote</b>
+                        <Typography.Text type="secondary" style={{ display: "block" }}>
+                          Terrakube hosts your plans and applies, allowing you and your team to collaborate and review
+                          jobs in the app.
+                        </Typography.Text>
+                      </Radio>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Radio value="local" className="execution-mode-option">
+                        <b>Local</b>
+                        <Typography.Text type="secondary" style={{ display: "block" }}>
+                          Your planning and applying jobs are performed on your own machines. Terrakube is used just for
+                          storing and syncing the state.
+                        </Typography.Text>
+                      </Radio>
+                    </Col>
+                  </Row>
+                </Radio.Group>
+              </Form.Item>
+            </SettingsSection>
+
+            <Form.Item style={{ maxWidth: 960 }}>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit" disabled={!managePermission}>
+                  Update organization
+                </Button>
+              </Flex>
             </Form.Item>
           </Form>
         </Spin>
@@ -238,33 +241,22 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           </>
         }
       >
-        <Popconfirm
-          okButtonProps={{ danger: true }}
-          onConfirm={() => {
-            onDelete();
-          }}
-          style={{ width: "100%" }}
-          title={
-            <p>
-              Organization will be permanently deleted and all workspaces will be marked as deleted <br />
-              <br />
-              Are you sure?
-            </p>
-          }
-          okText="Yes"
-          cancelText="No"
-          placement="bottom"
-        >
-          <Button
-            type="primary"
-            danger
-            style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-            disabled={!managePermission}
-          >
-            Delete this organization
-          </Button>
-        </Popconfirm>
+        <Button type="primary" danger disabled={!managePermission} onClick={() => setDeleteModalOpen(true)}>
+          Delete this organization
+        </Button>
       </SettingsSection>
+      <DeleteConfirmationModal
+        open={deleteModalOpen}
+        title="Delete this organization"
+        message="The organization will be permanently deleted and all its workspaces will be marked as deleted. This action cannot be undone."
+        confirmValue={organization?.attributes?.name ?? ""}
+        okText="Delete this organization"
+        onConfirm={() => {
+          onDelete();
+          setDeleteModalOpen(false);
+        }}
+        onCancel={() => setDeleteModalOpen(false)}
+      />
     </div>
   );
 };

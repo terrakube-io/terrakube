@@ -47,7 +47,7 @@ export const Tokens = () => {
       />
 
       {error && (
-        <Alert className="alert" message="Failed to load tokens. Please try again later" type="error" showIcon banner />
+        <Alert className="alert" title="Failed to load tokens. Please try again later" type="error" showIcon banner />
       )}
 
       {loading && (

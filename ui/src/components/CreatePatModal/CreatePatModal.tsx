@@ -2,6 +2,7 @@ import { Modal, Space, Form, Input, Typography, Alert, Button, Flex, Select, Tag
 import { useState, useEffect } from "react";
 import { DateTime } from "luxon";
 import useApiRequest from "@/modules/api/useApiRequest";
+import { ApiResponse } from "@/modules/api/types";
 import { CreateTokenForm, CreatedToken } from "@/modules/token/types";
 import "./CreatePatModal.css";
 
@@ -78,8 +79,8 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
       }
     >
       {tokenValue === undefined && (
-        <Space className="content" direction="vertical">
-          {error && <Alert type="error" banner message={error?.message} />}
+        <Space className="content" orientation="vertical">
+          {error && <Alert type="error" banner title={error?.message} />}
           <Form name="tokens" form={form} layout="vertical" disabled={loading} initialValues={{ description: "" }}>
             <Form.Item
               name="description"
@@ -113,7 +114,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
       )}
 
       {tokenValue !== undefined && (
-        <Space className="content" direction="vertical" size="middle">
+        <Space className="content" orientation="vertical" size="middle">
           <Typography.Text>
             Your new API token is displayed below. Treat this token like a password, as it can be used to access your
             account without a username, password, or two-factor authentication.
@@ -126,7 +127,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
           </div>
 
           <Alert
-            message="Terrakube will not display this token again, so store it securely."
+            title="Terrakube will not display this token again, so store it securely."
             type="warning"
             showIcon
             className="warning-banner"

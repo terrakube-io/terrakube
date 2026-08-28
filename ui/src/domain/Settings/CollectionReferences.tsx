@@ -211,7 +211,7 @@ export const CollectionReferencesSettings = ({ collectionId, collectionName }: P
         <Typography.Title level={3} style={{ marginTop: "30px" }}>
           Associated Workspaces
         </Typography.Title>
-        <Spin spinning={loading} tip="Loading References...">
+        <Spin spinning={loading} description="Loading References...">
           <Table dataSource={references} columns={REFERENCE_COLUMNS} rowKey="id" />
         </Spin>
       </SettingsSection>

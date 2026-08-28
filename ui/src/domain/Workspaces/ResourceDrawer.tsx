@@ -130,10 +130,10 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
         <LoadingFallback />
       ) : (
         <Suspense fallback={<LoadingFallback />}>
-          <Space size={10} style={{ width: "100%" }} direction="vertical">
+          <Space size={10} style={{ width: "100%" }} orientation="vertical">
             <Row>
               <Col span={24}>
-                <Space size={5} direction="horizontal">
+                <Space size={5} orientation="horizontal">
                   {actions &&
                     actions
                       .filter((action) => action?.attributes.type === "Workspace/ResourceDrawer/Action")

@@ -1,4 +1,4 @@
-import { Button, Checkbox, Divider, Form, Input, Typography, message, Table, Space, Select } from "antd";
+import { Button, Checkbox, Divider, Flex, Form, Input, Typography, message, Table, Space, Select } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
@@ -207,9 +207,11 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             <Checkbox>Allow all workspaces in the organization to access this workspace state</Checkbox>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={waiting}>
-              Update Workspace
-            </Button>
+            <Flex justify="flex-end">
+              <Button type="primary" htmlType="submit" loading={waiting}>
+                Update Workspace
+              </Button>
+            </Flex>
           </Form.Item>
         </Form>
         {!globalRemoteState && (

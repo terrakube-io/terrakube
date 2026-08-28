@@ -154,7 +154,7 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
             .catch(() => {});
         }}
       >
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <div>
             <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "var(--tk-accent)" }} />
             <Typography.Text type="secondary">

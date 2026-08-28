@@ -260,7 +260,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         <Typography.Title level={3} style={{ marginTop: "30px" }}>
           Collection Variables
         </Typography.Title>
-        <Spin spinning={loading} tip="Loading Collection Variables...">
+        <Spin spinning={loading} description="Loading Collection Variables...">
           <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
         </Spin>
       </SettingsSection>

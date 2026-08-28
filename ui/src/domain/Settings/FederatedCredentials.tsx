@@ -103,7 +103,7 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
               </Link>
             }
           />
-          <Spin spinning={loading} tip="Loading Federated Credentials...">
+          <Spin spinning={loading} description="Loading Federated Credentials...">
             <List
               itemLayout="horizontal"
               dataSource={federated}

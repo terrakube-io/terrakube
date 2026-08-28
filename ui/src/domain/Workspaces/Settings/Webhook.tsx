@@ -676,7 +676,7 @@ export const WorkspaceWebhook = ({
               </Col>
             </Row>
             <Form.Item>
-              <Flex justify="flex-start" align="flex-start">
+              <Flex justify="flex-end" align="flex-start">
                 <Button type="primary" htmlType="submit" disabled={!manageWorkspace} block={isMobile}>
                   Save webhooks
                 </Button>

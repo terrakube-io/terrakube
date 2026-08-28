@@ -342,7 +342,7 @@ export const States = ({
               </Space>
             </Col>
             <Col span={3}>
-              <Space style={{ marginTop: "30px" }} direction="horizontal">
+              <Space style={{ marginTop: "30px" }} orientation="horizontal">
                 <Popconfirm
                   title="Are you sure?"
                   description={

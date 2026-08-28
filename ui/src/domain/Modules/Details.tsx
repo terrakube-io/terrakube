@@ -307,7 +307,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         <div>
           <Row>
             <Col span={16}>
-              <Space direction="vertical" style={{ marginTop: "10px", width: "95%" }}>
+              <Space orientation="vertical" style={{ marginTop: "10px", width: "95%" }}>
                 {submodule === "" && (
                   <>
                     <Space size="large" wrap>
@@ -437,7 +437,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "2",
                       children:
                         hclObject && hclObject?.variable ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Inputs</h3>
                             <span>These variables should be set in the module block when using this module.</span>
                             <table
@@ -576,7 +576,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "3",
                       children:
                         hclObject && hclObject?.output ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Outputs</h3>
                             <span>These outputs are returned by this module.</span>
                             <table
@@ -660,7 +660,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "5",
                       children:
                         hclObject && hclObject?.resource ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Resources</h3>
                             <span>This is the list of resources this module can create.</span>
                             <span>This module defines {Object.keys(hclObject?.resource)?.length} resources.</span>
@@ -686,7 +686,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
             </Col>
             <Col span={8}>
               <Card>
-                <Space style={{ paddingRight: "10px", width: "100%" }} direction="vertical">
+                <Space style={{ paddingRight: "10px", width: "100%" }} orientation="vertical">
                   <div style={{ width: "100%" }}>
                     <Dropdown
                       menu={{

@@ -235,7 +235,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
               </Button>
             }
           />
-          <Spin spinning={loading} tip="Loading Global Variables...">
+          <Spin spinning={loading} description="Loading Global Variables...">
             <Collapse
               defaultActiveKey={["TERRAFORM", "ENV"]}
               items={[

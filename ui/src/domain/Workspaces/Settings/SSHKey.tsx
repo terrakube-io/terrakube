@@ -1,4 +1,4 @@
-import { Button, Form, Select, Spin, Typography, message } from "antd";
+import { Button, Flex, Form, Select, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance from "../../../config/axiosConfig";
@@ -112,9 +112,11 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
             </Form.Item>
 
             <Form.Item>
-              <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
-                Update SSH key
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
+                  Update SSH key
+                </Button>
+              </Flex>
             </Form.Item>
           </Form>
         </SettingsSection>

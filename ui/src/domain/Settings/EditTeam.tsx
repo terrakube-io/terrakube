@@ -1,7 +1,7 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Alert, Button, Divider, Form, Input, Space, Spin, Tooltip, Typography, message, theme } from "antd";
+import { Alert, Button, Col, Flex, Form, Input, Row, Space, Spin, Tooltip, message } from "antd";
 import CreatePatModal from "@/components/CreatePatModal";
-import { CreateTokenForm } from "@/modules/user/types";
+import { CreateTokenForm } from "@/modules/token/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import { useEffect, useState } from "react";
@@ -234,44 +234,45 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
         }
       />
 
-      {loading ? (
-        <Spin style={{ marginTop: 24, display: "block" }} />
-      ) : error ? (
-        <Alert message="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
+      {error ? (
+        <Alert title="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
       ) : (
-        <SettingsSection>
+        <Spin spinning={loading}>
           <Form name="team" form={form} onFinish={onFinish} layout="vertical">
             {mode === "create" && (
-              <Form.Item
-                name="name"
-                tooltip={{
-                  title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
-                  icon: <InfoCircleOutlined />,
-                }}
-                label="Team Name"
-                rules={[{ required: true, message: "Team name is required" }]}
-                extra="The team name must correspond to a group in your identity provider."
-              >
-                <Input placeholder="e.g. ENGINEERING_TEAM" />
-              </Form.Item>
+              <SettingsSection maxWidth={960} title="Identity">
+                <Row>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="name"
+                      tooltip={{
+                        title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
+                        icon: <InfoCircleOutlined />,
+                      }}
+                      label="Team Name"
+                      rules={[{ required: true, message: "Team name is required" }]}
+                    >
+                      <Input placeholder="e.g. ENGINEERING_TEAM" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </SettingsSection>
             )}
-
-            <Divider />
 
             <TeamPermissionsV2 managePermissions={true} />
 
-            <Divider />
-
-            <Space direction="horizontal">
-              <Button type="primary" htmlType="submit">
-                {mode === "edit" ? "Update team" : "Create team"}
-              </Button>
-              <Button onClick={onCancel} type="default">
-                Cancel
-              </Button>
-            </Space>
+            <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+              <Space orientation="horizontal">
+                <Button onClick={onCancel} type="default">
+                  Cancel
+                </Button>
+                <Button type="primary" htmlType="submit">
+                  {mode === "edit" ? "Update team" : "Create team"}
+                </Button>
+              </Space>
+            </Flex>
           </Form>
-        </SettingsSection>
+        </Spin>
       )}
 
       {mode === "edit" && !loading && !error && (
@@ -279,18 +280,14 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           title="Team API Tokens"
           description="Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation."
           maxWidth="100%"
-        >
-          <div>
+          extra={
             <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
               <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
                 Create a Team Token
               </Button>
             </Tooltip>
-          </div>
-
-          <Typography.Title level={4} style={{ marginTop: 24 }}>
-            Existing Tokens
-          </Typography.Title>
+          }
+        >
           {loadingTokens ? (
             <Spin style={{ display: "block", marginTop: 16 }} />
           ) : (
@@ -305,12 +302,6 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
             shortlivedTokens={true}
           />
         </SettingsSection>
-      )}
-
-      {mode === "edit" && (
-        <Button style={{ marginTop: 40 }} onClick={onCancel} type="default">
-          Go back to Teams list
-        </Button>
       )}
     </div>
   );

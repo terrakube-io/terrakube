@@ -589,7 +589,7 @@ export const CreateWorkspace = () => {
         />
       </div>
       {current == 0 && (
-        <Space className="chooseType" direction="vertical">
+        <Space className="chooseType" orientation="vertical">
           <Typography.Title level={3} style={{ margin: 0 }}>
             Choose your IaC type{" "}
           </Typography.Title>
@@ -611,7 +611,7 @@ export const CreateWorkspace = () => {
                   hoverable
                   onClick={() => handleIacTypeClick(item)}
                 >
-                  <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
+                  <Space orientation="vertical" align="center" size="middle" style={{ width: "100%" }}>
                     <img
                       style={{
                         padding: "14px",
@@ -633,7 +633,7 @@ export const CreateWorkspace = () => {
       )}
 
       {current === 1 && (
-        <Space className="chooseType" direction="vertical">
+        <Space className="chooseType" orientation="vertical">
           <Typography.Title level={3} style={{ margin: 0 }}>
             Choose your workflow{" "}
           </Typography.Title>
@@ -670,7 +670,7 @@ export const CreateWorkspace = () => {
       )}
 
       {current === 2 && versionControlFlow && (
-        <Space className="chooseType" direction="vertical">
+        <Space className="chooseType" orientation="vertical">
           <Typography.Title level={3} style={{ margin: 0 }}>
             Connect to a version control provider
           </Typography.Title>
@@ -680,7 +680,7 @@ export const CreateWorkspace = () => {
 
           {vcsButtonsVisible ? (
             <div>
-              <Space direction="horizontal">
+              <Space orientation="horizontal">
                 <Button
                   icon={<SiGit />}
                   onClick={() => {
@@ -715,7 +715,7 @@ export const CreateWorkspace = () => {
             </div>
           ) : (
             <div>
-              <Space direction="horizontal">
+              <Space orientation="horizontal">
                 <Dropdown menu={{ items: githubItems }}>
                   <Button size="large">
                     <Space>
@@ -762,7 +762,7 @@ export const CreateWorkspace = () => {
         validateMessages={validateMessages}
         initialValues={{ folder: "/" }}
       >
-        <Space hidden={step2Hidden} className="chooseType" direction="vertical" style={{ width: "100%" }}>
+        <Space hidden={step2Hidden} className="chooseType" orientation="vertical" style={{ width: "100%" }}>
           <Typography.Title level={3} style={{ margin: 0 }}>
             Choose a repository
           </Typography.Title>
@@ -817,7 +817,7 @@ export const CreateWorkspace = () => {
                   />
                 </Flex>
 
-                {repoError && <Alert type="error" showIcon banner message={repoError} style={{ borderRadius: 0 }} />}
+                {repoError && <Alert type="error" showIcon banner title={repoError} style={{ borderRadius: 0 }} />}
 
                 <List
                   loading={repoLoading && repoResults.length === 0}
@@ -838,7 +838,7 @@ export const CreateWorkspace = () => {
                       }}
                     >
                       <Flex justify="space-between" align="center" style={{ width: "100%" }}>
-                        <Space direction="vertical" size={0}>
+                        <Space orientation="vertical" size={0}>
                           <span style={{ fontWeight: 500 }}>{repo.name}</span>
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                             {repo.fullName}
@@ -890,13 +890,15 @@ export const CreateWorkspace = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button onClick={handleGitContinueClick} type="primary">
-              Continue
-            </Button>
+            <Flex justify="flex-end">
+              <Button onClick={handleGitContinueClick} type="primary">
+                Continue
+              </Button>
+            </Flex>
           </Form.Item>
         </Space>
 
-        <Space hidden={step3Hidden} className="chooseType" direction="vertical">
+        <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
           <Typography.Title level={3} style={{ margin: 0 }}>
             Configure settings
           </Typography.Title>
@@ -990,9 +992,11 @@ export const CreateWorkspace = () => {
             </Select>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={creating} disabled={creating}>
-              Create Workspace
-            </Button>
+            <Flex justify="flex-end">
+              <Button type="primary" htmlType="submit" loading={creating} disabled={creating}>
+                Create Workspace
+              </Button>
+            </Flex>
           </Form.Item>
         </Space>
       </Form>

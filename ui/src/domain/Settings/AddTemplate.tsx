@@ -1,5 +1,5 @@
 import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Button, Card, Form, Input, List, message, Space, Steps, Typography, theme } from "antd";
+import { Button, Card, Flex, Form, Input, List, message, Space, Steps, Typography, theme } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -165,7 +165,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       />
       {current == 0 && (
         <SettingsSection maxWidth="100%">
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Choose your template
             </Typography.Title>
@@ -203,7 +203,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       )}
       {current == 1 && (
         <SettingsSection>
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Set up template
             </Typography.Title>
@@ -239,7 +239,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       )}
       {current == 2 && (
         <SettingsSection>
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Configure settings
             </Typography.Title>
@@ -255,9 +255,11 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
               <Form.Item name="description" label="Description">
                 <Input.TextArea />
               </Form.Item>
-              <Button type="primary" htmlType="submit">
-                Create Template
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit">
+                  Create Template
+                </Button>
+              </Flex>
             </Form>
           </Space>
         </SettingsSection>

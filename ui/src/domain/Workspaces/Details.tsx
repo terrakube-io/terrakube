@@ -646,7 +646,7 @@ export const WorkspaceDetails = ({
               )}
             </Col>
             <Col span={5}>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <br />
                 <span>
                   {workspace.attributes.branch !== "remote-content" &&
@@ -765,7 +765,7 @@ export const WorkspaceDetails = ({
 
   const pageActions =
     !loading && workspace ? (
-      <Space direction="horizontal">
+      <Space orientation="horizontal">
         {actions &&
           actions
             .reduce((acc: ActionWithSettings[], action: ActionWithSettings) => {
@@ -851,7 +851,7 @@ export const WorkspaceDetails = ({
     >
       {workspace && (
         <div className="orgWrapper">
-          <Space className="workspace-details" direction="vertical">
+          <Space className="workspace-details" orientation="vertical">
             <Paragraph style={{ margin: "0px" }} copyable={{ text: id, tooltips: false }}>
               <Typography.Text type="secondary"> ID: {id} </Typography.Text>
             </Paragraph>
@@ -862,7 +862,7 @@ export const WorkspaceDetails = ({
             ) : (
               <Typography.Text type="secondary">{workspace.attributes.description}</Typography.Text>
             )}
-            <Space size={40} style={{ marginBottom: "40px" }} direction="horizontal">
+            <Space size={40} style={{ marginBottom: "40px" }} orientation="horizontal">
               <Typography.Text>
                 {workspace.attributes.locked ? (
                   <>
@@ -877,7 +877,7 @@ export const WorkspaceDetails = ({
               <Typography.Text>
                 <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
               </Typography.Text>
-              <Space direction="horizontal">
+              <Space orientation="horizontal">
                 {getIaCIconById(workspace.attributes?.iacType)}
                 <Typography.Text>
                   {getIaCNameById(workspace.attributes?.iacType)}{" "}
@@ -896,7 +896,7 @@ export const WorkspaceDetails = ({
                 {workspace.attributes.locked ? (
                   <>
                     <Alert
-                      message="Lock Description"
+                      title="Lock Description"
                       description={workspace.attributes.lockDescription}
                       type="warning"
                       showIcon

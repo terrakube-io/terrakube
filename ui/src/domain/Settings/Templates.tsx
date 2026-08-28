@@ -13,13 +13,12 @@ import LoadingFallback from "@/components/LoadingFallback";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
-  key: string;
   editorMode?: "new" | "edit";
   editorId?: string;
   managePermission?: boolean;
 };
 
-export const TemplatesSettings = ({ key, editorMode, editorId, managePermission = true }: Props) => {
+export const TemplatesSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -43,7 +42,7 @@ export const TemplatesSettings = ({ key, editorMode, editorId, managePermission 
   useEffect(() => {
     setLoading(true);
     loadTemplates();
-  }, [orgid, templateID, key]);
+  }, [orgid, templateID]);
 
   const loadTemplates = () => {
     axiosInstance

@@ -194,7 +194,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
         {error ? (
           <Alert
-            message={error.includes("permission") ? "Access Denied" : "Error"}
+            title={error.includes("permission") ? "Access Denied" : "Error"}
             description={error}
             type="error"
             showIcon

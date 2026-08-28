@@ -34,13 +34,12 @@ const roleDescriptions: Record<string, string> = {
 };
 
 type Props = {
-  key: string;
   editorMode?: "new" | "edit";
   editorId?: string;
   managePermission?: boolean;
 };
 
-export const TeamSettings = ({ key, editorMode, editorId, managePermission = true }: Props) => {
+export const TeamSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +82,7 @@ export const TeamSettings = ({ key, editorMode, editorId, managePermission = tru
   useEffect(() => {
     setLoading(true);
     loadTeams();
-  }, [orgid, key]);
+  }, [orgid]);
 
   const getTeamDescription = (item: Team) => {
     const role = item.attributes.role || "custom";
@@ -132,7 +131,7 @@ export const TeamSettings = ({ key, editorMode, editorId, managePermission = tru
               </Link>
             }
           />
-          <Spin spinning={loading} tip="Loading Teams...">
+          <Spin spinning={loading} description="Loading Teams...">
             <List
               itemLayout="horizontal"
               dataSource={teams}

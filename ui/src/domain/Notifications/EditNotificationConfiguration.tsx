@@ -3,9 +3,11 @@ import {
   Alert,
   Button,
   Checkbox,
+  Col,
   Form,
   Input,
   Radio,
+  Row,
   Select,
   Space,
   Spin,
@@ -274,7 +276,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Organization-wide default"
+            title="Organization-wide default"
             description="Applies to every workspace in this organization, alongside whatever each workspace configures for itself. Changes here affect all of them."
           />
         ) : (
@@ -282,11 +284,11 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="This workspace only"
+            title="This workspace only"
             description="Only affects this workspace, in addition to any organization-wide defaults."
           />
         ))}
-      <SettingsSection>
+      <SettingsSection maxWidth={960}>
         <Form form={form} layout="vertical" onFinish={onFinish}>
           <Typography.Title level={5} style={{ marginBottom: 12 }}>
             1. Channel
@@ -298,9 +300,18 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 12 }}>
             2. Details
           </Typography.Title>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter a name" }]}>
-            <Input placeholder="e.g. Prod Alerts" />
-          </Form.Item>
+          <Row gutter={24} align="bottom">
+            <Col flex="auto">
+              <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter a name" }]}>
+                <Input placeholder="e.g. Prod Alerts" />
+              </Form.Item>
+            </Col>
+            <Col flex="none">
+              <Form.Item name="active" label="Active" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="description" label="Description (optional)">
             <Input.TextArea
               placeholder="What this is for, e.g. 'Pages on-call for prod workspace failures'"
@@ -313,7 +324,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             rules={[{ required: true, message: "Please enter the destination URL" }]}
             help={
               channelType && (
-                <Space direction="vertical" size={0} style={{ marginTop: 2 }}>
+                <Space orientation="vertical" size={0} style={{ marginTop: 2 }}>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {CHANNEL_META[channelType].urlHelp}
                   </Typography.Text>
@@ -347,9 +358,6 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
               <Input.Password placeholder="Optional" />
             </Form.Item>
           )}
-          <Form.Item name="active" label="Active" valuePropName="checked">
-            <Switch />
-          </Form.Item>
           <Form.Item
             name="messageStyle"
             label="Message style"
@@ -391,66 +399,69 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             selected.
           </Typography.Text>
 
-          {JOB_STATUS_GROUPS.map((group) => {
-            const groupValues = group.statuses.map((s) => s.value);
-            const selectedInGroup = groupValues.filter((v) => selectedStatuses.includes(v));
-            const allSelected = selectedInGroup.length === groupValues.length;
-            const GroupIcon = group.icon;
+          <Row gutter={[10, 10]}>
+            {JOB_STATUS_GROUPS.map((group) => {
+              const groupValues = group.statuses.map((s) => s.value);
+              const selectedInGroup = groupValues.filter((v) => selectedStatuses.includes(v));
+              const allSelected = selectedInGroup.length === groupValues.length;
+              const GroupIcon = group.icon;
 
-            return (
-              <div
-                key={group.key}
-                data-testid={`trigger-group-${group.key}`}
-                style={{
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: token.borderRadius,
-                  padding: "10px 14px",
-                  marginBottom: 10,
-                }}
-              >
-                <Space align="center" style={{ marginBottom: 6 }}>
-                  <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
-                    {group.label}
-                  </Tag>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {selectedInGroup.length}/{groupValues.length}
-                  </Typography.Text>
-                  <Button
-                    type="link"
-                    size="small"
-                    style={{ padding: 0, fontSize: 12 }}
-                    onClick={() => toggleGroup(groupValues, !allSelected)}
+              return (
+                <Col key={group.key} xs={24} md={12}>
+                  <div
+                    data-testid={`trigger-group-${group.key}`}
+                    style={{
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                      borderRadius: token.borderRadius,
+                      padding: "10px 14px",
+                      height: "100%",
+                    }}
                   >
-                    {allSelected ? "Clear" : "Select all"}
-                  </Button>
-                </Space>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
-                  {group.statuses.map((status) => (
-                    <Checkbox
-                      key={status.value}
-                      checked={selectedStatuses.includes(status.value)}
-                      onChange={(e) => {
-                        setSelectedStatuses((current) =>
-                          e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
-                        );
-                      }}
-                    >
-                      {status.label}
-                    </Checkbox>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+                    <Space align="center" style={{ marginBottom: 6 }}>
+                      <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
+                        {group.label}
+                      </Tag>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {selectedInGroup.length}/{groupValues.length}
+                      </Typography.Text>
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ padding: 0, fontSize: 12 }}
+                        onClick={() => toggleGroup(groupValues, !allSelected)}
+                      >
+                        {allSelected ? "Clear" : "Select all"}
+                      </Button>
+                    </Space>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
+                      {group.statuses.map((status) => (
+                        <Checkbox
+                          key={status.value}
+                          checked={selectedStatuses.includes(status.value)}
+                          onChange={(e) => {
+                            setSelectedStatuses((current) =>
+                              e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
+                            );
+                          }}
+                        >
+                          {status.label}
+                        </Checkbox>
+                      ))}
+                    </div>
+                  </div>
+                </Col>
+              );
+            })}
+          </Row>
 
           <Form.Item style={{ marginTop: 16 }}>
-            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Space orientation="vertical" size="small" style={{ width: "100%" }}>
               {testResult && (
                 <Alert
                   type={testResult === "success" ? "success" : "error"}
                   showIcon
                   icon={testResult === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                  message={
+                  title={
                     testResult === "success"
                       ? "Test notification delivered successfully"
                       : "Test notification failed to deliver"
@@ -459,20 +470,22 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
                   onClose={() => setTestResult(null)}
                 />
               )}
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  {mode === "create" ? "Create" : "Update"}
-                </Button>
-                <Button
-                  icon={<SendOutlined />}
-                  onClick={sendTest}
-                  loading={testing}
-                  disabled={!channelType || !destinationUrl}
-                >
-                  Send test notification
-                </Button>
-                <Button onClick={onDone}>Cancel</Button>
-              </Space>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Space>
+                  <Button
+                    icon={<SendOutlined />}
+                    onClick={sendTest}
+                    loading={testing}
+                    disabled={!channelType || !destinationUrl}
+                  >
+                    Send test notification
+                  </Button>
+                  <Button onClick={onDone}>Cancel</Button>
+                  <Button type="primary" htmlType="submit">
+                    {mode === "create" ? "Create" : "Update"}
+                  </Button>
+                </Space>
+              </div>
             </Space>
           </Form.Item>
         </Form>

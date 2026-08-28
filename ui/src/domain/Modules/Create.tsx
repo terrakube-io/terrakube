@@ -223,14 +223,14 @@ export const CreateModule = () => {
       />
 
       {current === 0 && (
-        <Space className="chooseType" direction="vertical">
+        <Space className="chooseType" orientation="vertical">
           <h3>Connect to a version control provider</h3>
           <div className="workflowDescription2 App-text">
             Choose the version control provider that hosts your module source code.
           </div>
           {vcsButtonsVisible ? (
             <div>
-              <Space direction="horizontal">
+              <Space orientation="horizontal">
                 <Button
                   icon={<SiGit />}
                   onClick={() => {
@@ -266,7 +266,7 @@ export const CreateModule = () => {
             </div>
           ) : (
             <div>
-              <Space direction="horizontal">
+              <Space orientation="horizontal">
                 <Button icon={<GithubOutlined />} size="large">
                   <Link to={vcsLink(VcsType.GITHUB)}>GitHub</Link>
                 </Button>
@@ -290,7 +290,7 @@ export const CreateModule = () => {
       )}
 
       <Form form={form} name="create-module" layout="vertical" onFinish={onFinish} validateMessages={validateMessages}>
-        <Space hidden={step2Hidden} className="chooseType" direction="vertical">
+        <Space hidden={step2Hidden} className="chooseType" orientation="vertical">
           <h3>Choose a repository</h3>
           <div className="workflowDescription2 App-text">
             Choose the repository that hosts your module source code. The format of your repository name should be{" "}
@@ -311,13 +311,15 @@ export const CreateModule = () => {
             <Input />
           </Form.Item>
           <Form.Item>
-            <Button onClick={handleGitContinueClick} type="primary">
-              Continue
-            </Button>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button onClick={handleGitContinueClick} type="primary">
+                Continue
+              </Button>
+            </div>
           </Form.Item>
         </Space>
 
-        <Space hidden={step3Hidden} className="chooseType" direction="vertical">
+        <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
           <h3>Confirm selection</h3>
           <Form.Item
             name="name"
@@ -383,9 +385,11 @@ export const CreateModule = () => {
             </Select>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit">
-              Publish Module
-            </Button>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button type="primary" htmlType="submit">
+                Publish Module
+              </Button>
+            </div>
           </Form.Item>
         </Space>
       </Form>

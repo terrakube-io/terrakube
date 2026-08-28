@@ -199,9 +199,9 @@ export const DetailsJob = ({ jobId }: Props) => {
       <Alert
         type="error"
         showIcon
-        message="Run stopped before execution"
+        title="Run stopped before execution"
         description={
-          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          <Space orientation="vertical" size="small" style={{ width: "100%" }}>
             <Typography.Text>{guard.title}</Typography.Text>
             {guard.variables.length > 0 && (
               <Space size={[8, 8]} wrap>
@@ -226,7 +226,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <Alert
         type="warning"
         showIcon
-        message={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
+        title={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
         description={prCommentError}
       />
     );
@@ -633,11 +633,11 @@ export const DetailsJob = ({ jobId }: Props) => {
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
-        <Spin spinning={true} tip="Loading Job...">
+        <Spin spinning={true} description="Loading Job...">
           <p style={{ marginTop: "50px" }}></p>
         </Spin>
       ) : (
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           {(() => {
             const guard = parseIncompleteVariableGuard(job.data.attributes.output);
 

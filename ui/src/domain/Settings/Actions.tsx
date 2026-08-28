@@ -301,7 +301,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       />
       {error ? (
         <Alert
-          message={error.includes("permission") ? "Access Denied" : "Error"}
+          title={error.includes("permission") ? "Access Denied" : "Error"}
           description={error}
           type="error"
           showIcon
@@ -521,12 +521,16 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
                 <Switch />
               </Form.Item>
               <Form.Item>
-                <Button type="primary" htmlType="submit" disabled={!managePermission}>
-                  Save
-                </Button>
-                <Button type="default" onClick={onCancel} style={{ marginLeft: "10px" }}>
-                  Cancel
-                </Button>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Space>
+                    <Button type="default" onClick={onCancel}>
+                      Cancel
+                    </Button>
+                    <Button type="primary" htmlType="submit" disabled={!managePermission}>
+                      Save
+                    </Button>
+                  </Space>
+                </div>
               </Form.Item>
             </Form>
           </SettingsSection>

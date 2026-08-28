@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Dropdown,
+  Flex,
   Form,
   Input,
   Layout,
@@ -853,7 +854,7 @@ export const ImportWorkspace = () => {
       <Content hidden={stepsHidden}>
         <Steps direction="horizontal" size="small" current={current} onChange={handleChange} items={stepItems} />
         {current == 0 && (
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Select a Platform for Workspace Import{" "}
             </Typography.Title>
@@ -871,7 +872,7 @@ export const ImportWorkspace = () => {
                     hoverable
                     onClick={() => handlePlatformClick(item)}
                   >
-                    <Space direction="vertical">
+                    <Space orientation="vertical">
                       <img
                         style={{
                           padding: "6px",
@@ -889,7 +890,7 @@ export const ImportWorkspace = () => {
         )}
 
         {current === 1 && (
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Choose your workflow{" "}
             </Typography.Title>
@@ -926,7 +927,7 @@ export const ImportWorkspace = () => {
         )}
 
         {current === 2 && versionControlFlow && (
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Connect to a version control provider
             </Typography.Title>
@@ -937,7 +938,7 @@ export const ImportWorkspace = () => {
 
             {vcsButtonsVisible ? (
               <div>
-                <Space direction="horizontal">
+                <Space orientation="horizontal">
                   {loading || vcs.length === 0 ? (
                     <LoadingFallback />
                   ) : (
@@ -964,7 +965,7 @@ export const ImportWorkspace = () => {
               </div>
             ) : (
               <div>
-                <Space direction="horizontal">
+                <Space orientation="horizontal">
                   <Dropdown menu={{ items: githubItems }}>
                     <Button size="large">
                       <Space>
@@ -1013,7 +1014,7 @@ export const ImportWorkspace = () => {
             apiUrl: platform.id === "tfcloud" ? "https://app.terraform.io/api/v2" : "",
           }}
         >
-          <Space hidden={step3Hidden} className="chooseType" direction="vertical">
+          <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Connect to Platform
             </Typography.Title>
@@ -1046,14 +1047,16 @@ export const ImportWorkspace = () => {
               <Input.Password />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Continue
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit">
+                  Continue
+                </Button>
+              </Flex>
             </Form.Item>
           </Space>
         </Form>
 
-        <Space className="chooseType" hidden={workspacesHidden} direction="vertical">
+        <Space className="chooseType" hidden={workspacesHidden} orientation="vertical">
           <Typography.Title level={3} style={{ margin: 0 }}>
             Import Workspaces
           </Typography.Title>
@@ -1062,7 +1065,7 @@ export const ImportWorkspace = () => {
             &apos;Import&apos; button to initiate the import process. The chosen workspaces will be imported into the
             organization specified in the previous step.
           </div>
-          <Spin spinning={workspacesLoading} tip="Loading Workspaces...">
+          <Spin spinning={workspacesLoading} description="Loading Workspaces...">
             <Table
               rowSelection={{
                 type: "checkbox",
@@ -1079,9 +1082,11 @@ export const ImportWorkspace = () => {
             />
             <br />
 
-            <Button onClick={handleImportClick} type="primary" htmlType="button" loading={mappingDataLoading}>
-              Import Workspaces
-            </Button>
+            <Flex justify="flex-end">
+              <Button onClick={handleImportClick} type="primary" htmlType="button" loading={mappingDataLoading}>
+                Import Workspaces
+              </Button>
+            </Flex>
           </Spin>
         </Space>
       </Content>
@@ -1110,7 +1115,7 @@ export const ImportWorkspace = () => {
           </Button>,
         ]}
       >
-        <Space direction="vertical" style={{ width: "100%" }} size="large">
+        <Space orientation="vertical" style={{ width: "100%" }} size="large">
           <Card
             size="small"
             style={{
@@ -1118,7 +1123,7 @@ export const ImportWorkspace = () => {
               background: "linear-gradient(135deg, rgba(22,119,255,0.08) 0%, rgba(22,119,255,0.02) 100%)",
             }}
           >
-            <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Space orientation="vertical" style={{ width: "100%" }} size="middle">
               <div
                 style={{
                   display: "flex",
@@ -1197,14 +1202,14 @@ export const ImportWorkspace = () => {
             <Alert
               type="info"
               showIcon
-              message="No variable collections are available in this Terrakube organization yet. You can still continue without attaching any."
+              title="No variable collections are available in this Terrakube organization yet. You can still continue without attaching any."
             />
           )}
           {currentMappingRows.length === 0 && (
             <Alert
               type="info"
               showIcon
-              message="This workspace does not currently have any Terraform Cloud variable collections. You can add Terrakube variable collections below if needed."
+              title="This workspace does not currently have any Terraform Cloud variable collections. You can add Terrakube variable collections below if needed."
             />
           )}
           {currentMappingRows.map((row) => (
@@ -1301,7 +1306,7 @@ export const ImportWorkspace = () => {
             </Typography.Text>
           </Card>
           {currentSensitiveVariableRows.length === 0 && (
-            <Alert type="info" showIcon message="No sensitive variables need attention for this workspace." />
+            <Alert type="info" showIcon title="No sensitive variables need attention for this workspace." />
           )}
           {currentSensitiveVariableRows.map((variable) => (
             <Card
@@ -1372,7 +1377,7 @@ export const ImportWorkspace = () => {
           ))}
         </Space>
       </Modal>
-      <Space hidden={listHidden} direction="vertical">
+      <Space hidden={listHidden} orientation="vertical">
         <Typography.Title level={3} style={{ margin: 0 }}>
           Importing Workspaces
         </Typography.Title>

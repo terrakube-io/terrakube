@@ -398,7 +398,7 @@ export const Variables = ({
           type="warning"
           showIcon
           style={{ marginBottom: "16px" }}
-          message="Some sensitive variables are incomplete"
+          title="Some sensitive variables are incomplete"
           description="Complete or delete the highlighted variables before starting a new run."
         />
       )}

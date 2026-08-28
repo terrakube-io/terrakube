@@ -106,9 +106,11 @@ function ProjectGeneralSettings({
             <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
-              Save settings
-            </Button>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
+                Save settings
+              </Button>
+            </div>
           </Form.Item>
         </Form>
       </Spin>

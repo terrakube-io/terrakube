@@ -158,7 +158,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
               </Button>
             }
           />
-          <Spin spinning={loading} tip="Loading Tags...">
+          <Spin spinning={loading} description="Loading Tags...">
             <List
               itemLayout="horizontal"
               dataSource={tags}

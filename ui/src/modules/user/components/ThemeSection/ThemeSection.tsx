@@ -67,7 +67,7 @@ export const ThemeSection = () => {
         description="Customize the appearance of Terrakube by selecting your preferred color scheme and theme mode."
       />
 
-      <Space direction="vertical" size="large" style={{ width: "100%", maxWidth: 480 }}>
+      <Space orientation="vertical" size="large" style={{ width: "100%", maxWidth: 480 }}>
         <div>
           <Typography.Title level={5}>Color Scheme</Typography.Title>
           <Select

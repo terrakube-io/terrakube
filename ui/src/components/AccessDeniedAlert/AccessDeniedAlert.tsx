@@ -5,5 +5,5 @@ type Props = {
 };
 
 export default function AccessDeniedAlert({ description }: Props) {
-  return <Alert message="Access Denied" description={description} type="error" showIcon />;
+  return <Alert title="Access Denied" description={description} type="error" showIcon />;
 }

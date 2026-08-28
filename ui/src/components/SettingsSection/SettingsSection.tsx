@@ -1,4 +1,4 @@
-import { Card, Typography } from "antd";
+import { Card, Flex, Typography } from "antd";
 import clsx from "classnames";
 import "./SettingsSection.css";
 
@@ -16,6 +16,7 @@ export default function SettingsSection({ title, description, children, danger, 
     return (
       <Card
         className={clsx("settings-section", "settings-section-danger")}
+        style={{ maxWidth: typeof maxWidth === "number" ? Math.max(maxWidth, 960) : maxWidth }}
         title={
           title ? (
             <Typography.Title level={4} style={{ margin: 0 }}>
@@ -25,14 +26,14 @@ export default function SettingsSection({ title, description, children, danger, 
         }
         extra={extra}
       >
-        {description && (
-          <Typography.Text type="secondary" className="settings-section-description">
-            {description}
-          </Typography.Text>
-        )}
-        <div className="settings-section-content" style={{ maxWidth }}>
-          {children}
-        </div>
+        <Flex justify="space-between" align="center" gap={24} wrap>
+          {description && (
+            <Typography.Text type="secondary" className="settings-section-description" style={{ marginBottom: 0 }}>
+              {description}
+            </Typography.Text>
+          )}
+          <div style={{ flexShrink: 0 }}>{children}</div>
+        </Flex>
       </Card>
     );
   }

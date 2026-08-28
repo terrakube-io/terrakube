@@ -112,7 +112,7 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
         {isLocked ? (
           <>
             <Alert
-              message={
+              title={
                 <span>
                   This workspace is <Text strong>currently locked</Text>.
                   {lockDescription

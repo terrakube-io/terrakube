@@ -180,7 +180,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
                       <Tag color={r.color}>{r.label}</Tag>
                       <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
                         {r.description}
@@ -294,7 +294,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
                       <Tag color={r.color}>{r.label}</Tag>
                       <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
                         {r.description}

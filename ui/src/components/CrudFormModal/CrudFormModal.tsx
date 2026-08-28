@@ -40,7 +40,7 @@ export default function CrudFormModal<T>({
         });
       }}
     >
-      <Space style={{ width: "100%" }} direction="vertical">
+      <Space style={{ width: "100%" }} orientation="vertical">
         <Form name={formName} form={form} layout="vertical" validateMessages={validateMessages}>
           {children}
         </Form>

@@ -1,5 +1,5 @@
 import { DownOutlined, GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Form, Input, Space, Steps, Typography, message } from "antd";
+import { Button, Col, Dropdown, Flex, Form, Input, Row, Space, Steps, Typography, message } from "antd";
 import TextArea from "antd/es/input/TextArea";
 import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -794,14 +794,14 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       />
       {current == 0 && (
         <SettingsSection>
-          <Space className="chooseType" direction="vertical">
+          <Space className="chooseType" orientation="vertical">
             <Typography.Title level={3} style={{ margin: 0 }}>
               Choose a version control provider to connect
             </Typography.Title>
             <div className="workflowDescription2 App-text">
               Choose the version control provider you would like to connect.
             </div>
-            <Space direction="horizontal">
+            <Space orientation="horizontal">
               <Dropdown menu={{ items: githubItems }}>
                 <Button size="large">
                   <Space>
@@ -834,8 +834,8 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         </SettingsSection>
       )}
       {current == 1 && (
-        <SettingsSection>
-          <Space className="chooseType" direction="vertical">
+        <SettingsSection maxWidth={960}>
+          <Space className="chooseType" orientation="vertical">
             <SettingsPageHeader
               divider={false}
               docUrl={getDocsUrl(vcsType)}
@@ -862,22 +862,28 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
               >
                 <Input placeholder={renderVCSType(vcsType)} />
               </Form.Item>
-              <Form.Item
-                name="endpoint"
-                label="HTTPS URL"
-                rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
-                hidden={httpsHidden(vcsType)}
-              >
-                <Input placeholder={getHttpsPlaceholder(vcsType)} />
-              </Form.Item>
-              <Form.Item
-                name="apiUrl"
-                label="API URL"
-                rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
-                hidden={apiUrlHidden(vcsType)}
-              >
-                <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
-              </Form.Item>
+              <Row gutter={16}>
+                <Col xs={24} md={10}>
+                  <Form.Item
+                    name="endpoint"
+                    label="HTTPS URL"
+                    rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
+                    hidden={httpsHidden(vcsType)}
+                  >
+                    <Input placeholder={getHttpsPlaceholder(vcsType)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={14}>
+                  <Form.Item
+                    name="apiUrl"
+                    label="API URL"
+                    rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
+                    hidden={apiUrlHidden(vcsType)}
+                  >
+                    <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
                 <Input placeholder={connectionType === "OAUTH" ? "ex. 824ff023a7136981f322" : "970081"} />
               </Form.Item>
@@ -901,9 +907,11 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
               >
                 <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
               </Form.Item>
-              <Button type="primary" htmlType="submit">
-                Connect and Continue
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit">
+                  Connect and Continue
+                </Button>
+              </Flex>
             </Form>
           </Space>
         </SettingsSection>

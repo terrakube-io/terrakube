@@ -266,7 +266,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
             });
         }}
       >
-        <Space style={{ width: "100%" }} direction="vertical">
+        <Space style={{ width: "100%" }} orientation="vertical">
           <Form name="create-org" form={form} layout="vertical" validateMessages={validateMessages}>
             <Form.Item
               name="templateId"
