@@ -106,8 +106,7 @@ async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepL
     contentLength = undefined;
   }
 
-  const wantsTail =
-    params.tailBytes != null && contentLength != null && contentLength >= LARGE_LOG_THRESHOLD;
+  const wantsTail = params.tailBytes != null && contentLength != null && contentLength >= LARGE_LOG_THRESHOLD;
 
   try {
     const response = wantsTail
@@ -125,8 +124,7 @@ async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepL
 
     const text = typeof response.data === "string" ? response.data : String(response.data ?? "");
     const contentRange = response.headers?.["content-range"] as string | undefined;
-    const truncated =
-      response.status === 206 && contentRange != null && !/^bytes 0-/.test(contentRange);
+    const truncated = response.status === 206 && contentRange != null && !/^bytes 0-/.test(contentRange);
 
     return { text, truncated };
   } catch (error) {
