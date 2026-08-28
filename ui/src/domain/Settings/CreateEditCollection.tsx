@@ -541,7 +541,7 @@ export const CreateEditCollection = ({
     <div className="setting">
       <Spin spinning={loading}>
         <div style={{ marginBottom: "20px" }}>
-          <Typography.Title level={1} style={{ margin: 0 }}>
+          <Typography.Title level={3} style={{ margin: 0 }}>
             {mode === "create"
               ? "Create a new organization variable collection"
               : "Edit organization variable collection"}

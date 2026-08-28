@@ -181,11 +181,11 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
 
   return (
     <div style={{ width: "100%" }} className="generalSettings">
-      <SettingsPageHeader title="General Settings" />
-      <p>
-        Adjust the settings for this workspace. These settings control how the workspace behaves, including execution
-        mode, IaC configuration, and security options.
-      </p>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces"
+        title="General Settings"
+        description="Adjust the settings for this workspace. These settings control how the workspace behaves, including execution mode, IaC configuration, and security options."
+      />
       <Spin spinning={waiting}>
         <Form
           onFinish={onFinish}

@@ -171,9 +171,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
       <SettingsPageHeader
         title="Variable Collections"
         description="Variable Collections allow you to define and apply variables one time across multiple workspaces within an organization."
-      />
-      <SettingsSection maxWidth="100%">
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
+        actions={
           <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
             {managePermission ? (
               <Link to={`/organizations/${orgid}/settings/collection/new`}>Create variable collection</Link>
@@ -181,7 +179,9 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
               "Create variable collection"
             )}
           </Button>
-        </div>
+        }
+      />
+      <SettingsSection maxWidth="100%">
         <div style={{ marginBottom: "20px", width: "100%" }}>
           <Input
             prefix={<SearchOutlined />}

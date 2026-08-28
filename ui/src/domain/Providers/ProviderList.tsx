@@ -1,11 +1,12 @@
 import { CloudOutlined, LinkOutlined } from "@ant-design/icons";
-import { Empty, List, Typography } from "antd";
+import { List, Typography } from "antd";
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "./types";
 import "../Modules/Module.css";
 import { RegistryCard } from "@/components/RegistryCard";
+import { EmptyState } from "@/components/EmptyState";
 
 type Params = {
   orgid: string;
@@ -49,7 +50,8 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
 
   if (filteredProviders.length === 0) {
     return (
-      <Empty
+      <EmptyState
+        simple
         description={searchFilter ? "No providers match your search" : "No providers found in this organization"}
       />
     );

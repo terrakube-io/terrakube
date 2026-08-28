@@ -136,7 +136,11 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
-      <SettingsPageHeader title="General Settings" description="Configure general settings for your organization." />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations"
+        title="General Settings"
+        description="Configure general settings for your organization."
+      />
       {error ? (
         <AccessDeniedAlert description={error} />
       ) : loading || organization === undefined ? (

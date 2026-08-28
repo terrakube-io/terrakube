@@ -1,10 +1,9 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, List, message, Popconfirm, Select, Typography, theme } from "antd";
+import { Button, Form, Input, List, message, Popconfirm, Select, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { SshKey } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { CrudFormModal } from "@/components/CrudFormModal";
@@ -150,62 +149,59 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
       ) : (
         <>
           <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
             title="SSH Keys"
             description="Terrakube uses these private SSH keys for downloading private Terraform modules with Git-based sources during a Terraform run. SSH keys for downloading modules are assigned per-workspace."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Add a Private SSH Key
+              </Button>
+            }
           />
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Add a Private SSH Key
-            </Button>
-
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              SSH Keys
-            </Typography.Title>
-            {loading ? (
-              <LoadingFallback />
-            ) : (
-              <List
-                itemLayout="horizontal"
-                dataSource={sshKeys}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            This will permanently delete this SSH Key <br />
-                            Any workspaces configured with this SSH key will no longer use it to download Terraform
-                            modules. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                  </List.Item>
-                )}
-              />
-            )}
-          </SettingsSection>
+          {loading ? (
+            <LoadingFallback />
+          ) : (
+            <List
+              itemLayout="horizontal"
+              dataSource={sshKeys}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Popconfirm
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => {
+                        onDelete(item.id);
+                      }}
+                      style={{ width: "20px" }}
+                      title={
+                        <p>
+                          This will permanently delete this SSH Key <br />
+                          Any workspaces configured with this SSH key will no longer use it to download Terraform
+                          modules. <br />
+                          Are you sure?
+                        </p>
+                      }
+                      okText="Yes"
+                      cancelText="No"
+                    >
+                      {" "}
+                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
+                >
+                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                </List.Item>
+              )}
+            />
+          )}
 
           <CrudFormModal
             open={visible}

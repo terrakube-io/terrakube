@@ -1,5 +1,13 @@
 .settings-section {
-  margin-bottom: 24px;
+  margin-bottom: 32px;
+}
+
+.settings-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
 }
 
 .settings-section-description {
@@ -12,13 +20,13 @@
 }
 
 .settings-section-danger {
-  border-color: #ff4d4f;
+  border-color: var(--ant-color-error);
 }
 
 .settings-section-danger .ant-card-head {
-  border-bottom-color: rgba(255, 77, 79, 0.3);
+  border-bottom-color: color-mix(in srgb, var(--ant-color-error) 30%, transparent);
 }
 
 .settings-section-danger .ant-card-head-title .ant-typography {
-  color: #ff4d4f;
+  color: var(--ant-color-error);
 }

@@ -101,7 +101,11 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   };
   return (
     <div>
-      <SettingsPageHeader title="Edit Template" />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
+        title="Edit Template"
+        description="Update this template's job flow definition."
+      />
       <Space className="chooseType" direction="vertical">
         {loading ? (
           <LoadingFallback />

@@ -5,7 +5,6 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Federated } from "../types";
 import { EditFederatedCredential } from "./EditFederatedCredential";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
@@ -98,87 +97,84 @@ export const FederatedCredentials = ({ managePermission = true }: Props) => {
       ) : (
         <>
           <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
             title="Federated Credentials"
             description="Federated credentials allow you to establish a trust relationship between terrakube and external identity providers, such as GitHub Actions."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create federated credential
+              </Button>
+            }
           />
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create federated credential
-            </Button>
-
-            <Typography.Title level={3} style={{ marginTop: 30 }}>
-              Federated Credentials
-            </Typography.Title>
-            <Spin spinning={loading} tip="Loading Federated Credentials...">
-              <List
-                itemLayout="horizontal"
-                dataSource={federated}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
+          <Spin spinning={loading} tip="Loading Federated Credentials...">
+            <List
+              itemLayout="horizontal"
+              dataSource={federated}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      onClick={() => onEdit(item.id)}
+                      icon={<EditOutlined />}
+                      shape="round"
+                      type="primary"
+                      disabled={!managePermission}
+                    >
+                      Edit
+                    </Button>,
+                    <Popconfirm
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => onDelete(item.id)}
+                      title={
+                        <p>
+                          This will permanently delete this federated credential. <br />
+                          Are you sure?
+                        </p>
+                      }
+                      okText="Yes"
+                      cancelText="No"
+                    >
                       <Button
-                        onClick={() => onEdit(item.id)}
-                        icon={<EditOutlined />}
+                        icon={<DeleteOutlined />}
                         shape="round"
                         type="primary"
+                        danger
                         disabled={!managePermission}
                       >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => onDelete(item.id)}
-                        title={
-                          <p>
-                            This will permanently delete this federated credential. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button
-                          icon={<DeleteOutlined />}
-                          shape="round"
-                          type="primary"
-                          danger
-                          disabled={!managePermission}
-                        >
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<SafetyOutlined />} />}
-                      title={item.attributes.name}
-                      description={
-                        <>
-                          <Typography.Text type="secondary">{item.attributes.issuerUrl}</Typography.Text>
-                          <br />
-                          <Typography.Text type="secondary">{item.attributes.audience}</Typography.Text>
-                          <br />
-                          {claimCounts[item.id] > 0 ? (
-                            <Tag color="blue" style={{ marginTop: 4 }}>
-                              {claimCounts[item.id]} claim condition{claimCounts[item.id] !== 1 ? "s" : ""}
-                            </Tag>
-                          ) : (
-                            <Tag style={{ marginTop: 4 }}>No claim conditions</Tag>
-                          )}
-                        </>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-            </Spin>
-          </SettingsSection>
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<SafetyOutlined />} />}
+                    title={item.attributes.name}
+                    description={
+                      <>
+                        <Typography.Text type="secondary">{item.attributes.issuerUrl}</Typography.Text>
+                        <br />
+                        <Typography.Text type="secondary">{item.attributes.audience}</Typography.Text>
+                        <br />
+                        {claimCounts[item.id] > 0 ? (
+                          <Tag color="blue" style={{ marginTop: 4 }}>
+                            {claimCounts[item.id]} claim condition{claimCounts[item.id] !== 1 ? "s" : ""}
+                          </Tag>
+                        ) : (
+                          <Tag style={{ marginTop: 4 }}>No claim conditions</Tag>
+                        )}
+                      </>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </Spin>
         </>
       )}
     </div>

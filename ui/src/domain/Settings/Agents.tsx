@@ -1,10 +1,9 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, List, message, Popconfirm, Select, Typography, theme } from "antd";
+import { Button, Form, Input, List, message, Popconfirm } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Agent } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { CrudFormModal } from "@/components/CrudFormModal";
@@ -148,62 +147,59 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
       ) : (
         <>
           <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/getting-started/deployment/self-hosted-agents"
             title="Agents"
             description="Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents to run jobs, you can have as many agents as you want for a single organization."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create agent pool
+              </Button>
+            }
           />
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create agent pool
-            </Button>
-            <br></br>
-
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              Agents
-            </Typography.Title>
-            {loading ? (
-              <LoadingFallback />
-            ) : (
-              <List
-                itemLayout="horizontal"
-                dataSource={Agents}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            This will permanently delete this Terrakube Agent <br />
-                            <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                  </List.Item>
-                )}
-              />
-            )}
-          </SettingsSection>
+          <br></br>
+          {loading ? (
+            <LoadingFallback />
+          ) : (
+            <List
+              itemLayout="horizontal"
+              dataSource={Agents}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Popconfirm
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => {
+                        onDelete(item.id);
+                      }}
+                      style={{ width: "20px" }}
+                      title={
+                        <p>
+                          This will permanently delete this Terrakube Agent <br />
+                          <br />
+                          Are you sure?
+                        </p>
+                      }
+                      okText="Yes"
+                      cancelText="No"
+                    >
+                      {" "}
+                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
+                >
+                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                </List.Item>
+              )}
+            />
+          )}
 
           <CrudFormModal
             open={visible}

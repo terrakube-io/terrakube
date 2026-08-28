@@ -281,8 +281,16 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces/actions"
         title="Actions"
         description="Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
+        actions={
+          !isEditing ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={onNew} disabled={!managePermission}>
+              Create Action
+            </Button>
+          ) : undefined
+        }
       />
       {error ? (
         <Alert
@@ -293,19 +301,13 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
           style={{ marginTop: "20px" }}
         />
       ) : !isEditing ? (
-        <SettingsSection maxWidth="100%">
-          <Button type="primary" icon={<PlusOutlined />} onClick={onNew} disabled={!managePermission}>
-            Create Action
-          </Button>
-          <Typography.Title level={3} style={{ marginTop: "30px" }}>
-            Actions
-          </Typography.Title>
+        <>
           {loading || !actions ? (
             <LoadingFallback />
           ) : (
             <Table dataSource={actions} columns={ACTIONS_COLUMNS(onEdit)} rowKey="id" />
           )}
-        </SettingsSection>
+        </>
       ) : (
         <div>
           <Typography.Title level={3} style={{ margin: 0 }}>

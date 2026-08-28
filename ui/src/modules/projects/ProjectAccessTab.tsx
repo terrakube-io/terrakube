@@ -247,7 +247,11 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
 
   return (
     <div style={{ width: "100%" }}>
-      <SettingsPageHeader title="Team Access" description="Grant teams access to all workspaces within this project." />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/projects/team-access"
+        title="Team Access"
+        description="Grant teams access to all workspaces within this project."
+      />
 
       <Spin spinning={loading}>
         <Table

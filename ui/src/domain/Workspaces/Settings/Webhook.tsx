@@ -579,6 +579,7 @@ export const WorkspaceWebhook = ({
   return (
     <div>
       <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces/webhooks"
         title="Webhook"
         description="Webhooks allow you to trigger a workspace run when a specific event occurs in the repository. This only works with VCS flow workspace."
       />

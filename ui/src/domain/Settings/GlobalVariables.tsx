@@ -1,24 +1,9 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import {
-  Button,
-  Collapse,
-  Form,
-  Input,
-  message,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  Spin,
-} from "antd";
+import { Button, Collapse, Form, Input, message, Popconfirm, Select, Space, Switch, Table, Tag, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { CrudFormModal } from "@/components/CrudFormModal";
@@ -235,55 +220,54 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
       ) : (
         <>
           <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/organizations/global-variables"
             title="Global Variables"
             description="Global Variables allow you to define and apply variables one time across multiple workspaces within an organization."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create global variable
+              </Button>
+            }
           />
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-              style={{ marginBottom: 16 }}
-            >
-              Create global variable
-            </Button>
-
-            <Spin spinning={loading} tip="Loading Global Variables...">
-              <Collapse
-                defaultActiveKey={["TERRAFORM", "ENV"]}
-                items={[
-                  {
-                    key: "TERRAFORM",
-                    label: `Terraform Variables (${terraformVariables.length})`,
-                    children: (
-                      <Table
-                        dataSource={terraformVariables}
-                        columns={VARIABLES_COLUMS(onEdit)}
-                        rowKey="key"
-                        pagination={false}
-                        locale={{ emptyText: "No terraform variables defined yet." }}
-                      />
-                    ),
-                  },
-                  {
-                    key: "ENV",
-                    label: `Environment Variables (${envVariables.length})`,
-                    children: (
-                      <Table
-                        dataSource={envVariables}
-                        columns={VARIABLES_COLUMS(onEdit)}
-                        rowKey="key"
-                        pagination={false}
-                        locale={{ emptyText: "No environment variables defined yet." }}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </Spin>
-          </SettingsSection>
+          <Spin spinning={loading} tip="Loading Global Variables...">
+            <Collapse
+              defaultActiveKey={["TERRAFORM", "ENV"]}
+              items={[
+                {
+                  key: "TERRAFORM",
+                  label: `Terraform Variables (${terraformVariables.length})`,
+                  children: (
+                    <Table
+                      dataSource={terraformVariables}
+                      columns={VARIABLES_COLUMS(onEdit)}
+                      rowKey="key"
+                      pagination={false}
+                      locale={{ emptyText: "No terraform variables defined yet." }}
+                    />
+                  ),
+                },
+                {
+                  key: "ENV",
+                  label: `Environment Variables (${envVariables.length})`,
+                  children: (
+                    <Table
+                      dataSource={envVariables}
+                      columns={VARIABLES_COLUMS(onEdit)}
+                      rowKey="key"
+                      pagination={false}
+                      locale={{ emptyText: "No environment variables defined yet." }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </Spin>
 
           <CrudFormModal
             open={visible}

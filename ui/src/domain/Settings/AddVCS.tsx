@@ -781,6 +781,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
   return (
     <div>
       <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/vcs-providers"
         title="Add VCS Provider"
         description="To connect workspaces and modules to git repositories containing configurations, Terrakube needs access to your version control system (VCS) provider."
       />

@@ -69,7 +69,11 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
 
   return (
     <div className="generalSettings">
-      <SettingsPageHeader title="SSH Key" />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
+        title="SSH Key"
+        description="Select the SSH key this workspace uses to fetch private modules and repositories."
+      />
       <Text type="secondary">
         Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
         not used for cloning the workspace VCS repository or for provisioner connections.

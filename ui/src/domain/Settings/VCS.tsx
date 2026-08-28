@@ -12,6 +12,7 @@ import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import VcsLogo from "@/components/VcsLogo";
 import LoadingFallback from "@/components/LoadingFallback";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 const { Paragraph } = Typography;
 
 type Props = {
@@ -134,21 +135,22 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
         <AccessDeniedAlert description={error} />
       ) : mode === "list" ? (
         <div>
-          {" "}
-          <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
-            VCS Providers
-            <Button
-              type="primary"
-              onClick={onAddVCS}
-              className="addVCS"
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Add a VCS Provider
-            </Button>{" "}
-          </Typography.Title>
-          <br />
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/vcs-providers"
+            title="VCS Providers"
+            description="Connect version control providers so workspaces and modules can read from your repositories."
+            actions={
+              <Button
+                type="primary"
+                onClick={onAddVCS}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Add a VCS Provider
+              </Button>
+            }
+          />
           <SettingsSection maxWidth="100%">
             {loading ? (
               <LoadingFallback />

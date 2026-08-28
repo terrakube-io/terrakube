@@ -378,7 +378,7 @@ export const Variables = ({
 
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
+      <Typography.Title level={3} style={{ margin: 0 }}>
         Variables
       </Typography.Title>
       <div>

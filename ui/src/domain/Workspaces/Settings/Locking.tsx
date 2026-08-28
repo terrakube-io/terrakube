@@ -103,7 +103,10 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
 
   return (
     <div className="generalSettings">
-      <SettingsPageHeader title="Locking" />
+      <SettingsPageHeader
+        title="Locking"
+        description="Prevent new runs from starting on this workspace while it is locked."
+      />
 
       <SettingsSection>
         {isLocked ? (

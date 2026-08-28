@@ -223,7 +223,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
+      <Typography.Title level={3} style={{ margin: 0 }}>
         {mode === "edit" ? `Team: ${teamName}` : "New Team"}
       </Typography.Title>
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>

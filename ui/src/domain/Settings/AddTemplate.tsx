@@ -152,6 +152,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
   return (
     <div>
       <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
         title="Create a new Template"
         description="Templates allow you to define a custom flow so you can run any tool before or after terraform plan/apply/destroy."
       />

@@ -1,10 +1,9 @@
 import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Avatar, Button, Form, Input, List, message, Popconfirm, Typography, theme, Spin } from "antd";
+import { Avatar, Button, Form, Input, List, message, Popconfirm, theme, Spin } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import { CrudFormModal } from "@/components/CrudFormModal";
@@ -144,74 +143,71 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
       ) : (
         <>
           <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/organizations/tags"
             title="Tag Management"
             description="Tags are used to help identify and group together workspaces.."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create tag
+              </Button>
+            }
           />
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create tag
-            </Button>
-
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              Tags
-            </Typography.Title>
-            <Spin spinning={loading} tip="Loading Tags...">
-              <List
-                itemLayout="horizontal"
-                dataSource={tags}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button
-                        onClick={() => {
-                          onEdit(item.id);
-                        }}
-                        icon={<EditOutlined />}
-                        type="link"
-                        disabled={!managePermission}
-                      >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            Deleting this tag will also remove it <br />
-                            from all the Workspaces that use it.
-                            <br />
-                            This action cannot be undone. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
-                      title={item.attributes.name}
-                    />
-                  </List.Item>
-                )}
-              />
-            </Spin>
-          </SettingsSection>
+          <Spin spinning={loading} tip="Loading Tags...">
+            <List
+              itemLayout="horizontal"
+              dataSource={tags}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      onClick={() => {
+                        onEdit(item.id);
+                      }}
+                      icon={<EditOutlined />}
+                      type="link"
+                      disabled={!managePermission}
+                    >
+                      Edit
+                    </Button>,
+                    <Popconfirm
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => {
+                        onDelete(item.id);
+                      }}
+                      style={{ width: "20px" }}
+                      title={
+                        <p>
+                          Deleting this tag will also remove it <br />
+                          from all the Workspaces that use it.
+                          <br />
+                          This action cannot be undone. <br />
+                          Are you sure?
+                        </p>
+                      }
+                      okText="Yes"
+                      cancelText="No"
+                    >
+                      {" "}
+                      <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
+                    title={item.attributes.name}
+                  />
+                </List.Item>
+              )}
+            />
+          </Spin>
 
           <CrudFormModal
             open={visible}

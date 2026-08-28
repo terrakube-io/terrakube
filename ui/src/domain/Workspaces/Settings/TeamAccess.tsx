@@ -10,7 +10,6 @@ import {
   Button,
   Card,
   Checkbox,
-  Empty,
   Form,
   Popconfirm,
   Select,
@@ -32,6 +31,7 @@ import workspaceAccessService, {
 import { Workspace } from "../../types";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { EmptyState } from "@/components/EmptyState";
 
 type Props = {
   workspace: Workspace;
@@ -392,7 +392,11 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div style={{ width: "100%" }}>
-      <SettingsPageHeader title="Team Access" />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
+        title="Team Access"
+        description="Grant teams specific permissions on this workspace."
+      />
       <p>Teams granted access to this workspace via the Terrakube UI or the terrakube_workspace_access resource.</p>
 
       <SettingsSection maxWidth="100%">
@@ -411,8 +415,8 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
             scroll={{ x: 996 }}
             locale={{
               emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                <EmptyState
+                  simple
                   description={
                     canManage
                       ? "No teams have been granted workspace-level access."
@@ -424,7 +428,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
                       Add a team
                     </Button>
                   )}
-                </Empty>
+                </EmptyState>
               ),
             }}
             style={{ marginBottom: 32 }}

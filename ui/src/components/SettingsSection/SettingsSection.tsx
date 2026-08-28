@@ -12,18 +12,43 @@ type Props = {
 };
 
 export default function SettingsSection({ title, description, children, danger, maxWidth = 720, extra }: Props) {
+  if (danger) {
+    return (
+      <Card
+        className={clsx("settings-section", "settings-section-danger")}
+        title={
+          title ? (
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {title}
+            </Typography.Title>
+          ) : undefined
+        }
+        extra={extra}
+      >
+        {description && (
+          <Typography.Text type="secondary" className="settings-section-description">
+            {description}
+          </Typography.Text>
+        )}
+        <div className="settings-section-content" style={{ maxWidth }}>
+          {children}
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card
-      className={clsx("settings-section", { "settings-section-danger": danger })}
-      title={
-        title ? (
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {title}
-          </Typography.Title>
-        ) : undefined
-      }
-      extra={extra}
-    >
+    <section className="settings-section">
+      {(title || extra) && (
+        <div className="settings-section-header">
+          {title && (
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {title}
+            </Typography.Title>
+          )}
+          {extra}
+        </div>
+      )}
       {description && (
         <Typography.Text type="secondary" className="settings-section-description">
           {description}
@@ -32,6 +57,6 @@ export default function SettingsSection({ title, description, children, danger, 
       <div className="settings-section-content" style={{ maxWidth }}>
         {children}
       </div>
-    </Card>
+    </section>
   );
 }

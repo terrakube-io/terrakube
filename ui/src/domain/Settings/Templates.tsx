@@ -10,6 +10,7 @@ import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
 import LoadingFallback from "@/components/LoadingFallback";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   key: string;
@@ -76,21 +77,22 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
           <EditTemplate setMode={setMode} templateId={templateID} loadTemplates={loadTemplates} />
         )) || (
           <div>
-            {" "}
-            <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
-              Templates
-              <Button
-                type="primary"
-                onClick={onAddVCS}
-                className="addVCS"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Add a Template
-              </Button>{" "}
-            </Typography.Title>
-            <br />
+            <SettingsPageHeader
+              docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
+              title="Templates"
+              description="Templates define the job flows a workspace can run, such as plan, apply, or custom steps."
+              actions={
+                <Button
+                  type="primary"
+                  onClick={onAddVCS}
+                  htmlType="button"
+                  icon={<PlusOutlined />}
+                  disabled={!managePermission}
+                >
+                  Add a Template
+                </Button>
+              }
+            />
             <SettingsSection maxWidth="100%">
               {loading ? (
                 <LoadingFallback />

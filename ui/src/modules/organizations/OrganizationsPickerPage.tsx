@@ -1,4 +1,4 @@
-import { Button, Empty, Flex, Space } from "antd";
+import { Button, Flex, Space } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -11,6 +11,7 @@ import OrganizationTable from "./components/OrganizationTable/OrganizationTable"
 import PageWrapper from "@/components/PageWrapper/PageWrapper";
 import ListViewToggle from "@/components/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/components/ListViewToggle/listViewPreference";
+import { EmptyState } from "@/components/EmptyState";
 
 export default function OrganizationsPickerPage() {
   const [organizations, setOrganizations] = useState<OrganizationModel[]>([]);
@@ -108,15 +109,11 @@ export default function OrganizationsPickerPage() {
     >
       {!loading && organizations.length === 0 && (
         <Flex justify="center">
-          <Empty
-            className="page-wrapper-no-content"
-            style={{ textAlign: "center" }}
-            description="You have not created any organizations yet. Create one now to get stared with Terrakube"
-          >
+          <EmptyState description="You have not created any organizations yet. Create one now to get started with Terrakube.">
             <Button type="primary">
               <Link to="/organizations/create">Create a new organization</Link>
             </Button>
-          </Empty>
+          </EmptyState>
         </Flex>
       )}
       {!loading && organizations.length > 0 && listViewMode === "compact" && (

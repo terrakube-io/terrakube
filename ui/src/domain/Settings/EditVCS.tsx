@@ -264,7 +264,7 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   return (
     <Spin spinning={loading}>
       <div className="chooseType">
-        <Typography.Title level={1} style={{ margin: 0 }}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
           Edit VCS Provider
         </Typography.Title>
         <Typography.Text type="secondary" className="App-text">

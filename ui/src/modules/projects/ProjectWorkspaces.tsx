@@ -59,6 +59,7 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
   return (
     <div style={{ width: "100%" }}>
       <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/projects/workspace-assignment"
         title="Workspaces"
         description="Workspaces assigned to this project. To change a workspace's project, go to the workspace settings."
       />

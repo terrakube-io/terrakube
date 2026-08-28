@@ -185,7 +185,11 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
 
   return (
     <div className="generalSettings">
-      <SettingsPageHeader title="State Shared" />
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces/share-workspace-state"
+        title="State Shared"
+        description="Allow other workspaces in the organization to read this workspace's state."
+      />
       <Text type="secondary">Configure how the state is shared across workspaces.</Text>
       <SettingsSection maxWidth="100%">
         <Divider />

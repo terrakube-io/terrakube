@@ -76,12 +76,10 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div className="generalSettings">
-      <SettingsPageHeader title="Destruction and Deletion" />
-      <Text type="secondary">
-        There are two independent steps for destroying this workspace and any infrastructure associated with it. First,
-        any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube,
-        including any variables, settings, and alert history can be deleted.
-      </Text>
+      <SettingsPageHeader
+        title="Destruction and Deletion"
+        description="There are two independent steps for destroying this workspace and any infrastructure associated with it. First, any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube, including any variables, settings, and alert history can be deleted."
+      />
 
       <SettingsSection
         danger

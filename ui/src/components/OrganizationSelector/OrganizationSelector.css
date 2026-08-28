@@ -4,7 +4,7 @@
   border: none !important;
   border-radius: 8px !important;
   padding: 0 16px !important;
-  min-width: 200px !important;
+  width: 100% !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   cursor: pointer;
@@ -28,7 +28,8 @@
 
 .org-selector-container {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
 }
 
 .org-selector-dropdown {

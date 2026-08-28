@@ -21,6 +21,7 @@ type Props = {
   }[];
   actions?: React.ReactNode;
   width?: PageWidth;
+  showTitle?: boolean;
 };
 
 export default function PageWrapper({
@@ -33,6 +34,7 @@ export default function PageWrapper({
   breadcrumbs,
   actions,
   width = "fluid",
+  showTitle = true,
 }: Props) {
   const {
     token: { colorBgContainer },
@@ -61,13 +63,15 @@ export default function PageWrapper({
       )}
       <div className="page-wrapper-content" style={{ background: colorBgContainer }}>
         <div className={clsx("page-wrapper-inner", `page-wrapper-inner-${width}`)}>
-          <Flex justify="space-between" flex={1} wrap>
-            <div>
-              <Typography.Title className="page-wrapper-title">{title}</Typography.Title>
-              {subTitle && <Typography.Text type="secondary">{subTitle}</Typography.Text>}
-            </div>
-            {actions}
-          </Flex>
+          {(showTitle || actions) && (
+            <Flex justify="space-between" flex={1} wrap>
+              <div>
+                {showTitle && <Typography.Title className="page-wrapper-title">{title}</Typography.Title>}
+                {showTitle && subTitle && <Typography.Text type="secondary">{subTitle}</Typography.Text>}
+              </div>
+              {actions}
+            </Flex>
+          )}
 
           {errorInfo && (
             <Alert

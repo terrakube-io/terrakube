@@ -8,6 +8,7 @@ import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
 import SettingsSection from "@/components/SettingsSection/SettingsSection";
 import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/SettingsPageHeader";
 
 type Props = {
   orgId: string;
@@ -148,146 +149,146 @@ export const NotificationConfigurationList = ({ orgId, workspaceId, managePermis
         <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Notifications
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {workspaceId
-              ? "Notifications configured specifically for this workspace, plus any organization-wide defaults - both apply together."
-              : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."}
-          </Typography.Text>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-              onClick={() => setMode("create")}
-            >
-              {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
-            </Button>
-            <Spin spinning={loading}>
-              {workspaceId && (
-                <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                  This workspace's notifications
-                </Typography.Title>
-              )}
-              <List
-                itemLayout="horizontal"
-                dataSource={primaryConfigs}
-                locale={{
-                  emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " ",
-                }}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
+          <SettingsPageHeader
+            title="Notifications"
+            description={
+              workspaceId
+                ? "Notifications configured specifically for this workspace, plus any organization-wide defaults - both apply together."
+                : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."
+            }
+            actions={
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+                onClick={() => setMode("create")}
+              >
+                {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
+              </Button>
+            }
+          />
+          <Spin spinning={loading}>
+            {workspaceId && (
+              <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
+                This workspace's notifications
+              </Typography.Title>
+            )}
+            <List
+              itemLayout="horizontal"
+              dataSource={primaryConfigs}
+              locale={{
+                emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " ",
+              }}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      icon={<EditOutlined />}
+                      shape="round"
+                      type="primary"
+                      disabled={!managePermission}
+                      onClick={() => {
+                        setEditingId(item.id);
+                        setMode("edit");
+                      }}
+                    >
+                      Edit
+                    </Button>,
+                    <Popconfirm
+                      okButtonProps={{ danger: true }}
+                      title="This will permanently delete this notification configuration. Are you sure?"
+                      onConfirm={() => onDelete(item.id)}
+                      okText="Yes"
+                      cancelText="No"
+                    >
                       <Button
-                        icon={<EditOutlined />}
+                        icon={<DeleteOutlined />}
                         shape="round"
                         type="primary"
+                        danger
                         disabled={!managePermission}
-                        onClick={() => {
-                          setEditingId(item.id);
-                          setMode("edit");
-                        }}
                       >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        okButtonProps={{ danger: true }}
-                        title="This will permanently delete this notification configuration. Are you sure?"
-                        onConfirm={() => onDelete(item.id)}
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button
-                          icon={<DeleteOutlined />}
-                          shape="round"
-                          type="primary"
-                          danger
-                          disabled={!managePermission}
-                        >
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={renderChannelAvatar(item.attributes.channelType)}
-                      title={item.attributes.name}
-                      description={
-                        <>
-                          <div>
-                            <Tag
-                              color={CHANNEL_META[item.attributes.channelType].color}
-                              icon={(() => {
-                                const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                                return <Icon />;
-                              })()}
-                            >
-                              {CHANNEL_META[item.attributes.channelType].label}
-                            </Tag>
-                            {workspaceId && <Tag color="purple">This workspace</Tag>}
-                            {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                          </div>
-                          {item.attributes.description && (
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {item.attributes.description}
-                            </Typography.Text>
-                          )}
-                        </>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-
-              {workspaceId && (
-                <>
-                  <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                    Also applies here (organization-wide)
-                  </Typography.Title>
-                  <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
-                    Managed at the organization level - edit these from the organization's notification settings.
-                  </Typography.Text>
-                  <List
-                    itemLayout="horizontal"
-                    dataSource={inheritedConfigs}
-                    locale={{ emptyText: "No organization-wide defaults apply here." }}
-                    renderItem={(item) => (
-                      <List.Item>
-                        <List.Item.Meta
-                          avatar={renderChannelAvatar(item.attributes.channelType)}
-                          title={item.attributes.name}
-                          description={
-                            <>
-                              <div>
-                                <Tag
-                                  color={CHANNEL_META[item.attributes.channelType].color}
-                                  icon={(() => {
-                                    const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                                    return <Icon />;
-                                  })()}
-                                >
-                                  {CHANNEL_META[item.attributes.channelType].label}
-                                </Tag>
-                                <Tag>Org default</Tag>
-                                {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                              </div>
-                              {item.attributes.description && (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {item.attributes.description}
-                                </Typography.Text>
-                              )}
-                            </>
-                          }
-                        />
-                      </List.Item>
-                    )}
+                        Delete
+                      </Button>
+                    </Popconfirm>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={renderChannelAvatar(item.attributes.channelType)}
+                    title={item.attributes.name}
+                    description={
+                      <>
+                        <div>
+                          <Tag
+                            color={CHANNEL_META[item.attributes.channelType].color}
+                            icon={(() => {
+                              const Icon = CHANNEL_META[item.attributes.channelType].icon;
+                              return <Icon />;
+                            })()}
+                          >
+                            {CHANNEL_META[item.attributes.channelType].label}
+                          </Tag>
+                          {workspaceId && <Tag color="purple">This workspace</Tag>}
+                          {!item.attributes.active && <Tag color="default">Disabled</Tag>}
+                        </div>
+                        {item.attributes.description && (
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {item.attributes.description}
+                          </Typography.Text>
+                        )}
+                      </>
+                    }
                   />
-                </>
+                </List.Item>
               )}
-            </Spin>
-          </SettingsSection>
+            />
+
+            {workspaceId && (
+              <>
+                <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
+                  Also applies here (organization-wide)
+                </Typography.Title>
+                <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
+                  Managed at the organization level - edit these from the organization's notification settings.
+                </Typography.Text>
+                <List
+                  itemLayout="horizontal"
+                  dataSource={inheritedConfigs}
+                  locale={{ emptyText: "No organization-wide defaults apply here." }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={renderChannelAvatar(item.attributes.channelType)}
+                        title={item.attributes.name}
+                        description={
+                          <>
+                            <div>
+                              <Tag
+                                color={CHANNEL_META[item.attributes.channelType].color}
+                                icon={(() => {
+                                  const Icon = CHANNEL_META[item.attributes.channelType].icon;
+                                  return <Icon />;
+                                })()}
+                              >
+                                {CHANNEL_META[item.attributes.channelType].label}
+                              </Tag>
+                              <Tag>Org default</Tag>
+                              {!item.attributes.active && <Tag color="default">Disabled</Tag>}
+                            </div>
+                            {item.attributes.description && (
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                {item.attributes.description}
+                              </Typography.Text>
+                            )}
+                          </>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </>
+            )}
+          </Spin>
         </>
       )}
     </div>

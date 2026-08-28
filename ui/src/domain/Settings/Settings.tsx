@@ -104,6 +104,7 @@ export const OrganizationSettings = ({ selectedTab, vcsMode, collectionMode = "l
   return (
     <PageWrapper
       title="Organization Settings"
+      showTitle={false}
       breadcrumbs={[
         { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
         { label: "Settings", path: `/organizations/${orgid}/settings/general` },
