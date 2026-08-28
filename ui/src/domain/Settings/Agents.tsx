@@ -1,5 +1,5 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, List, message } from "antd";
+import { Button, Form, List, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -7,7 +7,7 @@ import { Agent } from "../types";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { Loading } from "@/components/feedback/Loading";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import AgentFormModal, { AddAgentFormValues, UpdateAgentFormValues } from "./components/AgentFormModal";
 
@@ -161,7 +161,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
           />
           <br></br>
           {loading ? (
-            <LoadingFallback />
+            <Loading loading description="Loading agents..." />
           ) : (
             <List
               itemLayout="horizontal"

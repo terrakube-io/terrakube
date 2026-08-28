@@ -9,7 +9,7 @@ import { EditTemplate } from "./EditTemplate";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { Loading } from "@/components/feedback/Loading";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
@@ -87,7 +87,7 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
             />
             <SettingsSection maxWidth="100%">
               {loading ? (
-                <LoadingFallback />
+                <Loading loading description="Loading templates..." />
               ) : (
                 <List
                   className="vcsList"

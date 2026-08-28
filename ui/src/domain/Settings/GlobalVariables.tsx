@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Collapse, Form, message, Space, Table, Tag, Spin } from "antd";
+import { Button, Collapse, Form, message, Space, Table, Tag } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -226,7 +227,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
               </Button>
             }
           />
-          <Spin spinning={loading} description="Loading Global Variables...">
+          <Loading loading={loading} description="Loading Global Variables...">
             <Collapse
               defaultActiveKey={["TERRAFORM", "ENV"]}
               items={[
@@ -258,7 +259,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
                 },
               ]}
             />
-          </Spin>
+          </Loading>
 
           <GlobalVariableFormModal
             open={visible}

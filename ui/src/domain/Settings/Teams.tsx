@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Space, Tag, Typography, theme, Spin } from "antd";
+import { Avatar, Button, List, message, Space, Tag, Typography, theme } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -133,7 +134,7 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
               </Link>
             }
           />
-          <Spin spinning={loading} description="Loading Teams...">
+          <Loading loading={loading} description="Loading Teams...">
             <List
               itemLayout="horizontal"
               dataSource={teams}
@@ -170,7 +171,7 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
                 );
               }}
             />
-          </Spin>
+          </Loading>
 
           <DeleteConfirmationModal
             open={pendingDelete !== null}

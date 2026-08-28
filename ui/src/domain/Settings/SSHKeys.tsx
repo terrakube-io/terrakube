@@ -7,7 +7,7 @@ import { SshKey } from "../types";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { Loading } from "@/components/feedback/Loading";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import SshKeyFormModal, { AddSshKeyFormValues, UpdateSshKeyFormValues } from "./components/SshKeyFormModal";
 
@@ -159,7 +159,7 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
             }
           />
           {loading ? (
-            <LoadingFallback />
+            <Loading loading description="Loading SSH keys..." />
           ) : (
             <List
               itemLayout="horizontal"

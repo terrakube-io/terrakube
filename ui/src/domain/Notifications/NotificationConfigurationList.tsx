@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Spin, Tag, Typography } from "antd";
+import { Avatar, Button, List, message, Tag, Typography } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "@/config/axiosConfig";
@@ -8,7 +9,6 @@ import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
@@ -135,7 +135,6 @@ export const NotificationConfigurationList = ({
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, workspaceId]);
 
   // On the org-level page (no workspaceId), "configurations" is already org-scoped only (see
@@ -199,7 +198,7 @@ export const NotificationConfigurationList = ({
               </Button>
             }
           />
-          <Spin spinning={loading}>
+          <Loading loading={loading} description="Loading notifications...">
             {workspaceId && (
               <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
                 This workspace's notifications
@@ -310,7 +309,7 @@ export const NotificationConfigurationList = ({
                 />
               </>
             )}
-          </Spin>
+          </Loading>
 
           <DeleteConfirmationModal
             open={pendingDelete !== null}

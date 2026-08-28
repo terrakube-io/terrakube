@@ -15,7 +15,10 @@ describe("OrgNotifications", () => {
     render(
       <MemoryRouter initialEntries={["/organizations/org-1/settings/notifications"]}>
         <Routes>
-          <Route path="/organizations/:orgid/settings/notifications" element={<OrgNotifications managePermission={true} />} />
+          <Route
+            path="/organizations/:orgid/settings/notifications"
+            element={<OrgNotifications managePermission={true} />}
+          />
         </Routes>
       </MemoryRouter>
     );

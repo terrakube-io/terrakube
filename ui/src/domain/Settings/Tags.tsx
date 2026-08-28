@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Avatar, Button, Form, List, message, theme, Spin } from "antd";
+import { Avatar, Button, Form, List, message, theme } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -158,7 +159,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
               </Button>
             }
           />
-          <Spin spinning={loading} description="Loading Tags...">
+          <Loading loading={loading} description="Loading Tags...">
             <List
               itemLayout="horizontal"
               dataSource={tags}
@@ -193,7 +194,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
                 </List.Item>
               )}
             />
-          </Spin>
+          </Loading>
 
           <TagFormModal
             open={visible}

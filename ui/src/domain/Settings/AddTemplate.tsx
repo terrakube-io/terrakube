@@ -205,7 +205,11 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       )}
       {current == 1 && (
         <>
-          <SettingsSection maxWidth={960} title="Set up template" description="Define the YAML flow this template runs.">
+          <SettingsSection
+            maxWidth={960}
+            title="Set up template"
+            description="Define the YAML flow this template runs."
+          >
             <div className="editor">
               <Editor
                 height="45vh"

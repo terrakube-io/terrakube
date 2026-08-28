@@ -11,7 +11,7 @@ import SettingsSection from "@/components/settings/SettingsSection/SettingsSecti
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import VcsLogo from "@/components/display/VcsLogo";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { Loading } from "@/components/feedback/Loading";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 const { Paragraph } = Typography;
@@ -144,7 +144,7 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
           />
           <SettingsSection maxWidth="100%">
             {loading ? (
-              <LoadingFallback />
+              <Loading loading description="Loading VCS providers..." />
             ) : (
               <List
                 className="vcsList"

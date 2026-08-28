@@ -33,7 +33,7 @@ import { Action } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { Loading } from "@/components/feedback/Loading";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const validateMessages: any = {
@@ -308,7 +308,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       ) : !isEditing ? (
         <>
           {loading || !actions ? (
-            <LoadingFallback />
+            <Loading loading description="Loading actions..." />
           ) : (
             <Table dataSource={actions} columns={ACTIONS_COLUMNS()} rowKey="id" />
           )}

@@ -6,7 +6,8 @@ import {
   AppstoreOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Input, List, Space, Spin, Typography, Pagination, message } from "antd";
+import { Alert, Button, Card, Input, List, Space, Typography, Pagination, message } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -203,7 +204,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
             style={{ marginTop: "20px" }}
           />
         ) : (
-          <Spin spinning={loading}>
+          <Loading loading={loading} description="Loading Variable Collections...">
             <List
               grid={{ gutter: 16, column: 1 }}
               dataSource={paginatedCollections}
@@ -265,7 +266,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                 />
               )}
             </div>
-          </Spin>
+          </Loading>
         )}
       </SettingsSection>
 

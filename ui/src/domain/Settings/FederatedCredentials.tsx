@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Spin, Tag, Typography, theme } from "antd";
+import { Avatar, Button, List, message, Tag, Typography, theme } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -105,7 +106,7 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
               </Link>
             }
           />
-          <Spin spinning={loading} description="Loading Federated Credentials...">
+          <Loading loading={loading} description="Loading Federated Credentials...">
             <List
               itemLayout="horizontal"
               dataSource={federated}
@@ -149,7 +150,7 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
                 </List.Item>
               )}
             />
-          </Spin>
+          </Loading>
 
           <DeleteConfirmationModal
             open={pendingDelete !== null}
