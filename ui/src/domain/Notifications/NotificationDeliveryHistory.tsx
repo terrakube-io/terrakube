@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage } from "@/config/axiosConfig";
 import { NotificationChannelType } from "../types";
 import { CHANNEL_META } from "./channelMeta";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 
 type DeliveryStatus = "PENDING" | "SENDING" | "SENT" | "FAILED";
 

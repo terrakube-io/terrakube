@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Form, Radio, Switch, Table, Tag, Typography, Tooltip, Alert, Space, Divider, Card } from "antd";
+import { Col, Form, Radio, Row, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import {
   InfoCircleOutlined,
   CrownOutlined,
@@ -8,7 +8,8 @@ import {
   CodeOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import "./Settings.css";
 
 type TeamPermissionsV2Props = {
   managePermissions: boolean;
@@ -114,6 +115,14 @@ const roleDescriptions: Record<TeamRole, { label: string; color: string; icon: R
     },
   };
 
+const roleAccents: Record<TeamRole, string> = {
+  admin: "#f5222d",
+  write: "#fa8c16",
+  plan: "#1677ff",
+  read: "#8c8c8c",
+  custom: "#722ed1",
+};
+
 const permissionCategories: PermissionCategory[] = [
   {
     category: "Run Access",
@@ -189,121 +198,114 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
     }
   }, [role, form]);
 
+  const renderCategory = (category: PermissionCategory) => (
+    <div key={category.category}>
+      <Typography.Title level={5} style={{ marginBottom: 8 }}>
+        {category.category}
+      </Typography.Title>
+      <Table
+        dataSource={category.permissions}
+        columns={[
+          {
+            title: "Permission",
+            key: "label",
+            render: (_: any, record: any) => (
+              <Space>
+                <span>{record.label}</span>
+                <Tooltip title={record.tooltip}>
+                  <Typography.Text type="secondary" style={{ cursor: "help" }}>
+                    <InfoCircleOutlined />
+                  </Typography.Text>
+                </Tooltip>
+              </Space>
+            ),
+          },
+          {
+            title: "Access",
+            key: "access",
+            align: "right" as const,
+            width: 120,
+            render: (_: any, record: any) => {
+              if (role !== "custom") {
+                const granted = rolePermissionMatrix[role]?.[record.name] ?? false;
+                return <Tag color={granted ? "green" : "default"}>{granted ? "Granted" : "Denied"}</Tag>;
+              }
+              return (
+                <Form.Item name={record.name} valuePropName="checked" noStyle>
+                  <Switch disabled={!managePermissions} />
+                </Form.Item>
+              );
+            },
+          },
+        ]}
+        rowKey="name"
+        pagination={false}
+        bordered
+        size="small"
+      />
+    </div>
+  );
+
   return (
-    <SettingsSection maxWidth="100%">
-      <Typography.Title level={2} style={{ marginBottom: 4, marginTop: 0 }}>
-        Role
-      </Typography.Title>
-      <Typography.Text type="secondary">
-        Choose a preset role or select Custom for fine-grained control.
-      </Typography.Text>
-
-      <Form.Item name="role" initialValue="custom" style={{ marginTop: 16 }}>
-        <Radio.Group disabled={!managePermissions} style={{ width: "100%" }}>
-          <Space direction="vertical" style={{ width: "100%", gap: 8 }}>
-            {(Object.entries(roleDescriptions) as [TeamRole, (typeof roleDescriptions)["admin"]][]).map(
-              ([key, desc]) => (
-                <Card
-                  key={key}
-                  size="small"
-                  style={{
-                    cursor: managePermissions ? "pointer" : "not-allowed",
-                    borderColor: role === key ? (desc.color === "default" ? "#d9d9d9" : desc.color) : undefined,
-                    borderWidth: role === key ? 2 : 1,
-                  }}
-                  styles={{ body: { padding: "12px 16px" } }}
-                  onClick={() => {
-                    if (managePermissions) {
-                      form.setFieldValue("role", key);
-                    }
-                  }}
-                >
-                  <Radio value={key}>
-                    <Space align="start">
-                      <Tag color={desc.color} icon={desc.icon}>
-                        {desc.label}
-                      </Tag>
-                      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                        {desc.description}
-                      </Typography.Text>
-                    </Space>
-                  </Radio>
-                </Card>
-              )
-            )}
-          </Space>
-        </Radio.Group>
-      </Form.Item>
-
-      <Divider />
-
-      <Typography.Title level={2} style={{ marginBottom: 4, marginTop: 0 }}>
-        Permissions
-        {role !== "custom" && (
-          <Typography.Text type="secondary" style={{ fontSize: 14, marginLeft: 12, fontWeight: "normal" }}>
-            Determined by the <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role
-          </Typography.Text>
-        )}
-      </Typography.Title>
-
-      {role === "custom" && (
-        <Alert
-          message="Custom permissions"
-          description="Select individual permissions for this team. This provides the most granular control but requires careful configuration."
-          type="info"
-          showIcon
-          style={{ marginBottom: 16, maxWidth: "80%" }}
-        />
-      )}
-
-      {permissionCategories.map((category) => (
-        <div key={category.category} style={{ marginBottom: 24 }}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {category.category}
-          </Typography.Title>
-          <div style={{ maxWidth: "80%" }}>
-            <Table
-              dataSource={category.permissions}
-              columns={[
-                {
-                  title: "Permission",
-                  key: "label",
-                  render: (_: any, record: any) => (
-                    <Space>
-                      <span>{record.label}</span>
-                      <Tooltip title={record.tooltip}>
-                        <Typography.Text type="secondary" style={{ cursor: "help" }}>
-                          <InfoCircleOutlined />
+    <>
+      <SettingsSection
+        maxWidth={960}
+        title="Role"
+        description="Choose a preset role or select Custom for fine-grained control."
+      >
+        <Form.Item name="role" initialValue="custom" style={{ marginBottom: 0 }}>
+          <Radio.Group disabled={!managePermissions} style={{ width: "100%" }}>
+            <Row gutter={[16, 16]}>
+              {(Object.entries(roleDescriptions) as [TeamRole, (typeof roleDescriptions)["admin"]][]).map(
+                ([key, desc]) => (
+                  <Col key={key} xs={24} md={12}>
+                    <Radio
+                      value={key}
+                      className="execution-mode-option role-option"
+                      style={{ "--role-accent": roleAccents[key] } as React.CSSProperties}
+                    >
+                      <Space align="center">
+                        <Tag color={desc.color} icon={desc.icon}>
+                          {desc.label}
+                        </Tag>
+                        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                          {desc.description}
                         </Typography.Text>
-                      </Tooltip>
-                    </Space>
-                  ),
-                },
-                {
-                  title: "Access",
-                  key: "access",
-                  align: "right" as const,
-                  render: (_: any, record: any) => {
-                    if (role !== "custom") {
-                      const granted = rolePermissionMatrix[role]?.[record.name] ?? false;
-                      return <Tag color={granted ? "green" : "default"}>{granted ? "Granted" : "Denied"}</Tag>;
-                    }
-                    return (
-                      <Form.Item name={record.name} valuePropName="checked" noStyle>
-                        <Switch disabled={!managePermissions} />
-                      </Form.Item>
-                    );
-                  },
-                },
-              ]}
-              rowKey="name"
-              pagination={false}
-              bordered
-              size="small"
-            />
-          </div>
-        </div>
-      ))}
-    </SettingsSection>
+                      </Space>
+                    </Radio>
+                  </Col>
+                )
+              )}
+            </Row>
+          </Radio.Group>
+        </Form.Item>
+      </SettingsSection>
+
+      <SettingsSection
+        maxWidth={960}
+        title="Permissions"
+        description={
+          role !== "custom" ? (
+            <>
+              Determined by the <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role.
+            </>
+          ) : (
+            "Select individual permissions for this team. This provides the most granular control but requires careful configuration."
+          )
+        }
+      >
+        <Row gutter={[24, 24]}>
+          <Col xs={24} md={12}>
+            <Space orientation="vertical" size={24} style={{ width: "100%" }}>
+              {renderCategory(permissionCategories[0])}
+              {renderCategory(permissionCategories[2])}
+            </Space>
+          </Col>
+          <Col xs={24} md={12}>
+            {renderCategory(permissionCategories[1])}
+          </Col>
+        </Row>
+      </SettingsSection>
+    </>
   );
 };

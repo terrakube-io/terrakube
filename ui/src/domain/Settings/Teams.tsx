@@ -1,12 +1,16 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, List, message, Popconfirm, Space, Tag, Typography, theme, Spin } from "antd";
+import { Avatar, Button, List, message, Space, Tag, Typography, theme } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const roleColors: Record<string, string> = {
   admin: "red",
@@ -33,27 +37,22 @@ const roleDescriptions: Record<string, string> = {
 };
 
 type Props = {
-  key: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const TeamSettings = ({ key, managePermission = true }: Props) => {
+export const TeamSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "edit" | "create">("list");
-  const [teamId, setTeamId] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<Team | null>(null);
+  const navigate = useNavigate();
+  const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
+  const teamId = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/teams`);
   const { token } = theme.useToken();
-
-  const onEdit = (id: string) => {
-    setMode("edit");
-    setTeamId(id);
-  };
-
-  const onNew = () => {
-    setMode("create");
-  };
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -87,7 +86,7 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
   useEffect(() => {
     setLoading(true);
     loadTeams();
-  }, [orgid, key]);
+  }, [orgid]);
 
   const getTeamDescription = (item: Team) => {
     const role = item.attributes.role || "custom";
@@ -119,86 +118,86 @@ export const TeamSettings = ({ key, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : mode !== "list" ? (
-        <EditTeam mode={mode} setMode={setMode} teamId={teamId} loadTeams={loadTeams} />
+        <EditTeam mode={mode} setMode={closeEditor} teamId={teamId} loadTeams={loadTeams} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Team Management
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary">
-              Teams let you group users into specific categories to enable finer grained access control policies. Each
-              team is assigned a role that determines what actions its members can perform within the organization.
-            </Typography.Text>
-          </div>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create team
-            </Button>
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
+            title="Team Management"
+            description="Teams let you group users into specific categories to enable finer grained access control policies. Each team is assigned a role that determines what actions its members can perform within the organization."
+            actions={
+              <LinkButton
+                to={`/organizations/${orgid}/settings/teams/new`}
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create team
+              </LinkButton>
+            }
+          />
+          <Loading loading={loading} description="Loading Teams...">
+            <List
+              itemLayout="horizontal"
+              dataSource={teams}
+              renderItem={(item) => {
+                const role = (item.attributes.role || "custom") as TeamRole;
+                return (
+                  <List.Item
+                    actions={[
+                      <LinkButton
+                        to={`/organizations/${orgid}/settings/teams/edit/${item.id}`}
+                        icon={<EditOutlined />}
+                        type="link"
+                        disabled={!managePermission}
+                      >
+                        Edit
+                      </LinkButton>,
+                      <Button
+                        icon={<DeleteOutlined />}
+                        type="link"
+                        danger
+                        disabled={!managePermission}
+                        onClick={() => setPendingDelete(item)}
+                      >
+                        Delete
+                      </Button>,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />}
+                      title={
+                        <Space>
+                          {item.attributes.name}
+                          <Tag color={roleColors[role] || "default"}>{roleLabels[role] || role}</Tag>
+                        </Space>
+                      }
+                      description={getTeamDescription(item)}
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+          </Loading>
 
-            <Typography.Title level={3} style={{ marginTop: 30 }}>
-              Teams
-            </Typography.Title>
-            <Spin spinning={loading} tip="Loading Teams...">
-              <List
-                itemLayout="horizontal"
-                dataSource={teams}
-                renderItem={(item) => {
-                  const role = (item.attributes.role || "custom") as TeamRole;
-                  return (
-                    <List.Item
-                      actions={[
-                        <Button
-                          onClick={() => onEdit(item.id)}
-                          icon={<EditOutlined />}
-                          type="link"
-                          disabled={!managePermission}
-                        >
-                          Edit
-                        </Button>,
-                        <Popconfirm
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => onDelete(item.id)}
-                          title={
-                            <p>
-                              This will permanently delete this team <br />
-                              and any permissions associated with it. <br />
-                              Are you sure?
-                            </p>
-                          }
-                          okText="Yes"
-                          cancelText="No"
-                        >
-                          <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                            Delete
-                          </Button>
-                        </Popconfirm>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TeamOutlined />} />}
-                        title={
-                          <Space>
-                            {item.attributes.name}
-                            <Tag color={roleColors[role] || "default"}>{roleLabels[role] || role}</Tag>
-                          </Space>
-                        }
-                        description={getTeamDescription(item)}
-                      />
-                    </List.Item>
-                  );
-                }}
-              />
-            </Spin>
-          </SettingsSection>
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete team"
+            message={
+              <>
+                Deleting the team <strong>{pendingDelete?.attributes.name}</strong> and any permissions associated with
+                it cannot be undone.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

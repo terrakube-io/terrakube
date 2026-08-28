@@ -65,7 +65,7 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
                 padding: 6,
                 cursor: "pointer",
                 textAlign: "center",
-                border: selectedIcon === icon ? "1px solid #1890ff" : "1px solid #d9d9d9",
+                border: selectedIcon === icon ? "1px solid var(--tk-accent)" : "1px solid #d9d9d9",
                 borderRadius: 4,
                 height: 60,
                 width: "100%",

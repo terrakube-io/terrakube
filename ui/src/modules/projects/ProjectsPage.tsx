@@ -1,13 +1,15 @@
-import { Button, Empty, Flex, Form, Input, Modal, Table, message } from "antd";
+import { Button, Flex, Form, Input, Modal, Table, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Props = {
   organizationName: string;
@@ -56,20 +58,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     } catch (err: any) {
       if (err?.errorFields) return;
       if (err?.response?.status === 403) {
-        message.error(
-          <span>
-            You are not authorized to create projects. <br /> Please contact your administrator and request the{" "}
-            <b>Manage Workspaces</b> permission. <br /> For more information, visit the{" "}
-            <a
-              target="_blank"
-              href="https://docs.terrakube.io/user-guide/organizations/team-management"
-              rel="noreferrer"
-            >
-              Terrakube documentation
-            </a>
-            .
-          </span>
-        );
+        message.error(<PermissionErrorMessage action="create projects" permission="Manage Workspaces" />);
       } else {
         message.error(err?.message ?? "An error occurred");
       }
@@ -107,7 +96,6 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         { label: organizationName, path: "/" },
         { label: "Projects", path: `/organizations/${id}/projects` },
       ]}
-      fluid
       actions={
         <Button icon={<PlusOutlined />} type="primary" onClick={openCreate} disabled={!permissions.manageWorkspace}>
           New project
@@ -116,15 +104,11 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     >
       {!loading && projects.length === 0 ? (
         <Flex justify="center">
-          <Empty
-            className="page-wrapper-no-content"
-            style={{ textAlign: "center" }}
-            description="You have not created any projects yet. Projects let you group related workspaces together."
-          >
+          <EmptyState description="You have not created any projects yet. Projects let you group related workspaces together.">
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!permissions.manageWorkspace}>
               Create a new project
             </Button>
-          </Empty>
+          </EmptyState>
         </Flex>
       ) : (
         <Table

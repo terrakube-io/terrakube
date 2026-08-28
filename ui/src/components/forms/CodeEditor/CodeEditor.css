@@ -1,0 +1,4 @@
+.code-editor {
+  border: 1px solid var(--tk-border-primary);
+  background-color: var(--tk-bg-base);
+}

@@ -34,6 +34,18 @@ public class ModuleRefreshService extends ScheduleServiceBase {
     private ModuleVersionRepository moduleVersionRepository;
     @Autowired
     private OrganizationRepository organizationRepository;
+    @Autowired
+    private ModuleRefreshProperties moduleRefreshProperties;
+
+    /** Creates the periodic refresh task of one module on the configured interval. */
+    public void createRefreshTask(String moduleId, boolean startNow) throws SchedulerException {
+        createTask(moduleRefreshProperties.getInterval(), moduleId, startNow);
+    }
+
+    /** Moves an existing refresh task onto the configured interval without unscheduling it. */
+    public void rescheduleRefreshTask(String moduleId) throws SchedulerException {
+        rescheduleTask(moduleRefreshProperties.getInterval(), moduleId);
+    }
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -50,7 +62,7 @@ public class ModuleRefreshService extends ScheduleServiceBase {
             log.info("Module {}/{}/{} has no versions in the database, creating a scheduler job to fetch the versions",
                     module.getOrganization().getName(), module.getName(), module.getProvider());
             try {
-                createTask(300, module.getId().toString(), true);
+                createRefreshTask(module.getId().toString(), true);
             } catch (SchedulerException e) {
                 log.error("Failed to create module refresh task for {}/{}/{}, error {}",
                         module.getOrganization().getName(), module.getName(), module.getProvider(), e);

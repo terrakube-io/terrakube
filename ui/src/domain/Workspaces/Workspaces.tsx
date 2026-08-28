@@ -1,11 +1,8 @@
-import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
 import { message } from "antd";
 import { IconContext } from "react-icons";
-import { SiBitbucket, SiTerraform } from "react-icons/si";
-import { VscAzureDevops } from "react-icons/vsc";
+import { SiTerraform } from "react-icons/si";
 import axiosInstance from "../../config/axiosConfig";
 import { withBasePath } from "../../config/basePath";
-import { VcsType } from "../types";
 
 export const genericHeader = {
   headers: {
@@ -39,29 +36,6 @@ export function compareVersions(a: string, b: string) {
   // TODO: Check
   return -2;
 }
-
-export const renderVCSLogo = (vcs: VcsType) => {
-  switch (vcs) {
-    case "GITLAB":
-      return <GitlabOutlined style={{ fontSize: "18px" }} />;
-    case "BITBUCKET":
-      return (
-        <IconContext.Provider value={{ size: "18px" }}>
-          <SiBitbucket />
-          &nbsp;
-        </IconContext.Provider>
-      );
-    case "AZURE_DEVOPS":
-      return (
-        <IconContext.Provider value={{ size: "18px" }}>
-          <VscAzureDevops />
-          &nbsp;
-        </IconContext.Provider>
-      );
-    default:
-      return <GithubOutlined style={{ fontSize: "18px" }} />;
-  }
-};
 
 export const atomicHeader = {
   headers: {

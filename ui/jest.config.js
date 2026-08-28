@@ -12,6 +12,8 @@ export default {
     "\\.(css|less|sass|scss)$": "identity-obj-proxy",
     "^.+\\.svg$": "jest-transformer-svg",
     "\\.(png|jpe?g|gif|webp)$": "<rootDir>/jest.fileMock.js",
+    "\\?worker$": "<rootDir>/jest.fileMock.js",
+    "^monaco-editor$": "<rootDir>/jest.fileMock.js",
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],

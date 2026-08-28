@@ -1,16 +1,17 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Alert, Button, Divider, Form, Input, Space, Spin, Tooltip, Typography, message, theme } from "antd";
-import CreatePatModal from "@/modules/token/modals/CreatePatModal";
-import { CreateTokenForm } from "@/modules/user/types";
+import { Alert, Button, Col, Flex, Form, Input, Row, Space, Spin, Tooltip, message } from "antd";
+import CreatePatModal from "@/components/modals/CreatePatModal";
+import { CreateTokenForm } from "@/modules/token/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { TeamPermissionsV2 } from "./TeamPermissionsV2";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   mode: "edit" | "create";
@@ -223,72 +224,70 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        {mode === "edit" ? `Team: ${teamName}` : "New Team"}
-      </Typography.Title>
-      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-        {mode === "edit"
-          ? "Update this team's role and permissions to control what its members can do within the organization."
-          : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."}
-      </Typography.Text>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
+        title={mode === "edit" ? `Team: ${teamName}` : "New Team"}
+        description={
+          mode === "edit"
+            ? "Update this team's role and permissions to control what its members can do within the organization."
+            : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."
+        }
+      />
 
-      {loading ? (
-        <Spin style={{ marginTop: 24, display: "block" }} />
-      ) : error ? (
-        <Alert message="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
+      {error ? (
+        <Alert title="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
       ) : (
-        <SettingsSection>
+        <Spin spinning={loading}>
           <Form name="team" form={form} onFinish={onFinish} layout="vertical">
             {mode === "create" && (
-              <Form.Item
-                name="name"
-                tooltip={{
-                  title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
-                  icon: <InfoCircleOutlined />,
-                }}
-                label="Team Name"
-                rules={[{ required: true, message: "Team name is required" }]}
-                extra="The team name must correspond to a group in your identity provider."
-              >
-                <Input placeholder="e.g. ENGINEERING_TEAM" />
-              </Form.Item>
+              <SettingsSection maxWidth={960} title="Identity">
+                <Row>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="name"
+                      tooltip={{
+                        title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
+                        icon: <InfoCircleOutlined />,
+                      }}
+                      label="Team Name"
+                      rules={[{ required: true, message: "Team name is required" }]}
+                    >
+                      <Input placeholder="e.g. ENGINEERING_TEAM" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </SettingsSection>
             )}
-
-            <Divider />
 
             <TeamPermissionsV2 managePermissions={true} />
 
-            <Divider />
-
-            <Space direction="horizontal">
-              <Button type="primary" htmlType="submit">
-                {mode === "edit" ? "Update team" : "Create team"}
-              </Button>
-              <Button onClick={onCancel} type="default">
-                Cancel
-              </Button>
-            </Space>
+            <Flex justify="flex-end" style={{ maxWidth: 960, marginBottom: 32 }}>
+              <Space orientation="horizontal">
+                <Button onClick={onCancel} type="default">
+                  Cancel
+                </Button>
+                <Button type="primary" htmlType="submit">
+                  {mode === "edit" ? "Update team" : "Create team"}
+                </Button>
+              </Space>
+            </Flex>
           </Form>
-        </SettingsSection>
+        </Spin>
       )}
 
       {mode === "edit" && !loading && !error && (
         <SettingsSection
           title="Team API Tokens"
           description="Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation."
-          maxWidth="100%"
-        >
-          <div>
+          maxWidth={960}
+          extra={
             <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
               <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
                 Create a Team Token
               </Button>
             </Tooltip>
-          </div>
-
-          <Typography.Title level={4} style={{ marginTop: 24 }}>
-            Existing Tokens
-          </Typography.Title>
+          }
+        >
           {loadingTokens ? (
             <Spin style={{ display: "block", marginTop: 16 }} />
           ) : (
@@ -296,19 +295,13 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           )}
 
           <CreatePatModal
-            visible={visible}
+            open={visible}
             onCancel={() => setVisible(false)}
             onCreated={() => loadTokens(teamName)}
             action={onCreateToken}
             shortlivedTokens={true}
           />
         </SettingsSection>
-      )}
-
-      {mode === "edit" && (
-        <Button style={{ marginTop: 40 }} onClick={onCancel} type="default">
-          Go back to Teams list
-        </Button>
       )}
     </div>
   );

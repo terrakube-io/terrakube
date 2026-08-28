@@ -3,9 +3,11 @@ import {
   Alert,
   Button,
   Checkbox,
+  Col,
   Form,
   Input,
   Radio,
+  Row,
   Select,
   Space,
   Spin,
@@ -22,7 +24,8 @@ import { JobStatus, NotificationChannelType, NotificationMessageStyle, Template 
 import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgId: string;
@@ -61,7 +64,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
   // rather than briefly showing the wrong scope. For create mode this is known immediately
   // from whether a workspaceId was passed in at all.
   const [configWorkspaceId, setConfigWorkspaceId] = useState<string | null | undefined>(
-    mode === "create" ? workspaceId ?? null : undefined
+    mode === "create" ? (workspaceId ?? null) : undefined
   );
   const channelType = Form.useWatch("channelType", form);
   const destinationUrl = Form.useWatch("destinationUrl", form);
@@ -263,16 +266,17 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
 
   return (
     <Spin spinning={loading}>
-      <Typography.Title level={3}>
-        {mode === "create" ? "Add Notification" : "Edit Notification"}
-      </Typography.Title>
+      <SettingsPageHeader
+        title={mode === "create" ? "Add Notification" : "Edit Notification"}
+        description="Send a message to a channel when jobs change state."
+      />
       {configWorkspaceId !== undefined &&
         (configWorkspaceId === null ? (
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Organization-wide default"
+            title="Organization-wide default"
             description="Applies to every workspace in this organization, alongside whatever each workspace configures for itself. Changes here affect all of them."
           />
         ) : (
@@ -280,11 +284,11 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="This workspace only"
+            title="This workspace only"
             description="Only affects this workspace, in addition to any organization-wide defaults."
           />
         ))}
-      <SettingsSection>
+      <SettingsSection maxWidth={960}>
         <Form form={form} layout="vertical" onFinish={onFinish}>
           <Typography.Title level={5} style={{ marginBottom: 12 }}>
             1. Channel
@@ -296,9 +300,18 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 12 }}>
             2. Details
           </Typography.Title>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter a name" }]}>
-            <Input placeholder="e.g. Prod Alerts" />
-          </Form.Item>
+          <Row gutter={24} align="bottom">
+            <Col flex="auto">
+              <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter a name" }]}>
+                <Input placeholder="e.g. Prod Alerts" />
+              </Form.Item>
+            </Col>
+            <Col flex="none">
+              <Form.Item name="active" label="Active" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="description" label="Description (optional)">
             <Input.TextArea
               placeholder="What this is for, e.g. 'Pages on-call for prod workspace failures'"
@@ -311,7 +324,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             rules={[{ required: true, message: "Please enter the destination URL" }]}
             help={
               channelType && (
-                <Space direction="vertical" size={0} style={{ marginTop: 2 }}>
+                <Space orientation="vertical" size={0} style={{ marginTop: 2 }}>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {CHANNEL_META[channelType].urlHelp}
                   </Typography.Text>
@@ -337,24 +350,21 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
               label="Signing Secret (optional)"
               help={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  If set, requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so
-                  your endpoint can verify they came from Terrakube.
+                  If set, requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so your
+                  endpoint can verify they came from Terrakube.
                 </Typography.Text>
               }
             >
               <Input.Password placeholder="Optional" />
             </Form.Item>
           )}
-          <Form.Item name="active" label="Active" valuePropName="checked">
-            <Switch />
-          </Form.Item>
           <Form.Item
             name="messageStyle"
             label="Message style"
             help={
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single
-                compact line instead - useful for high-frequency channels.
+                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single compact
+                line instead - useful for high-frequency channels.
               </Typography.Text>
             }
           >
@@ -389,86 +399,93 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
             selected.
           </Typography.Text>
 
-          {JOB_STATUS_GROUPS.map((group) => {
-            const groupValues = group.statuses.map((s) => s.value);
-            const selectedInGroup = groupValues.filter((v) => selectedStatuses.includes(v));
-            const allSelected = selectedInGroup.length === groupValues.length;
-            const GroupIcon = group.icon;
+          <Row gutter={[10, 10]}>
+            {JOB_STATUS_GROUPS.map((group) => {
+              const groupValues = group.statuses.map((s) => s.value);
+              const selectedInGroup = groupValues.filter((v) => selectedStatuses.includes(v));
+              const allSelected = selectedInGroup.length === groupValues.length;
+              const GroupIcon = group.icon;
 
-            return (
-              <div
-                key={group.key}
-                data-testid={`trigger-group-${group.key}`}
-                style={{
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: token.borderRadius,
-                  padding: "10px 14px",
-                  marginBottom: 10,
-                }}
-              >
-                <Space align="center" style={{ marginBottom: 6 }}>
-                  <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
-                    {group.label}
-                  </Tag>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {selectedInGroup.length}/{groupValues.length}
-                  </Typography.Text>
-                  <Button
-                    type="link"
-                    size="small"
-                    style={{ padding: 0, fontSize: 12 }}
-                    onClick={() => toggleGroup(groupValues, !allSelected)}
+              return (
+                <Col key={group.key} xs={24} md={12}>
+                  <div
+                    data-testid={`trigger-group-${group.key}`}
+                    style={{
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                      borderRadius: token.borderRadius,
+                      padding: "10px 14px",
+                      height: "100%",
+                    }}
                   >
-                    {allSelected ? "Clear" : "Select all"}
-                  </Button>
-                </Space>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
-                  {group.statuses.map((status) => (
-                    <Checkbox
-                      key={status.value}
-                      checked={selectedStatuses.includes(status.value)}
-                      onChange={(e) => {
-                        setSelectedStatuses((current) =>
-                          e.target.checked
-                            ? [...current, status.value]
-                            : current.filter((s) => s !== status.value)
-                        );
-                      }}
-                    >
-                      {status.label}
-                    </Checkbox>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+                    <Space align="center" style={{ marginBottom: 6 }}>
+                      <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
+                        {group.label}
+                      </Tag>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {selectedInGroup.length}/{groupValues.length}
+                      </Typography.Text>
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ padding: 0, fontSize: 12 }}
+                        onClick={() => toggleGroup(groupValues, !allSelected)}
+                      >
+                        {allSelected ? "Clear" : "Select all"}
+                      </Button>
+                    </Space>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
+                      {group.statuses.map((status) => (
+                        <Checkbox
+                          key={status.value}
+                          checked={selectedStatuses.includes(status.value)}
+                          onChange={(e) => {
+                            setSelectedStatuses((current) =>
+                              e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
+                            );
+                          }}
+                        >
+                          {status.label}
+                        </Checkbox>
+                      ))}
+                    </div>
+                  </div>
+                </Col>
+              );
+            })}
+          </Row>
 
           <Form.Item style={{ marginTop: 16 }}>
-            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Space orientation="vertical" size="small" style={{ width: "100%" }}>
               {testResult && (
                 <Alert
                   type={testResult === "success" ? "success" : "error"}
                   showIcon
                   icon={testResult === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                  message={testResult === "success" ? "Test notification delivered successfully" : "Test notification failed to deliver"}
+                  title={
+                    testResult === "success"
+                      ? "Test notification delivered successfully"
+                      : "Test notification failed to deliver"
+                  }
                   closable
                   onClose={() => setTestResult(null)}
                 />
               )}
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  {mode === "create" ? "Create" : "Update"}
-                </Button>
-                <Button
-                  icon={<SendOutlined />}
-                  onClick={sendTest}
-                  loading={testing}
-                  disabled={!channelType || !destinationUrl}
-                >
-                  Send test notification
-                </Button>
-                <Button onClick={onDone}>Cancel</Button>
-              </Space>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Space>
+                  <Button
+                    icon={<SendOutlined />}
+                    onClick={sendTest}
+                    loading={testing}
+                    disabled={!channelType || !destinationUrl}
+                  >
+                    Send test notification
+                  </Button>
+                  <Button onClick={onDone}>Cancel</Button>
+                  <Button type="primary" htmlType="submit">
+                    {mode === "create" ? "Create" : "Update"}
+                  </Button>
+                </Space>
+              </div>
             </Space>
           </Form.Item>
         </Form>

@@ -11,7 +11,6 @@ import {
 import {
   Alert,
   Avatar,
-  Breadcrumb,
   Button,
   Col,
   Divider,
@@ -21,7 +20,6 @@ import {
   message,
   Row,
   Space,
-  Spin,
   Table,
   Tabs,
   Typography,
@@ -30,10 +28,8 @@ import {
   Flex,
   Select,
   Input,
-  theme,
 } from "antd";
 
-import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useJobStatusSubscription, usePolling } from "../../hooks";
 import { IconContext } from "react-icons";
@@ -64,13 +60,16 @@ import { Schedules } from "../Workspaces/Schedules";
 import { Tags } from "../Workspaces/Tags";
 import { Variables } from "../Workspaces/Variables";
 import { getServiceIcon } from "./Icons.jsx";
-import { getIaCIconById, getIaCNameById, renderVCSLogo } from "./Workspaces";
+import { getIaCIconById, getIaCNameById } from "./Workspaces";
 import "./Workspaces.css";
-import LoadingFallback from "@/components/LoadingFallback";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import RunList from "@/modules/workspaces/components/RunList";
-import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
+import VcsLogo from "@/components/display/VcsLogo";
+import { relativeTime } from "@/modules/utils/dates";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -78,8 +77,6 @@ const WorkspaceSettings = lazy(() =>
 );
 
 const { Paragraph } = Typography;
-
-const { Content } = Layout;
 
 const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "1": "Overview",
@@ -100,7 +97,6 @@ const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   "team-access": "Team Access",
   advanced: "Destruction and Deletion",
 };
-
 
 type Props = {
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
@@ -165,9 +161,6 @@ export const WorkspaceDetails = ({
   const [contextState, setContextState] = useState({});
   const [projectName, setProjectName] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
 
   const runLink = (jobid: string) => `/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`;
 
@@ -653,14 +646,14 @@ export const WorkspaceDetails = ({
               )}
             </Col>
             <Col span={5}>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <br />
                 <span>
                   {workspace.attributes.branch !== "remote-content" &&
                   isValidUrl(fixSshURL(workspace.attributes.source)) ? (
                     <>
                       {" "}
-                      {renderVCSLogo(vcsProvider)}{" "}
+                      <VcsLogo type={vcsProvider} />{" "}
                       <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
                         {new URL(fixSshURL(workspace.attributes.source))?.pathname?.replace(".git", "")?.substring(1)}
                       </a>
@@ -758,194 +751,167 @@ export const WorkspaceDetails = ({
     }
   };
 
+  const pageBreadcrumbs = [
+    { label: organizationNameLocal ?? "", path: `/organizations/${organizationId}/workspaces` },
+    { label: "Workspaces", path: `/organizations/${organizationId}/workspaces` },
+    { label: workspaceName, path: `/organizations/${organizationId}/workspaces/${id}` },
+    ...(activeKey === "6" && settingsSection
+      ? [
+          { label: "Settings", path: `/organizations/${organizationId}/workspaces/${id}/settings/general` },
+          { label: WORKSPACE_SETTINGS_SECTION_LABELS[settingsSection] ?? "General" },
+        ]
+      : [{ label: WORKSPACE_SECTION_LABELS[activeKey ?? "1"] ?? "Overview" }]),
+  ];
+
+  const pageActions =
+    !loading && workspace ? (
+      <Space orientation="horizontal">
+        {actions &&
+          actions
+            .reduce((acc: ActionWithSettings[], action: ActionWithSettings) => {
+              if (!action.attributes.displayCriteria) {
+                acc.push(action);
+                return acc;
+              }
+
+              let displayCriteria;
+              try {
+                displayCriteria = JSON.parse(action.attributes.displayCriteria);
+              } catch (error) {
+                console.error("Error parsing displayCriteria JSON:", error);
+                return acc;
+              }
+
+              for (const criteria of displayCriteria) {
+                const settings = evaluateCriteria(criteria, {
+                  workspace: workspace,
+                  state: contextState,
+                  resources: resources,
+                  apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                  settings: action.settings,
+                });
+                if (settings) {
+                  action.settings = settings; // Attach settings to the action
+                  acc.push(action);
+                  break;
+                }
+              }
+
+              return acc;
+            }, [])
+            .filter((action) => action?.attributes.type === "Workspace/Action")
+            .map((action, index) => (
+              <Suspense key={index} fallback={<LoadingFallback />}>
+                <ActionLoader
+                  action={action?.attributes.action}
+                  context={{
+                    workspace: workspace,
+                    state: contextState,
+                    resources: resources,
+                    apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                    settings: action.settings,
+                  }}
+                />
+              </Suspense>
+            ))}
+        <Button
+          type="default"
+          htmlType="button"
+          onClick={() => handleLockButton(workspace.attributes.locked)}
+          icon={workspace.attributes.locked ? <UnlockOutlined /> : <LockOutlined />}
+          disabled={!manageWorkspace}
+        >
+          {workspace.attributes.locked ? "Unlock" : "Lock"}
+        </Button>
+        <CreateJob
+          changeJob={changeJob}
+          planJob={planJob}
+          resources={resources}
+          disabledReason={
+            workspace.attributes.source === "empty" && workspace.attributes.branch === "remote-content"
+              ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
+              : undefined
+          }
+        />
+      </Space>
+    ) : undefined;
+
   return (
-    <Content style={{ padding: "0 50px" }}>
-      <Breadcrumb
-        style={{ margin: "16px 0" }}
-        items={[
-          {
-            title: <Link to={`/organizations/${organizationId}/workspaces`}>{organizationNameLocal}</Link>,
-          },
-          {
-            title: <Link to={`/organizations/${organizationId}/workspaces`}>Workspaces</Link>,
-          },
-          {
-            title: <Link to={`/organizations/${organizationId}/workspaces/${id}`}>{workspaceName}</Link>,
-          },
-          ...(activeKey === "6" && settingsSection
-            ? [
-                {
-                  title: (
-                    <Link to={`/organizations/${organizationId}/workspaces/${id}/settings/general`}>Settings</Link>
-                  ),
-                },
-                {
-                  title: WORKSPACE_SETTINGS_SECTION_LABELS[settingsSection] ?? "General",
-                },
-              ]
-            : [
-                {
-                  title: WORKSPACE_SECTION_LABELS[activeKey ?? "1"] ?? "Overview",
-                },
-              ]),
-        ]}
-      />
-
-      <div className="site-layout-content" style={{ background: colorBgContainer }}>
-        <div className="workspaceDisplay">
-          {loadError ? (
-            <Alert
-              message={loadError.includes("permission") ? "Access Denied" : "Error"}
-              description={loadError}
-              type="error"
-              showIcon
-              style={{ margin: "20px 0" }}
-            />
-          ) : loading || !workspace || !variables || !jobs ? (
-            <Spin spinning={true} tip="Loading Workspace...">
-              <p style={{ marginTop: "50px" }}></p>
-            </Spin>
-          ) : (
-            <div className="orgWrapper">
-              <div className="variableActions">
-                <Typography.Title level={1} style={{ margin: 0 }}>
-                  {workspace.attributes.name}
-                </Typography.Title>
-                <Space direction="horizontal">
-                  {actions &&
-                    actions
-                      .reduce((acc: ActionWithSettings[], action: ActionWithSettings) => {
-                        if (!action.attributes.displayCriteria) {
-                          acc.push(action);
-                          return acc;
-                        }
-
-                        let displayCriteria;
-                        try {
-                          displayCriteria = JSON.parse(action.attributes.displayCriteria);
-                        } catch (error) {
-                          console.error("Error parsing displayCriteria JSON:", error);
-                          return acc;
-                        }
-
-                        for (const criteria of displayCriteria) {
-                          const settings = evaluateCriteria(criteria, {
-                            workspace: workspace,
-                            state: contextState,
-                            resources: resources,
-                            apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                            settings: action.settings,
-                          });
-                          if (settings) {
-                            action.settings = settings; // Attach settings to the action
-                            acc.push(action);
-                            break;
-                          }
-                        }
-
-                        return acc;
-                      }, [])
-                      .filter((action) => action?.attributes.type === "Workspace/Action")
-                      .map((action, index) => (
-                        <Suspense key={index} fallback={<LoadingFallback />}>
-                          <ActionLoader
-                            action={action?.attributes.action}
-                            context={{
-                              workspace: workspace,
-                              state: contextState,
-                              resources: resources,
-                              apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                              settings: action.settings,
-                            }}
-                          />
-                        </Suspense>
-                      ))}
-                  <Button
-                    type="default"
-                    htmlType="button"
-                    onClick={() => handleLockButton(workspace.attributes.locked)}
-                    icon={workspace.attributes.locked ? <UnlockOutlined /> : <LockOutlined />}
-                    disabled={!manageWorkspace}
-                  >
-                    {workspace.attributes.locked ? "Unlock" : "Lock"}
-                  </Button>
-                  <CreateJob
-                    changeJob={changeJob}
-                    planJob={planJob}
-                    resources={resources}
-                    disabledReason={
-                      workspace.attributes.source === "empty" && workspace.attributes.branch === "remote-content"
-                        ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
-                        : undefined
-                    }
-                  />
-                </Space>
-              </div>
-              <Space className="workspace-details" direction="vertical">
-                <Paragraph style={{ margin: "0px" }} copyable={{ text: id, tooltips: false }}>
-                  <Typography.Text type="secondary"> ID: {id} </Typography.Text>
-                </Paragraph>
-                {workspace.attributes?.description === "" ? (
-                  <a className="workspace-button" onClick={handleClickSettings}>
-                    Add workspace description
-                  </a>
+    <PageWrapper
+      title={workspaceName}
+      breadcrumbs={pageBreadcrumbs}
+      error={
+        loadError
+          ? { title: loadError.includes("permission") ? "Access Denied" : "Error", message: loadError }
+          : undefined
+      }
+      loading={!loadError && (loading || !workspace || !variables || !jobs)}
+      loadingText="Loading Workspace..."
+      actions={pageActions}
+    >
+      {workspace && (
+        <div className="orgWrapper">
+          <Space className="workspace-details" orientation="vertical">
+            <Paragraph style={{ margin: "0px" }} copyable={{ text: id, tooltips: false }}>
+              <Typography.Text type="secondary"> ID: {id} </Typography.Text>
+            </Paragraph>
+            {workspace.attributes?.description === "" ? (
+              <a className="workspace-button" onClick={handleClickSettings}>
+                Add workspace description
+              </a>
+            ) : (
+              <Typography.Text type="secondary">{workspace.attributes.description}</Typography.Text>
+            )}
+            <Space size={40} style={{ marginBottom: "40px" }} orientation="horizontal">
+              <Typography.Text>
+                {workspace.attributes.locked ? (
+                  <>
+                    <LockOutlined /> Locked
+                  </>
                 ) : (
-                  <Typography.Text type="secondary">{workspace.attributes.description}</Typography.Text>
+                  <>
+                    <UnlockOutlined /> Unlocked
+                  </>
                 )}
-                <Space size={40} style={{ marginBottom: "40px" }} direction="horizontal">
-                  <Typography.Text>
-                    {workspace.attributes.locked ? (
-                      <>
-                        <LockOutlined /> Locked
-                      </>
-                    ) : (
-                      <>
-                        <UnlockOutlined /> Unlocked
-                      </>
-                    )}
-                  </Typography.Text>
-                  <Typography.Text>
-                    <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
-                  </Typography.Text>
-                  <Space direction="horizontal">
-                    {getIaCIconById(workspace.attributes?.iacType)}
-                    <Typography.Text>
-                      {getIaCNameById(workspace.attributes?.iacType)}{" "}
-                      <a onClick={handleClickSettings} className="workspace-button">
-                        {workspace.attributes.terraformVersion}
-                      </a>
-                    </Typography.Text>
-                  </Space>
-
-                  <Typography.Text>
-                    <ClockCircleOutlined /> Updated{" "}
-                    <span style={{ fontWeight: "500" }}>
-                      {DateTime.fromISO(lastRun).toRelative() ?? "never executed"}
-                    </span>
-                  </Typography.Text>
-
-                  <span>
-                    {workspace.attributes.locked ? (
-                      <>
-                        <Alert
-                          message="Lock Description"
-                          description={workspace.attributes.lockDescription}
-                          type="warning"
-                          showIcon
-                        />
-                      </>
-                    ) : (
-                      <></>
-                    )}
-                  </span>
-                </Space>
+              </Typography.Text>
+              <Typography.Text>
+                <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
+              </Typography.Text>
+              <Space orientation="horizontal">
+                {getIaCIconById(workspace.attributes?.iacType)}
+                <Typography.Text>
+                  {getIaCNameById(workspace.attributes?.iacType)}{" "}
+                  <a onClick={handleClickSettings} className="workspace-button">
+                    {workspace.attributes.terraformVersion}
+                  </a>
+                </Typography.Text>
               </Space>
 
-              {renderSection(workspace)}
-            </div>
-          )}
+              <Typography.Text>
+                <ClockCircleOutlined /> Updated{" "}
+                <span style={{ fontWeight: "500" }}>{relativeTime(lastRun) ?? "never executed"}</span>
+              </Typography.Text>
+
+              <span>
+                {workspace.attributes.locked ? (
+                  <>
+                    <Alert
+                      title="Lock Description"
+                      description={workspace.attributes.lockDescription}
+                      type="warning"
+                      showIcon
+                    />
+                  </>
+                ) : (
+                  <></>
+                )}
+              </span>
+            </Space>
+          </Space>
+
+          {renderSection(workspace)}
         </div>
-      </div>
-    </Content>
+      )}
+    </PageWrapper>
   );
 };

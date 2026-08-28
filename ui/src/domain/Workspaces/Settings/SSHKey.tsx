@@ -1,10 +1,11 @@
-import { Button, Form, Select, Spin, Typography, message } from "antd";
+import { Button, Flex, Form, Select, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance from "../../../config/axiosConfig";
 import { SshKey, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -68,9 +69,11 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        SSH Key
-      </Typography.Title>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
+        title="SSH Key"
+        description="Select the SSH key this workspace uses to fetch private modules and repositories."
+      />
       <Text type="secondary">
         Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
         not used for cloning the workspace VCS repository or for provisioner connections.
@@ -109,9 +112,11 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
             </Form.Item>
 
             <Form.Item>
-              <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
-                Update SSH key
-              </Button>
+              <Flex justify="flex-end">
+                <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
+                  Update SSH key
+                </Button>
+              </Flex>
             </Form.Item>
           </Form>
         </SettingsSection>

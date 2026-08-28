@@ -1,12 +1,24 @@
 import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  Collapse,
+  message,
+  Radio,
+  RadioChangeEvent,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { AxiosResponse } from "axios";
-import { DateTime } from "luxon";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
-import WorkspaceStatusTag from "../../modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
@@ -26,6 +38,7 @@ import {
   normalizeStructuredPlanOutput,
   normalizeUITemplates,
 } from "./structuredPlan";
+import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   jobId: string;
@@ -154,9 +167,9 @@ export const DetailsJob = ({ jobId }: Props) => {
       <Alert
         type="error"
         showIcon
-        message="Run stopped before execution"
+        title="Run stopped before execution"
         description={
-          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          <Space orientation="vertical" size="small" style={{ width: "100%" }}>
             <Typography.Text>{guard.title}</Typography.Text>
             {guard.variables.length > 0 && (
               <Space size={[8, 8]} wrap>
@@ -181,7 +194,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <Alert
         type="warning"
         showIcon
-        message={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
+        title={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
         description={prCommentError}
       />
     );
@@ -355,10 +368,9 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(
-        `organization/${organizationId}/job/${jobId}?include=step,workspace`,
-        { signal }
-      );
+      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
+        signal,
+      });
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -457,8 +469,14 @@ export const DetailsJob = ({ jobId }: Props) => {
       // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
       // soon as the executor emits them. Replacing wholesale on every 5s poll would intermittently
       // wipe out a step's just-pushed live data with a stale snapshot that hasn't caught up yet.
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput) }));
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput),
+      }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput),
+      }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
@@ -522,20 +540,26 @@ export const DetailsJob = ({ jobId }: Props) => {
     setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(liveStructuredOutput.jobDiagnostics) }));
 
     if (liveStructuredOutput.phase === "plan") {
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(liveStructuredOutput.changes) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(liveStructuredOutput.changes),
+      }));
     } else {
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(liveStructuredOutput.changes) }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(liveStructuredOutput.changes),
+      }));
     }
   }, [liveStructuredOutput]);
 
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
-        <Spin spinning={true} tip="Loading Job...">
+        <Spin spinning={true} description="Loading Job...">
           <p style={{ marginTop: "50px" }}></p>
         </Spin>
       ) : (
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           {(() => {
             const guard = parseIncompleteVariableGuard(job.data.attributes.output);
 
@@ -561,9 +585,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                   <span>
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
-                    {job.data.attributes.createdDate
-                      ? DateTime.fromISO(job.data.attributes.createdDate || "").toRelative()
-                      : ""}
+                    {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
                   </span>
                 ),
                 children: (

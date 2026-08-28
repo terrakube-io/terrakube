@@ -63,7 +63,7 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       sorter: (a: FlatModule, b: FlatModule) => (a.downloadQuantity ?? 0) - (b.downloadQuantity ?? 0),
       render: (count: number) => (
         <span>
-          <DownloadOutlined style={{ marginRight: 6, color: "#8c97a8" }} />
+          <DownloadOutlined style={{ marginRight: 6, color: "var(--ant-color-text-secondary)" }} />
           {count ?? 0}
         </span>
       ),

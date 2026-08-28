@@ -1,4 +1,4 @@
-import { Button, Empty, Flex, Space } from "antd";
+import { Button, Flex, Space } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -8,9 +8,10 @@ import { OrganizationModel } from "./types";
 import { ErrorInformation } from "@/modules/api/types";
 import OrganizationGrid from "./components/OrganizationGrid/OrganizationGrid";
 import OrganizationTable from "./components/OrganizationTable/OrganizationTable";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
-import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 export default function OrganizationsPickerPage() {
   const [organizations, setOrganizations] = useState<OrganizationModel[]>([]);
@@ -108,15 +109,11 @@ export default function OrganizationsPickerPage() {
     >
       {!loading && organizations.length === 0 && (
         <Flex justify="center">
-          <Empty
-            className="page-wrapper-no-content"
-            style={{ textAlign: "center" }}
-            description="You have not created any organizations yet. Create one now to get stared with Terrakube"
-          >
+          <EmptyState description="You have not created any organizations yet. Create one now to get started with Terrakube.">
             <Button type="primary">
               <Link to="/organizations/create">Create a new organization</Link>
             </Button>
-          </Empty>
+          </EmptyState>
         </Flex>
       )}
       {!loading && organizations.length > 0 && listViewMode === "compact" && (
