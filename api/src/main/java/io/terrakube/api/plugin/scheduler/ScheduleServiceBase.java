@@ -15,6 +15,7 @@ import org.quartz.SchedulerException;
 import org.quartz.SimpleScheduleBuilder;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
+import org.quartz.TriggerKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -99,12 +100,38 @@ public abstract class ScheduleServiceBase {
         Trigger trigger = triggerBuilder.forJob(jobDetail)
                 .withIdentity(getJobPrefix() + id)
                 .withDescription(id)
-                .withSchedule(SimpleScheduleBuilder.repeatSecondlyForever(frequencyInSeconds)
-                        .withMisfireHandlingInstructionFireNow())
+                .withSchedule(repeatingSchedule(frequencyInSeconds))
                 .build();
 
         log.info("Create {} Trigger {}", getJobType(), jobDetail.getKey());
         scheduler.scheduleJob(jobDetail, trigger);
+    }
+
+    private SimpleScheduleBuilder repeatingSchedule(int frequencyInSeconds) {
+        return SimpleScheduleBuilder.repeatSecondlyForever(frequencyInSeconds)
+                .withMisfireHandlingInstructionFireNow();
+    }
+
+    /**
+     * Swaps the trigger of an existing job in one operation. {@link #createTask(int, String, boolean)}
+     * deletes the job first, so a failure between the two steps loses the schedule for good.
+     *
+     * <p>No existence pre-check: rescheduleJob does that itself and returns null when there is none.
+     */
+    public void rescheduleTask(int frequencyInSeconds, String id) throws SchedulerException {
+        TriggerKey triggerKey = TriggerKey.triggerKey(getJobPrefix() + id);
+        Trigger trigger = TriggerBuilder.newTrigger()
+                .startAt(Date.from(Instant.now().plusSeconds(frequencyInSeconds)))
+                .forJob(JobKey.jobKey(getJobPrefix() + id))
+                .withIdentity(triggerKey)
+                .withDescription(id)
+                .withSchedule(repeatingSchedule(frequencyInSeconds))
+                .build();
+
+        log.info("Reschedule {} Trigger {}", getJobType(), triggerKey);
+        if (scheduler.rescheduleJob(triggerKey, trigger) == null) {
+            log.warn("No {} trigger to reschedule for {}", getJobType(), id);
+        }
     }
 
     public void deleteTask(String id) throws SchedulerException {
