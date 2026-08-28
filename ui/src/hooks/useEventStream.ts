@@ -12,6 +12,10 @@ type UseEventStreamOptions<T> = {
   // accumulated log through ansi-to-react) once per line during a chatty apply. Left unset,
   // behavior is identical to before this existed: one setValue per message.
   flushIntervalMs?: number;
+  // Fired with { failed: true } once the reconnect backoff has grown to its ceiling (repeated
+  // failures), and { failed: false } again on the next successful message. Lets a consumer fall
+  // back to polling - see LiveTerminalOutput.
+  onStatus?: (status: { failed: boolean }) => void;
 };
 
 const INITIAL_BACKOFF_MS = 1000;
@@ -21,7 +25,7 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export function useEventStream<T>({ url, enabled, initial, reduce, flushIntervalMs }: UseEventStreamOptions<T>): T {
+export function useEventStream<T>({ url, enabled, initial, reduce, flushIntervalMs, onStatus }: UseEventStreamOptions<T>): T {
   const [value, setValue] = useState<T>(initial);
 
   useEffect(() => {
@@ -34,6 +38,7 @@ export function useEventStream<T>({ url, enabled, initial, reduce, flushInterval
     let cancelled = false;
     let retryTimeout: ReturnType<typeof setTimeout> | undefined;
     let backoffMs = INITIAL_BACKOFF_MS;
+    let reportedFailed = false;
     let lastEventId: string | undefined;
     let controller = new AbortController();
 
@@ -65,6 +70,10 @@ export function useEventStream<T>({ url, enabled, initial, reduce, flushInterval
         lastEventId,
         onMessage: (data, id) => {
           backoffMs = INITIAL_BACKOFF_MS;
+          if (reportedFailed) {
+            reportedFailed = false;
+            onStatus?.({ failed: false });
+          }
           if (id != null) {
             lastEventId = id;
           }
@@ -88,6 +97,10 @@ export function useEventStream<T>({ url, enabled, initial, reduce, flushInterval
           }
           retryTimeout = setTimeout(() => {
             backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+            if (backoffMs >= MAX_BACKOFF_MS && !reportedFailed) {
+              reportedFailed = true;
+              onStatus?.({ failed: true });
+            }
             connect();
           }, backoffMs);
         })

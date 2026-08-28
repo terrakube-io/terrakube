@@ -1,7 +1,8 @@
-import { CopyOutlined, DownloadOutlined, ExportOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
+import { CopyOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
 import { message, Tooltip } from "antd";
-import Ansi from "ansi-to-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useAnsiLines } from "./ansiChunks";
+import { LogViewport } from "./LogViewport";
 import { stripAnsi } from "./stripAnsi";
 import "./TerminalOutput.css";
 
@@ -9,10 +10,21 @@ type Props = {
   outputLog: string;
   stepName: string;
   isRunning: boolean;
+  truncated?: boolean;
+  emptyLabel?: string;
+  error?: boolean;
+  onRetry?: () => void;
 };
 
-export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+export const TerminalOutput = ({
+  outputLog,
+  stepName,
+  isRunning,
+  truncated = false,
+  emptyLabel = "(no output)",
+  error = false,
+  onRetry,
+}: Props) => {
   const [followEnabled, setFollowEnabled] = useState(true);
 
   useEffect(() => {
@@ -21,11 +33,8 @@ export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
     }
   }, [isRunning]);
 
-  useEffect(() => {
-    if (followEnabled && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [outputLog, followEnabled]);
+  const lines = useAnsiLines(outputLog);
+  const isEmpty = !error && outputLog.length === 0;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(stripAnsi(outputLog)).then(
@@ -55,7 +64,7 @@ export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
 
   return (
     <div className="terminal-wrapper">
-      <div className="terminal-container" ref={containerRef}>
+      <div className="terminal-container">
         <div className="terminal-toolbar">
           <Tooltip title="Auto-scroll to bottom">
             <button
@@ -82,10 +91,32 @@ export const TerminalOutput = ({ outputLog, stepName, isRunning }: Props) => {
             </button>
           </Tooltip>
         </div>
-        <div className="terminal-content">
-          {/* @ts-ignore */}
-          {Ansi.default ? <Ansi.default>{outputLog}</Ansi.default> : <Ansi>{outputLog}</Ansi>}
-        </div>
+
+        {truncated && (
+          <div className="terminal-notice">
+            Earlier output truncated — use Download for the full log.
+          </div>
+        )}
+
+        {error ? (
+          <div className="terminal-notice terminal-notice--error">
+            <span>Could not load this step&rsquo;s log.</span>
+            {onRetry && (
+              <button type="button" className="terminal-toolbar-btn" onClick={onRetry}>
+                <ReloadOutlined /> Retry
+              </button>
+            )}
+          </div>
+        ) : isEmpty ? (
+          <div className="terminal-content terminal-content--empty">{emptyLabel}</div>
+        ) : (
+          <LogViewport
+            className="terminal-content terminal-viewport"
+            lines={lines}
+            followTail={followEnabled}
+            onFollowChange={setFollowEnabled}
+          />
+        )}
       </div>
     </div>
   );
