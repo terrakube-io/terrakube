@@ -6,7 +6,8 @@ import {
   PlusOutlined,
   QuestionCircleOutlined,
 } from "@ant-design/icons";
-import { Editor, type OnMount } from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
+import { CodeEditor } from "@/components/forms/CodeEditor";
 import {
   Alert,
   Button,
@@ -22,14 +23,12 @@ import {
   Table,
   Tag,
   Tooltip,
-  theme,
 } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -84,7 +83,6 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   const [actionContent, setActionContent] = useState<string>("");
   const [form] = Form.useForm();
   const editorRef = useRef<IStandaloneCodeEditor>(null);
-  const { token } = theme.useToken();
 
   const ACTIONS_COLUMNS = () => [
     {
@@ -545,15 +543,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
               title="Action Code"
               description="A JavaScript function equivalent to a React component. It receives a context object whose content varies by type, please check the docs."
             >
-              <div className="editor">
-                <Editor
-                  height="40vh"
-                  onMount={handleEditorDidMount}
-                  defaultLanguage="javascript"
-                  theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                  options={monacoOptions}
-                />
-              </div>
+              <CodeEditor height="40vh" onMount={handleEditorDidMount} defaultLanguage="javascript" />
             </SettingsSection>
 
             <Flex justify="flex-end" style={{ maxWidth: 960 }}>

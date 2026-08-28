@@ -1,11 +1,11 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Alert, Button, Col, Flex, Form, Input, message, Row, Space, theme } from "antd";
+import type { OnMount, OnValidate } from "@monaco-editor/react";
+import { CodeEditor } from "@/components/forms/CodeEditor";
+import { Alert, Button, Col, Flex, Form, Input, message, Row, Space } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Template } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
@@ -39,7 +39,6 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   const [template, setTemplate] = useState<Template>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { token } = theme.useToken();
 
   function handleEditorDidMount(editor: IStandaloneCodeEditor) {
     editorRef.current = editor;
@@ -146,17 +145,13 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
             title="Template Definition"
             description="The YAML flow executed by this template. You can run any tool before or after terraform plan, apply or destroy."
           >
-            <div className="editor">
-              <Editor
-                height="45vh"
-                onMount={handleEditorDidMount}
-                onValidate={handleEditorValidation}
-                defaultLanguage="yaml"
-                defaultValue={tcl}
-                theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                options={monacoOptions}
-              />
-            </div>
+            <CodeEditor
+              height="45vh"
+              onMount={handleEditorDidMount}
+              onValidate={handleEditorValidation}
+              defaultLanguage="yaml"
+              defaultValue={tcl}
+            />
           </SettingsSection>
 
           <Flex justify="flex-end" style={{ maxWidth: 960 }}>
