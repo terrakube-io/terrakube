@@ -56,7 +56,7 @@ const VARIABLES_COLUMS = (
         <Tooltip
           title={record.description}
           placement="topLeft"
-          overlayStyle={{ width: 400, wordBreak: "break-word" }}
+          styles={{ root: { width: 400, wordBreak: "break-word" } }}
           overlayClassName="tooltip"
           trigger={["hover"]}
         >
@@ -142,7 +142,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
         <Tooltip
           title={record.description}
           placement="topLeft"
-          overlayStyle={{ width: 400, wordBreak: "break-word" }}
+          styles={{ root: { width: 400, wordBreak: "break-word" } }}
           overlayClassName="tooltip"
           trigger={["hover"]}
         >
@@ -210,7 +210,7 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
         <Tooltip
           title={record.description}
           placement="topLeft"
-          overlayStyle={{ width: 400, wordBreak: "break-word" }}
+          styles={{ root: { width: 400, wordBreak: "break-word" } }}
           overlayClassName="tooltip"
           trigger={["hover"]}
         >

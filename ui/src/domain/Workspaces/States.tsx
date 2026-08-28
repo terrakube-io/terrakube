@@ -108,7 +108,7 @@ export const States = ({
           markerStart: {
             type: MarkerType.Arrow,
           },
-          style: { stroke: "#1890ff" },
+          style: { stroke: "var(--tk-accent)" },
         });
       });
 

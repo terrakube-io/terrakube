@@ -111,7 +111,7 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
                 >
                   <Space size={16}>
                     {item.latestVersion && (
-                      <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+                      <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                         {formatVersion(item.latestVersion)}
                       </Typography.Text>
                     )}
@@ -129,7 +129,9 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
                         {source.repoLabel}
                       </Typography.Link>
                     )}
-                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>provider</Typography.Text>
+                    <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+                      provider
+                    </Typography.Text>
                   </Space>
                 </div>
               </Card>

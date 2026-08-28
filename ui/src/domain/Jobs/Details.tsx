@@ -1,5 +1,18 @@
 import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
-import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  Collapse,
+  message,
+  Radio,
+  RadioChangeEvent,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { AxiosResponse } from "axios";
 import parse from "html-react-parser";
 import { DateTime } from "luxon";
@@ -423,10 +436,9 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(
-        `organization/${organizationId}/job/${jobId}?include=step,workspace`,
-        { signal }
-      );
+      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
+        signal,
+      });
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -461,8 +473,8 @@ export const DetailsJob = ({ jobId }: Props) => {
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
               : stepItem.attributes.status === "running"
-              ? ""
-              : await fetchStepLog(stepItem),
+                ? ""
+                : await fetchStepLog(stepItem),
         }))
       );
 
@@ -534,8 +546,14 @@ export const DetailsJob = ({ jobId }: Props) => {
       // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
       // soon as the executor emits them. Replacing wholesale on every 5s poll would intermittently
       // wipe out a step's just-pushed live data with a stale snapshot that hasn't caught up yet.
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput) }));
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput),
+      }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput),
+      }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
@@ -600,9 +618,15 @@ export const DetailsJob = ({ jobId }: Props) => {
     setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(liveStructuredOutput.jobDiagnostics) }));
 
     if (liveStructuredOutput.phase === "plan") {
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(liveStructuredOutput.changes) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(liveStructuredOutput.changes),
+      }));
     } else {
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(liveStructuredOutput.changes) }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(liveStructuredOutput.changes),
+      }));
     }
   }, [liveStructuredOutput]);
 

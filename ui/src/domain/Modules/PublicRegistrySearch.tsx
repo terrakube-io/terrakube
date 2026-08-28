@@ -532,15 +532,17 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         >
           <Space size={16}>
             <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-              <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
+              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                 {formatDownloads(provider.downloads)}
               </Typography.Text>
             </Space>
           </Space>
           <Space size={6}>
             {renderProviderLogo(provider)}
-            <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>provider</Typography.Text>
+            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+              provider
+            </Typography.Text>
           </Space>
         </div>
       </Card>
@@ -609,15 +611,17 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         >
           <Space size={16}>
             <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-              <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
+              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                 {formatDownloads(module.downloads)}
               </Typography.Text>
             </Space>
           </Space>
           <Space size={6}>
             {renderModuleProviderIcon(module.provider)}
-            <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{module.provider}</Typography.Text>
+            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+              {module.provider}
+            </Typography.Text>
           </Space>
         </div>
       </Card>
@@ -774,7 +778,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                 </Typography.Text>
                 {loadingVersions ? (
                   <div style={{ textAlign: "center", padding: 20 }}>
-                    <Spin tip="Loading versions..." />
+                    <Spin />
                   </div>
                 ) : (
                   <Select

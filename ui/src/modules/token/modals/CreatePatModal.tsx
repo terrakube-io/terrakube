@@ -6,13 +6,14 @@ import { CreateTokenForm, CreatedToken } from "@/modules/token/types";
 import "./CreatePatModal.css";
 
 type Props = {
-  visible: boolean;
+  open: boolean;
   onCancel: () => void;
   onCreated: () => void;
   action: (data?: CreateTokenForm) => Promise<ApiResponse<CreatedToken>>;
+  shortlivedTokens?: boolean;
 };
 
-export default function CreatePatModal({ onCancel, action, onCreated, visible }: Props) {
+export default function CreatePatModal({ onCancel, action, onCreated, open, shortlivedTokens }: Props) {
   const [form] = Form.useForm<CreateTokenForm>();
   const [tokenValue, setTokenValue] = useState<string>();
   const [expiryDate, setExpiryDate] = useState<string>("");
@@ -61,9 +62,9 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible }:
   return (
     <Modal
       className="create-pat-modal"
-      open={visible}
+      open={open}
       title="Creating a user token"
-      destroyOnClose
+      destroyOnHidden
       onCancel={onCancel}
       footer={
         tokenValue === undefined ? (
@@ -100,7 +101,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, visible }:
                 <Select.Option value={90}>90 days</Select.Option>
                 <Select.Option value={120}>120 days</Select.Option>
                 <Select.Option value={365}>1 year</Select.Option>
-                <Select.Option value={0}>Never</Select.Option>
+                {!shortlivedTokens && <Select.Option value={0}>Never</Select.Option>}
               </Select>
             </Form.Item>
 

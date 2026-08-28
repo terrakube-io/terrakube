@@ -1184,7 +1184,7 @@ export const ImportWorkspace = () => {
             size="small"
             title="Review import details for this workspace"
             style={{ borderRadius: "12px" }}
-            bodyStyle={{ paddingTop: "12px" }}
+            styles={{ body: { paddingTop: "12px" } }}
           >
             <Typography.Text type="secondary">
               Match each Terraform Cloud variable collection to an existing Terrakube variable collection. You can also
@@ -1292,7 +1292,7 @@ export const ImportWorkspace = () => {
             size="small"
             title="Sensitive variables that need a value"
             style={{ borderRadius: "12px" }}
-            bodyStyle={{ paddingTop: "12px" }}
+            styles={{ body: { paddingTop: "12px" } }}
           >
             <Typography.Text type="secondary">
               Terraform Cloud does not expose sensitive values during import. Leave a value blank to import that

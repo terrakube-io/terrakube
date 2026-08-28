@@ -140,7 +140,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
       {error ? (
         <AccessDeniedAlert description={error} />
       ) : loading || organization === undefined ? (
-        <Spin tip="Loading Organization Settings..." />
+        <Spin />
       ) : (
         <Spin spinning={waiting}>
           <Form

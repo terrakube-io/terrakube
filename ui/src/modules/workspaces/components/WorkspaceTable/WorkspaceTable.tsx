@@ -86,8 +86,8 @@ function SortableHeader({
     >
       {label}
       <span className="workspace-sort-carets">
-        <CaretUpOutlined style={{ color: isAsc ? "#1890ff" : undefined }} />
-        <CaretDownOutlined style={{ color: isDesc ? "#1890ff" : undefined }} />
+        <CaretUpOutlined style={{ color: isAsc ? "var(--tk-accent)" : undefined }} />
+        <CaretDownOutlined style={{ color: isDesc ? "var(--tk-accent)" : undefined }} />
       </span>
     </span>
   );

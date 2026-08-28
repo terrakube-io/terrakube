@@ -155,7 +155,7 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
       >
         <Space direction="vertical">
           <div>
-            <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "#1677ff" }} />
+            <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "var(--tk-accent)" }} />
             <Typography.Text type="secondary">
               You will be redirected to the run details page to see this job executed.
             </Typography.Text>

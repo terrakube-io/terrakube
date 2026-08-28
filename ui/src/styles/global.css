@@ -13,7 +13,7 @@
 }
 
 [data-theme="dark"] a {
-  color: #58a6ff;
+  color: var(--tk-accent);
   text-decoration: none;
   transition: color 0.2s ease;
 }
@@ -149,7 +149,7 @@
 }
 
 [data-theme="dark"] .ant-menu-item-selected::after {
-  border-right: 3px solid #58a6ff; /* Accent indicator */
+  border-right: 3px solid var(--tk-accent); /* Accent indicator */
 }
 
 /* --- Inputs & Forms --- */
@@ -184,8 +184,8 @@
 [data-theme="dark"] .ant-input:focus,
 [data-theme="dark"] .ant-input-focused,
 [data-theme="dark"] .ant-select-focused .ant-select-selector {
-  border-color: #58a6ff !important;
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3) !important; /* Blue glow */
+  border-color: var(--tk-accent) !important;
+  box-shadow: 0 0 0 2px var(--tk-accent-tint) !important; /* Blue glow */
 }
 
 [data-theme="dark"] .ant-input-group-addon {
@@ -299,7 +299,7 @@
 }
 
 [data-theme="dark"] .ant-dropdown-menu-item:hover {
-  background-color: #1f6feb; /* GitHub blue hover */
+  background-color: var(--tk-accent); /* GitHub blue hover */
   color: #ffffff;
 }
 
@@ -325,7 +325,7 @@
 }
 
 [data-theme="dark"] .ant-tabs-ink-bar {
-  background: #f78166; /* Orange accent like GitHub actions or use primary */
+  background: var(--tk-accent);
 }
 
 /* --- Tags & Badges --- */
@@ -347,7 +347,7 @@
 [data-theme="dark"] .ant-tag-blue {
   background: rgba(56, 139, 253, 0.15);
   border-color: rgba(56, 139, 253, 0.4);
-  color: #58a6ff;
+  color: var(--tk-accent);
 }
 
 [data-theme="dark"] .ant-tag-green {
@@ -418,7 +418,7 @@
 /* --- Spinners --- */
 
 [data-theme="dark"] .ant-spin-dot-item {
-  background-color: #58a6ff;
+  background-color: var(--tk-accent);
 }
 
 /* --- Empty State --- */
@@ -450,23 +450,23 @@
 }
 
 [data-theme="dark"] .ant-steps-item-process .ant-steps-item-icon {
-  background-color: #1f6feb;
-  border-color: #1f6feb;
+  background-color: var(--tk-accent);
+  border-color: var(--tk-accent);
 }
 
 /* --- Premium Glow Effects (Specific Components) --- */
 
 /* Add a subtle glow to primary buttons on hover */
 [data-theme="dark"] .ant-btn-primary:hover {
-  box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
+  box-shadow: 0 0 12px var(--tk-accent-tint);
 }
 
 /* Add a subtle glow to active inputs */
 [data-theme="dark"] .ant-input:focus,
 [data-theme="dark"] .ant-select-focused .ant-select-selector {
   box-shadow:
-    0 0 0 2px rgba(88, 166, 255, 0.2),
-    0 0 8px rgba(88, 166, 255, 0.1) !important;
+    0 0 0 2px var(--tk-accent-tint),
+    0 0 8px var(--tk-accent-tint) !important;
 }
 
 /* Card hover effect */

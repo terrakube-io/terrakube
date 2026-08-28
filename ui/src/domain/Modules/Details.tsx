@@ -333,7 +333,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "#1677ff",
+                              color: "var(--tk-accent)",
                               cursor: "pointer",
                             }}
                           >

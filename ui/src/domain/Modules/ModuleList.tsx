@@ -97,15 +97,17 @@ export const ModuleList = ({ modules, searchFilter }: Props) => {
               >
                 <Space size={16}>
                   <Space size={4}>
-                    <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+                    <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
+                    <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                       {item.downloadQuantity}
                     </Typography.Text>
                   </Space>
                 </Space>
                 <Space size={6}>
                   {renderLogo(item.provider)}
-                  <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{item.provider}</Typography.Text>
+                  <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+                    {item.provider}
+                  </Typography.Text>
                 </Space>
               </div>
             </Card>

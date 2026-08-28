@@ -430,7 +430,7 @@ export function parseOldState(state: any) {
     state?.resources.forEach((value: any) => {
       const moduleName = value.module != null ? value.module : "root_module";
       const provider = value.provider
-        ? value.provider.replace('provider["', "").replace('provider[', "").replace('"]', "").replace(']', "")
+        ? value.provider.replace('provider["', "").replace("provider[", "").replace('"]', "").replace("]", "")
         : "";
       if (value.instances != null && value.instances.length > 0) {
         value.instances.forEach((instance: any) => {

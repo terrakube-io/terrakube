@@ -63,7 +63,7 @@ export const Tokens = () => {
 
       {loading && (
         <Flex align="center" className="loader" vertical gap="middle">
-          <Spin tip="Loading" size="large" />
+          <Spin size="large" />
           <Typography.Text>Loading tokens...</Typography.Text>
         </Flex>
       )}
@@ -78,7 +78,7 @@ export const Tokens = () => {
 
       {visible && (
         <CreatePatModal
-          visible={visible}
+          open={visible}
           onCancel={() => setVisible(false)}
           onCreated={() => loadTokens()}
           action={(values?: CreateTokenForm) => userService.createPersonalAccessToken(values!)}

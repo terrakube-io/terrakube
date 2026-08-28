@@ -296,7 +296,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
           )}
 
           <CreatePatModal
-            visible={visible}
+            open={visible}
             onCancel={() => setVisible(false)}
             onCreated={() => loadTokens(teamName)}
             action={onCreateToken}

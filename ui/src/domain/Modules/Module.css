@@ -49,7 +49,7 @@
 }
 
 [data-theme="dark"] .module-card-name {
-  color: #58a6ff;
+  color: var(--tk-accent);
 }
 
 /* Dark mode for module card description */
@@ -278,4 +278,3 @@
   background-color: var(--border-color);
   margin: 24px 0;
 }
-
