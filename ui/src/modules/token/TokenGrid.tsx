@@ -4,7 +4,7 @@ import { UserToken } from "@/modules/user/types";
 import TokenGridItem from "./TokenGridItem";
 import "./TokenList.css";
 import useApiRequest from "@/modules/api/useApiRequest";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   tokens: UserToken[];

@@ -1,8 +1,8 @@
 import { CloseCircleOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
 import { Typography } from "antd";
-import { CrudFormModal } from "@/components/CrudFormModal";
-import { VariableFormFields } from "@/components/VariableFormFields";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import { VariableFormFields } from "@/components/forms/VariableFormFields";
 
 export type CollectionVariableFormValues = {
   key: string;

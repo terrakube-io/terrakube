@@ -27,14 +27,14 @@ import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
 import { useNavigate, useParams } from "react-router-dom";
-import LoadingFallback from "@/components/LoadingFallback";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
-import VcsLogo from "@/components/VcsLogo";
+import VcsLogo from "@/components/display/VcsLogo";
 import { relativeTime } from "@/modules/utils/dates";
 
 const Markdown = lazy(async () => {

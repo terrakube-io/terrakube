@@ -24,8 +24,8 @@ import { JobStatus, NotificationChannelType, NotificationMessageStyle, Template 
 import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgId: string;

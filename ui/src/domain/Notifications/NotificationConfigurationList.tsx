@@ -7,10 +7,10 @@ import { apiPost } from "@/modules/api/apiWrapper";
 import { NotificationConfiguration } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgId: string;

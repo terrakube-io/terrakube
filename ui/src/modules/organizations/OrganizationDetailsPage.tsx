@@ -1,5 +1,5 @@
 import { Button, Flex, List, Space } from "antd";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
@@ -13,8 +13,8 @@ import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionType
 import { TagModel } from "./types";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
 import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/WorkspaceTable";
-import ListViewToggle from "@/components/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/components/ListViewToggle/listViewPreference";
+import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import { useWorkspaceFilterState } from "@/modules/workspaces/hooks/useWorkspaceFilterState";
 import { filterWorkspaces, WorkspaceStatusFilter } from "@/modules/workspaces/utils/workspaceFilter";
 import {

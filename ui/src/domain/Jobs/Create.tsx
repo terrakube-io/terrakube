@@ -6,7 +6,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance from "../../config/axiosConfig";
 import { Resource, Template } from "../types";
 import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
-import LoadingFallback from "@/components/LoadingFallback";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 const validateMessages = { required: "${label} is required!" };
 

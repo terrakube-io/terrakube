@@ -2,7 +2,7 @@ import { GitlabOutlined, GithubOutlined } from "@ant-design/icons";
 import { IconContext } from "react-icons";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
-import { VcsType } from "../../domain/types";
+import { VcsType } from "@/domain/types";
 
 type Props = {
   type?: VcsType;

@@ -5,10 +5,10 @@ import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
 import "./Settings.css";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import GlobalVariableFormModal from "./components/GlobalVariableFormModal";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   managePermission?: boolean;

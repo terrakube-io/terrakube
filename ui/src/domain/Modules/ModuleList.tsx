@@ -7,7 +7,7 @@ import { VscAzure } from "react-icons/vsc";
 import { Link, useParams } from "react-router-dom";
 import { FlatModule } from "../types";
 import "./Module.css";
-import { RegistryCard } from "@/components/RegistryCard";
+import { RegistryCard } from "@/components/display/RegistryCard";
 
 type Params = {
   orgid: string;

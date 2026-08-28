@@ -6,9 +6,9 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
 import "./Settings.css";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const roleColors: Record<string, string> = {
   admin: "red",

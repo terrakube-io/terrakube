@@ -22,7 +22,7 @@ import {
   message,
   theme,
 } from "antd";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import workspaceAccessService, {
@@ -30,9 +30,9 @@ import workspaceAccessService, {
   WorkspaceAccessPermissions,
 } from "@/modules/workspaces/workspaceAccessService";
 import { Workspace } from "../../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import { EmptyState } from "@/components/EmptyState";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Props = {
   workspace: Workspace;

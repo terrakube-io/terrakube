@@ -62,13 +62,13 @@ import { Variables } from "../Workspaces/Variables";
 import { getServiceIcon } from "./Icons.jsx";
 import { getIaCIconById, getIaCNameById } from "./Workspaces";
 import "./Workspaces.css";
-import LoadingFallback from "@/components/LoadingFallback";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import RunList from "@/modules/workspaces/components/RunList";
-import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
-import VcsLogo from "@/components/VcsLogo";
+import VcsLogo from "@/components/display/VcsLogo";
 import { relativeTime } from "@/modules/utils/dates";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));

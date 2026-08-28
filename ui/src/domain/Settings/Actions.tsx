@@ -30,11 +30,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { Action } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import LoadingFallback from "@/components/LoadingFallback";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 const validateMessages: any = {
   required: "${label} is required!",

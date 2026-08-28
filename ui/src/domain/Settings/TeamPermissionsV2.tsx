@@ -8,7 +8,7 @@ import {
   CodeOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 
 type TeamPermissionsV2Props = {

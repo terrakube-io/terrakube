@@ -2,14 +2,14 @@ import { Button, Flex, Form, Input, Modal, Table, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import { EmptyState } from "@/components/EmptyState";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Props = {
   organizationName: string;

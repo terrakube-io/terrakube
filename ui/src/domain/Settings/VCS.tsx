@@ -7,13 +7,13 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { VcsModel, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
 import { EditVCS } from "./EditVCS";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import VcsLogo from "@/components/VcsLogo";
-import LoadingFallback from "@/components/LoadingFallback";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import VcsLogo from "@/components/display/VcsLogo";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 const { Paragraph } = Typography;
 
 type Props = {

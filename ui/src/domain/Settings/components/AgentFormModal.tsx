@@ -1,6 +1,6 @@
 import type { FormInstance } from "antd";
 import { Form, Input } from "antd";
-import { CrudFormModal } from "@/components/CrudFormModal";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
 
 export type AddAgentFormValues = {
   name?: string;

@@ -5,8 +5,8 @@ import { Link, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "./types";
 import "../Modules/Module.css";
-import { RegistryCard } from "@/components/RegistryCard";
-import { EmptyState } from "@/components/EmptyState";
+import { RegistryCard } from "@/components/display/RegistryCard";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Params = {
   orgid: string;

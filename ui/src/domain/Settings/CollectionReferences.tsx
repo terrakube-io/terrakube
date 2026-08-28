@@ -3,9 +3,9 @@ import { Button, Form, Input, message, Select, Spin, Table, Typography } from "a
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import CollectionReferenceFormModal, { ReferenceFormValues } from "./components/CollectionReferenceFormModal";
 
 // Type definitions for Collection References

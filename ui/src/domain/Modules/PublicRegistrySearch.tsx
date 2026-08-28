@@ -13,7 +13,7 @@ import { IconContext } from "react-icons";
 import { FaAws, FaGoogle } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";

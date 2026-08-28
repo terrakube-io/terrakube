@@ -2,10 +2,10 @@ import { Button, Col, Form, Input, Row, Select, Space, Spin, Table, Tag, Typogra
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
 
 // Type definitions

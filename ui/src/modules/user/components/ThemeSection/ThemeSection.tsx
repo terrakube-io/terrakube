@@ -2,7 +2,7 @@ import { Select, Space, Typography } from "antd";
 import { ColorSchemeOption, ThemeMode } from "../../../../config/themeConfig";
 import { useTheme } from "../../../../context/ThemeContext";
 import "./ThemeSection.css";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const ColorBox = ({ color }: { color: string }) => (
   <span className="color-box" style={{ backgroundColor: color }}></span>

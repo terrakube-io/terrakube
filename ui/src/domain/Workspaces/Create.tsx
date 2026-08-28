@@ -43,10 +43,10 @@ import {
 import { compareVersions, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
-import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import VcsLogo from "@/components/VcsLogo";
-import LoadingFallback from "@/components/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import VcsLogo from "@/components/display/VcsLogo";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 const validateMessages = {
   required: "${label} is required!",

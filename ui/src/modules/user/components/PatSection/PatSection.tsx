@@ -3,12 +3,12 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { UserToken } from "@/modules/user/types";
 import "./PatSection.css";
-import CreatePatModal from "@/components/CreatePatModal";
+import CreatePatModal from "@/components/modals/CreatePatModal";
 import { CreateTokenForm } from "@/modules/token/types";
 import userService from "@/modules/user/userService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import TokenGrid from "@/modules/token/TokenGrid";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Params = {
   orgid: string;

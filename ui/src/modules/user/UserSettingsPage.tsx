@@ -1,7 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { Tokens } from "./components/PatSection/PatSection";
 import { ThemeSection } from "./components/ThemeSection/ThemeSection";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 
 export const UserSettingsPage = () => {
   const location = useLocation();

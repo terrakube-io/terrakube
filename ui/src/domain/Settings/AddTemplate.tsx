@@ -7,10 +7,10 @@ import { useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
 import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { TemplateAttributes } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 const { Meta } = Card;
 const validateMessages = {
   required: "${label} is required!",

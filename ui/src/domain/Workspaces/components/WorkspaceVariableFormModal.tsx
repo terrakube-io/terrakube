@@ -1,7 +1,7 @@
 import type { FormInstance } from "antd";
 import { Typography } from "antd";
-import { CrudFormModal } from "@/components/CrudFormModal";
-import { VariableFormFields } from "@/components/VariableFormFields";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import { VariableFormFields } from "@/components/forms/VariableFormFields";
 import { CreateVariableForm, VariableCategory } from "@/domain/types";
 
 const validateMessages = {

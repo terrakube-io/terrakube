@@ -2,9 +2,9 @@ import { DownOutlined, PoweroffOutlined, SettingOutlined, UserOutlined } from "@
 import { Avatar, Dropdown } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
-import { useAuth } from "../../config/authConfig";
-import getUserFromStorage from "../../config/authUser";
+import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
+import { useAuth } from "@/config/authConfig";
+import getUserFromStorage from "@/config/authUser";
 import getGravatarUrl from "@/modules/utils/gravatar";
 import "./UserMenu.css";
 

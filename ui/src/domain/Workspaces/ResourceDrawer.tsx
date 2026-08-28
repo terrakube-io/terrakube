@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import axiosInstance from "../../config/axiosConfig";
 import { ActionWithSettings, Resource, Workspace } from "../types.js";
 import { getServiceIcon } from "./Icons.jsx";
-import LoadingFallback from "@/components/LoadingFallback";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 const ActionLoader = lazy(() => import("../../ActionLoader"));
 

@@ -22,10 +22,10 @@ import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import VcsLogo from "@/components/VcsLogo";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import VcsLogo from "@/components/display/VcsLogo";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const isValidRegexList = (str: string | undefined) => {
   if (!str) {

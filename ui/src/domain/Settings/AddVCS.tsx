@@ -17,10 +17,10 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
 import { getUiRedirectUri } from "../../config/basePath";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { PermissionErrorMessage } from "@/components/PermissionErrorMessage";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const validateMessages = {
   required: "${label} is required!",

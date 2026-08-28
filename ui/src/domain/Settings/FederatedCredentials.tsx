@@ -6,9 +6,9 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { Federated } from "../types";
 import { EditFederatedCredential } from "./EditFederatedCredential";
 import "./Settings.css";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   editorMode?: "new" | "edit";

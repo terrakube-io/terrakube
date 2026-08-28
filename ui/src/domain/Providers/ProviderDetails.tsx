@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconContext } from "react-icons";
 import { RiFolderHistoryLine } from "react-icons/ri";
 import { useNavigate, useParams } from "react-router-dom";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import { getProvider, deleteProviderCascade } from "./providerService";
 import { ProviderModel, ProviderVersionModel } from "./types";

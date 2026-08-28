@@ -8,7 +8,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import * as C2Q from "cron-to-quartz";
 import { FlatSchedule, Template } from "../types";
-import LoadingFallback from "@/components/LoadingFallback";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 type ScheduleForm = {
   templateId: string;

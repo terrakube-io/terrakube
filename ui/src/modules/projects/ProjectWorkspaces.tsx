@@ -1,10 +1,10 @@
 import { Table, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import workspaceService from "@/modules/workspaces/workspaceService";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   orgid: string;

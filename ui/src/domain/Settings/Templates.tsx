@@ -6,12 +6,12 @@ import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { AccessDeniedAlert } from "@/components/AccessDeniedAlert";
-import LoadingFallback from "@/components/LoadingFallback";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
-import DeleteConfirmationModal from "@/components/DeleteConfirmationModal/DeleteConfirmationModal";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   editorMode?: "new" | "edit";

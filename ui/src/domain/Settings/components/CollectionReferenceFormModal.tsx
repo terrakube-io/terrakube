@@ -1,6 +1,6 @@
 import type { FormInstance } from "antd";
 import { Form, Input, Select } from "antd";
-import { CrudFormModal } from "@/components/CrudFormModal";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
 
 export type ReferenceFormValues = {
   workspaceId: string;

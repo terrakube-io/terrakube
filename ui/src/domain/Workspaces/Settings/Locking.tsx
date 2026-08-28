@@ -3,8 +3,8 @@ import { Alert, Button, Form, Input, Modal, Typography, message } from "antd";
 import { useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
-import SettingsSection from "@/components/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/components/SettingsPageHeader";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const { Text } = Typography;
 

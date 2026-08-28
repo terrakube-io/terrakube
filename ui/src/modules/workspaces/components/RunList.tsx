@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter from "./RunFilter";
-import WorkspaceStatusTag from "@/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { formatDateTime } from "@/modules/utils/dates";
 
 // Storage key for persisting pagination state

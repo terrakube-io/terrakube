@@ -30,9 +30,9 @@ import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionType
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import organizationService from "@/modules/organizations/organizationService";
 import { VcsModel, VcsTypeExtended } from "../types";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
-import VcsLogo from "@/components/VcsLogo";
-import LoadingFallback from "@/components/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import VcsLogo from "@/components/display/VcsLogo";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 const { Content } = Layout;
 const validateMessages = {
   required: "${label} is required!",

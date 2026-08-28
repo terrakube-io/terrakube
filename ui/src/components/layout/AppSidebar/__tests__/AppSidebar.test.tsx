@@ -12,11 +12,11 @@ jest.mock("@/modules/organizations/organizationService", () => ({
   },
 }));
 
-jest.mock("@/components/HelpMenu", () => ({
+jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
 }));
 
-jest.mock("@/components/UserMenu", () => ({
+jest.mock("@/components/layout/UserMenu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));
 

@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ModuleList } from "./ModuleList";
 import ModuleTable from "./components/ModuleTable";
 import { ProviderList } from "../Providers/ProviderList";
@@ -17,8 +17,8 @@ import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { FlatModule, FlatProvider } from "../types";
 import { ErrorInformation } from "@/modules/api/types";
-import ListViewToggle from "@/components/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/components/ListViewToggle/listViewPreference";
+import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import type { MenuProps } from "antd";
 
 type Params = {

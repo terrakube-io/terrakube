@@ -16,7 +16,7 @@ import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
 import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
-import PageWrapper from "@/components/PageWrapper/PageWrapper";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 
 const SETTINGS_TAB_PATHS: Record<string, string> = {
   "1": "general",
