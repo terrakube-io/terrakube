@@ -14,7 +14,6 @@ import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
 
-const { Step } = Steps;
 const validateMessages = {
   required: "${label} is required!",
 };
@@ -801,10 +800,13 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           your version control system (VCS) provider.
         </Typography.Text>
       </div>
-      <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-        <Step title="Connect to VCS" />
-        <Step title="Set up provider" />
-      </Steps>
+      <Steps
+        direction="horizontal"
+        size="small"
+        current={current}
+        onChange={handleChange}
+        items={[{ title: "Connect to VCS" }, { title: "Set up provider" }]}
+      />
       {current == 0 && (
         <SettingsSection>
           <Space className="chooseType" direction="vertical">

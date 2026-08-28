@@ -368,6 +368,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       width: 120,
       render: (_: any, record: WorkspaceAccessModel) => (
         <Popconfirm
+          okButtonProps={{ danger: true }}
           title={`Remove team "${record.name}" from this workspace?`}
           onConfirm={() => onRemove(record.id, record.name)}
           okText="Yes"

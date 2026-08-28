@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { JobStatus } from "@/domain/types";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { useOrganizationJobStatusSubscription, usePolling } from "@/hooks";
@@ -31,7 +31,6 @@ type Props = {
 
 export default function OrganizationsDetailPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [sortOption, setSortOption] = useState<WorkspaceSortOption>(() => getStoredWorkspaceSortOption());
   const [tags, setTags] = useState<TagModel[]>([]);
@@ -144,10 +143,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     },
   });
 
-  const handleCreateWorkspace = () => {
-    navigate("/workspaces/create");
-  };
-
   const showGrouped = listViewMode === "compact" && filterState.groupByProject && filterState.projectId === null;
 
   return (
@@ -166,10 +161,10 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
           <Button icon={<ImportOutlined />}>
-            <Link to="/workspaces/import">Import workspaces</Link>
+            <Link to={`/organizations/${id}/workspaces/import`}>Import workspaces</Link>
           </Button>
-          <Button icon={<PlusOutlined />} type="primary" onClick={handleCreateWorkspace}>
-            New workspace
+          <Button icon={<PlusOutlined />} type="primary">
+            <Link to={`/organizations/${id}/workspaces/create`}>New workspace</Link>
           </Button>
         </Space>
       }

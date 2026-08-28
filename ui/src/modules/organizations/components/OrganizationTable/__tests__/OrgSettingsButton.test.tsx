@@ -1,16 +1,10 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import OrgSettingsButton from "../OrgSettingsButton";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 
 jest.mock("@/modules/permissions/useOrgPermissions");
 const mockUseOrgPermissions = useOrgPermissions as jest.Mock;
-
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
 
 function renderButton() {
   return render(
@@ -21,10 +15,6 @@ function renderButton() {
 }
 
 describe("OrgSettingsButton", () => {
-  beforeEach(() => {
-    mockNavigate.mockClear();
-  });
-
   it("renders nothing while permissions are loading", () => {
     mockUseOrgPermissions.mockReturnValue({ permissions: {}, loading: true });
     const { container } = renderButton();
@@ -43,10 +33,12 @@ describe("OrgSettingsButton", () => {
     expect(screen.getByLabelText("organization settings")).toBeInTheDocument();
   });
 
-  it("navigates to the organization's settings page on click without bubbling", () => {
+  it("links to the organization's settings page", () => {
     mockUseOrgPermissions.mockReturnValue({ permissions: { managePermission: true }, loading: false });
     renderButton();
-    fireEvent.click(screen.getByLabelText("organization settings"));
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/settings");
+    expect(screen.getByLabelText("organization settings").closest("a")).toHaveAttribute(
+      "href",
+      "/organizations/org-1/settings"
+    );
   });
 });

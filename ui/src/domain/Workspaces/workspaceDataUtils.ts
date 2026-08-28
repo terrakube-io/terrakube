@@ -219,9 +219,9 @@ export async function setupWorkspaceIncludes(
   setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
 
   // set state data
-  const lastState = history
-    .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
-    .reverse()[0];
+  const lastState = [...history].sort(
+    (a: FlatJobHistory, b: FlatJobHistory) => parseInt(b.jobReference) - parseInt(a.jobReference)
+  )[0];
   // reload state only if there is a new version
 
   if (currentStateId !== lastState?.id) {

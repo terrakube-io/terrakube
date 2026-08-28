@@ -1,5 +1,5 @@
 import { Table, Typography } from "antd";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "../types";
 
@@ -30,14 +30,17 @@ export default function ProviderTable({ providers, searchFilter }: Props) {
       key: "name",
       sorter: (a: FlatProvider, b: FlatProvider) => a.name.localeCompare(b.name),
       render: (name: string, record: FlatProvider) => (
-        <div>
+        <Link
+          to={`/organizations/${orgid}/registry/providers/${record.id}`}
+          style={{ color: "inherit", display: "block" }}
+        >
           <Typography.Text strong>{name}</Typography.Text>
           <div>
             <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
               {record.description || "No description provided for this provider"}
             </Typography.Text>
           </div>
-        </div>
+        </Link>
       ),
     },
     {
@@ -56,7 +59,10 @@ export default function ProviderTable({ providers, searchFilter }: Props) {
       columns={columns}
       pagination={{ defaultPageSize: 10, showSizeChanger: true }}
       onRow={(record) => ({
-        onClick: () => navigate(`/organizations/${orgid}/registry/providers/${record.id}`),
+        onClick: (event) => {
+          if ((event.target as HTMLElement).closest("a")) return;
+          navigate(`/organizations/${orgid}/registry/providers/${record.id}`);
+        },
         style: { cursor: "pointer" },
       })}
       locale={{ emptyText: "No providers match your search." }}

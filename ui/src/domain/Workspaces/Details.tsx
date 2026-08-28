@@ -169,10 +169,7 @@ export const WorkspaceDetails = ({
     token: { colorBgContainer },
   } = theme.useToken();
 
-  const handleClick = (jobid: string) => {
-    changeJob(jobid);
-    navigate(`/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`);
-  };
+  const runLink = (jobid: string) => `/organizations/${organizationId}/workspaces/${id}/runs/${jobid}`;
 
   const getOutputValueFromState = (outputName: string): string => {
     const outputValue = (contextState as any)?.values?.outputs?.[outputName];
@@ -380,7 +377,6 @@ export const WorkspaceDetails = ({
   usePolling(
     () => {
       loadWorkspace(false, false, false);
-      loadPermissionSet();
     },
     { interval: 10000, enabled: Boolean(id), immediate: false }
   );
@@ -433,11 +429,15 @@ export const WorkspaceDetails = ({
       });
   };
 
-  const loadWorkspace = (_loadVersions: boolean, _loadWebhook = false, _loadPermissionSet = false) => {
-    axiosInstance
-      .get(`organization/${organizationId}/template`)
-      .then((template) => {
-        setTemplates(template.data.data);
+  const loadWorkspace = (_loadVersions: boolean, _loadTemplates = false, _loadPermissionSet = false) => {
+    const templatesRequest: Promise<any[]> = _loadTemplates
+      ? axiosInstance.get(`organization/${organizationId}/template`).then((template) => {
+          setTemplates(template.data.data);
+          return template.data.data;
+        })
+      : Promise.resolve(templates);
+    templatesRequest
+      .then((templateList) => {
         axiosInstance
           .get(
             `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
@@ -455,7 +455,7 @@ export const WorkspaceDetails = ({
                 setEnvVariables,
                 setHistory,
                 setSchedule,
-                template.data.data,
+                templateList,
                 setLastRun,
                 setVCSProvider,
                 setCurrentStateId,
@@ -464,7 +464,7 @@ export const WorkspaceDetails = ({
                 setResources,
                 setOutputs,
                 setAgent,
-                _loadWebhook,
+                _loadTemplates,
                 setContextState,
                 setCollectionVariables,
                 setCollectionEnvVariables,
@@ -494,7 +494,7 @@ export const WorkspaceDetails = ({
             setWorkspaceName(response.data.data.attributes.name);
             setExecutionMode(response.data.data.attributes.executionMode);
             if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
-            fetchActions();
+            if (_loadVersions) fetchActions();
             setLoadError(null);
           })
           .catch((err) => {
@@ -575,14 +575,7 @@ export const WorkspaceDetails = ({
                           />
                         ),
                       }}
-                      dataSource={
-                        jobs.length > 0
-                          ? jobs
-                              .sort((a: any, b: any) => a.id - b.id)
-                              .reverse()
-                              .slice(0, 1)
-                          : []
-                      }
+                      dataSource={jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id).slice(0, 1) : []}
                       renderItem={(item) => (
                         <List.Item>
                           <List.Item.Meta
@@ -597,7 +590,9 @@ export const WorkspaceDetails = ({
                                       className="ant-list-item-meta-title"
                                       style={{ margin: 0 }}
                                     >
-                                      <a onClick={() => handleClick(item.id)}>{item.title}</a>{" "}
+                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
+                                        {item.title}
+                                      </Link>{" "}
                                     </Typography.Title>
                                     <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
                                     <b>{item.via || "UI"}</b>{" "}
@@ -622,7 +617,11 @@ export const WorkspaceDetails = ({
                                 <Row>
                                   <Col span={20}></Col>
                                   <Col>
-                                    <Button onClick={() => handleClick(item.id)}>See details</Button>
+                                    <Button>
+                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
+                                        See details
+                                      </Link>
+                                    </Button>
                                   </Col>
                                 </Row>
                               </div>
@@ -707,7 +706,7 @@ export const WorkspaceDetails = ({
             <DetailsJob jobId={jobId!} />
           </Suspense>
         ) : (
-          <RunList jobs={jobs} onRunClick={handleClick} />
+          <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
         );
       case "3":
         return (
@@ -875,8 +874,7 @@ export const WorkspaceDetails = ({
                     planJob={planJob}
                     resources={resources}
                     disabledReason={
-                      workspace.attributes.source === "empty" &&
-                      workspace.attributes.branch === "remote-content"
+                      workspace.attributes.source === "empty" && workspace.attributes.branch === "remote-content"
                         ? "This CLI/API driven workspace has no applied configuration yet. Upload and apply a configuration with the terraform CLI/API before using Run now."
                         : undefined
                     }

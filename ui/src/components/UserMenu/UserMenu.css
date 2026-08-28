@@ -65,6 +65,12 @@
 }
 
 .user-menu-item {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
   padding: 8px 16px !important;
   margin: 0 !important;
   cursor: pointer;

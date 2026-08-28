@@ -177,6 +177,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
                   <List.Item
                     actions={[
                       <Popconfirm
+                        okButtonProps={{ danger: true }}
                         onConfirm={() => {
                           onDelete(item.id);
                         }}

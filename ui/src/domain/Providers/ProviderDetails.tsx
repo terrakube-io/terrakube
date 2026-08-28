@@ -215,6 +215,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                         key: "delete",
                         label: (
                           <Popconfirm
+                            okButtonProps={{ danger: true }}
                             title={
                               <p>
                                 Provider <b>{providerName}</b> and all its versions will be permanently deleted.

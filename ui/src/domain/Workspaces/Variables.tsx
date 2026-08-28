@@ -90,6 +90,7 @@ const VARIABLES_COLUMS = (
             Edit
           </Button>
           <Popconfirm
+            okButtonProps={{ danger: true }}
             onConfirm={() => {
               onDelete(record.id);
             }}

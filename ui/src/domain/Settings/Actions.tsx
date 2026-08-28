@@ -113,6 +113,7 @@ export const ActionSettings = ({ managePermission = true }: Props) => {
             Edit
           </Button>
           <Popconfirm
+            okButtonProps={{ danger: true }}
             title="Are you sure to delete this action?"
             onConfirm={() => onDelete(record.id)}
             okText="Yes"

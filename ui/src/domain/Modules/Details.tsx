@@ -723,6 +723,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                             key: "delete",
                             label: (
                               <Popconfirm
+                                okButtonProps={{ danger: true }}
                                 title={
                                   <p>
                                     Module <b>{module.attributes.name}</b> will be permanently deleted.

@@ -1,7 +1,7 @@
 import { DownOutlined, PoweroffOutlined, SettingOutlined, UserOutlined } from "@ant-design/icons";
 import { Avatar, Dropdown } from "antd";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useAuth } from "../../config/authConfig";
 import getUserFromStorage from "../../config/authUser";
@@ -13,7 +13,6 @@ export const UserMenu = () => {
   const [username, setUsername] = useState<string>();
   const [avatarUrl, setAvatarUrl] = useState<string>();
   const auth = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     const user = getUserFromStorage();
@@ -24,11 +23,6 @@ export const UserMenu = () => {
       getGravatarUrl(user.profile.email).then(setAvatarUrl);
     }
   }, []);
-
-  const handleUserSettings = () => {
-    setIsOpen(false);
-    navigate(`/settings/tokens`);
-  };
 
   const signOutClickHandler = () => {
     setIsOpen(false);
@@ -49,14 +43,14 @@ export const UserMenu = () => {
             <span className="user-menu-signed-in">Signed in as</span>
             <span className="user-menu-username">{username}</span>
           </div>
-          <div className="user-menu-item" onClick={handleUserSettings}>
+          <Link to="/settings/tokens" className="user-menu-item" onClick={() => setIsOpen(false)}>
             <SettingOutlined className="user-menu-item-icon" />
             <span>Account settings</span>
-          </div>
-          <div className="user-menu-item" onClick={signOutClickHandler}>
+          </Link>
+          <button type="button" className="user-menu-item" onClick={signOutClickHandler}>
             <PoweroffOutlined className="user-menu-item-icon" />
             <span>Sign out</span>
-          </div>
+          </button>
         </div>
       )}
     >
