@@ -20,10 +20,12 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.SshTransport;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.SchedulerException;
+import org.quartz.SimpleTrigger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,8 @@ import java.util.*;
 
 @Slf4j
 @Component
+// A low interval must not let two runs of one module overlap and insert the same versions twice.
+@DisallowConcurrentExecution
 public class ModuleRefreshJob implements Job {
 
     private static final int GIT_TIMEOUT_SECONDS = 30;
@@ -48,21 +52,30 @@ public class ModuleRefreshJob implements Job {
     private ModuleVersionRepository moduleVersionRepository;
     @Autowired
     private AzDevOpsTokenService azDevOpsTokenService;
+    @Autowired
+    private ModuleRefreshProperties moduleRefreshProperties;
 
     @Override
     @Transactional
     public void execute(JobExecutionContext context) throws JobExecutionException {
         String moduleId = context.getJobDetail().getJobDataMap().getString(moduleRefreshService.getJobDataKey());
+        if (refreshModule(moduleId)) {
+            applyConfiguredInterval(context, moduleId);
+        }
+    }
+
+    /** @return false when the module is gone and its task was removed, so nothing puts it back */
+    private boolean refreshModule(String moduleId) {
         Optional<Module> search = moduleRepository.findById(UUID.fromString(moduleId));
         if (search.isEmpty()) {
             deleteModuleTask(moduleId, "the module no longer exists");
-            return;
+            return false;
         }
 
         Module module = search.get();
         if (module.getOrganization() == null) {
             deleteModuleTask(moduleId, "its organization is disabled or no longer available");
-            return;
+            return false;
         }
 
         String organizationName = module.getOrganization().getName();
@@ -81,7 +94,7 @@ public class ModuleRefreshJob implements Job {
         if (rawRepoTags == null) {
             log.error("There are no tags available for module {} on organization/user {}, error {}", module.getName(),
                     organizationName, "No versions found");
-            return;
+            return true;
         }
 
         Map<String, ModuleVersionNormalizer.NormalizedVersion> canonicalVersions =
@@ -120,6 +133,30 @@ public class ModuleRefreshJob implements Job {
         }
 
         calculateLatestModuleVersion(module, organizationName);
+        return true;
+    }
+
+    /**
+     * Quartz persists triggers, so one keeps its old interval after the property changes. The trigger
+     * that fired is already in memory, so this comparison costs no I/O.
+     *
+     * <p>Do not wrap this in a transaction: QuartzAutoConfiguration discards the proxy initializeBean
+     * returns, so the @Transactional above never takes effect and there is none to hook.
+     */
+    private void applyConfiguredInterval(JobExecutionContext context, String moduleId) {
+        long configuredIntervalMillis = moduleRefreshProperties.getInterval() * 1000L;
+        if (!(context.getTrigger() instanceof SimpleTrigger trigger)
+                || trigger.getRepeatInterval() == configuredIntervalMillis) {
+            return;
+        }
+        try {
+            log.info("Rescheduling module refresh for {}: interval {}ms becomes {}ms", moduleId,
+                    trigger.getRepeatInterval(), configuredIntervalMillis);
+            moduleRefreshService.rescheduleRefreshTask(moduleId);
+        } catch (SchedulerException e) {
+            log.error("Failed to apply the configured refresh interval to module {}, error {}", moduleId,
+                    e.getMessage());
+        }
     }
 
     Map<String, ModuleVersionNormalizer.NormalizedVersion> resolveCanonicalVersions(Map<String, Ref> rawRepoTags,

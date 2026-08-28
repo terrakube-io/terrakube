@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.module.ModuleRequest;
 import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
+import io.terrakube.registry.configuration.CacheConfig;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
@@ -63,7 +64,7 @@ public class ModuleServiceImpl implements ModuleService {
         }
         """;
 
-    @Cacheable(cacheNames = {"getAvailableVersions"}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
+    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override
     public List<String> getAvailableVersions(String organizationName, String moduleName, String providerName) {
         String organizationId = commonSearchService.getOrganizationId(organizationName);
@@ -93,7 +94,7 @@ public class ModuleServiceImpl implements ModuleService {
     // without it, a burst of `terraform init` calls that all miss the cache at once would each
     // independently repeat the Terrakube API/VCS calls and the S3 HeadObject below.
     @Cacheable(
-            cacheNames = {"getModuleVersionPath"},
+            cacheNames = {CacheConfig.MODULE_VERSION_PATH_CACHE},
             key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version",
             sync = true)
     @Override

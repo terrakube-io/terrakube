@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.module.version.ModuleVersionAttrib
 import io.terrakube.client.model.organization.workspace.VcsData;
 import io.terrakube.client.model.response.Response;
 import io.terrakube.registry.configuration.CacheConfig;
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.search.CommonSearchService;
 import org.junit.jupiter.api.AfterEach;
@@ -61,8 +62,16 @@ class ModuleServiceImplCacheTest {
         }
 
         @Bean
-        org.springframework.cache.CacheManager cacheManager(CacheConfig cacheConfig) {
-            return cacheConfig.cacheManager();
+        OpenRegistryProperties openRegistryProperties() {
+            OpenRegistryProperties properties = new OpenRegistryProperties();
+            properties.setModuleVersionsCacheTtlSeconds(600);
+            return properties;
+        }
+
+        @Bean
+        org.springframework.cache.CacheManager cacheManager(CacheConfig cacheConfig,
+                OpenRegistryProperties openRegistryProperties) {
+            return cacheConfig.cacheManager(openRegistryProperties);
         }
 
         @Bean
