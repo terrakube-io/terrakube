@@ -167,6 +167,13 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sts</artifactId>
         </dependency>
+        <!-- Explicit sync HTTP client so S3Client/S3Presigner connection pool, connect, and
+             socket timeouts are configurable (see AwsStorageServiceProperties) instead of relying
+             on whatever the SDK auto-detects on the classpath. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.wiremock.integrations</groupId>
             <artifactId>wiremock-spring-boot</artifactId>
