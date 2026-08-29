@@ -9,7 +9,7 @@ import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
  */
 class StepLogTransactionBoundaryIntegrationTest extends ServerApplicationTests {
 
-    @MockBean
+    @MockitoBean
     StorageTypeService storageTypeService;
 
     @Autowired
