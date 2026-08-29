@@ -3,6 +3,7 @@ package io.terrakube.executor.service.logs;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.redis.connection.RedisStreamCommands.XAddOptions;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,12 @@ import java.util.Map;
 public class LogsServiceRedis implements ProcessLogs {
 
     RedisTemplate redisTemplate;
+
+    ExecutorLogsProperties properties;
+
+    private XAddOptions trimOptions() {
+        return XAddOptions.maxlen(properties.getRedisMaxLen()).approximateTrimming(true);
+    }
 
     @Override
     public void setupConsumerGroups(String jobId) {
@@ -45,7 +52,7 @@ public class LogsServiceRedis implements ProcessLogs {
             streamData.put("lineNumber", String.valueOf(lineNumber));
             streamData.put("output", output);
 
-            redisTemplate.opsForStream().add(jobId.toString(), streamData);
+            redisTemplate.opsForStream().add(jobId.toString(), streamData, trimOptions());
         } catch (Exception ex) {
             log.error("Could not send log line to Redis for Job {}: {}", jobId, ex.getMessage());
         }
@@ -59,7 +66,7 @@ public class LogsServiceRedis implements ProcessLogs {
             streamData.put("stepId", stepId);
             streamData.put("output", structuredJson);
 
-            redisTemplate.opsForStream().add(jobId + "-context", streamData);
+            redisTemplate.opsForStream().add(jobId + "-context", streamData, trimOptions());
         } catch (Exception ex) {
             log.error("Could not send structured update to Redis for Job {}: {}", jobId, ex.getMessage());
         }

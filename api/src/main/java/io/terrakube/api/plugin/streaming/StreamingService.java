@@ -1,9 +1,8 @@
 package io.terrakube.api.plugin.streaming;
 
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.*;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -22,87 +21,50 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-@AllArgsConstructor
 public class StreamingService {
 
-    RedisTemplate redisTemplate;
+    static final int DEFAULT_LIVE_TAIL_RECORDS = 5000;
 
-    StepRepository stepRepository;
+    final StepRepository stepRepository;
 
-    RedisStreamReader redisStreamReader;
+    final RedisStreamReader redisStreamReader;
 
-    JobRepository jobRepository;
+    final JobRepository jobRepository;
 
-    public String getCurrentLogs(String stepId, String streamKeySuffix){
+    /** Max trailing lines the running-step plain GET returns from the Redis stream. */
+    final int liveTailRecords;
+
+    public StreamingService(StepRepository stepRepository, RedisStreamReader redisStreamReader,
+                            JobRepository jobRepository,
+                            @Value("${io.terrakube.logs.live-tail-records:5000}") int liveTailRecords) {
+        this.stepRepository = stepRepository;
+        this.redisStreamReader = redisStreamReader;
+        this.jobRepository = jobRepository;
+        this.liveTailRecords = liveTailRecords;
+    }
+
+    public String getCurrentLogs(String stepId, String streamKeySuffix) {
         TextStringBuilder currentLogs = new TextStringBuilder();
         try {
             // findById (not getReferenceById): callers include ScheduleJob's doRunExecution path,
             // which reads Job/Step outside any open Hibernate session - a lazy getReferenceById
             // proxy would throw "no session" the moment a field like getStatus() below is touched.
             Step step = stepRepository.findById(UUID.fromString(stepId)).orElseThrow();
-            if(!step.getStatus().equals(JobStatus.completed) && !step.getStatus().equals(JobStatus.failed)) {
-                String streamKey = step.getJob().getId() + streamKeySuffix;
-                List<MapRecord> streamData = redisTemplate.opsForStream().read(StreamOffset.fromStart(streamKey), StreamOffset.latest(streamKey));
-                for (MapRecord mapRecord : streamData) {
-                    StringRecord stringRecord = StringRecord.of(mapRecord);
-                    String output = stringRecord.getValue().get("output");
-                    currentLogs.appendln(output);
-                }
-                log.info("Logs Size: {}", currentLogs.size());
+            if (step.getStatus().equals(JobStatus.completed) || step.getStatus().equals(JobStatus.failed)) {
+                return "";
             }
-        } catch (Exception ex ){
-            log.error(ex.getMessage());
-
+            String streamKey = step.getJob().getId() + streamKeySuffix;
+            List<MapRecord> streamData = redisStreamReader.readTail(streamKey, liveTailRecords);
+            for (MapRecord mapRecord : streamData) {
+                StringRecord stringRecord = StringRecord.of(mapRecord);
+                currentLogs.appendln(stringRecord.getValue().get("output"));
+            }
+        } catch (Exception ex) {
+            log.error("getCurrentLogs failed for step {}: {}", stepId, ex.getMessage());
         }
         return currentLogs.toString();
     }
 
-    @Async
-    public void streamStepLogsAsync(String stepId, SseEmitter emitter, RecordId resumeFrom, String streamKeySuffix) {
-        streamStepLogs(stepId, emitter, resumeFrom, streamKeySuffix);
-    }
-
-    public void streamStepLogs(String stepId, SseEmitter emitter, RecordId resumeFrom, String streamKeySuffix) {
-        try {
-            UUID id = UUID.fromString(stepId);
-            // findById (not getReferenceById) because this loop runs on a separate @Async thread with no
-            // active Hibernate session - a lazy getReferenceById proxy would throw LazyInitializationException
-            // the moment any field (including the eagerly-mapped job association) is accessed here.
-            Step step = stepRepository.findById(id).orElseThrow();
-            String streamKey = String.valueOf(step.getJob().getId()) + streamKeySuffix;
-            RecordId lastId = resumeFrom;
-            int emptyReads = 0;
-
-            while (true) {
-                List<MapRecord> records = redisStreamReader.readAfter(streamKey, lastId, Duration.ofSeconds(2));
-
-                if (records.isEmpty()) {
-                    emptyReads++;
-                    step = stepRepository.findById(id).orElseThrow();
-                    if (isTerminal(step.getStatus())) {
-                        emitter.complete();
-                        return;
-                    }
-                    if (emptyReads % 8 == 0) {
-                        emitter.send(SseEmitter.event().comment("heartbeat"));
-                    }
-                    continue;
-                }
-
-                emptyReads = 0;
-                for (MapRecord record : records) {
-                    lastId = record.getId();
-                    StringRecord stringRecord = StringRecord.of(record);
-                    emitter.send(SseEmitter.event().id(lastId.getValue()).data(stringRecord.getValue().get("output")));
-                }
-            }
-        } catch (IOException e) {
-            log.info("SSE client disconnected for step {}", stepId);
-        } catch (Exception e) {
-            log.error("Error streaming logs for step {}: {}", stepId, e.getMessage());
-            emitter.completeWithError(e);
-        }
-    }
 
     @Async
     public void streamJobContextAsync(String jobId, SseEmitter emitter, RecordId resumeFrom, ContextSanitizer contextSanitizer) {

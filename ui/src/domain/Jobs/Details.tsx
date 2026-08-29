@@ -14,20 +14,19 @@ import {
   Typography,
 } from "antd";
 import { AxiosResponse } from "axios";
-import parse from "html-react-parser";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance, { axiosClient } from "../../config/axiosConfig";
+import axiosInstance from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
-import { LiveTerminalOutput } from "./LiveTerminalOutput";
-import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
+import { getPublicApiOrigin } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
-import { StructuredPlanOutput } from "./StructuredPlanOutput";
+import { isTerminalStatus } from "./stepStatus";
+import { StepConsole } from "./StepConsole";
 import {
   JobDiagnosticsByStep,
   StructuredApplyOutputByStep,
@@ -45,8 +44,6 @@ type Props = {
   jobId: string;
 };
 
-const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
-const TERMINAL_STEP_STATUSES = TERMINAL_JOB_STATUSES;
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
 
 const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
@@ -120,7 +117,6 @@ export const DetailsJob = ({ jobId }: Props) => {
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
-  const cachedStepLogs = useRef<Map<string, any>>(new Map());
   const contextRequestRef = useRef(0);
   const pollRequestRef = useRef(0);
 
@@ -128,13 +124,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
 
-  const isTerminalJobStatus = (status?: string) => {
-    if (!status) {
-      return false;
-    }
-
-    return TERMINAL_JOB_STATUSES.has(status);
-  };
 
   const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
     if (jobOutput == null) {
@@ -171,27 +160,6 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const isIncompleteVariableGuardStep = (stepName?: string) => {
     return stepName === INCOMPLETE_VARIABLE_GUARD_STEP_NAME;
-  };
-
-  const outputLog = async (output: string | undefined, status: string, signal: AbortSignal) => {
-    if (output != null) {
-      const outputUrl = getJobOutputRequestUrl(output);
-
-      try {
-        if (isTerrakubeApiUrl(outputUrl)) {
-          const response = await axiosInstance.get(outputUrl, { signal });
-          return response.data;
-        }
-
-        const response = await axiosClient.get(outputUrl, { signal });
-        return response.data;
-      } catch {
-        return "No logs available";
-      }
-    } else {
-      if (status === "running") return "Initializing the backend...";
-      else return "Waiting logs...";
-    }
   };
 
   const renderIncompleteVariableAlert = (guard: IncompleteVariableGuard) => {
@@ -246,10 +214,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   };
 
-  const renderConsoleOutput = (item: JobStep) => {
-    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
-  };
-
   const getStepStructuredData = (item: JobStep) => {
     const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
     const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
@@ -284,49 +248,17 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const renderStepContent = (item: JobStep) => {
     const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+    const isGuardStep = guard != null && isIncompleteVariableGuardStep(item.name);
 
-    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
-      return renderConsoleOutput(item);
-    }
-
-    const { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView } =
-      getStepStructuredData(item);
-
-    if (!hasStructuredView) {
-      return renderConsoleOutput(item);
-    }
-
-    const isStepRunning = !isTerminalJobStatus(item.status);
-
-    const structuredContent = structuredApplyChanges ? (
-      <StructuredPlanOutput
-        changes={structuredApplyChanges}
-        outputLog={item.outputLog}
-        applyMode
-        outputs={stepOutputs}
-        jobDiagnostics={stepJobDiagnostics}
-        isStepRunning={isStepRunning}
-      />
-    ) : structuredChanges ? (
-      <StructuredPlanOutput
-        changes={structuredChanges}
-        outputLog={item.outputLog}
-        jobDiagnostics={stepJobDiagnostics}
-        isStepRunning={isStepRunning}
-      />
-    ) : (
-      <div>{parse(template ?? "")}</div>
-    );
-
-    // Keep both mounted and toggle visibility with CSS instead of conditionally rendering one or
-    // the other - unmounting StructuredPlanOutput every time the user flips between structured
-    // and console would reset its internal expanded-row/attribute state, closing any dropdowns
-    // they'd already opened.
     return (
-      <>
-        <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
-        <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsoleOutput(item)}</div>
-      </>
+      <StepConsole
+        item={item}
+        jobId={jobId}
+        organizationId={organizationId ?? ""}
+        guardMessage={isGuardStep ? item.outputLog : undefined}
+        structured={getStepStructuredData(item)}
+        uiType={uiType}
+      />
     );
   };
 
@@ -452,18 +384,11 @@ export const DetailsJob = ({ jobId }: Props) => {
       );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
-      const fetchStepLog = async (stepItem: any) => {
-        const cached = cachedStepLogs.current.get(stepItem.id);
-        if (cached !== undefined) return cached;
-        const log = await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal);
-        if (TERMINAL_STEP_STATUSES.has(stepItem.attributes.status) && !signal.aborted && log !== "No logs available") {
-          cachedStepLogs.current.set(stepItem.id, log);
-        }
-        return log;
-      };
-
-      const stepsPromise = Promise.all(
-        stepEntries.map(async (stepItem: any) => ({
+      // Steps render immediately from their entity data; each StepConsole fetches its own log
+      // lazily (on expand) via useStepLog, so first paint never blocks on log fetches and the
+      // 5s poll below refreshes step *status* only.
+      const stepsPromise = Promise.resolve(
+        stepEntries.map((stepItem: any) => ({
           id: stepItem.id,
           stepNumber: stepItem.attributes.stepNumber,
           status: stepItem.attributes.status,
@@ -472,9 +397,7 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
-              : stepItem.attributes.status === "running"
-                ? ""
-                : await fetchStepLog(stepItem),
+              : "",
         }))
       );
 
@@ -571,7 +494,6 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   useEffect(() => {
     setLoading(true);
-    cachedStepLogs.current.clear();
     abortJobRequests();
     abortContextRequests();
 
@@ -589,7 +511,7 @@ export const DetailsJob = ({ jobId }: Props) => {
     },
     {
       interval: 5000,
-      enabled: Boolean(jobId) && !isTerminalJobStatus(job?.data?.attributes.status),
+      enabled: Boolean(jobId) && !isTerminalStatus(job?.data?.attributes.status),
       immediate: false,
     }
   );
