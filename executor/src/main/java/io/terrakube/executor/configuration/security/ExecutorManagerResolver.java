@@ -25,6 +25,13 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
 
     private String internalJwtSecret;
 
+    /**
+     * Lazily initialised, immutable after first use. The secret key is stable for the
+     * lifetime of the process, so there is no need to rebuild the decoder on every request.
+     */
+    @Builder.Default
+    private volatile JwtDecoder cachedDecoder = null;
+
     @Override
     public AuthenticationManager resolve(HttpServletRequest request) {
         ProviderManager providerManager = null;
@@ -38,10 +45,17 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
     }
 
     private JwtDecoder getJwtDecoder() {
-        byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
-        SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
-        MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
-        return NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+        if (cachedDecoder == null) {
+            synchronized (this) {
+                if (cachedDecoder == null) {
+                    byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
+                    SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+                    MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
+                    cachedDecoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+                }
+            }
+        }
+        return cachedDecoder;
     }
 
     private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {

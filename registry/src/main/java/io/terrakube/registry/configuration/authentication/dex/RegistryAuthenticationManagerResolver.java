@@ -106,13 +106,17 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
 
         switch (tokenIssuer) {
             case jwtInternal:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal)));
+                // Cache key is stable: same secret → same decoder for the process lifetime.
+                providerManager = getProviderManagerCache().get("internal",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal))));
                 break;
             case jwtPat:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat)));
+                providerManager = getProviderManagerCache().get("pat",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat))));
                 break;
             default:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri)));
+                providerManager = getProviderManagerCache().get(this.issuerUri,
+                        k -> new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri))));
                 break;
         }
         return providerManager;
