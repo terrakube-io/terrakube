@@ -216,4 +216,88 @@ class ModuleServiceImplCacheTest {
         verify(terrakubeClient, times(1)).getModuleByNameAndProvider(anyString(), anyString(), anyString());
         verify(storageService, times(1)).searchModule(anyString(), anyString(), anyString(), any());
     }
+
+    @Test
+    void getModuleVersionPathWithNullGitTagDoesNotThrowException() {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        CommonSearchService commonSearchService = context.getBean(CommonSearchService.class);
+        StorageService storageService = context.getBean(StorageService.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+
+        when(commonSearchService.getOrganizationId("org")).thenReturn("org-id");
+
+        Module module = new Module();
+        module.setId("module-id");
+        ModuleAttributes attributes = new ModuleAttributes();
+        attributes.setSource("git::https://example.com/org/module.git");
+        module.setAttributes(attributes);
+        Relationships relationships = new Relationships();
+        relationships.setVcs(new VcsData());
+        relationships.setSsh(new SshData());
+        module.setRelationships(relationships);
+
+        Response<List<Module>> moduleResponse = new Response<>();
+        moduleResponse.setData(List.of(module));
+        when(terrakubeClient.getModuleByNameAndProvider("org-id", "module", "aws")).thenReturn(moduleResponse);
+
+        ModuleVersion moduleVersion = new ModuleVersion();
+        ModuleVersionAttributes versionAttributes = new ModuleVersionAttributes();
+        versionAttributes.setVersion("1.0.0");
+        versionAttributes.setGitTag(null);
+        moduleVersion.setAttributes(versionAttributes);
+
+        Response<List<ModuleVersion>> versionResponse = new Response<>();
+        versionResponse.setData(List.of(moduleVersion));
+        when(terrakubeClient.getAllVersionsByOrganizationIdAndModuleId("org-id", "module-id"))
+                .thenReturn(versionResponse);
+
+        org.mockito.ArgumentCaptor<io.terrakube.registry.service.git.ModuleVersionDownload> captor =
+                org.mockito.ArgumentCaptor.forClass(io.terrakube.registry.service.git.ModuleVersionDownload.class);
+        when(storageService.searchModule(anyString(), anyString(), anyString(), captor.capture()))
+                .thenReturn("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip");
+
+        String result = moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0");
+
+        assertEquals("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip", result);
+        org.junit.jupiter.api.Assertions.assertNull(captor.getValue().gitTag());
+    }
+
+    @Test
+    void getModuleVersionPathWithNullVersionResponseDoesNotThrowException() {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        CommonSearchService commonSearchService = context.getBean(CommonSearchService.class);
+        StorageService storageService = context.getBean(StorageService.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+
+        when(commonSearchService.getOrganizationId("org")).thenReturn("org-id");
+
+        Module module = new Module();
+        module.setId("module-id");
+        ModuleAttributes attributes = new ModuleAttributes();
+        attributes.setSource("git::https://example.com/org/module.git");
+        module.setAttributes(attributes);
+        Relationships relationships = new Relationships();
+        relationships.setVcs(new VcsData());
+        relationships.setSsh(new SshData());
+        module.setRelationships(relationships);
+
+        Response<List<Module>> moduleResponse = new Response<>();
+        moduleResponse.setData(List.of(module));
+        when(terrakubeClient.getModuleByNameAndProvider("org-id", "module", "aws")).thenReturn(moduleResponse);
+
+        when(terrakubeClient.getAllVersionsByOrganizationIdAndModuleId("org-id", "module-id"))
+                .thenReturn(null);
+
+        org.mockito.ArgumentCaptor<io.terrakube.registry.service.git.ModuleVersionDownload> captor =
+                org.mockito.ArgumentCaptor.forClass(io.terrakube.registry.service.git.ModuleVersionDownload.class);
+        when(storageService.searchModule(anyString(), anyString(), anyString(), captor.capture()))
+                .thenReturn("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip");
+
+        String result = moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0");
+
+        assertEquals("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip", result);
+        org.junit.jupiter.api.Assertions.assertNull(captor.getValue().gitTag());
+    }
 }
