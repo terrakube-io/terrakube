@@ -51,7 +51,10 @@ public class TerraformJsonEventParser {
                 updateStatus(changes, resourceAddress(event), "errored");
                 updateElapsedSeconds(changes, resourceAddress(event), event);
             }
-            case "diagnostic" -> attachDiagnostic(changes, jobDiagnostics, event);
+            case "diagnostic" -> {
+                attachDiagnostic(changes, jobDiagnostics, event);
+                return renderDiagnostic(event, message instanceof String text ? text : null);
+            }
             case "provision_start" -> updateCurrentProvisioner(changes, resourceAddress(event), provisionerName(event));
             case "provision_progress" -> appendProvisionerOutput(changes, resourceAddress(event), event);
             case "provision_complete", "provision_errored" -> updateCurrentProvisioner(changes, resourceAddress(event), null);
@@ -201,6 +204,80 @@ public class TerraformJsonEventParser {
         }
 
         jobDiagnostics.add(diagnosticEntry);
+    }
+
+    // Under `-json` a diagnostic's own @message is only the one-line "Error: <summary>" /
+    // "Warning: <summary>" header - the file/line, the source snippet and the explanatory detail
+    // all live in the structured "diagnostic" object and would otherwise never reach the console
+    // stream. That stream is what `terraform`/`tofu` prints back to a CLI-driven plan, what the
+    // raw-log download serves, and what PrCommentService posts, so rebuild the full multi-line
+    // rendering here, close to what plain (non-json) terraform would have printed. Falls back to
+    // the raw @message if the structured object is missing or malformed.
+    private String renderDiagnostic(Map<String, Object> event, String fallbackMessage) {
+        Object diagnosticRaw = event.get("diagnostic");
+        if (!(diagnosticRaw instanceof Map<?, ?> diagnostic)) {
+            return fallbackMessage;
+        }
+
+        String severity = severityOrNull(diagnostic.get("severity"));
+        if (severity == null || !(diagnostic.get("summary") instanceof String summary)) {
+            return fallbackMessage;
+        }
+
+        StringBuilder rendered = new StringBuilder();
+        rendered.append('\n')
+                .append("error".equals(severity) ? "Error: " : "Warning: ")
+                .append(summary)
+                .append('\n');
+
+        String location = renderDiagnosticSource(diagnostic);
+        if (location != null) {
+            rendered.append('\n').append(location).append('\n');
+        }
+
+        if (diagnostic.get("detail") instanceof String detail && !detail.isBlank()) {
+            rendered.append('\n').append(detail).append('\n');
+        }
+
+        return rendered.toString();
+    }
+
+    // "  on main.tf line 12, in resource "aws_instance" "web":" followed by the numbered source
+    // lines - the same layout terraform's own console renderer uses. Degrades to just the
+    // "  on <file> line <n>:" header when the event carries a range but no code snippet, and to
+    // null when the diagnostic has no source location at all (a config-wide problem).
+    private String renderDiagnosticSource(Map<?, ?> diagnostic) {
+        if (!(diagnostic.get("range") instanceof Map<?, ?> range)
+                || !(range.get("filename") instanceof String filename)) {
+            return null;
+        }
+
+        Integer line = null;
+        if (range.get("start") instanceof Map<?, ?> start && start.get("line") instanceof Number lineNumber) {
+            line = lineNumber.intValue();
+        }
+
+        StringBuilder source = new StringBuilder("  on ").append(filename);
+        if (line != null) {
+            source.append(" line ").append(line);
+        }
+
+        Map<?, ?> snippet = diagnostic.get("snippet") instanceof Map<?, ?> s ? s : null;
+        if (snippet != null && snippet.get("context") instanceof String context && !context.isBlank()) {
+            source.append(", in ").append(context);
+        }
+        source.append(':');
+
+        if (snippet != null && snippet.get("code") instanceof String code) {
+            int startLine = snippet.get("start_line") instanceof Number n ? n.intValue()
+                    : (line != null ? line : 1);
+            String[] codeLines = code.split("\n", -1);
+            for (int i = 0; i < codeLines.length; i++) {
+                source.append('\n').append(String.format("%4d: %s", startLine + i, codeLines[i]));
+            }
+        }
+
+        return source.toString();
     }
 
     // Diagnostics that carry no resource address at all (a deprecated variable/output, which can

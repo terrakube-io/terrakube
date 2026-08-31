@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -426,5 +427,39 @@ class TerraformExecutorServiceImplTest {
         verify(planStructuredOutputService, Mockito.atLeastOnce()).publishPlanProgress(
                 eq("org"), eq("42"), eq("1"), any(), any());
         verify(logsService, Mockito.atLeastOnce()).sendStructuredUpdate(eq(42), eq("1"), anyString());
+    }
+
+    // Regression test for the reported bug: running `tofu plan` from the CLI showed only a bare
+    // "Error: Unsupported attribute" header with no file, line or explanation. Under `-json` the
+    // diagnostic's detail lives in the structured event, not in @message - the executor must
+    // reconstruct the full rendering into the console stream the CLI reads.
+    @Test
+    void planForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String diagnosticLine = "{\"@message\":\"Error: Unsupported attribute\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Unsupported attribute\","
+                + "\"detail\":\"This object has no argument, nested block, or exported attribute named \\\"identifier\\\".\","
+                + "\"range\":{\"filename\":\"main.tf\",\"start\":{\"line\":12,\"column\":12}}}}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(1);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(logsService, Mockito.atLeastOnce()).sendLogs(eq(42), eq("1"), anyInt(),
+                argThat(line -> line != null && line.contains("no argument, nested block")));
+        verify(logsService, Mockito.atLeastOnce()).sendLogs(eq(42), eq("1"), anyInt(),
+                argThat(line -> line != null && line.contains("on main.tf line 12")));
     }
 }

@@ -183,7 +183,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     Consumer<String> jsonLineConsumer = (line) -> {
                         String humanMessage = eventParser.parseLine(line, liveChanges, jobDiagnostics);
                         if (humanMessage != null) {
-                            planOutput.accept(humanMessage);
+                            acceptConsoleLines(planOutput, humanMessage);
                         }
 
                         long now = System.currentTimeMillis();
@@ -381,7 +381,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Consumer<String> jsonLineConsumer = (line) -> {
             String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
             if (humanMessage != null) {
-                applyOutput.accept(humanMessage);
+                acceptConsoleLines(applyOutput, humanMessage);
             }
 
             long now = System.currentTimeMillis();
@@ -425,7 +425,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Consumer<String> jsonLineConsumer = (line) -> {
             String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
             if (humanMessage != null) {
-                destroyOutput.accept(humanMessage);
+                acceptConsoleLines(destroyOutput, humanMessage);
             }
 
             long now = System.currentTimeMillis();
@@ -450,6 +450,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
 
         return execution;
+    }
+
+    // The json event stream is one event per line, but a single diagnostic event renders as a
+    // multi-line block (header, source snippet, explanatory detail). Split it so every line gets
+    // its own log record and line number, instead of one record carrying embedded newlines.
+    private static void acceptConsoleLines(Consumer<String> output, String message) {
+        for (String line : message.split("\n", -1)) {
+            output.accept(line);
+        }
     }
 
     // Best-effort live push over the new structured-output SSE channel - never lets a
