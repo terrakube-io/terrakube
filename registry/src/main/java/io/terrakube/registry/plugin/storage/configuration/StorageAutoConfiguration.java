@@ -109,15 +109,17 @@ public class StorageAutoConfiguration {
 
                     S3Configuration serviceConfiguration = S3Configuration.builder()
                             .pathStyleAccessEnabled(true)
+                            .chunkedEncodingEnabled(awsStorageServiceProperties.isChunkedEncodingEnabled())
+                            .checksumValidationEnabled(awsStorageServiceProperties.isChecksumValidationEnabled())
                             .build();
 
                     s3ClientBuilder
-                            .region(Region.of("auto"))
+                            .region(Region.of(awsStorageServiceProperties.getEndpointRegion()))
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
                             .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED);
                     s3PresignerBuilder
-                            .region(Region.of("auto"))
+                            .region(Region.of(awsStorageServiceProperties.getEndpointRegion()))
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration);
                 } else {
