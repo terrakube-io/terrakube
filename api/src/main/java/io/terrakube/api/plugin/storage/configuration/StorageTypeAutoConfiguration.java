@@ -57,6 +57,14 @@ public class StorageTypeAutoConfiguration {
                 .build();
     }
 
+    static S3Configuration s3ServiceConfiguration(AwsStorageTypeProperties props) {
+        return S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .chunkedEncodingEnabled(props.isChunkedEncodingEnabled())
+                .checksumValidationEnabled(props.isChecksumValidationEnabled())
+                .build();
+    }
+
     @Bean
     public StorageTypeService terraformOutput(StreamingService streamingService, StorageTypeProperties storageTypeProperties, AzureStorageTypeProperties azureStorageTypeProperties, AwsStorageTypeProperties awsStorageTypeProperties, GcpStorageTypeProperties gcpStorageTypeProperties) {
         StorageTypeService storageTypeService = null;
@@ -87,12 +95,10 @@ public class StorageTypeAutoConfiguration {
                 } else if (awsStorageTypeProperties.getEndpoint() != null && !awsStorageTypeProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
 
-                    S3Configuration serviceConfiguration = S3Configuration.builder()
-                            .pathStyleAccessEnabled(true)
-                            .build();
+                    S3Configuration serviceConfiguration = s3ServiceConfiguration(awsStorageTypeProperties);
 
                     s3client = S3Client.builder()
-                            .region(Region.of("auto"))
+                            .region(Region.of(awsStorageTypeProperties.getEndpointRegion()))
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageTypeProperties)))
                             .endpointOverride(URI.create(awsStorageTypeProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
