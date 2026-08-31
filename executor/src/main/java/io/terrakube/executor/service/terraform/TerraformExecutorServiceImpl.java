@@ -1064,12 +1064,43 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", workspaceRootDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
         }
 
+        ensurePluginCacheDir(terraformJob);
         applyDataDirCache(terraformJob);
 
         return terraformJob.getEnvironmentVariables();
     }
 
     static final String TF_DATA_DIR = "TF_DATA_DIR";
+    static final String TF_PLUGIN_CACHE_DIR = "TF_PLUGIN_CACHE_DIR";
+
+    /**
+     * Terraform/OpenTofu refuse a plugin cache directory that does not exist ("the directory must
+     * already exist") and a freshly mounted cache volume is empty, so create it instead of letting
+     * every init report "The specified plugin cache dir ... cannot be opened". The variable can come
+     * from the workspace (job environment) or from the executor's own environment (helm chart).
+     */
+    void ensurePluginCacheDir(TerraformJob terraformJob) {
+        String pluginCacheDir = null;
+        if (terraformJob.getEnvironmentVariables() != null) {
+            pluginCacheDir = terraformJob.getEnvironmentVariables().get(TF_PLUGIN_CACHE_DIR);
+        }
+        if (pluginCacheDir == null || pluginCacheDir.isBlank()) {
+            pluginCacheDir = System.getenv(TF_PLUGIN_CACHE_DIR);
+        }
+        if (pluginCacheDir == null || pluginCacheDir.isBlank()) {
+            return;
+        }
+        File cacheDir = new File(pluginCacheDir.trim());
+        if (cacheDir.isDirectory()) {
+            return;
+        }
+        try {
+            FileUtils.forceMkdir(cacheDir);
+            log.info("Created terraform plugin cache directory {}", cacheDir.getAbsolutePath());
+        } catch (IOException e) {
+            log.warn("Unable to create terraform plugin cache directory {}: {}", cacheDir.getAbsolutePath(), e.getMessage());
+        }
+    }
 
     /**
      * Points TF_DATA_DIR at a per-workspace directory under the configured cache root, so the

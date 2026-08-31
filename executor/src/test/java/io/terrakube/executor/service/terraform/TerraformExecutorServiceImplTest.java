@@ -121,6 +121,20 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void loadTempEnvironmentVariablesCreatesMissingPluginCacheDir() throws Exception {
+        File workingDirectory = Files.createDirectories(tempDir.resolve("workspace")).toFile();
+        Path pluginCache = tempDir.resolve("cache").resolve("plugin-cache");
+        TerraformJob terraformJob = createJob();
+        terraformJob.getEnvironmentVariables().put("TF_PLUGIN_CACHE_DIR", pluginCache.toString());
+
+        HashMap<String, String> environment = subject()
+                .loadTempEnvironmentVariables(workingDirectory, workingDirectory, terraformJob);
+
+        assertEquals(pluginCache.toString(), environment.get("TF_PLUGIN_CACHE_DIR"));
+        assertTrue(Files.isDirectory(pluginCache));
+    }
+
+    @Test
     void loadTempEnvironmentVariablesLeavesDataDirUnsetWithoutCacheRoot() throws Exception {
         File workingDirectory = Files.createDirectories(tempDir.resolve("workspace")).toFile();
         TerraformJob terraformJob = createJob();
