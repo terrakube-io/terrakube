@@ -39,6 +39,18 @@ class DexGroupServiceTests {
     }
 
     @Test
+    void federatedTokenWithDecodedAudienceCollectionIsMember() {
+        DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
+
+        User user = userWith(Map.of(
+                "iss", ISSUER,
+                "aud", List.of("another-service", AUDIENCE),
+                "repository", "acme/infra"));
+
+        assertTrue(groupService.isServiceMember(user, GROUP));
+    }
+
+    @Test
     void federatedTokenWithClaimMismatchIsNotMember() {
         DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
 

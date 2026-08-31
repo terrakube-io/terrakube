@@ -45,6 +45,8 @@ The key features of Terrakube are:
 
 - **Access Control:** You can use [Dex](https://github.com/dexidp/dex) to authenticate in Terrakube with various identity providers, such as Azure Active Directory, Amazon Cognito, GitHub, SAML, and more. You can also leverage your existing groups to assign granular permissions to Workspaces, Modules, VCS, and other resources.
 
+- **Workload identity federation:** GitHub Actions and Kubernetes workloads can use short-lived OIDC tokens to call Terrakube without storing a PAT. See [Federated OIDC authentication](docs/federated-oidc-authentication.md).
+
 - **Remote Backend:** Terrakube supports both `remote backend` and `cloud` block so you can run your workflow directly from the Terraform / OpenTofu CLI.
 
 ### Getting Started

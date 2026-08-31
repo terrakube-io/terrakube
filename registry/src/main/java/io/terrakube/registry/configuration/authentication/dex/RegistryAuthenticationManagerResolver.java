@@ -85,21 +85,24 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         ProviderManager providerManager = null;
         Map<String, Object> payloadMap = getJwtPayload(request);
         String tokenIssuer = extractClaimString(payloadMap, "iss");
-        String audience = extractClaimString(payloadMap, "aud");
+        List<String> audiences = extractClaimStrings(payloadMap, "aud");
 
-        if (!tokenIssuer.isEmpty() && !audience.isEmpty()
+        if (!tokenIssuer.isEmpty() && !audiences.isEmpty()
                 && !tokenIssuer.equals(jwtPat)
                 && !tokenIssuer.equals(jwtInternal)
                 && !tokenIssuer.equals(this.issuerUri)) {
-            String cacheKey = tokenIssuer + ":" + audience;
-            Optional<FederatedConfig> federatedOpt = getFederatedCache().get(cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
-            if (federatedOpt.isPresent()) {
-                FederatedConfig config = federatedOpt.get();
-                if (validateClaims(payloadMap, config.getClaims())) {
-                    log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
-                    return getProviderManagerCache().get(config.getIssuerUrl(), url ->
-                            new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
-                    );
+            for (String audience : audiences) {
+                String cacheKey = tokenIssuer + ":" + audience;
+                Optional<FederatedConfig> federatedOpt = getFederatedCache().get(
+                        cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
+                if (federatedOpt.isPresent()) {
+                    FederatedConfig config = federatedOpt.get();
+                    if (validateClaims(payloadMap, config.getClaims())) {
+                        log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
+                        return getProviderManagerCache().get(config.getIssuerUrl(), url ->
+                                new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
+                        );
+                    }
                 }
             }
         }
@@ -153,12 +156,19 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         }
         for (Map.Entry<String, String> entry : requiredClaims.entrySet()) {
             Object tokenVal = payloadMap.get(entry.getKey());
-            if (tokenVal == null || !entry.getValue().equals(String.valueOf(tokenVal))) {
+            if (tokenVal == null || !claimMatches(tokenVal, entry.getValue())) {
                 log.debug("Federated claim mismatch for key {}: expected {}, got {}", entry.getKey(), entry.getValue(), tokenVal);
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean claimMatches(Object tokenValue, String expected) {
+        if (tokenValue instanceof Collection<?> values) {
+            return values.stream().filter(Objects::nonNull).anyMatch(value -> expected.equals(value.toString()));
+        }
+        return expected.equals(tokenValue.toString());
     }
 
     private Map<String, Object> getJwtPayload(HttpServletRequest request) {
@@ -198,6 +208,25 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
             }
         }
         return "";
+    }
+
+    private List<String> extractClaimStrings(Map<String, Object> payloadMap, String claim) {
+        if (payloadMap == null || !payloadMap.containsKey(claim)) {
+            return List.of();
+        }
+        Object value = payloadMap.get(claim);
+        if (value instanceof String stringValue) {
+            return stringValue.isEmpty() ? List.of() : List.of(stringValue);
+        }
+        if (value instanceof Collection<?> values) {
+            return values.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .filter(item -> !item.isEmpty())
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
     }
 
     private JwtDecoder getJwtEncoder(String issuerType) {

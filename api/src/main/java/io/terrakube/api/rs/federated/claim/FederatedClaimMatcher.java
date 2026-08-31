@@ -3,6 +3,7 @@ package io.terrakube.api.rs.federated.claim;
 import io.terrakube.api.rs.federated.Federated;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -29,8 +30,8 @@ public final class FederatedClaimMatcher {
     private static boolean claimMatches(Object tokenValue, String expected) {
         if (tokenValue instanceof String) {
             return expected.equals(tokenValue);
-        } else if (tokenValue instanceof List) {
-            for (Object item : (List<?>) tokenValue) {
+        } else if (tokenValue instanceof Collection<?> values) {
+            for (Object item : values) {
                 if (item != null && expected.equals(item.toString())) {
                     return true;
                 }

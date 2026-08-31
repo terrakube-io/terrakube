@@ -1,7 +1,6 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Flex, Form, Input, Space, Spin, Table, message, Typography, Row, Col } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { FederatedClaim } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
@@ -31,7 +30,6 @@ type ClaimRow = {
 const JSONAPI_HEADERS = { "Content-Type": "application/vnd.api+json" };
 
 export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFederated }: Props) => {
-  const { orgid } = useParams();
   const [loading, setLoading] = useState(true);
   const [form] = Form.useForm();
   const [claims, setClaims] = useState<ClaimRow[]>([]);
@@ -233,10 +231,11 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
               <Col xs={24} md={9}>
                 <Form.Item
                   name="name"
-                  label="Name"
-                  rules={[{ required: true, message: "Please enter the federated credential name" }]}
+                  label="Terrakube team name"
+                  extra="The external identity receives exactly the permissions assigned to this existing team."
+                  rules={[{ required: true, message: "Please enter an existing Terrakube team name" }]}
                 >
-                  <Input placeholder="e.g. GitHub Actions" />
+                  <Input placeholder="e.g. TERRAKUBE_AUTOMATION" />
                 </Form.Item>
               </Col>
               <Col xs={24} md={9}>

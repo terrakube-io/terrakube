@@ -119,6 +119,40 @@ class RegistryAuthenticationManagerResolverTest {
     }
 
     @Test
+    void resolve_federatedToken_matchesAudienceAndClaimCollections() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer,
+                "aud", List.of("other-service", audience),
+                "groups_direct", List.of("developers", "platform"))));
+
+        Federated federated = new Federated();
+        FederatedAttributes attributes = new FederatedAttributes();
+        attributes.setIssuerUrl(issuer);
+        attributes.setAudience(audience);
+        federated.setAttributes(attributes);
+
+        FederatedClaim claim = new FederatedClaim();
+        FederatedClaimAttributes claimAttributes = new FederatedClaimAttributes();
+        claimAttributes.setClaimKey("groups_direct");
+        claimAttributes.setClaimValue("platform");
+        claim.setAttributes(claimAttributes);
+
+        ResponseWithInclude<List<Federated>, FederatedClaim> response = new ResponseWithInclude<>();
+        response.setData(List.of(federated));
+        response.setIncluded(List.of(claim));
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, "other-service"))
+                .thenReturn(new ResponseWithInclude<>());
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(response);
+
+        assertNotNull(resolver.resolve(request));
+        verify(terrakubeClient).getFederatedByIssuerUrlAndAudienceWithClaims(issuer, "other-service");
+        verify(terrakubeClient).getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience);
+    }
+
+    @Test
     void resolve_federatedToken_mismatchedClaims_fallsBackToDefault() throws Exception {
         String issuer = "https://token.actions.githubusercontent.com";
         String audience = "terrakube";

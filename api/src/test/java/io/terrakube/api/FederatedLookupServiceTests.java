@@ -17,6 +17,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -139,6 +140,24 @@ class FederatedLookupServiceTests {
         assertEquals(Optional.empty(), service.findByIssuerUrlAndAudience(ISSUER, AUDIENCE));
         assertEquals(Optional.empty(), service.findByIssuerUrlAndAudience(ISSUER, AUDIENCE));
         verify(repository, times(1)).findByIssuerUrlAndAudience(ISSUER, AUDIENCE);
+    }
+
+    @Test
+    void authorizedLookupChecksEveryAudienceAndClaimConditions() {
+        FederatedRepository repository = mock(FederatedRepository.class);
+        when(repository.findByIssuerUrlAndAudience(ISSUER, "unrelated")).thenReturn(Optional.empty());
+        when(repository.findByIssuerUrlAndAudience(ISSUER, AUDIENCE))
+                .thenReturn(Optional.of(federated(GROUP, Map.of("repository", "acme/infra"))));
+        FederatedLookupService service = new FederatedLookupService(repository);
+
+        assertTrue(service.findAuthorized(Map.of(
+                "iss", ISSUER,
+                "aud", List.of("unrelated", AUDIENCE),
+                "repository", Set.of("acme/infra", "acme/app"))).isPresent());
+        assertFalse(service.findAuthorized(Map.of(
+                "iss", ISSUER,
+                "aud", List.of("unrelated", AUDIENCE),
+                "repository", "attacker/infra")).isPresent());
     }
 
     private void bindRequest() {

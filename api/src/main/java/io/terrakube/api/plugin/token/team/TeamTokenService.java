@@ -3,10 +3,9 @@ package io.terrakube.api.plugin.token.team;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import io.terrakube.api.repository.FederatedRepository;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.repository.TeamTokenRepository;
 import io.terrakube.api.rs.federated.Federated;
-import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +29,7 @@ public class TeamTokenService {
     private TeamTokenRepository teamTokenRepository;
 
     @Autowired
-    private FederatedRepository federatedRepository;
+    private FederatedLookupService federatedLookupService;
 
     private static final String ISSUER = "Terrakube";
 
@@ -135,27 +134,16 @@ public class TeamTokenService {
     }
 
     public List<String> getCurrentGroups(JwtAuthenticationToken principalJwt) {
-        String issuer = principalJwt.getTokenAttributes().get("iss").toString();
-        String audience = "";
-        if (principalJwt.getTokenAttributes().get("aud") instanceof List){
-            audience = ((java.util.ArrayList) principalJwt.getTokenAttributes().get("aud")).getFirst().toString();
-        } else if (principalJwt.getTokenAttributes().get("aud") instanceof String){
-            audience = principalJwt.getTokenAttributes().get("aud").toString();
+        Optional<Federated> federated = federatedLookupService.findAuthorized(principalJwt.getTokenAttributes());
+        if (federated.isPresent()) {
+            return List.of(federated.get().getName());
         }
-        Optional<Federated> federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience);
-        if(federated.isPresent() && FederatedClaimMatcher.matchesClaims(federated.get(), principalJwt.getTokenAttributes())){
-            List array = new ArrayList();
-            array.add(federated.get().getName());
-            return array;
-        } else {
-            Object groups = principalJwt.getTokenAttributes().get("groups");
-            List array = (java.util.ArrayList) groups;
-            List<String> list = new ArrayList();
-            for (int i = 0; i < array.size(); i++) {
-                list.add(array.get(i).toString());
-            }
-            return list;
+
+        Object groups = principalJwt.getTokenAttributes().get("groups");
+        if (!(groups instanceof Collection<?> values)) {
+            return List.of();
         }
+        return values.stream().filter(Objects::nonNull).map(Object::toString).toList();
     }
 
 }

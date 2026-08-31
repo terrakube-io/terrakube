@@ -3,10 +3,12 @@ package io.terrakube.api.plugin.security.federated;
 import io.terrakube.api.plugin.security.request.RequestScopedMemo;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -38,5 +40,24 @@ public class FederatedLookupService {
     public Optional<Federated> findByIssuerUrlAndAudience(String issuerUrl, String audience) {
         return RequestScopedMemo.memoize(CACHE_ATTRIBUTE, Arrays.asList(issuerUrl, audience),
                 () -> federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience));
+    }
+
+    /**
+     * Resolves and authorizes a federated credential from decoded token claims.
+     *
+     * <p>Every audience is considered because OIDC tokens may contain more than one intended
+     * recipient. Claim conditions remain part of this method so a caller cannot accidentally treat
+     * an issuer/audience match as authorization.
+     */
+    public Optional<Federated> findAuthorized(Map<String, Object> tokenAttributes) {
+        String issuer = FederatedTokenClaims.issuer(tokenAttributes);
+        if (issuer.isEmpty()) {
+            return Optional.empty();
+        }
+        return FederatedTokenClaims.audiences(tokenAttributes).stream()
+                .map(audience -> findByIssuerUrlAndAudience(issuer, audience))
+                .flatMap(Optional::stream)
+                .filter(federated -> FederatedClaimMatcher.matchesClaims(federated, tokenAttributes))
+                .findFirst();
     }
 }
