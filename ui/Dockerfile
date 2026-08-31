@@ -34,3 +34,4 @@ WORKDIR /usr/share/nginx/html
 COPY --from=builder /app/build .
 COPY --from=builder /etc/sbom /etc/sbom
 COPY conf/conf.d/terrakube-ui.conf /etc/nginx/conf.d/default.conf
+COPY conf/conf.d/gzip.conf /etc/nginx/conf.d/gzip.conf
