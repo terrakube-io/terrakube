@@ -111,13 +111,18 @@ public class ModuleServiceImpl implements ModuleService {
         String folder = module.getAttributes().getFolder();
         String tagPrefix = module.getAttributes().getTagPrefix();
 
+        // findFirst() must run before map(): Optional.of() (used internally by findFirst on a
+        // mapped stream) throws NPE if the mapped value is null, which getGitTag() can legitimately
+        // be for module_version rows the git-tag backfill migration skipped (provider alias issues
+        // or version collisions - see CanonicalModuleVersionMigration). Falling back to the semver
+        // version string mirrors the same fallback used by that migration and by ModuleRefreshJob.
         String gitTag = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId())
                 .getData()
                 .stream()
                 .filter(moduleVersion -> version.equals(moduleVersion.getAttributes().getVersion()))
-                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
                 .findFirst()
-                .orElse(null);
+                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
+                .orElse(version);
 
         if (module.getRelationships().getVcs().getData() != null) {
             Vcs vcsInformation = getVcsInformation(organizationId,
