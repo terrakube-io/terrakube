@@ -121,4 +121,119 @@ class DexAuthenticationManagerResolverTest {
             jwtDecoders.verify(() -> JwtDecoders.fromIssuerLocation("https://dummy-dex-issuer"), Mockito.times(2));
         }
     }
+
+    private HttpServletRequest mockTokenRequest(String token) {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+        return request;
+    }
+
+    private String createSignedToken(String issuer, String base64Secret) {
+        byte[] secretBytes = io.jsonwebtoken.io.Decoders.BASE64URL.decode(base64Secret);
+        javax.crypto.SecretKey key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretBytes);
+        return io.jsonwebtoken.Jwts.builder()
+                .issuer(issuer)
+                .subject("Test Subject")
+                .audience().add(issuer).and()
+                .id(UUID.randomUUID().toString())
+                .claim("email", "test@terrakube.io")
+                .claim("email_verified", true)
+                .claim("name", "Test User")
+                .issuedAt(java.util.Date.from(java.time.Instant.now()))
+                .expiration(java.util.Date.from(java.time.Instant.now().plus(60, java.time.temporal.ChronoUnit.SECONDS)))
+                .signWith(key)
+                .compact();
+    }
+
+    @Test
+    void resolve_patToken_32ByteSecret_supportsHS256() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(32).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_patToken_48ByteSecret_supportsHS384() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(48).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_patToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_internalToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("TerrakubeInternal", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
 }
