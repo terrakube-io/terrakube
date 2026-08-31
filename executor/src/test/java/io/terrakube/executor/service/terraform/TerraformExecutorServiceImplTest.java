@@ -462,4 +462,77 @@ class TerraformExecutorServiceImplTest {
         verify(logsService, Mockito.atLeastOnce()).sendLogs(eq(42), eq("1"), anyInt(),
                 argThat(line -> line != null && line.contains("on main.tf line 12")));
     }
+
+    // Same regression as the plan case, on the apply path: apply -json's diagnostic events must
+    // land in the console stream with their detail and location, not just the "Error:" header.
+    @Test
+    void applyForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        Map<String, Object> seededChange = new HashMap<>();
+        seededChange.put("address", "null_resource.fails");
+        seededChange.put("status", "pending");
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        String diagnosticLine = "{\"@message\":\"Error: Missing required argument\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Missing required argument\","
+                + "\"detail\":\"The argument \\\"triggers\\\" is required, but no definition was found.\","
+                + "\"range\":{\"filename\":\"main.tf\",\"start\":{\"line\":5,\"column\":1}}}}";
+
+        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(false);
+                });
+        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.getOutputLog().contains("The argument \"triggers\" is required, but no definition was found."),
+                result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("on main.tf line 5"), result.getOutputLog());
+    }
+
+    // Same regression on the destroy path.
+    @Test
+    void destroyForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        String diagnosticLine = "{\"@message\":\"Error: Provider configuration not present\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Provider configuration not present\","
+                + "\"detail\":\"To work with null_resource.fails its original provider configuration is required.\"}}";
+
+        TerraformClient jsonDestroyClient = Mockito.mock(TerraformClient.class);
+        when(jsonDestroyClient.destroy(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(false);
+                });
+        doReturn(jsonDestroyClient).when(subject).buildJsonEnabledDestroyClient();
+
+        ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
+
+        assertTrue(result.getOutputLog().contains(
+                "To work with null_resource.fails its original provider configuration is required."),
+                result.getOutputLog());
+    }
 }

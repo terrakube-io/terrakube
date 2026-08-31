@@ -25,16 +25,22 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -195,6 +201,49 @@ class RemoteTfeServiceTest {
         WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("exact"), currentUser);
 
         assertEquals("1.6.0", result.getData().get(0).getAttributes().get("terraform-version"));
+    }
+
+    // The CLI renders `tofu plan` output straight from the bytes this returns. The executor now
+    // writes a diagnostic's full rendering (header + `on <file> line <n>` + snippet + detail) to
+    // the job's step-100 log stream as several lines; getPlanLogs must hand all of them back, not
+    // drop everything after the "Error:" header, and the offset/limit slice must not chop the
+    // block when a page big enough to hold it is requested.
+    @Test
+    @SuppressWarnings("unchecked")
+    void planLogsReturnTheFullMultiLineDiagnosticBlock() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(123);
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        when(encryptionService.decrypt("encrypted-plan-id")).thenReturn("123");
+        when(jobRepository.findById(123)).thenReturn(Optional.of(job));
+
+        String executorConsole = String.join("\n",
+                "Plan: 0 to add, 0 to change, 0 to destroy.",
+                "",
+                "Error: Unsupported attribute",
+                "",
+                "  on main.tf line 12, in resource \"aws_instance\" \"web\":",
+                "  12:   subnet = aws_subnet.main.identifier",
+                "",
+                "This object has no argument, nested block, or exported attribute named \"identifier\".");
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class), any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("123", Map.of("output", executorConsole))));
+
+        String logs = new String(service.getPlanLogs("encrypted-plan-id", 0, 500_000), StandardCharsets.UTF_8);
+
+        assertTrue(logs.contains("on main.tf line 12, in resource \"aws_instance\" \"web\":"), logs);
+        assertTrue(logs.contains("12:   subnet = aws_subnet.main.identifier"), logs);
+        assertTrue(logs.contains(
+                "This object has no argument, nested block, or exported attribute named \"identifier\"."), logs);
     }
 
     private RemoteTfeService remoteTfeService() {
