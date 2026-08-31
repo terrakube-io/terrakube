@@ -211,7 +211,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
                 <Link
                   to={`/organizations/${id}/workspaces/${item.id}`}
                   aria-label={`Open workspace ${item.name}`}
-                  style={{ position: "absolute", inset: 0, zIndex: 0 }}
+                  style={{ position: "absolute", inset: 0, zIndex: 1 }}
                 />
                 <WorkspaceCard tags={tags} item={item} />
               </List.Item>

@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { List } from "antd";
+import { Link, MemoryRouter } from "react-router-dom";
 import OrganizationTable from "./modules/organizations/components/OrganizationTable/OrganizationTable";
 import OrganizationGridItem from "./modules/organizations/components/OrganizationGrid/OrganizationGridItem";
 import WorkspaceTable from "./modules/workspaces/components/WorkspaceTable/WorkspaceTable";
+import WorkspaceCard from "./modules/workspaces/components/WorkspaceCard";
 
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
   useOrgPermissions: () => ({ permissions: { managePermission: false }, loading: false }),
@@ -54,6 +56,37 @@ test("organization grid card is a real anchor pointing at the org workspaces URL
   expect(link.tagName).toBe("A");
   expect(link.getAttribute("href")).toBe("/organizations/org-1/workspaces");
   expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+});
+
+test("workspace card list item overlays a real anchor that stacks above the card", () => {
+  // The card list in OrganizationDetailsPage puts an absolutely-positioned <Link>
+  // behind each <WorkspaceCard>. antd's `.ant-card` is `position: relative`, so the
+  // card and its content paint in the same layer as (and, being later in the DOM,
+  // on top of) an overlay link with `z-index: 0` — which swallows every click.
+  // The overlay must carry a positive z-index to sit above the card.
+  render(
+    <MemoryRouter>
+      <List
+        dataSource={[workspace]}
+        renderItem={(item) => (
+          <List.Item style={{ position: "relative" }}>
+            <Link
+              to={`/organizations/org-1/workspaces/${item.id}`}
+              aria-label={`Open workspace ${item.name}`}
+              style={{ position: "absolute", inset: 0, zIndex: 1 }}
+            />
+            <WorkspaceCard tags={[]} item={item} />
+          </List.Item>
+        )}
+      />
+    </MemoryRouter>
+  );
+
+  const link = screen.getByRole("link", { name: /open workspace my workspace/i });
+  expect(link.tagName).toBe("A");
+  expect(link.getAttribute("href")).toBe("/organizations/org-1/workspaces/ws-1");
+  expect(link.style.position).toBe("absolute");
+  expect(Number(link.style.zIndex)).toBeGreaterThan(0);
 });
 
 test("workspace table row is a real anchor pointing at the workspace URL", () => {
