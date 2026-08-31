@@ -65,8 +65,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ApplyStructuredOutputService applyStructuredOutputService;
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
+    // Root of the per-workspace TF_DATA_DIR cache (io.terrakube.executor.terraform.dataDirCacheRoot); blank = disabled.
+    String dataDirCacheRoot;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, @Value("${io.terrakube.executor.terraform.dataDirCacheRoot:}") String dataDirCacheRoot) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -78,6 +80,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.objectMapper = objectMapper;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
+        this.dataDirCacheRoot = dataDirCacheRoot;
     }
 
     public File getTerraformWorkingDir(TerraformJob terraformJob, File workingDirectory) throws IOException {
@@ -1061,6 +1064,50 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", workspaceRootDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
         }
 
+        applyDataDirCache(terraformJob);
+
         return terraformJob.getEnvironmentVariables();
+    }
+
+    static final String TF_DATA_DIR = "TF_DATA_DIR";
+
+    /**
+     * Points TF_DATA_DIR at a per-workspace directory under the configured cache root, so the
+     * modules and providers that terraform/tofu init downloads survive between jobs of the same
+     * workspace (each job otherwise runs in a throw-away clone whose .terraform is discarded).
+     * A TF_DATA_DIR the user set explicitly on the workspace wins; no cache root, or a root that
+     * cannot be created, keeps the stock behaviour for this job.
+     */
+    void applyDataDirCache(TerraformJob terraformJob) {
+        if (dataDirCacheRoot == null || dataDirCacheRoot.isBlank()) {
+            return;
+        }
+        if (terraformJob.getEnvironmentVariables() == null) {
+            terraformJob.setEnvironmentVariables(new HashMap<>());
+        }
+        HashMap<String, String> environmentVariables = terraformJob.getEnvironmentVariables();
+        if (environmentVariables.containsKey(TF_DATA_DIR)) {
+            log.info("TF_DATA_DIR is already set to {} for this workspace, keeping it", environmentVariables.get(TF_DATA_DIR));
+            return;
+        }
+        String organizationId = cacheDirName(terraformJob.getOrganizationId());
+        String workspaceId = cacheDirName(terraformJob.getWorkspaceId());
+        if (organizationId.isEmpty() || workspaceId.isEmpty()) {
+            log.warn("Job {} has no organization/workspace id, not using the terraform data directory cache", terraformJob.getJobId());
+            return;
+        }
+        File dataDir = new File(new File(dataDirCacheRoot.trim(), organizationId), workspaceId);
+        try {
+            FileUtils.forceMkdir(dataDir);
+            environmentVariables.put(TF_DATA_DIR, dataDir.getAbsolutePath());
+            log.info("Using cached terraform data directory {}", dataDir.getAbsolutePath());
+        } catch (IOException e) {
+            log.warn("Unable to create terraform data directory {}: {} - modules and providers will be downloaded again for this job", dataDir.getAbsolutePath(), e.getMessage());
+        }
+    }
+
+    // Ids are UUIDs; anything else is reduced to a safe single path segment.
+    private static String cacheDirName(String id) {
+        return id == null ? "" : id.trim().replaceAll("[^A-Za-z0-9._-]", "_");
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +53,10 @@ class TerraformExecutorServiceImplTest {
     private final StreamOperations streamOperations = Mockito.mock(StreamOperations.class);
 
     private TerraformExecutorServiceImpl subject() {
+        return subject("");
+    }
+
+    private TerraformExecutorServiceImpl subject(String dataDirCacheRoot) {
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
         when(streamOperations.size(anyString())).thenReturn(0L);
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
@@ -67,7 +72,8 @@ class TerraformExecutorServiceImplTest {
                 objectMapper,
                 false,
                 redisTemplate,
-                1);
+                1,
+                dataDirCacheRoot);
     }
 
     private TerraformJob createJob() {
@@ -84,6 +90,45 @@ class TerraformExecutorServiceImplTest {
         terraformJob.setEnvironmentVariables(new HashMap<>());
         terraformJob.setVariables(new HashMap<>());
         return terraformJob;
+    }
+
+    @Test
+    void loadTempEnvironmentVariablesSetsPerWorkspaceDataDirWhenCacheRootConfigured() throws Exception {
+        Path cacheRoot = tempDir.resolve("tf-data-cache");
+        File workingDirectory = Files.createDirectories(tempDir.resolve("workspace")).toFile();
+        TerraformJob terraformJob = createJob();
+
+        HashMap<String, String> environment = subject(cacheRoot.toString())
+                .loadTempEnvironmentVariables(workingDirectory, workingDirectory, terraformJob);
+
+        File expected = cacheRoot.resolve("org").resolve("workspace").toFile();
+        assertEquals(expected.getAbsolutePath(), environment.get("TF_DATA_DIR"));
+        assertTrue(expected.isDirectory());
+    }
+
+    @Test
+    void loadTempEnvironmentVariablesKeepsUserProvidedDataDir() throws Exception {
+        Path cacheRoot = tempDir.resolve("tf-data-cache");
+        File workingDirectory = Files.createDirectories(tempDir.resolve("workspace")).toFile();
+        TerraformJob terraformJob = createJob();
+        terraformJob.getEnvironmentVariables().put("TF_DATA_DIR", "/custom/data-dir");
+
+        HashMap<String, String> environment = subject(cacheRoot.toString())
+                .loadTempEnvironmentVariables(workingDirectory, workingDirectory, terraformJob);
+
+        assertEquals("/custom/data-dir", environment.get("TF_DATA_DIR"));
+        assertFalse(cacheRoot.resolve("org").toFile().exists());
+    }
+
+    @Test
+    void loadTempEnvironmentVariablesLeavesDataDirUnsetWithoutCacheRoot() throws Exception {
+        File workingDirectory = Files.createDirectories(tempDir.resolve("workspace")).toFile();
+        TerraformJob terraformJob = createJob();
+
+        HashMap<String, String> environment = subject()
+                .loadTempEnvironmentVariables(workingDirectory, workingDirectory, terraformJob);
+
+        assertFalse(environment.containsKey("TF_DATA_DIR"));
     }
 
     @Test
