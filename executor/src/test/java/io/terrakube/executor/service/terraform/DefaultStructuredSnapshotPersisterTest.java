@@ -57,6 +57,46 @@ class DefaultStructuredSnapshotPersisterTest {
     }
 
     @Test
+    void finalEmptyPlanSnapshotWritesTheNoChangePlanMarker() {
+        JobContextService ctx = mock(JobContextService.class);
+        when(ctx.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        when(ctx.saveContextChecked(eq("o"), eq("1"), any())).thenReturn(true);
+        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
+        Map<String, Object> merged = new HashMap<>();
+        when(plan.updateContext(any(), eq("step-1"), any(), any())).thenReturn(merged);
+        DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(
+                ctx, plan, mock(ApplyStructuredOutputService.class), mock(ProcessLogs.class), mapper);
+
+        StructuredSnapshot emptyFinalPlan = StructuredSnapshot.copyOf("o", "1", "step-1",
+                StructuredSnapshot.Phase.PLAN, 2L, true, List.of(), List.of(), mapper);
+        assertTrue(persister.persist(emptyFinalPlan));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> marker = (Map<String, Object>) merged.get("noChangePlan");
+        assertEquals("step-1", marker.get("planStepId"));
+    }
+
+    @Test
+    void finalNonEmptyPlanSnapshotClearsAnyStaleNoChangePlanMarker() {
+        JobContextService ctx = mock(JobContextService.class);
+        Map<String, Object> merged = new HashMap<>();
+        merged.put("noChangePlan", Map.of("planStepId", "step-1"));
+        when(ctx.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        when(ctx.saveContextChecked(eq("o"), eq("1"), any())).thenReturn(true);
+        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
+        when(plan.updateContext(any(), eq("step-1"), any(), any())).thenReturn(merged);
+        DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(
+                ctx, plan, mock(ApplyStructuredOutputService.class), mock(ProcessLogs.class), mapper);
+
+        StructuredSnapshot nonEmptyFinalPlan = StructuredSnapshot.copyOf("o", "1", "step-1",
+                StructuredSnapshot.Phase.PLAN, 3L, true,
+                List.of(Map.of("address", "aws_s3_bucket.a", "action", "create")), List.of(), mapper);
+        assertTrue(persister.persist(nonEmptyFinalPlan));
+
+        assertFalse(merged.containsKey("noChangePlan"));
+    }
+
+    @Test
     void persistReturnsFalseWhenSaveFailsAndDoesNotPushSse() {
         JobContextService ctx = mock(JobContextService.class);
         when(ctx.getCurrentContext(any(), any())).thenReturn(new HashMap<>());

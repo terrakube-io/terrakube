@@ -32,6 +32,7 @@ public class PlanStructuredOutputService {
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
     private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
+    static final String CONTEXT_NO_CHANGE_PLAN_KEY = "noChangePlan";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
 
     private final JobContextService jobContextService;
@@ -80,6 +81,7 @@ public class PlanStructuredOutputService {
                     : buildChangesFromPlanJson(planJson);
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
+            applyNoChangePlanMarker(updatedContext, terraformJob.getStepId(), changes);
             saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
@@ -124,6 +126,9 @@ public class PlanStructuredOutputService {
         try {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
             Map<String, Object> updatedContext = updateContext(context, stepId, liveChanges, jobDiagnostics);
+            if (finalSnapshot) {
+                applyNoChangePlanMarker(updatedContext, stepId, liveChanges);
+            }
             saveContext(organizationId, jobId, updatedContext);
         } catch (Exception e) {
             log.warn("Unable to publish live plan progress for job {} step {}", jobId, stepId, e);
@@ -290,6 +295,20 @@ public class PlanStructuredOutputService {
         updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
 
         return updatedContext;
+    }
+
+    /**
+     * A no-change plan writes an explicit {@code noChangePlan} marker (with its plan step id) so the
+     * UI can treat the associated standard apply as a valid no-op without inferring it from an empty
+     * array or console text. The marker is cleared as soon as a real change is recorded for the step.
+     * Only written from authoritative final writes (plan summary / final snapshot), never progress.
+     */
+    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes) {
+        if (changes == null || changes.isEmpty()) {
+            context.put(CONTEXT_NO_CHANGE_PLAN_KEY, Map.of("planStepId", stepId));
+        } else {
+            context.remove(CONTEXT_NO_CHANGE_PLAN_KEY);
+        }
     }
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {

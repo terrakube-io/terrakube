@@ -57,6 +57,9 @@ public class DefaultStructuredSnapshotPersister implements StructuredSnapshotPer
                     "stepId", stepId,
                     "phase", planPhase ? "plan" : "apply",
                     "finalSnapshot", snapshot.isFinalSnapshot()));
+            if (planPhase && snapshot.isFinalSnapshot()) {
+                PlanStructuredOutputService.applyNoChangePlanMarker(updated, stepId, snapshot.getChanges());
+            }
 
             boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updated);
             if (saved) {
