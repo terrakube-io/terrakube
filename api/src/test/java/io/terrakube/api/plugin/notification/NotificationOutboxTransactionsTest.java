@@ -59,6 +59,50 @@ class NotificationOutboxTransactionsTest {
     }
 
     @Test
+    void claimSkipsTheRowWhenTheJobHasMovedPastTheRenderedStatus() {
+        UUID id = UUID.randomUUID();
+        Date lastAttemptAt = new Date();
+        io.terrakube.api.rs.job.Job job = new io.terrakube.api.rs.job.Job();
+        job.setId(721);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        NotificationOutbox row = new NotificationOutbox();
+        row.setId(id);
+        row.setPayload("{}");
+        row.setLastAttemptAt(lastAttemptAt);
+        row.setJob(job);
+        row.setJobStatus(io.terrakube.api.rs.job.JobStatus.failed);
+        when(notificationOutboxRepository.claimForDelivery(eq(id), eq(NotificationOutboxStatus.PENDING),
+                eq(NotificationOutboxStatus.SENDING), any())).thenReturn(1);
+        when(notificationOutboxRepository.findById(id)).thenReturn(Optional.of(row));
+
+        assertThat(subject.claim(id)).isNull();
+
+        verify(notificationOutboxRepository).recordDeliveryResult(eq(id), eq(NotificationOutboxStatus.SENDING),
+                eq(lastAttemptAt), eq(NotificationOutboxStatus.SKIPPED), any(), isNull(), any());
+    }
+
+    @Test
+    void claimDeliversTheRowWhenTheJobStillMatchesTheRenderedStatus() {
+        UUID id = UUID.randomUUID();
+        io.terrakube.api.rs.job.Job job = new io.terrakube.api.rs.job.Job();
+        job.setId(721);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.failed);
+        NotificationOutbox row = new NotificationOutbox();
+        row.setId(id);
+        row.setPayload("{}");
+        row.setLastAttemptAt(new Date());
+        row.setJob(job);
+        row.setJobStatus(io.terrakube.api.rs.job.JobStatus.failed);
+        when(notificationOutboxRepository.claimForDelivery(eq(id), eq(NotificationOutboxStatus.PENDING),
+                eq(NotificationOutboxStatus.SENDING), any())).thenReturn(1);
+        when(notificationOutboxRepository.findById(id)).thenReturn(Optional.of(row));
+
+        assertThat(subject.claim(id)).isNotNull();
+        verify(notificationOutboxRepository, never()).recordDeliveryResult(any(), any(), any(),
+                eq(NotificationOutboxStatus.SKIPPED), any(), any(), any());
+    }
+
+    @Test
     void recordResultDelegatesToTheConditionalUpdate() {
         UUID id = UUID.randomUUID();
         Date lastAttemptAt = new Date();
@@ -89,13 +133,15 @@ class NotificationOutboxTransactionsTest {
     void pruneTerminalRowsOlderThanDelegatesToTheDeleteQuery() {
         Date cutoff = new Date();
         when(notificationOutboxRepository.deleteTerminalRowsCreatedBefore(
-                eq(java.util.List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED)), eq(cutoff)))
+                eq(java.util.List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED,
+                        NotificationOutboxStatus.SKIPPED)), eq(cutoff)))
                 .thenReturn(5);
 
         int deleted = subject.pruneTerminalRowsOlderThan(cutoff);
 
         assertThat(deleted).isEqualTo(5);
         verify(notificationOutboxRepository).deleteTerminalRowsCreatedBefore(
-                eq(java.util.List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED)), eq(cutoff));
+                eq(java.util.List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED,
+                        NotificationOutboxStatus.SKIPPED)), eq(cutoff));
     }
 }
