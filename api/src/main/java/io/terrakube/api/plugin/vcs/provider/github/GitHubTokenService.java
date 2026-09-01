@@ -13,7 +13,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
 
-import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -24,11 +23,9 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
-import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
 import io.terrakube.api.plugin.vcs.provider.GetAccessToken;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
-import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
 
@@ -56,10 +53,6 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     ObjectMapper objectMapper;
     @Autowired
     GitHubAppTokenRepository gitHubAppTokenRepository;
-    @Autowired
-    VcsRepository vcsRepository;
-    @Autowired
-    ScheduleGitHubAppTokenService scheduleGitHubAppTokenService;
 
     public GitHubToken getAccessToken(String clientId, String clientSecret, String tempCode, String callback,
                                       String endpoint) throws TokenException {
@@ -108,92 +101,87 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         return getGitHubAppToken(vcs, ownerAndRepo).getToken();
     }
 
-    // Refreshes the access token for a specific installation of the app that's
-    // already been saved in the GitHubAppToken table
-    public String refreshAccessToken(GitHubAppToken gitHubAppToken)
-            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonMappingException, JsonProcessingException {
-        Vcs vcs = vcsRepository.findFirstByClientId(gitHubAppToken.getAppId());
-        if (vcs == null) {
-            log.warn("No Vcs found for GitHub App id {}, removing orphaned GitHubAppToken {} for owner {}",
-                    gitHubAppToken.getAppId(), gitHubAppToken.getId(), gitHubAppToken.getOwner());
-            try {
-                scheduleGitHubAppTokenService.deleteTask(gitHubAppToken.getId().toString());
-            } catch (SchedulerException e) {
-                log.error("Failed to delete refresh schedule for orphaned GitHubAppToken {}, error {}",
-                        gitHubAppToken.getId(), e);
-            }
-            gitHubAppTokenRepository.delete(gitHubAppToken);
-            return null;
-        }
-        String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-        GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
-                gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, gitHubAppToken.getOwner());
-        gitHubAppToken.setExpiresAt(installationToken.expiresAt());
-        return installationToken.token();
-    }
-
+    // A cached token is served while it is still valid, and minted on demand when it is
+    // not. Tokens are only worth anything at the moment a caller needs one, and every
+    // consumer (job dispatch, imports, module refresh, webhooks, discovery) comes
+    // through here, so validating on read covers all of them from one place.
     public GitHubAppToken getGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
             throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
         log.info("Getting access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
         GitHubAppToken gitHubAppToken = gitHubAppTokenRepository.findByAppIdAndOwner(vcs.getClientId(), ownerAndRepo[0]);
-        if (gitHubAppToken == null) {
-            log.info("No token found in GitHubAppToken table, fetching new token");
-            gitHubAppToken = fetchGitHubAppInstallationToken(vcs, ownerAndRepo);
-        } else if (isExpired(gitHubAppToken.getExpiresAt())) {
-            log.info("Cached GitHub App token for user/organization {} is expired or missing an expiry, refreshing",
-                    ownerAndRepo[0]);
-            String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(
-                    gitHubAppToken.getInstallationId(), vcs.getApiUrl(), jws, ownerAndRepo[0]);
-            gitHubAppToken.setToken(installationToken.token());
-            gitHubAppToken.setExpiresAt(installationToken.expiresAt());
-            gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
+
+        if (gitHubAppToken != null && !isExpired(gitHubAppToken.getExpiresAt())) {
+            log.debug("Cached GitHub App token for user/organization {} is still valid", ownerAndRepo[0]);
+            return gitHubAppToken;
         }
 
-        log.info("Token fetched for user/organization {}", ownerAndRepo[0]);
-        log.debug("Token: {}", gitHubAppToken.getToken());
+        if (gitHubAppToken == null) {
+            log.info("No token cached for user/organization {}, minting one", ownerAndRepo[0]);
+        } else {
+            log.info("Cached GitHub App token for user/organization {} is expired or missing an expiry, minting a new one",
+                    ownerAndRepo[0]);
+        }
+        return mintAndCacheToken(vcs, ownerAndRepo, gitHubAppToken);
+    }
 
+    // Mints an installation token and upserts the cache row.
+    //
+    // The installation is resolved on every mint rather than read back from the cached
+    // row. An installation id is not stable - reinstalling an app, or installing it on
+    // another account, issues new ids - and a cached id that GitHub no longer accepts
+    // leaves that owner permanently broken, since nothing in the flow would ever
+    // reconsider it. Resolving costs one extra call on a path that already runs at most
+    // once per token lifetime.
+    private GitHubAppToken mintAndCacheToken(Vcs vcs, String[] ownerAndRepo, GitHubAppToken cached)
+            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonProcessingException {
+        String owner = ownerAndRepo[0];
+        String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
+        String installationId = resolveInstallationId(vcs.getApiUrl(), jws, ownerAndRepo);
+        GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(installationId, vcs.getApiUrl(),
+                jws, owner);
+
+        if (installationToken.token() == null) {
+            // Caching a row with no token would poison it: later reads would find the
+            // row, hand back a null token, and the clone would go out unauthenticated -
+            // reaching the user as an unexplained "not authorized" from the git client.
+            throw new IllegalStateException(String.format(
+                    "Installation %s of GitHub App %s returned no token for user/organization %s", installationId,
+                    vcs.getClientId(), owner));
+        }
+
+        GitHubAppToken gitHubAppToken = cached != null ? cached : new GitHubAppToken();
+        gitHubAppToken.setOwner(owner);
+        gitHubAppToken.setAppId(vcs.getClientId());
+        gitHubAppToken.setInstallationId(installationId);
+        gitHubAppToken.setToken(installationToken.token());
+        gitHubAppToken.setExpiresAt(installationToken.expiresAt());
+        gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
+
+        log.info("Token minted for user/organization {} on installation {}, expires at {}", owner, installationId,
+                installationToken.expiresAt());
         return gitHubAppToken;
     }
 
-    // Generates a new access token for a specific installation of the app that
-    // hasn't been saved in the GitHubAppToken table yet
-    private GitHubAppToken fetchGitHubAppInstallationToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
-        GitHubAppToken gitHubAppToken = new GitHubAppToken();
-
-        String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
-        log.info("Generated JWT token for GitHub App");
-        String url = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/installation";
-        log.info("Getting access token for user/organization {} using url {}", ownerAndRepo[0], url);
-        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.GET, jws);
-        if (tokenResponse.getStatusCode().value() == 200) {
-            log.info("Successfully fetched access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
-            JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
-            String installationId = rootNode.path("id").asText();
-            //gitHubAppToken.setId(UUID.randomUUID());
-            gitHubAppToken.setInstallationId(installationId);
-            gitHubAppToken.setOwner(ownerAndRepo[0]);
-            gitHubAppToken.setAppId(vcs.getClientId());
-            GitHubAppInstallationToken installationToken = fetchGitHubAppInstallationToken(installationId,
-                    vcs.getApiUrl(), jws, ownerAndRepo[0]);
-            gitHubAppToken.setToken(installationToken.token());
-            gitHubAppToken.setExpiresAt(installationToken.expiresAt());
+    // Which installation of the app serves this repository. An account holds at most one
+    // installation of a given app, so this identifies the owner's installation too - and
+    // unlike the owner-level endpoints it also proves the repository is within that
+    // installation's scope, which is the thing the caller is about to rely on.
+    private String resolveInstallationId(String vcsApiUrl, String jws, String[] ownerAndRepo)
+            throws JsonProcessingException {
+        if (ownerAndRepo.length < 2 || ownerAndRepo[1] == null || ownerAndRepo[1].isBlank()) {
+            throw new IllegalArgumentException(
+                    "A repository is required to resolve the GitHub App installation for owner " + ownerAndRepo[0]);
         }
-
-        gitHubAppToken = gitHubAppTokenRepository.save(gitHubAppToken);
-        log.info("Successfully saved token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
-        // Schedule a job to refresh the token every 55 minutes
-        try {
-            log.info("Scheduling task to refresh GitHub App token for owner/organization {}", gitHubAppToken.getOwner());
-            scheduleGitHubAppTokenService.createTask(3300, gitHubAppToken.getId().toString());
-            log.info("Successfully created schedule task to refresh GitHub App token for owner/organization {}",
-                    gitHubAppToken.getOwner());
-        } catch (SchedulerException e) {
-            log.error("Failed to create schedule task to refresh GitHub App token for owner/organization {}, error {}",
-                    gitHubAppToken.getOwner(), e);
+        String url = vcsApiUrl + "/repos/" + ownerAndRepo[0] + "/" + ownerAndRepo[1] + "/installation";
+        log.info("Resolving the GitHub App installation for user/organization {} using url {}", ownerAndRepo[0], url);
+        ResponseEntity<String> response = callGithubAPI("", url, HttpMethod.GET, jws);
+        String installationId = objectMapper.readTree(response.getBody()).path("id").asText();
+        if (installationId.isBlank()) {
+            throw new IllegalStateException(
+                    "No GitHub App installation id returned for repository " + String.join("/", ownerAndRepo));
         }
-        return gitHubAppToken;
+        log.info("Resolved installation {} for user/organization {}", installationId, ownerAndRepo[0]);
+        return installationId;
     }
 
     // Gets the access token with app installation ID for a specific installation of
