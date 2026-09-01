@@ -19,10 +19,12 @@ import io.terrakube.api.rs.workspace.Workspace;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -169,6 +171,49 @@ class JobTests extends ServerApplicationTests {
                 .extract()
                 .path("data.id");
    }
+
+    // Dates must keep (at least) second precision so the UI can compute accurate relative
+    // times; minute-truncated timestamps made it show "42 seconds ago" for jobs that were
+    // just triggered (issue #2787).
+    @Test
+    void jsonApiDatesKeepSecondPrecision() {
+        devsManageJobs(true);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"))
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/")
+                .then()
+                .assertThat()
+                .body("data.attributes.createdDate", matchesPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z"))
+                .body("data.attributes.updatedDate", matchesPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z"))
+                .statusCode(HttpStatus.CREATED.value());
+    }
+
+    // GraphQL dates go through Elide's ISO8601 date serde, whose default pattern truncates to
+    // minute precision (yyyy-MM-dd'T'HH:mm'Z'). The workspace list in the UI reads lastJobDate
+    // through this exact query path, so "Last run X ago" was computed from the top of the
+    // minute (issue #2787). ElideSerdeConfiguration overrides the pattern to keep seconds.
+    @Test
+    void graphQlDatesKeepSecondPrecision() {
+        workspace.setLastJobDate(Date.from(Instant.parse("2026-01-15T10:20:42Z")));
+        workspace = workspaceRepository.save(workspace);
+
+        String query = "{ \"query\": \"{ organization(ids: [\\\"d9b58bd3-f3fc-4056-a026-1163297e80a8\\\"]) { edges { node { "
+                + "workspace(ids: [\\\"" + workspace.getId() + "\\\"]) { edges { node { lastJobDate } } } } } } }\" }";
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/json")
+                .body(query)
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.organization.edges[0].node.workspace.edges[0].node.lastJobDate",
+                        IsEqual.equalTo("2026-01-15T10:20:42Z"));
+    }
 
     @Test
     void createJobLockedWorkspace() {
