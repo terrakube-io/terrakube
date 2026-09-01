@@ -36,6 +36,16 @@ class StructuredSnapshotTest {
     }
 
     @Test
+    void copyOfStampsCreatedAtTimestamp() {
+        long before = System.currentTimeMillis();
+        StructuredSnapshot snapshot = StructuredSnapshot.copyOf(
+                "org", "42", "s", StructuredSnapshot.Phase.PLAN, 1L, true, List.of(), List.of(), mapper);
+        long after = System.currentTimeMillis();
+
+        assertTrue(snapshot.getCreatedAtEpochMs() >= before && snapshot.getCreatedAtEpochMs() <= after);
+    }
+
+    @Test
     void copyOfToleratesNullLists() {
         StructuredSnapshot snapshot = StructuredSnapshot.copyOf(
                 "org", "42", "s", StructuredSnapshot.Phase.APPLY, 7L, true, null, null, mapper);

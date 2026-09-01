@@ -24,4 +24,12 @@ public class StructuredOutputProperties {
     private long initialBackoffMs = 250;
     private long maxBackoffMs = 4000;
     private long drainTimeoutMs = 30000;
+
+    // Delayed recovery: after the normal retry budget is exhausted, the newest snapshot per
+    // (jobId, stepId, phase) is retained and retried on a slow scheduled cadence until it persists
+    // or the retention period expires.
+    private long recoveryRetentionMs = 600_000;
+    private long recoveryInitialDelayMs = 15_000;
+    private long recoveryMaxDelayMs = 60_000;
+    private int recoveryMaxRetained = 64;
 }

@@ -24,4 +24,8 @@ public class ExecutorFlagsProperties {
     // fall back to the previous synchronous behaviour.
     private boolean asyncStructuredOutput = true;
 
+    // When true, a snapshot that exhausts its normal retry budget is retained and retried on a
+    // slow scheduled cadence so a brief context-store outage does not permanently lose it.
+    private boolean structuredOutputRecovery = true;
+
 }

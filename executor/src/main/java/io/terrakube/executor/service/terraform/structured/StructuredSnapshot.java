@@ -44,11 +44,12 @@ public final class StructuredSnapshot {
     private final Phase phase;
     private final long sequence;
     private final boolean finalSnapshot;
+    private final long createdAtEpochMs;
     private final List<Map<String, Object>> changes;
     private final List<Map<String, Object>> jobDiagnostics;
 
     private StructuredSnapshot(String organizationId, String jobId, String stepId, Phase phase, long sequence,
-                              boolean finalSnapshot, List<Map<String, Object>> changes,
+                              boolean finalSnapshot, long createdAtEpochMs, List<Map<String, Object>> changes,
                               List<Map<String, Object>> jobDiagnostics) {
         this.organizationId = organizationId;
         this.jobId = jobId;
@@ -56,6 +57,7 @@ public final class StructuredSnapshot {
         this.phase = phase;
         this.sequence = sequence;
         this.finalSnapshot = finalSnapshot;
+        this.createdAtEpochMs = createdAtEpochMs;
         this.changes = changes;
         this.jobDiagnostics = jobDiagnostics;
     }
@@ -71,6 +73,7 @@ public final class StructuredSnapshot {
             List<Map<String, Object>> safeDiagnostics = objectMapper.convertValue(
                     jobDiagnostics == null ? List.of() : jobDiagnostics, LIST_OF_MAPS);
             return new StructuredSnapshot(organizationId, jobId, stepId, phase, sequence, finalSnapshot,
+                    System.currentTimeMillis(),
                     Collections.unmodifiableList(safeChanges), Collections.unmodifiableList(safeDiagnostics));
         } catch (IllegalArgumentException e) {
             throw new SnapshotSerializationException(e);
