@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
@@ -55,6 +56,7 @@ public class PrCommentServiceTest {
     StepRepository stepRepository;
     StorageTypeService storageTypeService;
     StreamingService streamingService;
+    StepOutputReader stepOutputReader;
     ObjectMapper objectMapper;
 
     PrCommentService subject;
@@ -68,6 +70,10 @@ public class PrCommentServiceTest {
         stepRepository = mock(StepRepository.class);
         storageTypeService = mock(StorageTypeService.class);
         streamingService = mock(StreamingService.class);
+        // Real reader over the mocked storage/streaming beans, so the existing getCurrentLogs /
+        // getStepOutput stubs below keep exercising the same read-then-fallback behaviour that
+        // now lives in StepOutputReader.
+        stepOutputReader = new StepOutputReader(storageTypeService, streamingService);
         objectMapper = new ObjectMapper();
 
         subject = new PrCommentService(
@@ -77,7 +83,7 @@ public class PrCommentServiceTest {
                 jobRepository,
                 stepRepository,
                 storageTypeService,
-                streamingService,
+                stepOutputReader,
                 objectMapper);
     }
 
