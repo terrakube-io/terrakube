@@ -1,5 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { DetailsJob } from "../Details";
+import { stepLogCache } from "../stepLogCache";
+
+// The step-log cache is module-level and would otherwise leak a fetched log from one test into the
+// next (they reuse step ids like "step-1").
+beforeEach(() => {
+  stepLogCache.clear();
+});
 
 window._env_ = {
   REACT_APP_AUTHORITY: "http://localhost/authority",
@@ -159,6 +166,45 @@ describe("DetailsJob apply structured output", () => {
     expect(
       screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
     ).not.toBeInTheDocument();
+  });
+
+  it("shows 'temporarily unavailable' (never a false 'No changes') when structured context is missing after a plan with changes", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+      if (url.includes("/step/")) {
+        return Promise.resolve({
+          data: "Terraform will perform the following actions:\n\nPlan: 1 to add, 0 to change, 0 to destroy.\n",
+        });
+      }
+
+      return Promise.resolve({
+        data: {
+          data: {
+            id: "1",
+            attributes: { status: "completed" },
+          },
+          included: [
+            {
+              id: "step-1",
+              type: "step",
+              attributes: { name: "Plan", status: "completed", stepNumber: "1" },
+            },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Structured output temporarily unavailable")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 });
 

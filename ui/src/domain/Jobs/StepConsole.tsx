@@ -1,7 +1,8 @@
-import { Spin } from "antd";
+import { Alert, Button, Spin } from "antd";
 import parse from "html-react-parser";
 import { useStepLog } from "../../hooks";
 import { JobStep } from "../types";
+import { parseConsolePlanSummary } from "./consolePlanSummary";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { isRunningStatus, isTerminalStatus } from "./stepStatus";
 import { StructuredPlanOutput } from "./StructuredPlanOutput";
@@ -30,6 +31,8 @@ type Props = {
   guardMessage?: string;
   structured: StructuredData;
   uiType: "structured" | "console";
+  /** Re-fetch the structured context (used by the "temporarily unavailable" retry control). */
+  onRetryStructured?: () => void;
 };
 
 /**
@@ -40,7 +43,15 @@ type Props = {
  * When a structured view exists it shares the same log text (for terraform-version extraction etc.)
  * and the console sits behind the Structured/Console toggle.
  */
-export const StepConsole = ({ item, jobId, organizationId, guardMessage, structured, uiType }: Props) => {
+export const StepConsole = ({
+  item,
+  jobId,
+  organizationId,
+  guardMessage,
+  structured,
+  uiType,
+  onRetryStructured,
+}: Props) => {
   const running = isRunningStatus(item.status);
   const terminal = isTerminalStatus(item.status);
 
@@ -83,6 +94,48 @@ export const StepConsole = ({ item, jobId, organizationId, guardMessage, structu
       />
     );
   };
+
+  // A completed plan/apply step whose console clearly shows changes but whose structured context
+  // is missing or empty: the structured write is stale or failed. Show an explicit "temporarily
+  // unavailable" state with the console as fallback and a retry - never a false "No changes".
+  const hasRealStructuredContent =
+    Boolean(structured.template) ||
+    (structured.structuredChanges != null && structured.structuredChanges.length > 0) ||
+    (structured.structuredApplyChanges != null && structured.structuredApplyChanges.length > 0);
+  const consolePlanSummary = parseConsolePlanSummary(logText);
+  const structuredUnavailable =
+    terminal &&
+    !hasRealStructuredContent &&
+    consolePlanSummary.hasPlan &&
+    consolePlanSummary.declaresChanges;
+
+  if (structuredUnavailable) {
+    return (
+      <>
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Structured output temporarily unavailable"
+          description={
+            <>
+              This step produced changes, but the structured view could not be loaded. The full
+              output is shown below.
+              {onRetryStructured != null && (
+                <>
+                  {" "}
+                  <Button size="small" onClick={onRetryStructured}>
+                    Retry
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
+        {renderConsole()}
+      </>
+    );
+  }
 
   if (!structured.hasStructuredView) {
     return renderConsole();

@@ -258,6 +258,7 @@ export const DetailsJob = ({ jobId }: Props) => {
         guardMessage={isGuardStep ? item.outputLog : undefined}
         structured={getStepStructuredData(item)}
         uiType={uiType}
+        onRetryStructured={() => void loadContext()}
       />
     );
   };
