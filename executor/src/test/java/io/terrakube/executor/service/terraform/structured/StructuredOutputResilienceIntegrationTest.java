@@ -36,12 +36,12 @@ class StructuredOutputResilienceIntegrationTest {
 
         StructuredOutputProperties properties = new StructuredOutputProperties();
         properties.setQueueCapacity(128);
-        StructuredOutputPersistenceQueue queue =
-                new StructuredOutputPersistenceQueue(properties, new SimpleMeterRegistry(), glacial);
-        queue.start();
-
         ExecutorFlagsProperties flags = new ExecutorFlagsProperties();
         flags.setAsyncStructuredOutput(true);
+        flags.setStructuredOutputRecovery(false);
+        StructuredOutputPersistenceQueue queue =
+                new StructuredOutputPersistenceQueue(properties, flags, new SimpleMeterRegistry(), glacial);
+        queue.start();
         // A FailUnkownMethod-style strict mock: any synchronous HTTP call here fails the test.
         JobContextService jobContextService = Mockito.mock(JobContextService.class, invocation -> {
             throw new AssertionError("line consumer made a synchronous context call: " + invocation.getMethod());

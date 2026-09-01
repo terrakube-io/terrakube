@@ -27,17 +27,41 @@ class StructuredOutputPersistenceQueueTest {
                 List.of(row), List.of(), mapper);
     }
 
+    private StructuredSnapshot finalSnap(String step, long seq, String addr) {
+        Map<String, Object> row = new HashMap<>();
+        row.put("address", addr);
+        return StructuredSnapshot.copyOf("o", "1", step, StructuredSnapshot.Phase.PLAN, seq, true,
+                List.of(row), List.of(), mapper);
+    }
+
     private StructuredOutputProperties props(int capacity) {
         StructuredOutputProperties p = new StructuredOutputProperties();
         p.setQueueCapacity(capacity);
         p.setMaxPersistAttempts(2);
         p.setInitialBackoffMs(1);
         p.setMaxBackoffMs(2);
+        p.setRecoveryInitialDelayMs(100);
+        p.setRecoveryMaxDelayMs(200);
+        p.setRecoveryRetentionMs(60_000);
+        p.setRecoveryMaxRetained(4);
         return p;
     }
 
+    private io.terrakube.executor.configuration.ExecutorFlagsProperties flags(boolean recovery) {
+        io.terrakube.executor.configuration.ExecutorFlagsProperties f =
+                new io.terrakube.executor.configuration.ExecutorFlagsProperties();
+        f.setStructuredOutputRecovery(recovery);
+        return f;
+    }
+
     private StructuredOutputPersistenceQueue started(StructuredSnapshotPersister persister, SimpleMeterRegistry reg, int capacity) {
-        StructuredOutputPersistenceQueue queue = new StructuredOutputPersistenceQueue(props(capacity), reg, persister);
+        return started(persister, reg, capacity, false);
+    }
+
+    private StructuredOutputPersistenceQueue started(StructuredSnapshotPersister persister, SimpleMeterRegistry reg,
+                                                     int capacity, boolean recovery) {
+        StructuredOutputPersistenceQueue queue =
+                new StructuredOutputPersistenceQueue(props(capacity), flags(recovery), reg, persister);
         queue.start();
         return queue;
     }
@@ -150,6 +174,128 @@ class StructuredOutputPersistenceQueueTest {
         assertEquals(2, calls[0]);
         assertEquals(1.0, registry.get("terrakube.executor.structured.output.persist")
                 .tag("outcome", "success").counter().count());
+        queue.stop();
+    }
+
+    // --- delayed recovery -------------------------------------------------------------------
+
+    @Test
+    void retainsNewestSnapshotAfterRetryExhaustion() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        StructuredOutputPersistenceQueue queue = started(s -> false, registry, 64, true);
+
+        queue.submit(finalSnap("step-1", 1, "a"));
+
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        assertEquals(1, queue.retainedDepth());
+        assertEquals(1.0, registry.get("terrakube.executor.structured.output.recovery.pending").gauge().value());
+        queue.stop();
+    }
+
+    @Test
+    void recoverRetainedPersistsOnceStorageRecovers() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        java.util.concurrent.atomic.AtomicBoolean healthy = new java.util.concurrent.atomic.AtomicBoolean(false);
+        List<Long> persistedSequences = Collections.synchronizedList(new java.util.ArrayList<>());
+        StructuredSnapshotPersister persister = s -> {
+            if (!healthy.get()) {
+                return false;
+            }
+            persistedSequences.add(s.getSequence());
+            return true;
+        };
+        StructuredOutputPersistenceQueue queue = started(persister, registry, 64, true);
+
+        queue.submit(snap("step-1", 1, "a"));
+        queue.submit(finalSnap("step-1", 2, "b")); // newer supersedes the retained progress snapshot
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        assertEquals(1, queue.retainedDepth());
+
+        healthy.set(true);
+        Thread.sleep(200); // let the retained entry become due (recovery-initial-delay = 100ms)
+        queue.recoverRetained();
+
+        assertEquals(0, queue.retainedDepth());
+        assertEquals(List.of(2L), persistedSequences);
+        assertTrue(registry.get("terrakube.executor.structured.output.recovery.attempts").counter().count() >= 1);
+        queue.stop();
+    }
+
+    @Test
+    void recoveryRetentionExpiryRemovesTheSnapshotAndCountsIt() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        StructuredOutputProperties p = props(64);
+        p.setRecoveryRetentionMs(1);
+        StructuredOutputPersistenceQueue queue =
+                new StructuredOutputPersistenceQueue(p, flags(true), registry, s -> false);
+        queue.start();
+
+        queue.submit(finalSnap("step-1", 1, "a"));
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        Thread.sleep(150);
+        queue.recoverRetained();
+
+        assertEquals(0, queue.retainedDepth());
+        assertEquals(1.0, registry.get("terrakube.executor.structured.output.recovery.expired").counter().count());
+        queue.stop();
+    }
+
+    @Test
+    void retainedCapacityKeepsFinalSnapshotsOverProgress() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        // recoveryMaxRetained = 4 (see props)
+        java.util.concurrent.atomic.AtomicBoolean healthy = new java.util.concurrent.atomic.AtomicBoolean(false);
+        List<String> persistedSteps = Collections.synchronizedList(new java.util.ArrayList<>());
+        StructuredSnapshotPersister persister = s -> {
+            if (!healthy.get()) {
+                return false;
+            }
+            persistedSteps.add(s.getStepId());
+            return true;
+        };
+        StructuredOutputPersistenceQueue queue = started(persister, registry, 64, true);
+
+        queue.submit(finalSnap("final-step", 1, "a"));
+        for (int i = 0; i < 8; i++) {
+            queue.submit(snap("progress-" + i, 10 + i, "a"));
+        }
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+
+        assertEquals(4, queue.retainedDepth());
+        assertTrue(registry.get("terrakube.executor.structured.output.recovery.evictions").counter().count() >= 4);
+
+        healthy.set(true);
+        Thread.sleep(200);
+        queue.recoverRetained();
+        assertTrue(persistedSteps.contains("final-step"), "final snapshot must survive eviction: " + persistedSteps);
+        queue.stop();
+    }
+
+    @Test
+    void pendingCapacityEvictsProgressBeforeFinal() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        CountDownLatch block = new CountDownLatch(1);
+        List<String> persistedSteps = Collections.synchronizedList(new java.util.ArrayList<>());
+        StructuredSnapshotPersister persister = s -> {
+            try {
+                block.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            persistedSteps.add(s.getStepId());
+            return true;
+        };
+        StructuredOutputPersistenceQueue queue = started(persister, registry, 2, false);
+
+        queue.submit(finalSnap("final-step", 1, "a")); // worker picks this up and blocks on it
+        Thread.sleep(50);
+        queue.submit(snap("progress-a", 2, "a"));
+        queue.submit(snap("progress-b", 3, "a"));
+        queue.submit(snap("progress-c", 4, "a")); // forces an eviction among the pending progress rows
+
+        block.countDown();
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        assertTrue(persistedSteps.contains("final-step"), "final snapshot must not be evicted: " + persistedSteps);
         queue.stop();
     }
 }
