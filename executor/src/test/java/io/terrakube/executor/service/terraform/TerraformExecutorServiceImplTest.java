@@ -535,4 +535,74 @@ class TerraformExecutorServiceImplTest {
                 "To work with null_resource.fails its original provider configuration is required."),
                 result.getOutputLog());
     }
+
+    // Regression test for the reported bug: a plan that fails late (a data source erroring after
+    // the diff was already streamed) surfaced in the UI/CLI as a bare
+    // "java.lang.RuntimeException: Failed to capture process output stream" - the executor's
+    // catch block replaced every line Terraform had already printed with just the exception
+    // message. The console output that was already collected must be preserved.
+    @Test
+    void planKeepsAlreadyStreamedOutputWhenTheClientFutureFails() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":"
+                + "{\"addr\":\"aws_instance.example\"},\"action\":\"create\"},"
+                + "\"@message\":\"aws_instance.example: Plan to create\"}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    return CompletableFuture.failedFuture(
+                            new RuntimeException("Failed to capture process output stream"));
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("Failed to capture process output stream"), result.getOutputLog());
+        assertTrue(result.getOutputErrorLog().contains("Failed to capture process output stream"));
+    }
+
+    // A failure inside the -json line consumer (here: the live structured-update push blowing up)
+    // must not propagate into terraform-spring-boot's process-output reader loop - that kills the
+    // reader and fails the whole run with "Failed to capture process output stream", losing the
+    // console output that had already been read.
+    @Test
+    void planSurvivesAFailureRaisedFromInsideTheJsonLineConsumer() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        Mockito.doThrow(new RuntimeException("redis is unreachable"))
+                .when(logsService).sendStructuredUpdate(anyInt(), anyString(), anyString());
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":"
+                + "{\"addr\":\"aws_instance.example\"},\"action\":\"create\"},"
+                + "\"@message\":\"aws_instance.example: Plan to create\"}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    return CompletableFuture.completedFuture(2);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(2, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+    }
 }
