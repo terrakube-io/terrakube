@@ -2,6 +2,7 @@ import { Alert, Button, Spin } from "antd";
 import parse from "html-react-parser";
 import { useStepLog } from "../../hooks";
 import { JobStep } from "../types";
+import { ContextAvailability } from "./contextAvailability";
 import { parseConsolePlanSummary } from "./consolePlanSummary";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { isRunningStatus, isTerminalStatus } from "./stepStatus";
@@ -31,6 +32,8 @@ type Props = {
   guardMessage?: string;
   structured: StructuredData;
   uiType: "structured" | "console";
+  /** How the API reports the structured context: persisted / pending / unavailable. */
+  contextAvailability?: ContextAvailability;
   /** Re-fetch the structured context (used by the "temporarily unavailable" retry control). */
   onRetryStructured?: () => void;
 };
@@ -50,6 +53,7 @@ export const StepConsole = ({
   guardMessage,
   structured,
   uiType,
+  contextAvailability = "persisted",
   onRetryStructured,
 }: Props) => {
   const running = isRunningStatus(item.status);
@@ -95,19 +99,23 @@ export const StepConsole = ({
     );
   };
 
-  // A completed plan/apply step whose console clearly shows changes but whose structured context
-  // is missing or empty: the structured write is stale or failed. Show an explicit "temporarily
-  // unavailable" state with the console as fallback and a retry - never a false "No changes".
+  // A completed plan/apply step with no real structured content whose context the API has not
+  // confirmed as persisted (pending / unavailable), or whose console clearly shows changes:
+  // show an explicit "temporarily unavailable" state with the console as fallback and a retry -
+  // never a false "No changes".
   const hasRealStructuredContent =
     Boolean(structured.template) ||
     (structured.structuredChanges != null && structured.structuredChanges.length > 0) ||
     (structured.structuredApplyChanges != null && structured.structuredApplyChanges.length > 0);
   const consolePlanSummary = parseConsolePlanSummary(logText);
+  const isPlanOrApplyStep = /\b(plan|apply|destroy)\b/.test(item.name.toLowerCase());
   const structuredUnavailable =
     terminal &&
     !hasRealStructuredContent &&
-    consolePlanSummary.hasPlan &&
-    consolePlanSummary.declaresChanges;
+    isPlanOrApplyStep &&
+    !consolePlanSummary.declaresNoChanges &&
+    (contextAvailability !== "persisted" ||
+      (consolePlanSummary.hasPlan && consolePlanSummary.declaresChanges));
 
   if (structuredUnavailable) {
     return (
@@ -119,8 +127,8 @@ export const StepConsole = ({
           message="Structured output temporarily unavailable"
           description={
             <>
-              This step produced changes, but the structured view could not be loaded. The full
-              output is shown below.
+              The structured view for this step could not be loaded yet. The full console output is
+              shown below and the page keeps retrying automatically.
               {onRetryStructured != null && (
                 <>
                   {" "}

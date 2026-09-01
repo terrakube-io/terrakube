@@ -208,6 +208,97 @@ describe("DetailsJob apply structured output", () => {
   });
 });
 
+describe("DetailsJob terminal-status context reconciliation", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("loads the final structured diff after a terminal transition without a browser refresh", async () => {
+    let jobStatus: "running" | "completed" = "running";
+    let contextPersisted = false;
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve(
+          contextPersisted
+            ? {
+                data: {
+                  structuredOutputStatus: { state: "PERSISTED" },
+                  applyStructuredOutput: {
+                    "step-2": [
+                      {
+                        address: "aws_instance.reconciled",
+                        action: "create",
+                        actions: ["create"],
+                        after: { id: "i-1" },
+                        status: "applied",
+                      },
+                    ],
+                  },
+                },
+              }
+            : { data: {} }
+        );
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: jobStatus } },
+          included: [
+            { id: "step-2", type: "step", attributes: { name: "Apply", status: jobStatus, stepNumber: "2" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(screen.getByText(/Apply/)).toBeInTheDocument());
+
+    jobStatus = "completed";
+    contextPersisted = true;
+
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: /aws_instance\.reconciled/i })).toBeInTheDocument(),
+      { timeout: 8000 }
+    );
+    expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
+  }, 12000);
+
+  it("keeps the page usable when context stays unavailable (503) - console shown, no spinner, never 'No changes'", async () => {
+    let jobStatus: "running" | "completed" = "running";
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.reject({ response: { status: 503 }, isAxiosError: true });
+      }
+      if (url.includes("/step/")) {
+        return Promise.resolve({ data: "Plan: 1 to add, 0 to change, 0 to destroy.\n" });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: jobStatus } },
+          included: [
+            { id: "step-1", type: "step", attributes: { name: "Plan", status: jobStatus, stepNumber: "1" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(screen.getByText(/Plan/)).toBeInTheDocument());
+
+    jobStatus = "completed";
+
+    await waitFor(
+      () => expect(screen.getByText("Structured output temporarily unavailable")).toBeInTheDocument(),
+      { timeout: 8000 }
+    );
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading Job...")).not.toBeInTheDocument();
+  }, 12000);
+});
+
 describe("DetailsJob SSE reconnect behavior", () => {
   beforeEach(() => {
     useStructuredOutputStreamMock.mockReset();

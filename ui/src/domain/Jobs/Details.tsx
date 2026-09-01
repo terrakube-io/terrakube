@@ -23,6 +23,11 @@ import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColo
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
+import {
+  ContextAvailability,
+  parseContextAvailability,
+  recordReconciliationResult,
+} from "./contextAvailability";
 import { getPublicApiOrigin } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { isTerminalStatus } from "./stepStatus";
@@ -114,6 +119,11 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
+  const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
+  // Non-null while we keep polling context after a terminal job status (bounded reconciliation).
+  const [reconcileUntil, setReconcileUntil] = useState<number | null>(null);
+  const reconcileAttemptRef = useRef(0);
+  const previousJobStatusRef = useRef<string | undefined>(undefined);
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
   const jobRequestRef = useRef(0);
@@ -258,6 +268,7 @@ export const DetailsJob = ({ jobId }: Props) => {
         guardMessage={isGuardStep ? item.outputLog : undefined}
         structured={getStepStructuredData(item)}
         uiType={uiType}
+        contextAvailability={contextAvailability}
         onRetryStructured={() => void loadContext()}
       />
     );
@@ -465,6 +476,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       if (requestId !== contextRequestRef.current) {
         return;
       }
+      setContextAvailability(parseContextAvailability(response?.data, response?.status));
       setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
       // Merge (not replace) plan/apply/diagnostics - this REST snapshot can lag behind the live
       // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
@@ -482,6 +494,11 @@ export const DetailsJob = ({ jobId }: Props) => {
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
       if (isAbortError(error)) return;
+      if (requestId !== contextRequestRef.current) return;
+      // A failed/controlled context response must not clear already-loaded structured state and
+      // must never bounce the whole page back to its loading spinner.
+      const httpStatus = (error as { response?: { status?: number } })?.response?.status;
+      setContextAvailability(httpStatus != null && httpStatus >= 500 ? "unavailable" : "pending");
     }
   }, [getContextSignal, jobId]);
 
@@ -517,6 +534,52 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   );
 
+  // A terminal job status does not prove its final structured context is persisted yet. On the
+  // terminal transition (and on any status transition) re-fetch context, and keep a bounded,
+  // context-only reconciliation running - job metadata and console stay untouched by this.
+  useEffect(() => {
+    const status = job?.data?.attributes.status;
+    if (status === previousJobStatusRef.current) {
+      return;
+    }
+    const becameTerminal =
+      !isTerminalStatus(previousJobStatusRef.current) && isTerminalStatus(status);
+    previousJobStatusRef.current = status;
+
+    if (!jobId) {
+      return;
+    }
+    void loadContext();
+    if (becameTerminal && contextAvailability !== "persisted") {
+      reconcileAttemptRef.current = 0;
+      setReconcileUntil(Date.now() + 60_000);
+    }
+  }, [job?.data?.attributes.status, contextAvailability, jobId, loadContext]);
+
+  // Bounded exponential backoff while reconciling. Re-runs whenever loadContext updates
+  // contextAvailability, so it schedules the next retry or stops.
+  useEffect(() => {
+    if (reconcileUntil == null) {
+      return;
+    }
+    if (contextAvailability === "persisted") {
+      recordReconciliationResult("persisted");
+      setReconcileUntil(null);
+      return;
+    }
+    if (Date.now() >= reconcileUntil) {
+      recordReconciliationResult(contextAvailability === "unavailable" ? "unavailable" : "expired");
+      setReconcileUntil(null);
+      return;
+    }
+    const delay = Math.min(8000, 1000 * 2 ** reconcileAttemptRef.current);
+    const timer = setTimeout(() => {
+      reconcileAttemptRef.current += 1;
+      void loadContext();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [reconcileUntil, contextAvailability, loadContext]);
+
   type LiveStructuredOutput = {
     phase: "plan" | "apply";
     changes: Record<string, unknown>;
@@ -526,7 +589,7 @@ export const DetailsJob = ({ jobId }: Props) => {
   const isJobRunning = job?.data?.attributes.status === "running";
   const liveStructuredOutput = useStructuredOutputStream<LiveStructuredOutput | null>({
     url: `${getPublicApiOrigin()}/context/v1/${jobId}/stream`,
-    enabled: Boolean(jobId) && isJobRunning,
+    enabled: Boolean(jobId) && (isJobRunning || reconcileUntil != null),
     initial: null,
   });
 
@@ -534,6 +597,9 @@ export const DetailsJob = ({ jobId }: Props) => {
     if (liveStructuredOutput == null) {
       return;
     }
+
+    // A live event means the executor just wrote context - re-fetch the authoritative snapshot too.
+    void loadContext();
 
     // Each push only carries the one step (plan or apply) that just changed, keyed by that
     // step's id - merge it into the existing per-step maps rather than replacing them wholesale,
@@ -551,7 +617,7 @@ export const DetailsJob = ({ jobId }: Props) => {
         ...normalizeStructuredApplyOutput(liveStructuredOutput.changes),
       }));
     }
-  }, [liveStructuredOutput]);
+  }, [liveStructuredOutput, loadContext]);
 
   return (
     <div style={{ marginTop: "14px" }}>
