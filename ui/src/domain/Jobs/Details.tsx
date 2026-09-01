@@ -16,7 +16,7 @@ import {
 import { AxiosResponse } from "axios";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { axiosAuxiliary } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
@@ -472,7 +472,10 @@ export const DetailsJob = ({ jobId }: Props) => {
     const apiOrigin = getPublicApiOrigin();
 
     try {
-      const response = await axiosInstance.get(`${apiOrigin}/context/v1/${jobId}`, { signal });
+      const response = await axiosAuxiliary.get(`${apiOrigin}/context/v1/${jobId}`, {
+        signal,
+        auxClass: "context",
+      });
       if (requestId !== contextRequestRef.current) {
         return;
       }

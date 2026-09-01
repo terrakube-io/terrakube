@@ -24,6 +24,10 @@ jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,
   default: { get: (...args: unknown[]) => getMock(...args) },
   axiosClient: { get: (...args: unknown[]) => getMock(...args) },
+  axiosAuxiliary: {
+    get: (...args: unknown[]) => getMock(...args),
+    head: (...args: unknown[]) => getMock(...args),
+  },
 }));
 
 const useStructuredOutputStreamMock = jest.fn();
@@ -263,6 +267,41 @@ describe("DetailsJob terminal-status context reconciliation", () => {
     expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
   }, 12000);
 
+  it("keeps the page and other steps usable when one archived step log returns 503", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: { structuredOutputStatus: { state: "PERSISTED" } } });
+      }
+      if (url.includes("/step/step-1")) {
+        return Promise.reject({ response: { status: 503 }, isAxiosError: true });
+      }
+      if (url.includes("/step/step-2")) {
+        return Promise.resolve({ data: "step two log output", headers: {} });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [
+            { id: "step-1", type: "step", attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" } },
+            { id: "step-2", type: "step", attributes: { name: "Terraform Apply", status: "completed", stepNumber: "2" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => expect(screen.getByText(/Terraform Plan/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Could not load this step’s log.")).toBeInTheDocument(), {
+      timeout: 12000,
+    });
+
+    // The page shell and the healthy step's log are still there.
+    expect(screen.queryByText("Loading Job...")).not.toBeInTheDocument();
+    expect(screen.getByText(/Terraform Apply/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /retry/i }).length).toBeGreaterThan(0);
+  }, 20000);
+
   it("keeps the page usable when context stays unavailable (503) - console shown, no spinner, never 'No changes'", async () => {
     let jobStatus: "running" | "completed" = "running";
 
@@ -303,6 +342,57 @@ describe("DetailsJob SSE reconnect behavior", () => {
   beforeEach(() => {
     useStructuredOutputStreamMock.mockReset();
   });
+
+  it("keeps Job Details rendered and HTTP polling delivering structured output while SSE is disconnected", async () => {
+    // The SSE hook returns null the whole time (connection interrupted / never established).
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    let contextHasData = false;
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve(
+          contextHasData
+            ? {
+                data: {
+                  structuredOutputStatus: { state: "PERSISTED" },
+                  applyStructuredOutput: {
+                    "step-2": [
+                      {
+                        address: "aws_instance.via_poll",
+                        action: "create",
+                        actions: ["create"],
+                        after: { id: "i-9" },
+                        status: "applied",
+                      },
+                    ],
+                  },
+                },
+              }
+            : { data: {} }
+        );
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "running" } },
+          included: [
+            { id: "step-2", type: "step", attributes: { name: "Apply", status: "running", stepNumber: "2" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(screen.getByText(/Apply/)).toBeInTheDocument());
+
+    contextHasData = true;
+
+    // No SSE event ever arrives; the 5s refreshJobDetails HTTP poll must still pick up the diff.
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: /aws_instance\.via_poll/i })).toBeInTheDocument(),
+      { timeout: 8000 }
+    );
+    expect(screen.queryByText("Loading Job...")).not.toBeInTheDocument();
+  }, 12000);
 
   it(
     "keeps the last known structured output when the job leaves running and the live channel disables",

@@ -1,4 +1,4 @@
-import axiosInstance, { axiosClient } from "../../config/axiosConfig";
+import { axiosAuxiliary, axiosClient } from "../../config/axiosConfig";
 import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
 
 /** Objects at or above this size are fetched tail-first via a Range request. */
@@ -88,11 +88,13 @@ export async function fetchStepLog(params: FetchStepLogParams): Promise<FetchSte
 
 async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepLogResult> {
   const { url, terrakubeApi } = resolveUrl(params);
-  const client = terrakubeApi ? axiosInstance : axiosClient;
+  // Archived step logs are auxiliary Job Details data: a transient storage failure must stay local
+  // to the step, never the application-wide backend-error screen.
+  const client = terrakubeApi ? axiosAuxiliary : axiosClient;
 
   let contentLength: number | undefined;
   try {
-    const head = await client.head(url, { signal: params.signal });
+    const head = await client.head(url, { signal: params.signal, auxClass: "step-log" });
     const raw = head.headers?.["content-length"];
     contentLength = raw != null ? Number(raw) : undefined;
   } catch (error) {
@@ -115,11 +117,13 @@ async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepL
           headers: { Range: `bytes=-${params.tailBytes}` },
           responseType: "text",
           transformResponse: (d) => d,
+          auxClass: "step-log",
         })
       : await client.get(url, {
           signal: params.signal,
           responseType: "text",
           transformResponse: (d) => d,
+          auxClass: "step-log",
         });
 
     const text = typeof response.data === "string" ? response.data : String(response.data ?? "");
