@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +50,10 @@ class DefaultStructuredSnapshotPersisterTest {
         assertTrue(ok);
         verify(ctx).saveContextChecked(eq("o"), eq("1"), eq(merged));
         verify(logs).sendStructuredUpdate(eq(1), eq("step-1"), contains("\"phase\":\"plan\""));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> status = (Map<String, Object>) merged.get("structuredOutputStatus");
+        assertEquals("PERSISTED", status.get("state"));
+        assertEquals("plan", status.get("phase"));
     }
 
     @Test

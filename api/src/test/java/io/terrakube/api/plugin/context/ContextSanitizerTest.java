@@ -30,4 +30,14 @@ class ContextSanitizerTest {
 
         assertTrue(sanitized.contains("\"value\":null"));
     }
+
+    @Test
+    void preservesStructuredOutputStatusMetadata() throws Exception {
+        String context = "{\"structuredOutputStatus\":{\"state\":\"PERSISTED\",\"updatedAtEpochMs\":123,\"phase\":\"apply\"}}";
+
+        String sanitized = subject().sanitize(context);
+
+        assertTrue(sanitized.contains("\"state\":\"PERSISTED\""));
+        assertTrue(sanitized.contains("\"updatedAtEpochMs\":123"));
+    }
 }

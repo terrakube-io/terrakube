@@ -49,6 +49,14 @@ public class DefaultStructuredSnapshotPersister implements StructuredSnapshotPer
             Map<String, Object> updated = planPhase
                     ? planStructuredOutputService.updateContext(context, stepId, snapshot.getChanges(), snapshot.getJobDiagnostics())
                     : applyStructuredOutputService.updateApplyContext(context, stepId, snapshot.getChanges(), snapshot.getJobDiagnostics());
+            // Machine-readable persistence status the API/UI can reason about without reading any
+            // Terraform payload content. Carries no variable values or secrets.
+            updated.put("structuredOutputStatus", Map.of(
+                    "state", "PERSISTED",
+                    "updatedAtEpochMs", snapshot.getCreatedAtEpochMs(),
+                    "stepId", stepId,
+                    "phase", planPhase ? "plan" : "apply",
+                    "finalSnapshot", snapshot.isFinalSnapshot()));
 
             boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updated);
             if (saved) {
