@@ -177,6 +177,8 @@ public class RepoWebhookService {
     // deliveryId and calls dispatchAsync, the enqueue is already committed and visible.
     @Transactional
     public UUID acceptV2Webhook(String repoWebhookId, String jsonPayload, Map<String, String> headers) {
+        // HTTP header names are case-insensitive; downstream verification looks them up in lowercase.
+        headers = WebhookHeaders.caseInsensitive(headers);
         RepoWebhook repoWebhook = repoWebhookRepository.findById(UUID.fromString(repoWebhookId))
                 .orElseThrow(() -> new IllegalArgumentException("Repo webhook not found: " + repoWebhookId));
 
@@ -207,6 +209,7 @@ public class RepoWebhookService {
     }
 
     public void processClaimedDelivery(RepoWebhook repoWebhook, String jsonPayload, Map<String, String> headers) {
+        headers = WebhookHeaders.caseInsensitive(headers);
         boolean azureDevOps = isAzureDevOps(repoWebhook);
         boolean gitlab = isGitLab(repoWebhook);
 

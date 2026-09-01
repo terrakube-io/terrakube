@@ -459,6 +459,28 @@ class RepoWebhookServiceTest {
             verify(repoWebhookDeliveryTransactions).enqueue(eq(rw), eq(payload), headersJsonCaptor.capture());
             assertThat(headersJsonCaptor.getValue()).contains("x-github-event").contains("push");
         }
+
+        @Test
+        void acceptsSignatureWhenHeaderNamesUseOriginalCasing() throws Exception {
+            // GitHub sends "X-Hub-Signature-256"; header names are case-insensitive (RFC 9110) and
+            // Spring 7 / Spring Boot 4 no longer lowercases them for @RequestHeader Map. The service
+            // must still verify the signature regardless of the casing it receives.
+            String secret = "test-secret";
+            String payload = "{\"ref\":\"refs/heads/main\"}";
+            RepoWebhook rw = repoWebhookWith("https://github.com/owner/repo", secret);
+            when(repoWebhookRepository.findById(rw.getId())).thenReturn(Optional.of(rw));
+            UUID deliveryId = UUID.randomUUID();
+            when(repoWebhookDeliveryTransactions.enqueue(eq(rw), eq(payload), any())).thenReturn(deliveryId);
+
+            String sig = computeHmac(secret, payload);
+            Map<String, String> headers = Map.of(
+                    "X-Hub-Signature-256", sig,
+                    "X-GitHub-Event", "push");
+
+            UUID result = subject.acceptV2Webhook(rw.getId().toString(), payload, headers);
+
+            assertThat(result).isEqualTo(deliveryId);
+        }
     }
 
     @Nested
