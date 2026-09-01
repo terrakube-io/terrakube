@@ -149,12 +149,10 @@ public class TeamTokenService {
             return array;
         } else {
             Object groups = principalJwt.getTokenAttributes().get("groups");
-            if (!(groups instanceof List<?> groupList)) {
-                return List.of();
-            }
-            List<String> list = new ArrayList<>();
-            for (Object group : groupList) {
-                list.add(group.toString());
+            List array = (java.util.ArrayList) groups;
+            List<String> list = new ArrayList();
+            for (int i = 0; i < array.size(); i++) {
+                list.add(array.get(i).toString());
             }
             return list;
         }

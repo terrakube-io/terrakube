@@ -1,38 +1,47 @@
 import { axiosGraphQL } from "@/config/axiosConfig";
-import { apiGet } from "@/modules/api/apiWrapper";
 import organizationService from "../organizationService";
 
 jest.mock("@/config/axiosConfig", () => ({
   axiosGraphQL: { post: jest.fn() },
 }));
-jest.mock("@/modules/api/apiWrapper", () => ({
-  apiGet: jest.fn(),
-}));
-
 const mockPost = axiosGraphQL.post as jest.Mock;
-const mockApiGet = apiGet as jest.Mock;
 
 describe("organizationService.listOrganizationSummaries", () => {
-  it("maps the compact summary endpoint to the picker model without workspace edges", async () => {
-    mockApiGet.mockResolvedValue({
-      isError: false,
-      responseCode: 200,
-      data: [
-        {
-          id: "org-1",
-          name: "acme",
-          description: "desc",
-          executionMode: "remote",
-          icon: "FaBuilding:#000000",
-          workspaceCount: 4,
-          statusCounts: { failed: 2, completed: 1, NeverExecuted: 1 },
+  it("maps the organization GraphQL response to the picker model", async () => {
+    mockPost.mockResolvedValue({
+      data: {
+        data: {
+          organization: {
+            edges: [
+              {
+                node: {
+                  id: "org-1",
+                  name: "acme",
+                  description: "desc",
+                  executionMode: "remote",
+                  icon: "FaBuilding:#000000",
+                  workspace: {
+                    edges: [
+                      { node: { id: "workspace-1", lastJobStatus: "failed" } },
+                      { node: { id: "workspace-2", lastJobStatus: "completed" } },
+                      { node: { id: "workspace-3" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
         },
-      ],
+      },
     });
 
     const result = await organizationService.listOrganizationSummaries();
 
-    expect(mockApiGet).toHaveBeenCalledWith("/ui/v1/organizations/summary", { contentType: "application/json" });
+    expect(mockPost).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({ query: expect.stringContaining("lastJobStatus") }),
+      { headers: { "Content-Type": "application/json" } }
+    );
     expect(result).toEqual([
       {
         id: "org-1",
@@ -40,17 +49,15 @@ describe("organizationService.listOrganizationSummaries", () => {
         description: "desc",
         executionMode: "remote",
         icon: "FaBuilding:#000000",
-        workspaceCount: 4,
-        workspaceStatusCounts: { failed: 2, completed: 1, NeverExecuted: 1 },
+        workspaceCount: 3,
+        workspaceStatusCounts: { failed: 1, completed: 1, NeverExecuted: 1 },
       },
     ]);
   });
 
-  it("throws a useful error when the summary endpoint fails", async () => {
-    mockApiGet.mockResolvedValue({
-      isError: true,
-      responseCode: 403,
-      error: { message: "Forbidden" },
+  it("throws a useful error when GraphQL returns errors", async () => {
+    mockPost.mockResolvedValue({
+      data: { errors: [{ message: "Forbidden" }] },
     });
 
     await expect(organizationService.listOrganizationSummaries()).rejects.toThrow("Forbidden");
