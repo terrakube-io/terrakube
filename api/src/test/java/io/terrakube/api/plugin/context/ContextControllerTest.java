@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.repository.JobRepository;
@@ -25,7 +27,12 @@ import static org.mockito.Mockito.when;
 class ContextControllerTest {
 
     private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository) {
-        return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()), Mockito.mock(StreamingService.class));
+        return controller(storageTypeService, jobRepository, new SimpleMeterRegistry());
+    }
+
+    private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository, MeterRegistry meterRegistry) {
+        return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()),
+                Mockito.mock(StreamingService.class), new ContextStorageMetrics(meterRegistry));
     }
 
     @Test
@@ -249,11 +256,46 @@ class ContextControllerTest {
     }
 
     @Test
+    void storageReadFailureReturnsServiceUnavailableNotFiveHundred() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        when(storageTypeService.getContext(9)).thenThrow(new RuntimeException("apiCallTimeout"));
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ContextController controller = controller(storageTypeService, jobRepository, registry);
+
+        ResponseEntity<String> response = controller.getContext(9);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("{}", response.getBody());
+        assertEquals(1.0, registry.get("terrakube.api.context.storage.failures")
+                .tag("operation", "read").counter().count());
+    }
+
+    @Test
+    void storageWriteFailureReturnsServiceUnavailableNotFiveHundred() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenThrow(new RuntimeException("S3 unavailable"));
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ContextController controller = controller(storageTypeService, jobRepository, registry);
+
+        ResponseEntity<String> response = controller.saveContext(1, "{\"planStructuredOutput\":{}}");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals(1.0, registry.get("terrakube.api.context.storage.failures")
+                .tag("operation", "write").counter().count());
+    }
+
+    @Test
     void streamEndpointDelegatesToStreamingServiceWithJobId() {
         StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         StreamingService streamingService = Mockito.mock(StreamingService.class);
-        ContextController controller = new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()), streamingService);
+        ContextController controller = new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()), streamingService, new ContextStorageMetrics(new SimpleMeterRegistry()));
 
         controller.streamContext("42", null);
 
