@@ -1,18 +1,7 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { FlatOrganization } from "@/domain/types";
 import organizationService from "./organizationService";
-
-type OrganizationSummaryContextValue = {
-  organizations: FlatOrganization[];
-  loading: boolean;
-  error?: Error;
-  refresh: () => Promise<void>;
-  upsertOrganization: (organization: FlatOrganization) => void;
-  updateOrganization: (id: string, changes: Partial<FlatOrganization>) => void;
-  removeOrganization: (id: string) => void;
-};
-
-const OrganizationSummaryContext = createContext<OrganizationSummaryContextValue | undefined>(undefined);
+import { OrganizationSummaryContext } from "./OrganizationSummaryStore";
 
 export function OrganizationSummaryProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<FlatOrganization[]>([]);
@@ -73,12 +62,4 @@ export function OrganizationSummaryProvider({ children }: { children: ReactNode 
       {children}
     </OrganizationSummaryContext.Provider>
   );
-}
-
-export function useOrganizationSummaries() {
-  const context = useContext(OrganizationSummaryContext);
-  if (!context) {
-    throw new Error("useOrganizationSummaries must be used within OrganizationSummaryProvider");
-  }
-  return context;
 }

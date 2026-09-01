@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { OrganizationSummaryProvider, useOrganizationSummaries } from "../OrganizationSummaryContext";
+import { OrganizationSummaryProvider } from "../OrganizationSummaryContext";
+import { useOrganizationSummaries } from "../useOrganizationSummaries";
 import organizationService from "../organizationService";
 
 jest.mock("../organizationService", () => ({

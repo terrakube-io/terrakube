@@ -10,7 +10,7 @@ import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import { EmptyState } from "@/components/feedback/EmptyState";
-import { useOrganizationSummaries } from "./OrganizationSummaryContext";
+import { useOrganizationSummaries } from "./useOrganizationSummaries";
 
 export default function OrganizationsPickerPage() {
   const { organizations, loading, error } = useOrganizationSummaries();

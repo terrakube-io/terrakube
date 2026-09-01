@@ -6,7 +6,7 @@ import { IconSelector } from "./IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import { useState } from "react";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import { useOrganizationSummaries } from "@/modules/organizations/OrganizationSummaryContext";
+import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import "./Organizations.css";
 
 const validateMessages = {

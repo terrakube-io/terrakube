@@ -24,10 +24,8 @@ import { getBackendError, subscribeBackendStatus } from "@/modules/api/backendSt
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
-import {
-  OrganizationSummaryProvider,
-  useOrganizationSummaries,
-} from "@/modules/organizations/OrganizationSummaryContext";
+import { OrganizationSummaryProvider } from "@/modules/organizations/OrganizationSummaryContext";
+import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 const { Footer } = Layout;
 
 type AppRouteContext = {

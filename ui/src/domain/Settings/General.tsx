@@ -11,7 +11,7 @@ import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-import { useOrganizationSummaries } from "@/modules/organizations/OrganizationSummaryContext";
+import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
