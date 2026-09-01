@@ -3,12 +3,16 @@ package io.terrakube.executor.service.terraform;
 import com.diogonunes.jcolor.AnsiFormat;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.configuration.StructuredOutputProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
@@ -65,8 +69,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ApplyStructuredOutputService applyStructuredOutputService;
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
+    StructuredOutputPersistenceQueue structuredOutputPersistenceQueue;
+    ExecutorFlagsProperties executorFlagsProperties;
+    StructuredOutputProperties structuredOutputProperties;
+    MeterRegistry meterRegistry;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -78,6 +86,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.objectMapper = objectMapper;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
+        this.structuredOutputPersistenceQueue = structuredOutputPersistenceQueue;
+        this.executorFlagsProperties = executorFlagsProperties;
+        this.structuredOutputProperties = structuredOutputProperties;
+        this.meterRegistry = meterRegistry;
     }
 
     public File getTerraformWorkingDir(TerraformJob terraformJob, File workingDirectory) throws IOException {
@@ -145,6 +157,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TextStringBuilder jobOutput = new TextStringBuilder();
         TextStringBuilder jobErrorOutput = new TextStringBuilder();
+        // Method-scoped so a mid-stream failure (see the catch below) can still publish a final
+        // structured snapshot carrying whatever changes/diagnostics were parsed before it broke.
+        List<Map<String, Object>> liveChanges = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
             boolean executionPlan = false;
@@ -169,8 +185,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 if (scriptBeforeSuccessPlan) {
                     planCommandExecuted = true;
-                    List<Map<String, Object>> liveChanges = new ArrayList<>();
-                    List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
                     TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
                     // Starting at 0 (not now()) guarantees the very first json line always
                     // passes the "now - lastFlush > interval" check below and flushes
@@ -186,12 +200,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             acceptConsoleLines(planOutput, humanMessage);
                         }
 
+                        // Cheap pre-filter only: the persistence queue coalesces per step, so this
+                        // just bounds how often we build a snapshot copy on the reader thread. The
+                        // GET/merge/POST and the SSE push happen on the queue worker, never here.
                         long now = System.currentTimeMillis();
                         if (now - lastFlush.get() > APPLY_PROGRESS_FLUSH_INTERVAL_MS) {
                             lastFlush.set(now);
                             planStructuredOutputService.publishPlanProgress(
                                     terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), liveChanges, jobDiagnostics);
-                            pushLiveStructuredUpdate("plan", terraformJob, liveChanges, jobDiagnostics);
                         }
                     };
 
@@ -211,16 +227,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                                 null).get();
                     }
 
-                    // Unconditional final flush, mirroring runJsonApply's trailing push - the
-                    // periodic flush above only fires when a json line arrives more than
-                    // APPLY_PROGRESS_FLUSH_INTERVAL_MS after the last one, so a plan whose lines
-                    // all land in a single burst (typical for small/fast plans) would otherwise
-                    // exit having pushed nothing, live or final - and if the plan then failed,
-                    // publishPlanSummary below (gated on executionPlan) would never run either,
-                    // leaving stale/empty progress data as the last word on this step.
-                    planStructuredOutputService.publishPlanProgress(
+                    // Unconditional final snapshot - the periodic flush above only fires when a json
+                    // line arrives more than APPLY_PROGRESS_FLUSH_INTERVAL_MS after the last one, so
+                    // a plan whose lines all land in a single burst (typical for small/fast plans)
+                    // would otherwise exit having enqueued nothing. Attempted even when the plan
+                    // failed, so a diagnostic (e.g. an unset required variable) is the last word on
+                    // this step rather than stale/empty progress data.
+                    planStructuredOutputService.publishFinalPlanSnapshot(
                             terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), liveChanges, jobDiagnostics);
-                    pushLiveStructuredUpdate("plan", terraformJob, liveChanges, jobDiagnostics);
 
                     terraformJob.setLiveChanges(liveChanges);
                     terraformJob.setJobDiagnostics(jobDiagnostics);
@@ -261,6 +275,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
+            drainStructuredOutputQueue(terraformJob.getJobId());
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
@@ -272,11 +287,36 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setPlan(true);
             result.setExitCode(exitCode);
         } catch (IOException | ExecutionException | InterruptedException exception) {
+            // A stream-drain failure or late exception must not swallow the plan diagnostics the
+            // UI needs - publish what was parsed before it broke, then let it drain.
+            try {
+                planStructuredOutputService.publishFinalPlanSnapshot(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
+                        liveChanges, jobDiagnostics);
+                drainStructuredOutputQueue(terraformJob.getJobId());
+            } catch (Exception e) {
+                log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
+            }
             result = setError(exception, jobOutput.toString());
             result.setPlan(true);
             result.setExitCode(1);
         }
         return result;
+    }
+
+    // Give the async structured-output queue a bounded window to finish persisting before the job
+    // result is finalised. A timeout is logged, never fatal - the run's outcome does not depend on
+    // best-effort context writes.
+    private void drainStructuredOutputQueue(String jobId) {
+        if (structuredOutputPersistenceQueue == null || executorFlagsProperties == null
+                || !executorFlagsProperties.isAsyncStructuredOutput()) {
+            return;
+        }
+        long drainTimeoutMs = structuredOutputProperties != null ? structuredOutputProperties.getDrainTimeoutMs() : 30000L;
+        boolean drained = structuredOutputPersistenceQueue.awaitDrain(java.time.Duration.ofMillis(drainTimeoutMs));
+        if (!drained) {
+            log.warn("Structured-output queue did not drain within {} ms for job {}", drainTimeoutMs, jobId);
+        }
     }
 
     @Override
@@ -351,8 +391,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
+            drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
+            drainStructuredOutputQueue(terraformJob.getJobId());
             result = setError(exception, terraformOutput.toString());
             result.setExitCode(1);
         }
@@ -392,7 +434,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 lastFlush.set(now);
                 applyStructuredOutputService.publishApplyProgress(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-                pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
             }
         };
 
@@ -405,9 +446,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             applyStructuredOutputService.resolveFinalValues(changes, stateJson);
         }
 
-        applyStructuredOutputService.publishApplyProgress(
+        applyStructuredOutputService.publishFinalApplySnapshot(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-        pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
 
         return execution;
     }
@@ -440,7 +480,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 // third parallel structured-output shape for what's functionally the same view.
                 applyStructuredOutputService.publishApplyProgress(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-                pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
             }
         };
 
@@ -448,9 +487,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         boolean execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
 
-        applyStructuredOutputService.publishApplyProgress(
+        applyStructuredOutputService.publishFinalApplySnapshot(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-        pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
 
         return execution;
     }
@@ -461,30 +499,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     private static void acceptConsoleLines(Consumer<String> output, String message) {
         for (String line : message.split("\n", -1)) {
             output.accept(line);
-        }
-    }
-
-    // Best-effort live push over the new structured-output SSE channel - never lets a
-    // serialization failure abort the plan/apply itself, mirroring how publishApplyProgress/
-    // publishPlanProgress already swallow their own failures. changes/jobDiagnostics get keyed
-    // by stepId (matching /context/v1's shape) so the UI's existing normalizeStructuredPlanOutput/
-    // normalizeStructuredApplyOutput can consume the push unchanged, and phase is tagged so the
-    // UI merges into the right one of planStructuredOutput/applyStructuredOutput without
-    // clobbering the other.
-    private void pushLiveStructuredUpdate(String phase, TerraformJob terraformJob, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
-        try {
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("phase", phase);
-            payload.put("changes", Map.of(terraformJob.getStepId(), changes));
-            payload.put("jobDiagnostics", Map.of(terraformJob.getStepId(), jobDiagnostics));
-            logsService.sendStructuredUpdate(Integer.valueOf(terraformJob.getJobId()), terraformJob.getStepId(),
-                    objectMapper.writeValueAsString(payload));
-        } catch (Exception e) {
-            // Best-effort: a serialization error, a null stepId in Map.of, or a transport failure
-            // in sendStructuredUpdate must never abort the plan/apply - some of these call sites
-            // run on terraform-spring-boot's output-reader thread, where an uncaught exception
-            // kills stream capture entirely.
-            log.warn("Unable to push live structured update for job {} step {}", terraformJob.getJobId(), terraformJob.getStepId(), e);
         }
     }
 
@@ -584,8 +598,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, outputDestroy, execution);
 
             waitForStreamCompletion(terraformJob.getJobId(), 300);
+            drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
+            drainStructuredOutputQueue(terraformJob.getJobId());
             result = setError(exception, jobOutput.toString());
             result.setExitCode(1);
         }
