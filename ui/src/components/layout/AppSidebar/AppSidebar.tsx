@@ -108,25 +108,16 @@ export default function AppSidebar({
   }, [organizationId, organizationName, setOrganizationName]);
 
   useEffect(() => {
-    organizationService
-      .listOrganizationsGraphQL()
-      .then((loadedOrganizations: FlatOrganization[]) => {
-        if (orgIdFromUrl && !sessionStorage.getItem(ORGANIZATION_NAME)) {
-          const foundOrg = loadedOrganizations.find((org) => org.id === orgIdFromUrl);
-          if (foundOrg) {
-            sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgIdFromUrl);
-            sessionStorage.setItem(ORGANIZATION_NAME, foundOrg.name);
-            setOrganizationName(foundOrg.name);
-          } else {
-            ensureOrganizationName(orgIdFromUrl, "", setOrganizationName, () => {});
-          }
-        } else {
-          setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "");
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to load organizations:", error);
-      });
+    if (orgIdFromUrl && !sessionStorage.getItem(ORGANIZATION_NAME)) {
+      const foundOrg = organizations.find((org) => org.id === orgIdFromUrl);
+      if (foundOrg) {
+        sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgIdFromUrl);
+        sessionStorage.setItem(ORGANIZATION_NAME, foundOrg.name);
+        setOrganizationName(foundOrg.name);
+      }
+    } else {
+      setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "");
+    }
 
     if (isUserSettingsContext) {
       setDefaultSelected([params[2]]);
@@ -153,6 +144,7 @@ export default function AppSidebar({
     isWorkspaceDetailContext,
     isWorkspaceSettingsContext,
     isUserSettingsContext,
+    organizations,
   ]);
 
   const handleOrgMenuClick = (key: string) => {

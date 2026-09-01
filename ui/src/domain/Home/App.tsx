@@ -24,7 +24,10 @@ import { getBackendError, subscribeBackendStatus } from "@/modules/api/backendSt
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
-import { FlatOrganization } from "../types";
+import {
+  OrganizationSummaryProvider,
+  useOrganizationSummaries,
+} from "@/modules/organizations/OrganizationSummaryContext";
 const { Footer } = Layout;
 
 type AppRouteContext = {
@@ -157,7 +160,7 @@ const AppLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [organizationName, setOrganizationName] = useState<string>("");
-  const [orgs, setOrgs] = useState<FlatOrganization[]>([]);
+  const { organizations: orgs, loading: organizationsLoading } = useOrganizationSummaries();
   const [workspaceManageState, setWorkspaceManageState] = useState(false);
   const backendError = useSyncExternalStore(subscribeBackendStatus, getBackendError);
   const { colorScheme, themeMode } = useTheme();
@@ -184,7 +187,14 @@ const AppLayout = () => {
 
       if (storedOrgName && storedOrgId === orgId) {
         setOrganizationName(storedOrgName);
-      } else {
+      } else if (!organizationsLoading) {
+        const organization = orgs.find((item) => item.id === orgId);
+        if (organization) {
+          sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgId);
+          sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
+          setOrganizationName(organization.name);
+          return;
+        }
         organizationService
           .getOrganizationNameGraphQL(orgId)
           .then((orgName) => {
@@ -204,20 +214,7 @@ const AppLayout = () => {
         setOrganizationName(storedOrgName);
       }
     }
-  }, [location.pathname]);
-
-  useEffect(() => {
-    // Re-fetch on every navigation so newly created/deleted organizations
-    // show up in the header dropdown without a full page reload.
-    organizationService
-      .listOrganizationsGraphQL()
-      .then((organizations) => {
-        setOrgs(organizations);
-      })
-      .catch((error) => {
-        console.error("Failed to load organizations:", error);
-      });
-  }, [location.pathname]);
+  }, [location.pathname, organizationsLoading, orgs]);
 
   const handleOrgChange = (orgId: string) => {
     const org = orgs.find((o) => o.id === orgId);
@@ -634,7 +631,9 @@ const App = () => {
     <ThemeProvider>
       <ErrorBoundary catchGlobal>
         <Suspense fallback={<LoadingFallback />}>
-          <RouterProvider router={router} />
+          <OrganizationSummaryProvider>
+            <RouterProvider router={router} />
+          </OrganizationSummaryProvider>
         </Suspense>
       </ErrorBoundary>
     </ThemeProvider>
