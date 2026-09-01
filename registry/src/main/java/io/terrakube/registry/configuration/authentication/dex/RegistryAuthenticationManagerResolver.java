@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.federated.Federated;
 import io.terrakube.client.model.federated.claim.FederatedClaim;
@@ -25,7 +26,6 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -106,13 +106,17 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
 
         switch (tokenIssuer) {
             case jwtInternal:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal)));
+                // Cache key is stable: same secret → same decoder for the process lifetime.
+                providerManager = getProviderManagerCache().get("internal",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal))));
                 break;
             case jwtPat:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat)));
+                providerManager = getProviderManagerCache().get("pat",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat))));
                 break;
             default:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri)));
+                providerManager = getProviderManagerCache().get(this.issuerUri,
+                        k -> new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri))));
                 break;
         }
         return providerManager;
@@ -202,8 +206,20 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
 
     private JwtDecoder getJwtEncoder(String issuerType) {
         String tokenSecret = (issuerType.equals(jwtPat) ? patSecret : internalSecret);
-        SecretKey jwtTokenKey = new SecretKeySpec(Decoders.BASE64URL.decode(tokenSecret), "HMACSHA256");
-        return NimbusJwtDecoder.withSecretKey(jwtTokenKey).macAlgorithm(MacAlgorithm.HS256).build();
+        byte[] secretBytes = Decoders.BASE64URL.decode(tokenSecret);
+        SecretKey jwtTokenKey = Keys.hmacShaKeyFor(secretBytes);
+        MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
+        return NimbusJwtDecoder.withSecretKey(jwtTokenKey).macAlgorithm(macAlgorithm).build();
+    }
+
+    private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {
+        if (keyLengthBytes >= 64) {
+            return MacAlgorithm.HS512;
+        } else if (keyLengthBytes >= 48) {
+            return MacAlgorithm.HS384;
+        } else {
+            return MacAlgorithm.HS256;
+        }
     }
 
     @Getter

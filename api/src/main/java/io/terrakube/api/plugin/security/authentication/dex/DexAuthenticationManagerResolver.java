@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.security.authentication.dex;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
@@ -25,7 +26,6 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -112,10 +112,22 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             return cached;
         }
         String jwtSecret = (issuerType.equals(jwtTypePat) ? patJwtSecret : internalJwtSecret);
-        SecretKey jwtSecretKey = new SecretKeySpec(Decoders.BASE64URL.decode(jwtSecret), "HMACSHA256");
-        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        byte[] secretBytes = Decoders.BASE64URL.decode(jwtSecret);
+        SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+        MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
+        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
         decoderCache.putIfAbsent(cacheKey, decoder);
         return decoderCache.get(cacheKey);
+    }
+
+    private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {
+        if (keyLengthBytes >= 64) {
+            return MacAlgorithm.HS512;
+        } else if (keyLengthBytes >= 48) {
+            return MacAlgorithm.HS384;
+        } else {
+            return MacAlgorithm.HS256;
+        }
     }
 
     private String getJwtClaim(HttpServletRequest request, String claim) {
