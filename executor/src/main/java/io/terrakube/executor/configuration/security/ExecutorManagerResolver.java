@@ -12,6 +12,7 @@ import org.springframework.security.authentication.AuthenticationManagerResolver
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
@@ -28,9 +29,12 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
     /**
      * Lazily initialised, immutable after first use. The secret key is stable for the
      * lifetime of the process, so there is no need to rebuild the decoder on every request.
+     * An {@link AtomicReference} is used instead of a plain {@code volatile} field to
+     * satisfy thread-safety requirements without requiring an explicit {@code synchronized}
+     * block.
      */
     @Builder.Default
-    private volatile JwtDecoder cachedDecoder = null;
+    private final AtomicReference<JwtDecoder> cachedDecoder = new AtomicReference<>();
 
     @Override
     public AuthenticationManager resolve(HttpServletRequest request) {
@@ -45,17 +49,15 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
     }
 
     private JwtDecoder getJwtDecoder() {
-        if (cachedDecoder == null) {
-            synchronized (this) {
-                if (cachedDecoder == null) {
-                    byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
-                    SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
-                    MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
-                    cachedDecoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
-                }
+        return cachedDecoder.updateAndGet(existing -> {
+            if (existing != null) {
+                return existing;
             }
-        }
-        return cachedDecoder;
+            byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
+            SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+            MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
+            return NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+        });
     }
 
     private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {
