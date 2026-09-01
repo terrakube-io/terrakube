@@ -29,4 +29,10 @@ public class ContextProperties {
 
     /** Retry hint (seconds) returned to clients when context is temporarily unavailable. */
     private int retryAfterSeconds = 5;
+
+    /** Bounded object-store read worker pool size. */
+    private int readWorkers = 4;
+
+    /** Bounded queue in front of the read worker pool; saturation returns a controlled 503. */
+    private int readQueueCapacity = 64;
 }

@@ -31,10 +31,18 @@ class ContextReadServiceTest {
         return new ContextReadService(storage, new ContextStorageMetrics(registry), properties, registry);
     }
 
-    private double cacheRequests(String result) {
-        return registry.find("terrakube.api.context.cache.requests").tag("result", result).counter() == null
+    private double counter(String name, String tagKey, String tagValue) {
+        return registry.find(name).tag(tagKey, tagValue).counter() == null
                 ? 0.0
-                : registry.get("terrakube.api.context.cache.requests").tag("result", result).counter().count();
+                : registry.get(name).tag(tagKey, tagValue).counter().count();
+    }
+
+    private double counter(String name) {
+        return registry.find(name).counter() == null ? 0.0 : registry.get(name).counter().count();
+    }
+
+    private double cacheRequests(String result) {
+        return counter("terrakube.api.context.cache.requests", "result", result);
     }
 
     @Test
@@ -49,6 +57,7 @@ class ContextReadServiceTest {
         verify(storage, times(1)).getContext(1);
         assertEquals(1.0, cacheRequests("hit"));
         assertEquals(1.0, cacheRequests("miss"));
+        assertEquals(1.0, counter("terrakube.api.context.singleflight.completions", "outcome", "success"));
     }
 
     @Test
@@ -110,25 +119,55 @@ class ContextReadServiceTest {
     }
 
     @Test
-    void storeTimeoutThrowsControlledExceptionAndIsNotNegativeCached() {
+    void ownerTimeoutLeavesTheInFlightReadForLaterCallersToCoalesceOnto() throws Exception {
         AtomicInteger calls = new AtomicInteger();
+        CountDownLatch release = new CountDownLatch(1);
         StorageTypeService storage = Mockito.mock(StorageTypeService.class);
         when(storage.getContext(5)).thenAnswer(inv -> {
-            if (calls.getAndIncrement() == 0) {
-                Thread.sleep(500);
-                return "late";
-            }
+            calls.incrementAndGet();
+            release.await(2, TimeUnit.SECONDS);
             return "{\"planStructuredOutput\":{}}";
         });
         ContextProperties properties = new ContextProperties();
         properties.setReadTimeout(Duration.ofMillis(100));
         ContextReadService service = service(storage, properties);
 
+        // Owner starts the read and times out at 100ms while the store call is still blocked.
         assertThrows(ContextUnavailableException.class, () -> service.read(5));
-        assertEquals(1.0, cacheRequests("failure"));
+        assertEquals(1.0, counter("terrakube.api.context.read.waiter.timeouts"));
 
-        // A recovered object must be visible on the next request (no negative cache).
+        // A second caller arrives before the store call finishes - it must coalesce, not start a
+        // duplicate read (and it also times out on its own budget).
+        assertThrows(ContextUnavailableException.class, () -> service.read(5));
+
+        // Let the single backing read finish; its result must land in the cache.
+        release.countDown();
+        Thread.sleep(300);
+
         assertEquals("{\"planStructuredOutput\":{}}", service.read(5));
+        assertEquals(1, calls.get(), "exactly one object-store read despite the owner timing out");
+        assertEquals(1.0, counter("terrakube.api.context.singleflight.completions", "outcome", "success"));
+    }
+
+    @Test
+    void storageFailureIsNotNegativeCached() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        StorageTypeService storage = Mockito.mock(StorageTypeService.class);
+        when(storage.getContext(6)).thenAnswer(inv -> {
+            if (calls.getAndIncrement() == 0) {
+                throw new RuntimeException("S3 503");
+            }
+            return "{\"planStructuredOutput\":{}}";
+        });
+        ContextReadService service = service(storage);
+
+        assertThrows(ContextUnavailableException.class, () -> service.read(6));
+        Thread.sleep(50);
+        assertEquals(1.0, counter("terrakube.api.context.singleflight.completions", "outcome", "failure"));
+
+        // A recovered object must be visible on the next request.
+        assertEquals("{\"planStructuredOutput\":{}}", service.read(6));
+        assertEquals(2, calls.get());
     }
 
     @Test
@@ -140,5 +179,34 @@ class ContextReadServiceTest {
         assertNull(service.read(9));
         assertNull(service.read(9));
         verify(storage, times(2)).getContext(9);
+    }
+
+    @Test
+    void workerPoolSaturationReturnsControlledUnavailable() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        StorageTypeService storage = Mockito.mock(StorageTypeService.class);
+        when(storage.getContext(anyInt())).thenAnswer(inv -> {
+            release.await(3, TimeUnit.SECONDS);
+            return "{}";
+        });
+        ContextProperties properties = new ContextProperties();
+        properties.setReadWorkers(1);
+        properties.setReadQueueCapacity(1);
+        properties.setReadTimeout(Duration.ofMillis(200));
+        ContextReadService service = service(storage, properties);
+
+        // Fill the one worker + one queue slot with distinct jobs, then a third distinct job is rejected.
+        Thread a = new Thread(() -> { try { service.read(100); } catch (RuntimeException ignored) { } });
+        Thread b = new Thread(() -> { try { service.read(101); } catch (RuntimeException ignored) { } });
+        a.start();
+        b.start();
+        Thread.sleep(100);
+
+        assertThrows(ContextUnavailableException.class, () -> service.read(102));
+        assertTrue(cacheRequests("saturation") >= 1.0);
+
+        release.countDown();
+        a.join(2000);
+        b.join(2000);
     }
 }

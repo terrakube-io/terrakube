@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,7 +38,7 @@ public class ContextReadService {
 
     private final Cache<Integer, String> cache;
     private final ConcurrentHashMap<Integer, CompletableFuture<String>> inFlight = new ConcurrentHashMap<>();
-    private final ExecutorService ioPool;
+    private final ThreadPoolExecutor ioPool;
 
     public ContextReadService(StorageTypeService storageTypeService,
                               ContextStorageMetrics contextStorageMetrics,
@@ -53,11 +53,16 @@ public class ContextReadService {
                 .expireAfterWrite(properties.getCacheTtl())
                 .build();
         AtomicInteger threadIndex = new AtomicInteger();
-        this.ioPool = Executors.newFixedThreadPool(4, r -> {
-            Thread t = new Thread(r, "context-read-" + threadIndex.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        });
+        int workers = Math.max(1, properties.getReadWorkers());
+        this.ioPool = new ThreadPoolExecutor(
+                Math.min(2, workers), workers, 60, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(Math.max(1, properties.getReadQueueCapacity())),
+                r -> {
+                    Thread t = new Thread(r, "context-read-" + threadIndex.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
         Gauge.builder("terrakube.api.context.inflight.reads", inFlight, Map::size)
                 .description("In-flight object-store context reads (single-flight)")
                 .register(meterRegistry);
@@ -70,7 +75,8 @@ public class ContextReadService {
 
     /**
      * @return the raw stored context JSON, {@code null} when the object does not exist yet.
-     * @throws ContextUnavailableException on timeout or a storage failure (never negative-cached).
+     * @throws ContextUnavailableException on timeout, storage failure, or worker saturation
+     *         (never negative-cached).
      */
     public String read(int jobId) {
         String cached = cache.getIfPresent(jobId);
@@ -82,8 +88,13 @@ public class ContextReadService {
         boolean[] owner = {false};
         CompletableFuture<String> future = inFlight.computeIfAbsent(jobId, id -> {
             owner[0] = true;
-            return CompletableFuture.supplyAsync(() -> loadFromStore(id), ioPool);
+            return startLoad(id);
         });
+        if (owner[0]) {
+            // Lifecycle is tied to the backing object-store operation, NOT to any waiting caller:
+            // the in-flight entry is removed only when this future completes.
+            future.whenComplete((value, error) -> onLoadComplete(jobId, future, value, error));
+        }
         countRequest(owner[0] ? "miss" : "coalesced");
 
         try {
@@ -93,6 +104,9 @@ public class ContextReadService {
             }
             return result;
         } catch (TimeoutException e) {
+            // This caller's budget expired; the backing read keeps running and later callers still
+            // coalesce onto it. Do NOT remove the in-flight entry here.
+            meterRegistry.counter("terrakube.api.context.read.waiter.timeouts").increment();
             countRequest("failure");
             throw new ContextUnavailableException("context read timed out for job " + jobId, e);
         } catch (ExecutionException e) {
@@ -102,10 +116,37 @@ public class ContextReadService {
             Thread.currentThread().interrupt();
             countRequest("failure");
             throw new ContextUnavailableException("context read interrupted for job " + jobId, e);
-        } finally {
-            if (owner[0]) {
-                inFlight.remove(jobId, future);
+        }
+    }
+
+    private CompletableFuture<String> startLoad(int jobId) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        try {
+            ioPool.execute(() -> {
+                try {
+                    future.complete(loadFromStore(jobId));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+        } catch (RejectedExecutionException saturated) {
+            countRequest("saturation");
+            log.warn("Context read worker pool saturated for job {}", jobId);
+            future.completeExceptionally(saturated);
+        }
+        return future;
+    }
+
+    private void onLoadComplete(int jobId, CompletableFuture<String> future, String value, Throwable error) {
+        inFlight.remove(jobId, future);
+        if (error == null) {
+            if (value != null && !value.isBlank()) {
+                cache.put(jobId, value);
             }
+            meterRegistry.counter("terrakube.api.context.singleflight.completions", "outcome", "success").increment();
+        } else {
+            // Never negative-cache: nothing is stored for a failed/malformed read.
+            meterRegistry.counter("terrakube.api.context.singleflight.completions", "outcome", "failure").increment();
         }
     }
 
@@ -122,7 +163,7 @@ public class ContextReadService {
         try {
             return contextStorageMetrics.time("read", () -> storageTypeService.getContext(jobId));
         } catch (IOException | RuntimeException e) {
-            throw new CompletionException(e);
+            throw new ContextUnavailableException("context storage read failed for job " + jobId, e);
         }
     }
 
