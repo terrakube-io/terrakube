@@ -7,6 +7,7 @@ import io.terrakube.executor.service.terraform.structured.StructuredSnapshot.Key
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -52,7 +53,10 @@ public class StructuredOutputPersistenceQueue {
 
     public StructuredOutputPersistenceQueue(StructuredOutputProperties properties,
                                             MeterRegistry meterRegistry,
-                                            StructuredSnapshotPersister persister) {
+                                            // @Lazy breaks the construction cycle: the persister
+                                            // depends (transitively) on Plan/ApplyStructuredOutputService,
+                                            // which depend on this queue.
+                                            @Lazy StructuredSnapshotPersister persister) {
         this.capacity = Math.max(1, properties.getQueueCapacity());
         this.maxAttempts = Math.max(1, properties.getMaxPersistAttempts());
         this.initialBackoffMs = Math.max(0, properties.getInitialBackoffMs());
