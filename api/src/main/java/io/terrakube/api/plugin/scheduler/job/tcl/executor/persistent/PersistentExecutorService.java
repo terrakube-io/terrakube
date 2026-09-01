@@ -83,7 +83,12 @@ public class PersistentExecutorService {
             throw new ExecutionException(e);
         }
 
-        ResponseEntity<ExecutorContext> response = null;
+        // The executor answers POST /api/v1/terraform-rs with 202 Accepted the moment it has
+        // queued the job for asynchronous execution. Its response body is NOT an API/executor
+        // compatibility contract - deserializing it as ExecutorContext once meant a completed
+        // run could be marked failed just because the acknowledgement body was shaped for a
+        // different executor version. Read a bodyless entity: dispatch success is the 202 alone.
+        ResponseEntity<Void> response = null;
         try {
             response = webClient.post()
                     .uri(executorUrlForRequest)
@@ -91,7 +96,7 @@ public class PersistentExecutorService {
                     .header("Authorization", "Bearer " + generateSystemToken())
                     .bodyValue(executorContext)
                     .retrieve()
-                    .toEntity(ExecutorContext.class)
+                    .toBodilessEntity()
                     .block();
         } catch (Exception ex) {
             if (ex instanceof WebClientRequestException) {
@@ -125,10 +130,7 @@ public class PersistentExecutorService {
         log.info("Response Status: {}", response.getStatusCode().value());
 
         if (!response.getStatusCode().equals(HttpStatus.ACCEPTED)) {
-            String message = String.format(
-                    "Executor error status %s: %s",
-                    response.getStatusCode(),
-                    response.getBody());
+            String message = String.format("Executor error status %s", response.getStatusCode());
             throw new ExecutionException(new Throwable(message));
         }
     }
