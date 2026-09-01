@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.logs;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -28,12 +29,15 @@ public class StepLogService {
     private final StorageTypeService storage;
     private final StepRepository stepRepository;
     private final LogsProperties properties;
+    private final MeterRegistry meterRegistry;
     private final Cache<String, byte[]> cache;
 
-    public StepLogService(StorageTypeService storage, StepRepository stepRepository, LogsProperties properties) {
+    public StepLogService(StorageTypeService storage, StepRepository stepRepository, LogsProperties properties,
+                          MeterRegistry meterRegistry) {
         this.storage = storage;
         this.stepRepository = stepRepository;
         this.properties = properties;
+        this.meterRegistry = meterRegistry;
         this.cache = Caffeine.newBuilder()
                 .maximumWeight(properties.getCacheMaxWeightBytes())
                 .weigher((String k, byte[] v) -> v.length)
@@ -111,9 +115,10 @@ public class StepLogService {
                 return StepLog.cached(body);
             }
             return StepLog.streamable(len);
-        } catch (IOException e) {
-            log.error("Failed reading step log {}: {}", key, e.getMessage());
-            throw new RuntimeException(e);
+        } catch (IOException | RuntimeException e) {
+            meterRegistry.counter("terrakube.api.step.log.storage.failures").increment();
+            log.warn("Failed reading step log {}: {}", key, e.getMessage());
+            throw new StepLogUnavailableException("step log read failed for " + key, e);
         }
     }
 
