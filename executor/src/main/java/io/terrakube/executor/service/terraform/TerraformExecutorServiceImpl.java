@@ -806,9 +806,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // output stream" with none of the real Terraform output, and none of the real error (the
     // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
     // that actually caused it.
-    private ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
+    ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
         String message = exception.getMessage() != null ? exception.getMessage() : exception.toString();
         log.error("Terraform operation failed: {}", message, exception);
+
+        // A terraform-spring-boot stream-drain watchdog failure is an executor-side symptom, not the
+        // Terraform diagnostic - the real error (an unset required variable, a missing provider) is
+        // already in partialConsoleOutput above. Count it and keep it clearly secondary so it never
+        // masks the diagnostic the user actually needs.
+        boolean streamDrainFailure = messageChainContains(exception, "Failed to capture process output stream");
+        if (streamDrainFailure && meterRegistry != null) {
+            meterRegistry.counter("terrakube.executor.process.stream.drain.timeouts").increment();
+        }
 
         TextStringBuilder consoleOutput = new TextStringBuilder();
         if (partialConsoleOutput != null && !partialConsoleOutput.isBlank()) {
@@ -819,7 +828,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             consoleOutput.appendNewLine();
         }
         consoleOutput.appendln("Error: the Terrakube executor could not finish this operation");
-        consoleOutput.appendln(message);
+        if (streamDrainFailure) {
+            consoleOutput.appendln("(secondary, executor-side) " + message);
+            consoleOutput.appendln("The Terraform/OpenTofu diagnostic above is the primary error.");
+        } else {
+            consoleOutput.appendln(message);
+        }
 
         ExecutorJobResult error = generateJobResult(false, consoleOutput.toString(), message);
 
@@ -827,6 +841,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             Thread.currentThread().interrupt();
         }
         return error;
+    }
+
+    private static boolean messageChainContains(Throwable throwable, String needle) {
+        for (Throwable current = throwable; current != null && current != current.getCause(); current = current.getCause()) {
+            if (current.getMessage() != null && current.getMessage().contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // terraform-spring-boot invokes the -json line consumer from inside its process-output reader

@@ -58,6 +58,7 @@ class TerraformExecutorServiceImplTest {
     private final StructuredOutputPersistenceQueue structuredOutputPersistenceQueue = Mockito.mock(StructuredOutputPersistenceQueue.class);
     private final ExecutorFlagsProperties executorFlagsProperties = new ExecutorFlagsProperties();
     private final StructuredOutputProperties structuredOutputProperties = new StructuredOutputProperties();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private TerraformExecutorServiceImpl subject() {
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
@@ -81,7 +82,7 @@ class TerraformExecutorServiceImplTest {
                 structuredOutputPersistenceQueue,
                 executorFlagsProperties,
                 structuredOutputProperties,
-                new SimpleMeterRegistry());
+                meterRegistry);
     }
 
     private TerraformJob createJob() {
@@ -616,5 +617,21 @@ class TerraformExecutorServiceImplTest {
 
         assertEquals(2, result.getExitCode());
         assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+    }
+
+    @Test
+    void streamDrainFailureKeepsTheTerraformDiagnosticPrimaryAndCountsIt() {
+        TerraformExecutorServiceImpl subject = subject();
+        String realDiagnostic = "Error: Reference to undeclared input variable\n\n  on main.tf line 3\n";
+
+        ExecutorJobResult result = subject.setError(
+                new RuntimeException("Failed to capture process output stream"), realDiagnostic);
+
+        int diagnosticIndex = result.getOutputLog().indexOf("undeclared input variable");
+        int captureIndex = result.getOutputLog().indexOf("Failed to capture process output stream");
+        assertTrue(diagnosticIndex >= 0, result.getOutputLog());
+        assertTrue(captureIndex > diagnosticIndex, "real diagnostic must precede the capture note: " + result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("The Terraform/OpenTofu diagnostic above is the primary error."));
+        assertEquals(1.0, meterRegistry.get("terrakube.executor.process.stream.drain.timeouts").counter().count());
     }
 }
