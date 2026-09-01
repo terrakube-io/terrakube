@@ -36,6 +36,8 @@ public class ContextController {
             JobStatus.completed,
             JobStatus.noChanges);
 
+    private static final String PENDING_BODY = "{\"structuredOutputStatus\":{\"state\":\"PENDING\"}}";
+
     private final StorageTypeService storageTypeService;
 
     private final JobRepository jobRepository;
@@ -46,18 +48,38 @@ public class ContextController {
 
     private final ContextStorageMetrics contextStorageMetrics;
 
+    private final ContextReadService contextReadService;
+
+    private final ContextProperties contextProperties;
+
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) {
+        String context;
         try {
-            String context = contextStorageMetrics.time("read", () -> storageTypeService.getContext(jobId));
-            if (context == null || context.isBlank()) {
-                context = "{}";
-            }
-            return new ResponseEntity<>(contextSanitizer.sanitize(context), HttpStatus.OK);
-        } catch (IOException | RuntimeException e) {
-            log.warn("Controlled failure reading context for job {}: {}", jobId, e.getMessage());
-            return new ResponseEntity<>("{}", HttpStatus.SERVICE_UNAVAILABLE);
+            context = contextReadService.read(jobId);
+        } catch (RuntimeException e) {
+            log.warn("Controlled context-read failure for job {}: {}", jobId, e.getMessage());
+            return unavailable();
         }
+
+        // A missing object is "not persisted yet", distinct from an empty plan and from an outage.
+        if (context == null || context.isBlank()) {
+            return new ResponseEntity<>(PENDING_BODY, HttpStatus.OK);
+        }
+
+        try {
+            return new ResponseEntity<>(contextSanitizer.sanitize(context), HttpStatus.OK);
+        } catch (IOException e) {
+            log.warn("Controlled failure sanitizing context for job {}: {}", jobId, e.getMessage());
+            return unavailable();
+        }
+    }
+
+    private ResponseEntity<String> unavailable() {
+        int retryAfter = contextProperties.getRetryAfterSeconds();
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", String.valueOf(retryAfter))
+                .body("{\"structuredOutputStatus\":{\"state\":\"UNAVAILABLE\"},\"retryAfterSeconds\":" + retryAfter + "}");
     }
 
     @PostMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -94,6 +116,8 @@ public class ContextController {
             log.warn("Controlled failure saving context for job {}: {}", jobId, e.getMessage());
             return new ResponseEntity<>("{}", HttpStatus.SERVICE_UNAVAILABLE);
         }
+        // Refresh the read cache so a Job Details page open right after the write sees this snapshot.
+        contextReadService.invalidate(jobId, savedContext);
         return new ResponseEntity<>(savedContext, HttpStatus.OK);
     }
 
