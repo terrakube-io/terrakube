@@ -511,3 +511,141 @@ describe("DetailsJob progressive render", () => {
     });
   });
 });
+
+describe("DetailsJob no-change apply semantics", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  const twoStepJob = (status: string) => ({
+    data: {
+      data: { id: "1", attributes: { status } },
+      included: [
+        { id: "plan-1", type: "step", attributes: { name: "Terraform Plan", status, stepNumber: "1" } },
+        { id: "apply-1", type: "step", attributes: { name: "Terraform Apply", status, stepNumber: "2" } },
+      ],
+    },
+  });
+
+  const noChangeContext = {
+    data: {
+      structuredOutputStatus: { state: "PERSISTED" },
+      noChangePlan: { planStepId: "plan-1" },
+      planStructuredOutput: { "plan-1": [] },
+    },
+  };
+
+  it("renders a no-op Apply state (not a warning) for a persisted empty plan with no apply rows", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) return Promise.resolve(noChangeContext);
+      if (url.includes("/step/")) return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
+      return Promise.resolve(twoStepJob("completed"));
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => expect(screen.getByText(/Apply completed with no changes/)).toBeInTheDocument());
+    expect(
+      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
+  });
+
+  it("retains the no-change/no-op presentation when a later context read returns 503", async () => {
+    let jobStatus = "running";
+    let contextCalls = 0;
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        contextCalls += 1;
+        return contextCalls === 1
+          ? Promise.resolve(noChangeContext)
+          : Promise.reject({ response: { status: 503 }, isAxiosError: true });
+      }
+      if (url.includes("/step/")) return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
+      return Promise.resolve(twoStepJob(jobStatus));
+    });
+
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(contextCalls).toBeGreaterThan(0));
+
+    jobStatus = "completed"; // the 5s poll re-fetches job (terminal) + context (now 503)
+
+    // Plan step reaching its terminal "no changes needed" proves the job transitioned AND a
+    // later 503 context read has already happened - the empty-plan evidence must have survived it.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText("Your infrastructure matches the configuration — no changes needed.")
+        ).toBeInTheDocument(),
+      { timeout: 10000 }
+    );
+    expect(contextCalls).toBeGreaterThan(1);
+    expect(screen.getByText(/Apply completed with no changes/)).toBeInTheDocument();
+    expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
+  }, 15000);
+
+  it("still warns for Apply when the plan had changes but the apply snapshot is unavailable", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({
+          data: {
+            structuredOutputStatus: { state: "PERSISTED" },
+            planStructuredOutput: {
+              "plan-1": [
+                { address: "aws_instance.x", action: "create", actions: ["create"], after: { id: "i-1" } },
+              ],
+            },
+          },
+        });
+      }
+      if (url.includes("/step/")) return Promise.resolve({ data: "Terraform will perform the following actions:", headers: {} });
+      return Promise.resolve(twoStepJob("completed"));
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => expect(screen.getByText("Structured output temporarily unavailable")).toBeInTheDocument());
+    expect(screen.queryByText(/Apply completed with no changes/)).not.toBeInTheDocument();
+  });
+
+  it("does not show 'No changes' for an unavailable context with no prior no-change evidence", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) return Promise.reject({ response: { status: 503 }, isAxiosError: true });
+      if (url.includes("/step/")) return Promise.resolve({ data: "Refreshing state...", headers: {} });
+      return Promise.resolve(twoStepJob("completed"));
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => expect(screen.getAllByText("Structured output temporarily unavailable").length).toBeGreaterThan(0));
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Apply completed with no changes/)).not.toBeInTheDocument();
+  });
+
+  it("shows the real console diagnostic for a genuinely failed apply even with a no-change plan marker", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) return Promise.resolve(noChangeContext);
+      if (url.includes("/step/apply-1"))
+        return Promise.resolve({ data: "Error: the Terrakube executor could not finish this operation", headers: {} });
+      if (url.includes("/step/")) return Promise.resolve({ data: "no changes", headers: {} });
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "failed" } },
+          included: [
+            { id: "plan-1", type: "step", attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" } },
+            { id: "apply-1", type: "step", attributes: { name: "Terraform Apply", status: "failed", stepNumber: "2" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/the Terrakube executor could not finish this operation/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/Apply completed with no changes/)).not.toBeInTheDocument();
+  });
+});

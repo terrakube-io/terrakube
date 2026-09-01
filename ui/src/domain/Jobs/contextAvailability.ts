@@ -35,6 +35,18 @@ export const parseContextAvailability = (data: unknown, httpStatus?: number): Co
   return hasContent ? "persisted" : "pending";
 };
 
+/**
+ * The plan step id of an explicitly persisted no-change plan, if the executor wrote the marker.
+ * This is affirmative evidence that the associated standard apply is a valid no-op.
+ */
+export const parseNoChangePlanStepId = (data: unknown): string | undefined => {
+  if (!isRecord(data) || !isRecord(data.noChangePlan)) {
+    return undefined;
+  }
+  const planStepId = data.noChangePlan.planStepId;
+  return typeof planStepId === "string" && planStepId.length > 0 ? planStepId : undefined;
+};
+
 // No UI metrics backend exists yet; this module-level counter records reconciliation outcomes for
 // tests and future wiring of `terrakube_ui_structured_output_reconciliation_total`.
 export type ReconciliationResult = "persisted" | "unavailable" | "expired";

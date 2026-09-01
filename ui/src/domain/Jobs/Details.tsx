@@ -26,6 +26,7 @@ import { IncludedItem, Job, JobStep, Workspace } from "../types";
 import {
   ContextAvailability,
   parseContextAvailability,
+  parseNoChangePlanStepId,
   recordReconciliationResult,
 } from "./contextAvailability";
 import { getPublicApiOrigin } from "./outputUrl";
@@ -120,6 +121,10 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
+  // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
+  const [contextEverPersisted, setContextEverPersisted] = useState(false);
+  // Plan step id of an explicitly persisted no-change plan (sticky once observed).
+  const [noChangePlanStepId, setNoChangePlanStepId] = useState<string | undefined>(undefined);
   // Non-null while we keep polling context after a terminal job status (bounded reconciliation).
   const [reconcileUntil, setReconcileUntil] = useState<number | null>(null);
   const reconcileAttemptRef = useRef(0);
@@ -224,6 +229,22 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   };
 
+  // Phase/step-aware structured-output evidence, so a transient job-wide 503 does not turn a
+  // no-op apply (whose Plan was explicitly empty) into a false "temporarily unavailable".
+  const planEvidence = (() => {
+    const planEntries = Object.values(planStructuredOutput);
+    const anyPlanHasRows = planEntries.some((rows) => Array.isArray(rows) && rows.length > 0);
+    const markedNoChange =
+      noChangePlanStepId != null &&
+      !(Array.isArray(planStructuredOutput[noChangePlanStepId]) &&
+        planStructuredOutput[noChangePlanStepId].length > 0);
+    const inferredNoChange =
+      contextEverPersisted &&
+      planEntries.length > 0 &&
+      planEntries.every((rows) => Array.isArray(rows) && rows.length === 0);
+    return { anyPlanHasRows, associatedPlanIsNoChange: markedNoChange || inferredNoChange };
+  })();
+
   const getStepStructuredData = (item: JobStep) => {
     const template = uiTemplates[item.id] || uiTemplates[String(item.stepNumber)];
     const structuredChanges = planStructuredOutput[item.id] || planStructuredOutput[String(item.stepNumber)];
@@ -232,7 +253,17 @@ export const DetailsJob = ({ jobId }: Props) => {
     const stepJobDiagnostics = jobDiagnostics[item.id] || jobDiagnostics[String(item.stepNumber)];
     const hasStructuredView = Boolean(template) || Boolean(structuredChanges) || Boolean(structuredApplyChanges);
 
-    return { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView };
+    return {
+      template,
+      structuredChanges,
+      structuredApplyChanges,
+      stepOutputs,
+      stepJobDiagnostics,
+      hasStructuredView,
+      contextEverPersisted,
+      associatedPlanIsNoChange: planEvidence.associatedPlanIsNoChange,
+      anyPlanHasRows: planEvidence.anyPlanHasRows,
+    };
   };
 
   const renderStepExtra = (item: JobStep) => {
@@ -479,7 +510,15 @@ export const DetailsJob = ({ jobId }: Props) => {
       if (requestId !== contextRequestRef.current) {
         return;
       }
-      setContextAvailability(parseContextAvailability(response?.data, response?.status));
+      const availability = parseContextAvailability(response?.data, response?.status);
+      setContextAvailability(availability);
+      if (availability === "persisted") {
+        setContextEverPersisted(true);
+      }
+      const noChangeStepId = parseNoChangePlanStepId(response?.data);
+      if (noChangeStepId != null) {
+        setNoChangePlanStepId(noChangeStepId);
+      }
       setUITemplates(normalizeUITemplates(response?.data?.terrakubeUI));
       // Merge (not replace) plan/apply/diagnostics - this REST snapshot can lag behind the live
       // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as

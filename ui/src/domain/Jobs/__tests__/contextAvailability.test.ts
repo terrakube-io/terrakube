@@ -1,6 +1,7 @@
 import {
   getReconciliationCounts,
   parseContextAvailability,
+  parseNoChangePlanStepId,
   recordReconciliationResult,
   resetReconciliationCounts,
 } from "../contextAvailability";
@@ -29,6 +30,19 @@ describe("parseContextAvailability", () => {
     expect(parseContextAvailability(undefined)).toBe("pending");
     expect(parseContextAvailability(null)).toBe("pending");
     expect(parseContextAvailability("nope")).toBe("pending");
+  });
+});
+
+describe("parseNoChangePlanStepId", () => {
+  it("reads the plan step id from the noChangePlan marker", () => {
+    expect(parseNoChangePlanStepId({ noChangePlan: { planStepId: "step-1" } })).toBe("step-1");
+  });
+
+  it("returns undefined when the marker is absent or malformed", () => {
+    expect(parseNoChangePlanStepId({})).toBeUndefined();
+    expect(parseNoChangePlanStepId({ noChangePlan: {} })).toBeUndefined();
+    expect(parseNoChangePlanStepId({ noChangePlan: { planStepId: "" } })).toBeUndefined();
+    expect(parseNoChangePlanStepId(null)).toBeUndefined();
   });
 });
 
