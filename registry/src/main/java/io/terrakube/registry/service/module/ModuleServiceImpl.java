@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.module.ModuleRequest;
 import io.terrakube.client.model.organization.ssh.Ssh;
 import io.terrakube.client.model.organization.vcs.Vcs;
 import io.terrakube.client.model.organization.vcs.github_app_token.GitHubAppToken;
+import io.terrakube.client.model.response.Response;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
@@ -20,7 +21,9 @@ import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @AllArgsConstructor
@@ -103,12 +106,13 @@ public class ModuleServiceImpl implements ModuleService {
         String folder = module.getAttributes().getFolder();
         String tagPrefix = module.getAttributes().getTagPrefix();
 
-        String gitTag = terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId())
-                .getData()
+        String gitTag = Optional.ofNullable(terrakubeClient.getAllVersionsByOrganizationIdAndModuleId(organizationId, module.getId()))
+                .map(Response::getData)
+                .orElseGet(Collections::emptyList)
                 .stream()
                 .filter(moduleVersion -> version.equals(moduleVersion.getAttributes().getVersion()))
-                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
                 .findFirst()
+                .map(moduleVersion -> moduleVersion.getAttributes().getGitTag())
                 .orElse(null);
 
         if (module.getRelationships().getVcs().getData() != null) {
