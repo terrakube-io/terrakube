@@ -37,7 +37,6 @@ import org.quartz.JobExecutionContext;
 import org.quartz.Scheduler;
 
 import graphql.Assert;
-import jakarta.persistence.EntityNotFoundException;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
@@ -963,8 +962,9 @@ public class ScheduleJobTest {
     public void orphanedTriggerSelfDeschedules() throws Exception {
         // The Job row was deleted after this trigger was scheduled (e.g. KEEP_JOB_HISTORY
         // pruning winning the race against the job's own terminal-status cleanup tick, or a
-        // soft delete hiding the row via the entity's @SQLRestriction). The fire must remove
-        // the orphaned Quartz context instead of throwing on every refire forever.
+        // soft delete hiding the row via the entity's @SQLRestriction), so execute()'s
+        // findById() comes back empty. The fire must remove the orphaned Quartz context
+        // instead of failing on every refire forever.
         JobDetail jobDetail = mock(JobDetail.class);
         JobDataMap dataMap = new JobDataMap();
         dataMap.put(ScheduleJob.JOB_ID, 4711);
@@ -976,12 +976,7 @@ public class ScheduleJobTest {
         doReturn(scheduler).when(context).getScheduler();
         doReturn(true).when(scheduler).deleteJob(any(JobKey.class));
 
-        TransactionStatus transactionStatus = mock(TransactionStatus.class);
-        doReturn(transactionStatus).when(transactionManager).getTransaction(any());
-        doNothing().when(transactionManager).rollback(transactionStatus);
-
-        doThrow(new EntityNotFoundException("Unable to find io.terrakube.api.rs.job.Job with id 4711"))
-                .when(jobRepository).getReferenceById(4711);
+        doReturn(Optional.empty()).when(jobRepository).findById(4711);
 
         Assertions.assertDoesNotThrow(() -> subject().execute(context));
 
