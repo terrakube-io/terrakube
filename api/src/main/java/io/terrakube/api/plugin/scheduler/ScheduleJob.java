@@ -123,8 +123,19 @@ public class ScheduleJob implements org.quartz.Job {
             // and therefore JPA-default EAGER - is fully materialized here, in the one place this
             // method still needs an open Hibernate session. Everything doRunExecution reads off
             // job afterwards is safe even once this repository call's own transaction has closed.
-            Job job = jobRepository.findById(jobId)
-                    .orElseThrow(() -> new IllegalStateException("Job " + jobId + " not found"));
+            // An empty result is not an error here - see below.
+            Optional<Job> existingJob = jobRepository.findById(jobId);
+            if (existingJob.isEmpty()) {
+                // The Job row no longer exists - deleted (or soft-deleted, which the entity's
+                // @SQLRestriction makes equally invisible) after this trigger was scheduled,
+                // typically by KEEP_JOB_HISTORY pruning racing this job's own terminal-status
+                // cleanup tick under load. The trigger can never succeed and would otherwise
+                // refire forever, so remove it by id (the entity is gone; only the id is usable).
+                log.warn("Job {} no longer exists (deleted after scheduling, e.g. KEEP_JOB_HISTORY pruning); removing orphaned job context", jobId);
+                removeJobContext(jobId, jobExecutionContext);
+                return true;
+            }
+            Job job = existingJob.get();
 
             boolean shouldDeschedule;
             try {
@@ -148,7 +159,7 @@ public class ScheduleJob implements org.quartz.Job {
 
             if (shouldDeschedule) {
                 redisTemplate.delete(String.valueOf(job.getId()));
-                removeJobContext(job, jobExecutionContext);
+                removeJobContext(job.getId(), jobExecutionContext);
             }
             return shouldDeschedule;
         });
@@ -312,6 +323,18 @@ public class ScheduleJob implements org.quartz.Job {
                 for (int i = 0; i < previousJobs.get().size(); i++) {
                     if (i >= keepHistory.get()) {
                         Job previousJob = previousJobs.get().get(i);
+                        // Remove the job's Quartz context BEFORE the row disappears (hard delete)
+                        // or becomes invisible to Hibernate (soft delete + @SQLRestriction): a
+                        // surviving trigger whose row is gone throws EntityNotFoundException on
+                        // every fire and can never clean itself up. Under load this race is
+                        // common - the pruned job's own terminal-status tick (which normally
+                        // removes the context) may not have run yet. Already-removed contexts
+                        // make this a harmless no-op; a scheduler hiccup must not abort pruning.
+                        try {
+                            scheduleJobService.deleteJobContext(previousJob.getId());
+                        } catch (Exception e) {
+                            log.warn("Could not remove job context for pruned job {}: {}", previousJob.getId(), e.getMessage());
+                        }
                         if (softDelete.get()) {
                             log.info("Soft deleting Job {} with Status {}", previousJob.getId(), previousJob.getStatus());
                             previousJob.setDeleted(true);
@@ -550,12 +573,14 @@ public class ScheduleJob implements org.quartz.Job {
         updateJobStatusOnVcs(job, JobStatus.unknown);
     }
 
-    private void removeJobContext(Job job, JobExecutionContext jobExecutionContext) {
+    // Takes the raw job id, not the entity: the orphaned-trigger path (see execute) calls this
+    // precisely when the Job row no longer exists, so a Job parameter would itself throw.
+    private void removeJobContext(int jobId, JobExecutionContext jobExecutionContext) {
         try {
             Boolean triggerByStatusChange = jobExecutionContext.getJobDetail().getJobDataMap().getBooleanFromString("isTriggerFromStatusChange");
             if (!triggerByStatusChange.booleanValue()) {
-                log.info("Deleting Schedule Job Context {}, InstanceId {}", PREFIX_JOB_CONTEXT + job.getId(), jobExecutionContext.getFireInstanceId());
-                jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
+                log.info("Deleting Schedule Job Context {}, InstanceId {}", PREFIX_JOB_CONTEXT + jobId, jobExecutionContext.getFireInstanceId());
+                jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + jobId));
             } else {
                 String jobIdentity = jobExecutionContext.getJobDetail().getJobDataMap().getString("identity");
                 jobExecutionContext.getScheduler().deleteJob(new JobKey(jobIdentity));
