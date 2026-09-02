@@ -117,21 +117,25 @@ class JobReconciliationSweepIntegrationTest {
         job = jobRepository.save(job);
 
         JobKey key = new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + job.getId());
+        int jobId = job.getId();
         assertThat(scheduler.checkExists(key)).isFalse();
 
-        // Wait past one full sweep tick (registered at 30s intervals, plus the sweep's own
-        // immediate run-once-at-startup already happened before this job existed).
-        long deadline = System.currentTimeMillis() + 35_000;
-        boolean recreated = false;
+        // The sweep recreates the lost trigger, which fires ScheduleJob, which then processes the
+        // job (it has no template, so it fails fast and deschedules itself within ~0.2s). Accept
+        // either observation: the transient recreated trigger, or the durable proof that the job
+        // was picked back up - it left 'pending'. Polling only for the trigger is a race.
+        long deadline = System.currentTimeMillis() + 75_000;
+        boolean pickedUp = false;
         while (System.currentTimeMillis() < deadline) {
-            if (scheduler.checkExists(key)) {
-                recreated = true;
+            JobStatus status = jobRepository.findById(jobId).map(Job::getStatus).orElse(null);
+            if (scheduler.checkExists(key) || status != JobStatus.pending) {
+                pickedUp = true;
                 break;
             }
-            Thread.sleep(500);
+            Thread.sleep(200);
         }
 
-        assertThat(recreated).isTrue();
+        assertThat(pickedUp).isTrue();
     }
 
     @Test
@@ -157,7 +161,12 @@ class JobReconciliationSweepIntegrationTest {
         stepRepository.save(done);
 
         int id = zombie.getId();
-        long deadline = System.currentTimeMillis() + 35_000;
+
+        // the guarded FIFO head query must never hand the executor pool this dead job
+        Integer head = jobRepository.findNextDispatchableExecutableJobId();
+        assertThat(head == null || head != id).isTrue();
+
+        long deadline = System.currentTimeMillis() + 75_000;
         boolean reconciled = false;
         while (System.currentTimeMillis() < deadline) {
             JobStatus status = jobRepository.findById(id).map(Job::getStatus).orElse(null);

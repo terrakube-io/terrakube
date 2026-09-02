@@ -1677,8 +1677,15 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ## Task 9: End-to-end burst test + operator runbook
 
+> **Execution note:** a standalone `ZeroPendingBurstIntegrationTest` shared a Spring context
+> with `JobReconciliationSweepIntegrationTest` (dynamic-property customizers compared equal),
+> and whichever class ran first had its Testcontainers Postgres torn down under the other. The
+> end-to-end scenario (live sweep reconciles a stale `approved` head + guarded head query
+> excludes it) was folded into `JobReconciliationSweepIntegrationTest.aZombieApprovedJobWithNoPendingStepsIsReconciledToCompletedBySweep`
+> instead — same context, one container. No separate burst class.
+
 **Files:**
-- Test: `api/src/test/java/io/terrakube/api/plugin/scheduler/reconciliation/ZeroPendingBurstIntegrationTest.java`
+- Test: `api/src/test/java/io/terrakube/api/plugin/scheduler/reconciliation/JobReconciliationSweepIntegrationTest.java` (folded-in scenario)
 - Create (NOT committed): `docs/ops/zero-pending-job-reconciliation.md`
 
 **Interfaces:**
