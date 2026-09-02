@@ -101,6 +101,8 @@ public class ScheduleJobTest {
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
     JobNotificationTrigger jobNotificationTrigger;
+    io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService jobReconciliationService;
+    io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
 
     UUID stepId = UUID.randomUUID();
 
@@ -139,6 +141,14 @@ public class ScheduleJobTest {
         // ordering tests below override these.
         lenient().doReturn(true).when(jobRepository).isJobNextInDispatchOrder(anyInt());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableJobId();
+
+        jobReconciliationService = mock(
+                io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService.class,
+                new FailUnkownMethod<>());
+        // Guard off by default so the existing dispatch-order tests keep exercising the original
+        // queries; a dedicated test flips it on. Behaviour is identical either way (same rows).
+        reconciliationProperties = new io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties();
+        reconciliationProperties.setAdmissionGuardEnabled(false);
     }
 
     private ScheduleJob subject() {
@@ -160,7 +170,9 @@ public class ScheduleJobTest {
                 globalVarRepository,
                 variableRepository,
                 workspaceVariableValidationService,
-                jobNotificationTrigger);
+                jobNotificationTrigger,
+                jobReconciliationService,
+                reconciliationProperties);
     }
 
     private Job job(JobStatus status) {
@@ -691,11 +703,8 @@ public class ScheduleJobTest {
     }
 
     @Test
-    public void pendingJobWithNoMoreSteps() {
+    public void pendingJobWithNoMoreStepsIsHandedToTheReconciliationRoutine() {
         Job job = job(JobStatus.pending);
-
-        Flow flow = new Flow();
-        flow.setType(FlowType.terraformPlan.name());
 
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
         doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
@@ -707,22 +716,76 @@ public class ScheduleJobTest {
                         any(Workspace.class),
                         anyList(),
                         anyInt());
-        // Called twice :(
         doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
         doReturn(null).when(tclService).getNextFlow(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-
+        doReturn(new io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult(
+                job.getId(), JobStatus.pending,
+                io.terrakube.api.plugin.scheduler.reconciliation.DerivedOutcome.COMPLETED,
+                JobStatus.completed,
+                io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition.APPLIED,
+                java.util.List.of()))
+                .when(jobReconciliationService).reconcile(job.getId(), false);
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
 
-        // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(jobRepository, times(1)).save(job);
-        verify(workspaceRepository, times(2)).save(job.getWorkspace());
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
+        verify(jobReconciliationService, times(1)).reconcile(job.getId(), false);
+        // the shared routine owns the status transition + event; the scheduler still runs the
+        // VCS-status / PR-comment / history-prune tail that completeJob used to
         Assertions.assertEquals(JobStatus.completed, job.getStatus());
-        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.completed, null);
+        verify(globalVarRepository, times(1)).findByOrganization(any());
+    }
+
+    @Test
+    public void approvedJobWithNoMoreStepsIsReconciledInsteadOfStranded() {
+        Job job = job(JobStatus.approved);
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        doReturn(null).when(tclService).getNextFlow(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(new io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult(
+                job.getId(), JobStatus.approved,
+                io.terrakube.api.plugin.scheduler.reconciliation.DerivedOutcome.ANOMALY, null,
+                io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition.HELD_ANOMALY,
+                java.util.List.of()))
+                .when(jobReconciliationService).reconcile(job.getId(), false);
+
+        // anomaly -> keep the trigger (return false), do not touch VCS
+        Assert.assertFalse(subject().runExecution(job));
+        verify(jobReconciliationService, times(1)).reconcile(job.getId(), false);
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+    }
+
+    @Test
+    public void admissionGuardFlagSelectsTheExecutableDispatchQuery() {
+        reconciliationProperties.setAdmissionGuardEnabled(true);
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(false).when(jobRepository).isJobNextInDispatchOrderExecutable(job.getId());
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, times(1)).isJobNextInDispatchOrderExecutable(job.getId());
+        verify(jobRepository, times(0)).isJobNextInDispatchOrder(anyInt());
     }
 
     @Test
