@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,6 +72,47 @@ class TerraformJsonEventParserTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> diagnostics = (List<Map<String, Object>>) changes.get(0).get("diagnostics");
         assertEquals("local-exec provisioner error", diagnostics.get(0).get("summary"));
+    }
+
+    // Under `-json` a diagnostic's own `@message` is only the one-line "Error: <summary>" header -
+    // the file, line, source snippet and explanation live in the structured `diagnostic` object.
+    // parseLine must hand the caller the full multi-line rendering that plain `tofu plan` prints,
+    // otherwise the CLI (and raw-log download, and PR comment) show a bare "Error: Unsupported
+    // attribute" with nothing else.
+    @Test
+    void returnsFullHumanReadableDiagnosticRenderingForTheConsole() {
+        List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        String consoleText = subject().parseLine(
+                "{\"@message\":\"Error: Unsupported attribute\",\"@level\":\"error\",\"type\":\"diagnostic\","
+                        + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Unsupported attribute\","
+                        + "\"detail\":\"This object has no argument, nested block, or exported attribute named \\\"identifier\\\".\","
+                        + "\"range\":{\"filename\":\"main.tf\",\"start\":{\"line\":12,\"column\":12},\"end\":{\"line\":12,\"column\":30}},"
+                        + "\"snippet\":{\"context\":\"resource \\\"aws_instance\\\" \\\"web\\\"\",\"code\":\"  subnet = aws_subnet.main.identifier\",\"start_line\":12}}}",
+                changes, jobDiagnostics);
+
+        assertTrue(consoleText.contains("Error: Unsupported attribute"), consoleText);
+        assertTrue(consoleText.contains("on main.tf line 12, in resource \"aws_instance\" \"web\""), consoleText);
+        assertTrue(consoleText.contains("12:   subnet = aws_subnet.main.identifier"), consoleText);
+        assertTrue(consoleText.contains(
+                "This object has no argument, nested block, or exported attribute named \"identifier\"."), consoleText);
+    }
+
+    @Test
+    void rendersADiagnosticWithNoSourceLocationAsJustSummaryAndDetail() {
+        List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        String consoleText = subject().parseLine(
+                "{\"@message\":\"Warning: Deprecated attribute\",\"type\":\"diagnostic\","
+                        + "\"diagnostic\":{\"severity\":\"warning\",\"summary\":\"Deprecated attribute\","
+                        + "\"detail\":\"The attribute \\\"foo\\\" is deprecated. Use \\\"bar\\\" instead.\"}}",
+                changes, jobDiagnostics);
+
+        assertTrue(consoleText.contains("Warning: Deprecated attribute"), consoleText);
+        assertTrue(consoleText.contains("The attribute \"foo\" is deprecated. Use \"bar\" instead."), consoleText);
+        assertFalse(consoleText.contains("  on "), consoleText);
     }
 
     @Test
