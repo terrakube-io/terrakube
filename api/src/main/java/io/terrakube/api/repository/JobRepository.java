@@ -155,4 +155,14 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "             OR EXISTS (SELECT 1 FROM step s2 WHERE s2.job_id = earlier.id AND s2.status = 'pending') )" +
             "   )", nativeQuery = true)
     Integer findNextDispatchableExecutableJobId();
+
+    /** Count of jobs the guarded FIFO-admission query currently considers eligible - a
+     *  pending/approved job that is uninitialised or still has a pending step. Queue-depth gauge. */
+    @Query(value = "SELECT COUNT(*) FROM job j" +
+            " WHERE j.status IN ('pending','approved')" +
+            "   AND j.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id AND s.status = 'pending') )",
+            nativeQuery = true)
+    int countDispatchEligibleJobs();
 }
