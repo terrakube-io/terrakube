@@ -73,6 +73,8 @@ class JobReconciliationSweepIntegrationTest {
     @Autowired
     private WorkspaceRepository workspaceRepository;
     @Autowired
+    private io.terrakube.api.repository.StepRepository stepRepository;
+    @Autowired
     private OrganizationRepository organizationRepository;
     @Autowired
     private Scheduler scheduler;
@@ -80,10 +82,22 @@ class JobReconciliationSweepIntegrationTest {
     private Organization organization;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setup() {
         organization = new Organization();
         organization.setName("org-" + UUID.randomUUID().toString().substring(0, 8));
         organization = organizationRepository.save(organization);
+
+        // The sweep now takes a per-job Redis lock before reconciling a zero-pending job; the
+        // mocked RedisTemplate must let that lock be acquired and released.
+        org.springframework.data.redis.core.ValueOperations<String, Object> valueOperations =
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
+        org.mockito.Mockito.lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        org.mockito.Mockito.lenient().when(valueOperations.setIfAbsent(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(java.time.Duration.class))).thenReturn(true);
+        org.mockito.Mockito.lenient().when(redisTemplate.delete(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(true);
     }
 
     @Test
@@ -118,5 +132,43 @@ class JobReconciliationSweepIntegrationTest {
         }
 
         assertThat(recreated).isTrue();
+    }
+
+    @Test
+    void aZombieApprovedJobWithNoPendingStepsIsReconciledToCompletedBySweep() throws Exception {
+        Workspace workspace = new Workspace();
+        workspace.setName("ws-" + UUID.randomUUID().toString().substring(0, 8));
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.6.0");
+        workspace.setOrganization(organization);
+        workspace = workspaceRepository.save(workspace);
+
+        Job zombie = new Job();
+        zombie.setOrganization(organization);
+        zombie.setWorkspace(workspace);
+        zombie.setStatus(JobStatus.approved);
+        zombie = jobRepository.save(zombie);
+
+        io.terrakube.api.rs.job.step.Step done = new io.terrakube.api.rs.job.step.Step();
+        done.setJob(zombie);
+        done.setStepNumber(100);
+        done.setStatus(JobStatus.completed);
+        stepRepository.save(done);
+
+        int id = zombie.getId();
+        long deadline = System.currentTimeMillis() + 35_000;
+        boolean reconciled = false;
+        while (System.currentTimeMillis() < deadline) {
+            JobStatus status = jobRepository.findById(id).map(Job::getStatus).orElse(null);
+            if (status == JobStatus.completed) {
+                reconciled = true;
+                break;
+            }
+            Thread.sleep(500);
+        }
+
+        assertThat(reconciled).isTrue();
+        assertThat(scheduler.checkExists(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + id))).isFalse();
     }
 }
