@@ -101,13 +101,19 @@ class AdmissionControlIntegrationTest {
         ResponseEntity<TerraformJob> secondResponse = controller.terraformJob(secondJob);
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, secondResponse.getStatusCode());
 
-        // Let the first job finish, which releases the gate.
+        // Let the first job finish. ExecutorJobImpl releases the gate in its finally block
+        // *before* publishReadiness/publishExecutorAvailable and before the pool Runnable
+        // returns - so waiting only for the gate to free up races the pool thread still being
+        // busy, and the third submit below would then hit the queue-capacity-0 pool and be
+        // rejected (503) even though capacity is logically available. Wait for the pool thread
+        // to actually go idle instead.
         releaseFirstJob.countDown();
         long deadline = System.currentTimeMillis() + 5000;
-        while (gate.tryAcquire() == false && System.currentTimeMillis() < deadline) {
+        while (pool.getThreadPoolExecutor().getActiveCount() > 0 && System.currentTimeMillis() < deadline) {
             Thread.sleep(20);
         }
-        gate.release();
+        assertEquals(0, pool.getThreadPoolExecutor().getActiveCount(),
+                "first job's pool task did not finish within the timeout");
 
         // Third request after completion: pod accepts again.
         TerraformJob thirdJob = new TerraformJob();

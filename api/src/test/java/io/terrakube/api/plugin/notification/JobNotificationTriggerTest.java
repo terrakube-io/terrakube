@@ -12,7 +12,9 @@ import io.terrakube.api.rs.notification.NotificationTrigger;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -39,9 +41,16 @@ class JobNotificationTriggerTest {
     NotificationOutboxRepository notificationOutboxRepository;
     @Mock
     NotificationDispatchService notificationDispatchService;
+    @Mock
+    JobFailureSummaryService jobFailureSummaryService;
 
     @InjectMocks
     JobNotificationTrigger subject;
+
+    @BeforeEach
+    void setGraceWindow() {
+        ReflectionTestUtils.setField(subject, "recoverableStatusGraceSeconds", 90L);
+    }
 
     @AfterEach
     void clearTransactionSynchronization() {
@@ -78,9 +87,9 @@ class JobNotificationTriggerTest {
 
     @Test
     void enqueue_matchingConfigInsertsExactlyOneOutboxRow() {
-        Job job = jobWithStatus(JobStatus.failed);
-        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
-        NotificationConfiguration nonMatching = configWithTrigger(NotificationChannelType.WEBHOOK, JobStatus.completed);
+        Job job = jobWithStatus(JobStatus.completed);
+        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
+        NotificationConfiguration nonMatching = configWithTrigger(NotificationChannelType.WEBHOOK, JobStatus.failed);
         when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(matching, nonMatching));
         when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
 
@@ -90,7 +99,29 @@ class JobNotificationTriggerTest {
         verify(notificationOutboxRepository, times(1)).save(captor.capture());
         assertThat(captor.getValue().getConfiguration()).isEqualTo(matching);
         assertThat(captor.getValue().getJob()).isEqualTo(job);
+        assertThat(captor.getValue().getJobStatus()).isEqualTo(JobStatus.completed);
+        assertThat(captor.getValue().getNextAttemptAt()).isNull();
         assertThat(ids).containsExactly(captor.getValue().getId());
+    }
+
+    @Test
+    void enqueue_recoverableStatusRowIsInsertedButDeferredNotDispatchedImmediately() {
+        // A job briefly flips to "failed" when the API->executor dispatch call throws even
+        // though the executor is running it; the row is held back (nextAttemptAt in the future,
+        // id withheld from the result) so the poller can re-validate it against the job's live
+        // status before delivering - see JobNotificationTrigger.RECOVERABLE_STATUSES.
+        Job job = jobWithStatus(JobStatus.failed);
+        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(matching));
+        when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+
+        List<UUID> ids = subject.enqueue(job);
+
+        ArgumentCaptor<NotificationOutbox> captor = ArgumentCaptor.forClass(NotificationOutbox.class);
+        verify(notificationOutboxRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getJobStatus()).isEqualTo(JobStatus.failed);
+        assertThat(captor.getValue().getNextAttemptAt()).isAfter(new java.util.Date());
+        assertThat(ids).isEmpty();
     }
 
     @Test
@@ -129,8 +160,8 @@ class JobNotificationTriggerTest {
 
     @Test
     void notifyStatusChanged_dispatchesEveryEnqueuedOutboxRowImmediately() {
-        Job job = jobWithStatus(JobStatus.failed);
-        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        Job job = jobWithStatus(JobStatus.completed);
+        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
         when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(matching));
         when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
 
@@ -143,8 +174,8 @@ class JobNotificationTriggerTest {
 
     @Test
     void notifyStatusChanged_defersDispatchUntilAfterCommitWhenATransactionIsActive() {
-        Job job = jobWithStatus(JobStatus.failed);
-        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        Job job = jobWithStatus(JobStatus.completed);
+        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
         when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(matching));
         when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
 
@@ -178,10 +209,10 @@ class JobNotificationTriggerTest {
 
     @Test
     void enqueue_configScopedToTheJobsTemplateMatches() {
-        Job job = jobWithStatus(JobStatus.failed);
+        Job job = jobWithStatus(JobStatus.completed);
         UUID templateId = UUID.randomUUID();
         job.setTemplateReference(templateId.toString());
-        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
         Template matchingTemplate = new Template();
         matchingTemplate.setId(templateId);
         configuration.setTemplates(List.of(matchingTemplate));
@@ -196,9 +227,9 @@ class JobNotificationTriggerTest {
 
     @Test
     void enqueue_configWithNoTemplatesSelectedMatchesEveryTemplate() {
-        Job job = jobWithStatus(JobStatus.failed);
+        Job job = jobWithStatus(JobStatus.completed);
         job.setTemplateReference(UUID.randomUUID().toString());
-        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.failed);
+        NotificationConfiguration configuration = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
         // templates left null/unset - see NotificationConfiguration.templates javadoc.
         when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(configuration));
         when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");

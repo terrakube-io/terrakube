@@ -1,7 +1,9 @@
 package io.terrakube.api.plugin.notification;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import io.terrakube.api.plugin.notification.payload.NotificationContext;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
@@ -40,30 +43,55 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class JobNotificationTrigger {
 
+    // Statuses a run can still leave for a non-error status afterwards. A job briefly flips to
+    // "failed" when the API↔executor dispatch call throws (see ScheduleJob.errorJobAtStep) even
+    // though the executor often accepted the job and is running it - its next status callback
+    // (setRunningStatus / setCompletedStatus) then moves the job back off "failed" and the run
+    // completes normally. A notification for such a status is held back briefly and re-validated
+    // against the job's live status before it is actually delivered (see
+    // NotificationOutboxTransactions.claim), so these transient flips never reach the channel.
+    private static final Set<JobStatus> RECOVERABLE_STATUSES = Set.of(JobStatus.failed);
+
     private final NotificationConfigResolver notificationConfigResolver;
     private final NotificationPayloadRenderer notificationPayloadRenderer;
     private final NotificationOutboxRepository notificationOutboxRepository;
     private final NotificationDispatchService notificationDispatchService;
+    private final JobFailureSummaryService jobFailureSummaryService;
 
     @Value("${io.terrakube.ui.url:}")
     private String uiUrl;
 
+    // How long to hold a notification for a potentially-transient status (RECOVERABLE_STATUSES)
+    // before the poller may deliver it, giving the executor's own status callback time to
+    // correct a dispatch-error flip. Only delays the delivery of these rows; every other status
+    // is still dispatched immediately.
+    @Value("${io.terrakube.notification.recoverableStatusGraceSeconds:90}")
+    private long recoverableStatusGraceSeconds;
+
     public JobNotificationTrigger(NotificationConfigResolver notificationConfigResolver,
             NotificationPayloadRenderer notificationPayloadRenderer,
             NotificationOutboxRepository notificationOutboxRepository,
-            NotificationDispatchService notificationDispatchService) {
+            NotificationDispatchService notificationDispatchService,
+            JobFailureSummaryService jobFailureSummaryService) {
         this.notificationConfigResolver = notificationConfigResolver;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationDispatchService = notificationDispatchService;
+        this.jobFailureSummaryService = jobFailureSummaryService;
     }
 
+    // Returns the ids of rows that are due for immediate dispatch. A row rendered for a
+    // potentially-transient status (RECOVERABLE_STATUSES) is still inserted, but with a short
+    // nextAttemptAt in the future and its id withheld from the result - only the outbox poller
+    // picks it up, after the grace window, and only if the job's live status still matches by
+    // then. Callers dispatch exactly what is returned; the poller covers the rest.
     public List<UUID> enqueue(Job job) {
         if (job.getWorkspace() == null) {
             return List.of();
         }
         List<UUID> insertedIds = new ArrayList<>();
         try {
+            boolean deferDispatch = RECOVERABLE_STATUSES.contains(job.getStatus());
             List<NotificationConfiguration> configs = notificationConfigResolver.resolve(job.getWorkspace());
             for (NotificationConfiguration configuration : configs) {
                 boolean statusMatches = configuration.getTriggers() != null && configuration.getTriggers().stream()
@@ -71,23 +99,37 @@ public class JobNotificationTrigger {
                 if (!statusMatches || !templateMatches(configuration, job)) {
                     continue;
                 }
-                String payload = notificationPayloadRenderer.render(configuration.getChannelType(),
-                        buildContext(job, configuration));
-
-                NotificationOutbox outbox = new NotificationOutbox();
-                outbox.setId(UUID.randomUUID());
-                outbox.setJob(job);
-                outbox.setConfiguration(configuration);
-                outbox.setPayload(payload);
-                outbox.setStatus(NotificationOutboxStatus.PENDING);
-                notificationOutboxRepository.save(outbox);
-                insertedIds.add(outbox.getId());
+                UUID outboxId = saveOutboxRow(job, configuration, deferDispatch);
+                if (!deferDispatch) {
+                    insertedIds.add(outboxId);
+                }
             }
         } catch (Exception e) {
             // Never let a resolution/render failure fail the job status update itself.
             log.error("Failed to resolve/enqueue notifications for job {}", job.getId(), e);
         }
         return insertedIds;
+    }
+
+    // Renders and persists one PENDING outbox row. A deferred row (job in a RECOVERABLE_STATUS)
+    // gets a nextAttemptAt in the future so only the poller picks it up, after the grace window.
+    private UUID saveOutboxRow(Job job, NotificationConfiguration configuration, boolean deferred) {
+        String payload = notificationPayloadRenderer.render(configuration.getChannelType(),
+                buildContext(job, configuration));
+
+        NotificationOutbox outbox = new NotificationOutbox();
+        outbox.setId(UUID.randomUUID());
+        outbox.setJob(job);
+        outbox.setConfiguration(configuration);
+        outbox.setPayload(payload);
+        outbox.setStatus(NotificationOutboxStatus.PENDING);
+        outbox.setJobStatus(job.getStatus());
+        if (deferred) {
+            outbox.setNextAttemptAt(
+                    new Date(System.currentTimeMillis() + recoverableStatusGraceSeconds * 1000L));
+        }
+        notificationOutboxRepository.save(outbox);
+        return outbox.getId();
     }
 
     // Empty/null templates means "applies to every template" - this only ever narrows which
@@ -122,14 +164,13 @@ public class JobNotificationTrigger {
         String workspaceUrl = String.format("%s/organizations/%s/workspaces/%s", uiUrl,
                 job.getOrganization().getId(), job.getWorkspace().getId());
         String runUrl = workspaceUrl + "/runs/" + job.getId();
-        // job.output is the raw Terraform/OpenTofu run output; there is no dedicated
-        // failure-reason field on Job, so this trims the tail of that log as a
-        // best-effort summary rather than shipping the whole (possibly huge) output.
-        String failureReason = null;
-        if (job.getOutput() != null && !job.getOutput().isBlank()) {
-            String output = job.getOutput();
-            failureReason = output.length() > 500 ? output.substring(output.length() - 500) : output;
-        }
+        // Only a genuinely failed job carries a failure reason; for any other status there is
+        // nothing to explain. The text is the tail of the failing step's console output (see
+        // JobFailureSummaryService) - job.output itself only holds "Step <id> completed"
+        // markers and is useless here.
+        String failureReason = job.getStatus() == JobStatus.failed
+                ? jobFailureSummaryService.describeFailure(job)
+                : null;
         return new NotificationContext(
                 job.getOrganization().getName(),
                 job.getWorkspace().getName(),
