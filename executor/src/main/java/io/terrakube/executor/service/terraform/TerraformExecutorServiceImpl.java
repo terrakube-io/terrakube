@@ -65,8 +65,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ApplyStructuredOutputService applyStructuredOutputService;
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
+    // Root of the per-workspace TF_DATA_DIR cache (io.terrakube.executor.terraform.dataDirCacheRoot); blank = disabled.
+    String dataDirCacheRoot;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, @Value("${io.terrakube.executor.terraform.dataDirCacheRoot:}") String dataDirCacheRoot) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -78,6 +80,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.objectMapper = objectMapper;
         this.enableColorOutput = enableColorOutput;
         this.redisTimeout = redisTimeout;
+        this.dataDirCacheRoot = dataDirCacheRoot;
     }
 
     public File getTerraformWorkingDir(TerraformJob terraformJob, File workingDirectory) throws IOException {
@@ -1119,6 +1122,81 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", workspaceRootDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
         }
 
+        ensurePluginCacheDir(terraformJob);
+        applyDataDirCache(terraformJob);
+
         return terraformJob.getEnvironmentVariables();
+    }
+
+    static final String TF_DATA_DIR = "TF_DATA_DIR";
+    static final String TF_PLUGIN_CACHE_DIR = "TF_PLUGIN_CACHE_DIR";
+
+    /**
+     * Terraform/OpenTofu refuse a plugin cache directory that does not exist ("the directory must
+     * already exist") and a freshly mounted cache volume is empty, so create it instead of letting
+     * every init report "The specified plugin cache dir ... cannot be opened". The variable can come
+     * from the workspace (job environment) or from the executor's own environment (helm chart).
+     */
+    void ensurePluginCacheDir(TerraformJob terraformJob) {
+        String pluginCacheDir = null;
+        if (terraformJob.getEnvironmentVariables() != null) {
+            pluginCacheDir = terraformJob.getEnvironmentVariables().get(TF_PLUGIN_CACHE_DIR);
+        }
+        if (pluginCacheDir == null || pluginCacheDir.isBlank()) {
+            pluginCacheDir = System.getenv(TF_PLUGIN_CACHE_DIR);
+        }
+        if (pluginCacheDir == null || pluginCacheDir.isBlank()) {
+            return;
+        }
+        File cacheDir = new File(pluginCacheDir.trim());
+        if (cacheDir.isDirectory()) {
+            return;
+        }
+        try {
+            FileUtils.forceMkdir(cacheDir);
+            log.info("Created terraform plugin cache directory {}", cacheDir.getAbsolutePath());
+        } catch (IOException e) {
+            log.warn("Unable to create terraform plugin cache directory {}: {}", cacheDir.getAbsolutePath(), e.getMessage());
+        }
+    }
+
+    /**
+     * Points TF_DATA_DIR at a per-workspace directory under the configured cache root, so the
+     * modules and providers that terraform/tofu init downloads survive between jobs of the same
+     * workspace (each job otherwise runs in a throw-away clone whose .terraform is discarded).
+     * A TF_DATA_DIR the user set explicitly on the workspace wins; no cache root, or a root that
+     * cannot be created, keeps the stock behaviour for this job.
+     */
+    void applyDataDirCache(TerraformJob terraformJob) {
+        if (dataDirCacheRoot == null || dataDirCacheRoot.isBlank()) {
+            return;
+        }
+        if (terraformJob.getEnvironmentVariables() == null) {
+            terraformJob.setEnvironmentVariables(new HashMap<>());
+        }
+        HashMap<String, String> environmentVariables = terraformJob.getEnvironmentVariables();
+        if (environmentVariables.containsKey(TF_DATA_DIR)) {
+            log.info("TF_DATA_DIR is already set to {} for this workspace, keeping it", environmentVariables.get(TF_DATA_DIR));
+            return;
+        }
+        String organizationId = cacheDirName(terraformJob.getOrganizationId());
+        String workspaceId = cacheDirName(terraformJob.getWorkspaceId());
+        if (organizationId.isEmpty() || workspaceId.isEmpty()) {
+            log.warn("Job {} has no organization/workspace id, not using the terraform data directory cache", terraformJob.getJobId());
+            return;
+        }
+        File dataDir = new File(new File(dataDirCacheRoot.trim(), organizationId), workspaceId);
+        try {
+            FileUtils.forceMkdir(dataDir);
+            environmentVariables.put(TF_DATA_DIR, dataDir.getAbsolutePath());
+            log.info("Using cached terraform data directory {}", dataDir.getAbsolutePath());
+        } catch (IOException e) {
+            log.warn("Unable to create terraform data directory {}: {} - modules and providers will be downloaded again for this job", dataDir.getAbsolutePath(), e.getMessage());
+        }
+    }
+
+    // Ids are UUIDs; anything else is reduced to a safe single path segment.
+    private static String cacheDirName(String id) {
+        return id == null ? "" : id.trim().replaceAll("[^A-Za-z0-9._-]", "_");
     }
 }
