@@ -82,6 +82,10 @@
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>io.terrakube.terraform</groupId>
 			<artifactId>terraform-spring-boot-starter</artifactId>
 			<version>${terraform-spring-boot-starter.version}</version>
