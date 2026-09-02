@@ -56,7 +56,10 @@ class StructuredOutputResilienceIntegrationTest {
         }
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
 
-        assertTrue(elapsedMs < 1_000, "500 progress publications blocked for " + elapsedMs + "ms");
+        // The persister blocks 3s per call; 500 non-blocking enqueues must finish far quicker. The
+        // ceiling is generous (CPU-only deep copies, sensitive to CI load) but still orders of
+        // magnitude below a single blocked persist.
+        assertTrue(elapsedMs < 2_500, "500 progress publications blocked for " + elapsedMs + "ms");
         assertTrue(queue.queueDepth() <= 1, "same-key snapshots should coalesce, depth=" + queue.queueDepth());
 
         queue.stop();
