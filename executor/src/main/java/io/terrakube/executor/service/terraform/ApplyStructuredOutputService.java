@@ -2,7 +2,11 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
+import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -20,12 +24,32 @@ public class ApplyStructuredOutputService {
 
     private final JobContextService jobContextService;
     private final ObjectMapper objectMapper;
+    private final StructuredOutputPersistenceQueue persistenceQueue;
+    private final ExecutorFlagsProperties executorFlagsProperties;
 
+    @Autowired
+    public ApplyStructuredOutputService(
+            JobContextService jobContextService,
+            ObjectMapper objectMapper,
+            StructuredOutputPersistenceQueue persistenceQueue,
+            ExecutorFlagsProperties executorFlagsProperties) {
+        this.jobContextService = jobContextService;
+        this.objectMapper = objectMapper;
+        this.persistenceQueue = persistenceQueue;
+        this.executorFlagsProperties = executorFlagsProperties;
+    }
+
+    // Convenience constructor for tests and callers that keep the previous synchronous behaviour.
     public ApplyStructuredOutputService(
             JobContextService jobContextService,
             ObjectMapper objectMapper) {
-        this.jobContextService = jobContextService;
-        this.objectMapper = objectMapper;
+        this(jobContextService, objectMapper, null, synchronousFlags());
+    }
+
+    private static ExecutorFlagsProperties synchronousFlags() {
+        ExecutorFlagsProperties flags = new ExecutorFlagsProperties();
+        flags.setAsyncStructuredOutput(false);
+        return flags;
     }
 
     public List<Map<String, Object>> seedFromPlan(String organizationId, String jobId) {
@@ -94,6 +118,32 @@ public class ApplyStructuredOutputService {
     }
 
     void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        publishApplyStructured(organizationId, jobId, stepId, changes, jobDiagnostics, false);
+    }
+
+    /** Persist the last word on an apply/destroy step - attempted whether it succeeded or failed. */
+    public void publishFinalApplySnapshot(String organizationId, String jobId, String stepId,
+                                          List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        publishApplyStructured(organizationId, jobId, stepId, changes, jobDiagnostics, true);
+    }
+
+    private void publishApplyStructured(String organizationId, String jobId, String stepId,
+                                        List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics,
+                                        boolean finalSnapshot) {
+        if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
+            try {
+                StructuredSnapshot snapshot = StructuredSnapshot.copyOf(organizationId, jobId, stepId,
+                        StructuredSnapshot.Phase.APPLY, persistenceQueue.nextSequence(), finalSnapshot,
+                        changes, jobDiagnostics, objectMapper);
+                persistenceQueue.submit(snapshot);
+            } catch (StructuredSnapshot.SnapshotSerializationException e) {
+                persistenceQueue.dropSerialization();
+            } catch (RuntimeException e) {
+                log.warn("Unable to enqueue structured apply snapshot for job {} step {}", jobId, stepId, e);
+            }
+            return;
+        }
+
         try {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
             Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);

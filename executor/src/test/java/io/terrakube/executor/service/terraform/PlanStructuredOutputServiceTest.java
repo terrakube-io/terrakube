@@ -394,4 +394,40 @@ class PlanStructuredOutputServiceTest {
 
         assertNull(service.getPlanAsHumanText(job, new File("/tmp")));
     }
+
+    @Test
+    void publishPlanProgressEnqueuesInsteadOfBlockingWhenAsyncEnabled() {
+        io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue queue =
+                Mockito.mock(io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue.class);
+        Mockito.when(queue.nextSequence()).thenReturn(1L);
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
+                new io.terrakube.executor.configuration.ExecutorFlagsProperties();
+        flags.setAsyncStructuredOutput(true);
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), Mockito.mock(TerraformClient.class), queue, flags);
+
+        service.publishPlanProgress("o", "1", "step-1", List.of(Map.of("address", "a")), List.of());
+
+        Mockito.verify(queue).submit(Mockito.argThat(s ->
+                s.key().stepId().equals("step-1") && !s.isFinalSnapshot()));
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotStaysSynchronousWhenAsyncDisabled() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
+                new io.terrakube.executor.configuration.ExecutorFlagsProperties();
+        flags.setAsyncStructuredOutput(false);
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), Mockito.mock(TerraformClient.class), null, flags);
+
+        service.publishFinalPlanSnapshot("o", "1", "step-1", List.of(Map.of("address", "a")), List.of());
+
+        Mockito.verify(jobContextService).getCurrentContext("o", "1");
+        Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
 }

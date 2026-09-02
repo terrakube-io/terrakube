@@ -1,11 +1,15 @@
 package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.configuration.StructuredOutputProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformProcessData;
 import org.junit.jupiter.api.Test;
@@ -51,11 +55,17 @@ class TerraformExecutorServiceImplTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RedisTemplate redisTemplate = Mockito.mock(RedisTemplate.class);
     private final StreamOperations streamOperations = Mockito.mock(StreamOperations.class);
+    private final StructuredOutputPersistenceQueue structuredOutputPersistenceQueue = Mockito.mock(StructuredOutputPersistenceQueue.class);
+    private final ExecutorFlagsProperties executorFlagsProperties = new ExecutorFlagsProperties();
+    private final StructuredOutputProperties structuredOutputProperties = new StructuredOutputProperties();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private TerraformExecutorServiceImpl subject() {
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
         when(streamOperations.size(anyString())).thenReturn(0L);
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
+        when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
+        structuredOutputProperties.setDrainTimeoutMs(1000);
 
         return new TerraformExecutorServiceImpl(
                 terraformClient,
@@ -68,7 +78,11 @@ class TerraformExecutorServiceImplTest {
                 objectMapper,
                 false,
                 redisTemplate,
-                1);
+                1,
+                structuredOutputPersistenceQueue,
+                executorFlagsProperties,
+                structuredOutputProperties,
+                meterRegistry);
     }
 
     private TerraformJob createJob() {
@@ -424,9 +438,8 @@ class TerraformExecutorServiceImplTest {
 
         subject.plan(terraformJob, tempDir.toFile(), false);
 
-        verify(planStructuredOutputService, Mockito.atLeastOnce()).publishPlanProgress(
+        verify(planStructuredOutputService, Mockito.atLeastOnce()).publishFinalPlanSnapshot(
                 eq("org"), eq("42"), eq("1"), any(), any());
-        verify(logsService, Mockito.atLeastOnce()).sendStructuredUpdate(eq(42), eq("1"), anyString());
     }
 
     // Regression test for the reported bug: running `tofu plan` from the CLI showed only a bare
@@ -585,7 +598,7 @@ class TerraformExecutorServiceImplTest {
                 .thenReturn(CompletableFuture.completedFuture(true));
 
         Mockito.doThrow(new RuntimeException("redis is unreachable"))
-                .when(logsService).sendStructuredUpdate(anyInt(), anyString(), anyString());
+                .when(planStructuredOutputService).publishPlanProgress(anyString(), anyString(), anyString(), any(), any());
 
         String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":"
                 + "{\"addr\":\"aws_instance.example\"},\"action\":\"create\"},"
@@ -604,5 +617,21 @@ class TerraformExecutorServiceImplTest {
 
         assertEquals(2, result.getExitCode());
         assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+    }
+
+    @Test
+    void streamDrainFailureKeepsTheTerraformDiagnosticPrimaryAndCountsIt() {
+        TerraformExecutorServiceImpl subject = subject();
+        String realDiagnostic = "Error: Reference to undeclared input variable\n\n  on main.tf line 3\n";
+
+        ExecutorJobResult result = subject.setError(
+                new RuntimeException("Failed to capture process output stream"), realDiagnostic);
+
+        int diagnosticIndex = result.getOutputLog().indexOf("undeclared input variable");
+        int captureIndex = result.getOutputLog().indexOf("Failed to capture process output stream");
+        assertTrue(diagnosticIndex >= 0, result.getOutputLog());
+        assertTrue(captureIndex > diagnosticIndex, "real diagnostic must precede the capture note: " + result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("The Terraform/OpenTofu diagnostic above is the primary error."));
+        assertEquals(1.0, meterRegistry.get("terrakube.executor.process.stream.drain.timeouts").counter().count());
     }
 }

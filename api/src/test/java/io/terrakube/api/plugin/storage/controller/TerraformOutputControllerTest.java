@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.storage.controller;
 
 import io.terrakube.api.plugin.logs.StepLogService;
+import io.terrakube.api.plugin.logs.StepLogUnavailableException;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.plugin.streaming.JobLogBroadcasterRegistry;
 import io.terrakube.api.plugin.streaming.SseCapacityExceededException;
@@ -40,6 +41,15 @@ class TerraformOutputControllerTest {
         ResponseEntity<?> response = controller.getFile("o", "j", "s", null);
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void stepLogUnavailableMapsToControlled503WithRetryHint() {
+        ResponseEntity<?> response = controller.onStepLogUnavailable(
+                new StepLogUnavailableException("step log read failed", new RuntimeException("S3 timeout")));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("5", response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER));
     }
 
     @Test

@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.storage.controller;
 
 import io.terrakube.api.plugin.logs.StepLogResponses;
 import io.terrakube.api.plugin.logs.StepLogService;
+import io.terrakube.api.plugin.logs.StepLogUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.plugin.streaming.JobLogBroadcasterRegistry;
@@ -77,6 +78,16 @@ public class TerraformOutputController {
 
     @ExceptionHandler(SseCapacityExceededException.class)
     public ResponseEntity<Void> onSseCapacityExceeded() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "5")
+                .build();
+    }
+
+    // A transient archived-log storage failure is local to this step in the UI, not a global
+    // backend outage - return a controlled 503 with a retry hint, no stack trace.
+    @ExceptionHandler(StepLogUnavailableException.class)
+    public ResponseEntity<Void> onStepLogUnavailable(StepLogUnavailableException e) {
+        log.warn("Archived step log temporarily unavailable: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .header(HttpHeaders.RETRY_AFTER, "5")
                 .build();

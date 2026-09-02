@@ -19,4 +19,13 @@ public class ExecutorFlagsProperties {
     private String batchJobFile;
     private boolean disableAcknowledge;
 
+    // When true, structured plan/apply context persistence is handed to a bounded async queue
+    // instead of running synchronously on the Terraform process-output reader thread. Set false to
+    // fall back to the previous synchronous behaviour.
+    private boolean asyncStructuredOutput = true;
+
+    // When true, a snapshot that exhausts its normal retry budget is retained and retried on a
+    // slow scheduled cadence so a brief context-store outage does not permanently lose it.
+    private boolean structuredOutputRecovery = true;
+
 }

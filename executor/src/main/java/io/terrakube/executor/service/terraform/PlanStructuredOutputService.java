@@ -2,10 +2,14 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
+import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import io.terrakube.executor.service.mode.TerraformJob;
 
@@ -28,19 +32,41 @@ public class PlanStructuredOutputService {
     private static final String CONTEXT_PLAN_KEY = "planStructuredOutput";
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
     private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
+    static final String CONTEXT_NO_CHANGE_PLAN_KEY = "noChangePlan";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
 
     private final JobContextService jobContextService;
     private final ObjectMapper objectMapper;
     TerraformClient terraformClient;
+    private final StructuredOutputPersistenceQueue persistenceQueue;
+    private final ExecutorFlagsProperties executorFlagsProperties;
 
+    @Autowired
+    public PlanStructuredOutputService(
+            JobContextService jobContextService,
+            ObjectMapper objectMapper,
+            TerraformClient terraformClient,
+            StructuredOutputPersistenceQueue persistenceQueue,
+            ExecutorFlagsProperties executorFlagsProperties) {
+        this.jobContextService = jobContextService;
+        this.objectMapper = objectMapper;
+        this.terraformClient = terraformClient;
+        this.persistenceQueue = persistenceQueue;
+        this.executorFlagsProperties = executorFlagsProperties;
+    }
+
+    // Convenience constructor for tests and callers that keep the previous synchronous behaviour.
     public PlanStructuredOutputService(
             JobContextService jobContextService,
             ObjectMapper objectMapper,
             TerraformClient terraformClient) {
-        this.jobContextService = jobContextService;
-        this.objectMapper = objectMapper;
-        this.terraformClient = terraformClient;
+        this(jobContextService, objectMapper, terraformClient, null, synchronousFlags());
+    }
+
+    private static ExecutorFlagsProperties synchronousFlags() {
+        ExecutorFlagsProperties flags = new ExecutorFlagsProperties();
+        flags.setAsyncStructuredOutput(false);
+        return flags;
     }
 
     public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
@@ -55,6 +81,7 @@ public class PlanStructuredOutputService {
                     : buildChangesFromPlanJson(planJson);
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
+            applyNoChangePlanMarker(updatedContext, terraformJob.getStepId(), changes);
             saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
@@ -66,9 +93,42 @@ public class PlanStructuredOutputService {
     }
 
     void publishPlanProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        publishPlanStructured(organizationId, jobId, stepId, liveChanges, jobDiagnostics, false);
+    }
+
+    /**
+     * Persist the last word on a plan step - attempted for both a successful and a failed plan, so
+     * the UI can show real diagnostics (e.g. an unset required variable) instead of a stale "no
+     * changes" state.
+     */
+    public void publishFinalPlanSnapshot(String organizationId, String jobId, String stepId,
+                                         List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        publishPlanStructured(organizationId, jobId, stepId, liveChanges, jobDiagnostics, true);
+    }
+
+    private void publishPlanStructured(String organizationId, String jobId, String stepId,
+                                       List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics,
+                                       boolean finalSnapshot) {
+        if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
+            try {
+                StructuredSnapshot snapshot = StructuredSnapshot.copyOf(organizationId, jobId, stepId,
+                        StructuredSnapshot.Phase.PLAN, persistenceQueue.nextSequence(), finalSnapshot,
+                        liveChanges, jobDiagnostics, objectMapper);
+                persistenceQueue.submit(snapshot);
+            } catch (StructuredSnapshot.SnapshotSerializationException e) {
+                persistenceQueue.dropSerialization();
+            } catch (RuntimeException e) {
+                log.warn("Unable to enqueue structured plan snapshot for job {} step {}", jobId, stepId, e);
+            }
+            return;
+        }
+
         try {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
             Map<String, Object> updatedContext = updateContext(context, stepId, liveChanges, jobDiagnostics);
+            if (finalSnapshot) {
+                applyNoChangePlanMarker(updatedContext, stepId, liveChanges);
+            }
             saveContext(organizationId, jobId, updatedContext);
         } catch (Exception e) {
             log.warn("Unable to publish live plan progress for job {} step {}", jobId, stepId, e);
@@ -235,6 +295,20 @@ public class PlanStructuredOutputService {
         updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
 
         return updatedContext;
+    }
+
+    /**
+     * A no-change plan writes an explicit {@code noChangePlan} marker (with its plan step id) so the
+     * UI can treat the associated standard apply as a valid no-op without inferring it from an empty
+     * array or console text. The marker is cleared as soon as a real change is recorded for the step.
+     * Only written from authoritative final writes (plan summary / final snapshot), never progress.
+     */
+    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes) {
+        if (changes == null || changes.isEmpty()) {
+            context.put(CONTEXT_NO_CHANGE_PLAN_KEY, Map.of("planStepId", stepId));
+        } else {
+            context.remove(CONTEXT_NO_CHANGE_PLAN_KEY);
+        }
     }
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {

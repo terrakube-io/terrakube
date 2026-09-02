@@ -30,4 +30,25 @@ class ContextSanitizerTest {
 
         assertTrue(sanitized.contains("\"value\":null"));
     }
+
+    @Test
+    void preservesStructuredOutputStatusMetadata() throws Exception {
+        String context = "{\"structuredOutputStatus\":{\"state\":\"PERSISTED\",\"updatedAtEpochMs\":123,\"phase\":\"apply\"}}";
+
+        String sanitized = subject().sanitize(context);
+
+        assertTrue(sanitized.contains("\"state\":\"PERSISTED\""));
+        assertTrue(sanitized.contains("\"updatedAtEpochMs\":123"));
+    }
+
+    @Test
+    void preservesNoChangePlanMarkerAndExplicitEmptyPlanArray() throws Exception {
+        String context = "{\"noChangePlan\":{\"planStepId\":\"step-1\"},"
+                + "\"planStructuredOutput\":{\"step-1\":[]}}";
+
+        String sanitized = subject().sanitize(context);
+
+        assertTrue(sanitized.contains("\"noChangePlan\":{\"planStepId\":\"step-1\"}"), sanitized);
+        assertTrue(sanitized.contains("\"planStructuredOutput\":{\"step-1\":[]}"), sanitized);
+    }
 }
