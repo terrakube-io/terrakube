@@ -266,34 +266,6 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             log.error(String.format("Failed to send job status to GitHub, message %s", response.getBody()));
         }
-
-        // Optional: Check if the commit is part of a PR and send status to the PR as
-        // well
-        try {
-            List<Integer> prNumbers = getPullRequestNumbersForCommit(workspace, job.getCommitId());
-            for (Integer prNumber : prNumbers) {
-                String prApiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos)
-                        + "/pulls/" + prNumber + "/statuses";
-
-                // Send the status to the pull request
-                ResponseEntity<String> prResponse = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, prApiUrl,
-                        HttpMethod.POST);
-                if (prResponse == null) {
-                    log.error("Failed to send job status on PR #{} in workspace {} to GitHub", prNumber,
-                            workspace.getName());
-                    continue;
-                }
-
-                if (prResponse.getStatusCode().value() == 201) {
-                    log.info("Job status sent successfully to PR #{} on GitHub", prNumber);
-                } else {
-                    log.error(String.format("Failed to send job status to PR #%, message %s", prNumber,
-                            prResponse.getBody()));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error occurred while checking PRs for commit {}: {}", job.getCommitId(), e.getMessage());
-        }
     }
 
     // GitHub's commit-status description has a hard 140-character API limit.
@@ -302,50 +274,83 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return description.length() > 140 ? description.substring(0, 140) : description;
     }
 
-    private List<Integer> getPullRequestNumbersForCommit(Workspace workspace, String commitId) {
-        List<Integer> prNumbers = new ArrayList<>();
-        String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
-        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo)
-                + "/commits/" + commitId + "/pulls";
-
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, null, apiUrl,
-                HttpMethod.GET);
-
-        if (response != null && response.getStatusCode().value() == 200) {
-            try {
-                JsonNode jsonNode = new ObjectMapper().readTree(response.getBody());
-                for (JsonNode pr : jsonNode) {
-                    prNumbers.add(pr.path("number").asInt());
-                }
-            } catch (Exception e) {
-                log.error("Failed to parse PR data for commit {}: {}", commitId, e.getMessage());
-            }
-        } else {
-            log.error("Failed to fetch PRs for commit {}: {}", commitId,
-                    response != null ? response.getBody() : "No response");
-        }
-
-        return prNumbers;
-    }
+    // GitHub paginates /pulls/{number}/files at 30 entries per page by default (100 max per page,
+    // up to 3000 files total across pages) - a single unpaginated request silently truncates the
+    // file list for any PR touching more files than fit on one page, which is common for monorepo
+    // PRs. MAX_PR_FILE_PAGES is a defensive cap (100 pages * 100/page = 10000 files), not a real
+    // GitHub limit, so a malformed or malicious Link header can't spin this into an infinite loop.
+    private static final int MAX_PR_FILE_PAGES = 100;
 
     private List<String> getPrFileChanges(Vcs vcs, String[] ownerAndRepo, String apiUrl) {
         List<String> changedFiles = new ArrayList<>();
+        String nextUrl = withPerPage(apiUrl);
 
-        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", apiUrl, HttpMethod.GET);
-        if(response == null || response.getStatusCode().value() != 200) {
-            log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
-            return changedFiles;
-        }
-        
-        try {
-            JsonNode rootNode = objectMapper.readTree(response.getBody());
-            for (JsonNode file : rootNode) {
-                changedFiles.add(file.path("filename").asText());
+        for (int page = 0; nextUrl != null && page < MAX_PR_FILE_PAGES; page++) {
+            ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", nextUrl, HttpMethod.GET);
+            if (response == null || response.getStatusCode().value() != 200) {
+                log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
+                break;
             }
-        } catch (Exception e) {
-            log.error("Error parsing JSON response", e);
+
+            try {
+                changedFiles.addAll(parseChangedFilesFromPage(response.getBody()));
+            } catch (Exception e) {
+                log.error("Error parsing JSON response", e);
+                break;
+            }
+
+            nextUrl = extractNextPageUrl(response.getHeaders().getFirst(HttpHeaders.LINK));
         }
         return changedFiles;
+    }
+
+    // Package-private (not private) so GitHubWebhookServiceTest can exercise the parsing logic -
+    // including the previous_filename/rename handling - directly, without standing up an HTTP
+    // stack for what's really just a JSON-shape question.
+    List<String> parseChangedFilesFromPage(String responseBody) throws JsonProcessingException {
+        List<String> files = new ArrayList<>();
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+        for (JsonNode file : rootNode) {
+            files.add(file.path("filename").asText());
+            // Renames need the old path too, or a workspace whose path filter only matches the
+            // pre-rename location never sees the change that moved it out.
+            String previousFilename = file.path("previous_filename").asText(null);
+            if (previousFilename != null && !previousFilename.isEmpty()) {
+                files.add(previousFilename);
+            }
+        }
+        return files;
+    }
+
+    String withPerPage(String apiUrl) {
+        return apiUrl + (apiUrl.contains("?") ? "&" : "?") + "per_page=100";
+    }
+
+    // Parses a GitHub RFC 5988 Link header, e.g.:
+    // <https://api.github.com/.../files?page=2>; rel="next", <...>; rel="last"
+    // Returns the rel="next" URL, or null once there isn't one (the last page).
+    String extractNextPageUrl(String linkHeader) {
+        if (linkHeader == null || linkHeader.isBlank()) {
+            return null;
+        }
+        for (String link : linkHeader.split(",")) {
+            String[] segments = link.split(";");
+            if (segments.length < 2) {
+                continue;
+            }
+            boolean isNext = false;
+            for (int i = 1; i < segments.length; i++) {
+                if (segments[i].trim().equals("rel=\"next\"")) {
+                    isNext = true;
+                    break;
+                }
+            }
+            String urlSegment = segments[0].trim();
+            if (isNext && urlSegment.startsWith("<") && urlSegment.endsWith(">")) {
+                return urlSegment.substring(1, urlSegment.length() - 1);
+            }
+        }
+        return null;
     }
 
     public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {

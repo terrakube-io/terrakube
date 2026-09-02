@@ -1,33 +1,21 @@
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Avatar,
-  Button,
-  Form,
-  Input,
-  List,
-  message,
-  Modal,
-  Popconfirm,
-  Space,
-  Typography,
-  theme,
-  Spin,
-} from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
+import { Avatar, Button, Form, List, message, theme } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import TagFormModal, { TagFormValues } from "./components/TagFormModal";
 
 type Props = {
   managePermission?: boolean;
 };
 
-type AddTagForm = {
-  name: string;
-};
+type AddTagForm = TagFormValues;
 
 export const TagsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
@@ -38,6 +26,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   const [tagName, setTagName] = useState<string>();
   const [mode, setMode] = useState("create");
   const [tagId, setTagId] = useState<string>();
+  const [pendingDelete, setPendingDelete] = useState<Tag | null>(null);
   const [form] = Form.useForm<AddTagForm>();
   const { token } = theme.useToken();
 
@@ -151,117 +140,90 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            Tag Management
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Tags are used to help identify and group together workspaces..
-            </Typography.Text>
-          </div>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create tag
-            </Button>
-
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              Tags
-            </Typography.Title>
-            <Spin spinning={loading} tip="Loading Tags...">
-              <List
-                itemLayout="horizontal"
-                dataSource={tags}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button
-                        onClick={() => {
-                          onEdit(item.id);
-                        }}
-                        icon={<EditOutlined />}
-                        type="link"
-                        disabled={!managePermission}
-                      >
-                        Edit
-                      </Button>,
-                      <Popconfirm
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            Deleting this tag will also remove it <br />
-                            from all the Workspaces that use it.
-                            <br />
-                            This action cannot be undone. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
-                      title={item.attributes.name}
-                    />
-                  </List.Item>
-                )}
-              />
-            </Spin>
-          </SettingsSection>
-
-          <Modal
-            width="600px"
-            open={visible}
-            title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
-            okText="Save tag"
-            onCancel={onCancel}
-            cancelText="Cancel"
-            onOk={() => {
-              form
-                .validateFields()
-                .then((values) => {
-                  if (mode === "create") onCreate(values);
-                  else onUpdate(values);
-                })
-                .catch((info) => {
-                  console.log("Validate Failed:", info);
-                });
-            }}
-          >
-            <Space style={{ width: "100%" }} direction="vertical">
-              <Form name="tag" form={form} layout="vertical">
-                <Form.Item
-                  name="name"
-                  tooltip={{
-                    title: "Must be a valid tag name",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  label="Name"
-                  rules={[{ required: true }]}
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/organizations/tags"
+            title="Tag Management"
+            description="Tags are used to help identify and group together workspaces.."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Create tag
+              </Button>
+            }
+          />
+          <Loading loading={loading} description="Loading Tags...">
+            <List
+              itemLayout="horizontal"
+              dataSource={tags}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      onClick={() => {
+                        onEdit(item.id);
+                      }}
+                      icon={<EditOutlined />}
+                      type="link"
+                      disabled={!managePermission}
+                    >
+                      Edit
+                    </Button>,
+                    <Button
+                      icon={<DeleteOutlined />}
+                      type="link"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
+                    >
+                      Delete
+                    </Button>,
+                  ]}
                 >
-                  <Input />
-                </Form.Item>
-              </Form>
-            </Space>
-          </Modal>
+                  <List.Item.Meta
+                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
+                    title={item.attributes.name}
+                  />
+                </List.Item>
+              )}
+            />
+          </Loading>
+
+          <TagFormModal
+            open={visible}
+            mode={mode === "create" ? "create" : "edit"}
+            tagName={tagName}
+            form={form}
+            onCancel={onCancel}
+            onSubmit={(values) => {
+              if (mode === "create") onCreate(values);
+              else onUpdate(values);
+            }}
+          />
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete tag"
+            message={
+              <>
+                Deleting the tag <strong>{pendingDelete?.attributes.name}</strong> cannot be undone. It will also be
+                removed from all the workspaces that use it.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

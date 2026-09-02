@@ -1,10 +1,12 @@
 import { CloudOutlined, LinkOutlined } from "@ant-design/icons";
-import { Card, Empty, List, Space, Typography } from "antd";
+import { List, Typography } from "antd";
 import { useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatProvider } from "./types";
 import "../Modules/Module.css";
+import { RegistryCard } from "@/components/display/RegistryCard";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Params = {
   orgid: string;
@@ -34,7 +36,6 @@ const extractSourceRepo = (description: string): { repoLabel: string; repoUrl: s
 
 export const ProviderList = ({ providers, searchFilter }: Props) => {
   const { orgid } = useParams<Params>();
-  const navigate = useNavigate();
 
   const filteredProviders = useMemo(() => {
     if (searchFilter === "") {
@@ -49,7 +50,8 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
 
   if (filteredProviders.length === 0) {
     return (
-      <Empty
+      <EmptyState
+        simple
         description={searchFilter ? "No providers match your search" : "No providers found in this organization"}
       />
     );
@@ -71,68 +73,47 @@ export const ProviderList = ({ providers, searchFilter }: Props) => {
           : desc.replace(/Source:?\s*/i, "").trim();
 
         return (
-          <List.Item
-            style={{ cursor: "pointer", padding: "6px 0" }}
-            onClick={() => navigate(`/organizations/${orgid}/registry/providers/${item.id}`)}
-          >
-            <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-              <div className="module-card-body">
-                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div
-                    style={{
-                      flexShrink: 0,
-                      width: 36,
-                      height: 36,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
+          <List.Item style={{ padding: "6px 0" }}>
+            <Link
+              to={`/organizations/${orgid}/registry/providers/${item.id}`}
+              style={{ display: "block", width: "100%", color: "inherit" }}
+            >
+              <RegistryCard
+                icon={
+                  <>
                     <CloudOutlined style={{ fontSize: 18, color: "#7b61ff" }} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Typography.Text strong className="module-card-name">
-                      {item.name}
-                    </Typography.Text>
-                    <div className="module-card-desc">
-                      {descriptionText || "No description provided for this provider"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div
-                style={{
-                  borderTop: "1px solid #f0f0f0",
-                  padding: "10px 24px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <Space size={16}>
-                  {item.latestVersion && (
-                    <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+                  </>
+                }
+                title={item.name}
+                description={descriptionText || "No description provided for this provider"}
+                footerLeft={
+                  item.latestVersion && (
+                    <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                       {formatVersion(item.latestVersion)}
                     </Typography.Text>
-                  )}
-                </Space>
-                <Space size={6}>
-                  {source && (
-                    <Typography.Link
-                      href={source.repoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ fontSize: 13 }}
-                    >
-                      <LinkOutlined style={{ marginRight: 3 }} />
-                      {source.repoLabel}
-                    </Typography.Link>
-                  )}
-                  <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>provider</Typography.Text>
-                </Space>
-              </div>
-            </Card>
+                  )
+                }
+                footerRight={
+                  <>
+                    {source && (
+                      <Typography.Link
+                        href={source.repoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: 13 }}
+                      >
+                        <LinkOutlined style={{ marginRight: 3 }} />
+                        {source.repoLabel}
+                      </Typography.Link>
+                    )}
+                    <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+                      provider
+                    </Typography.Text>
+                  </>
+                }
+              />
+            </Link>
           </List.Item>
         );
       }}

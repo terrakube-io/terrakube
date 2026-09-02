@@ -35,8 +35,6 @@ import org.quartz.JobKey;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.Scheduler;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionStatus;
 
 import graphql.Assert;
 import jakarta.persistence.EntityNotFoundException;
@@ -103,7 +101,6 @@ public class ScheduleJobTest {
     WorkspaceVariableValidationService workspaceVariableValidationService;
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
-    PlatformTransactionManager transactionManager;
     JobNotificationTrigger jobNotificationTrigger;
 
     UUID stepId = UUID.randomUUID();
@@ -132,11 +129,6 @@ public class ScheduleJobTest {
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
         valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
-        // Only execute() (the production entry point) uses this, to wrap doRunExecution in a real
-        // transaction - these tests all go through runExecution directly (see subject()'s javadoc
-        // reference in ScheduleJob), which has no persistence context to commit, so it's never called.
-        transactionManager = mock(PlatformTransactionManager.class,
-                new FailUnkownMethod<PlatformTransactionManager>());
         // Plain mock (not FailUnkownMethod): almost every status-transition path under test now
         // calls notifyStatusChanged(), and its outcome is irrelevant to what these tests assert.
         jobNotificationTrigger = mock(JobNotificationTrigger.class);
@@ -169,7 +161,6 @@ public class ScheduleJobTest {
                 globalVarRepository,
                 variableRepository,
                 workspaceVariableValidationService,
-                transactionManager,
                 jobNotificationTrigger);
     }
 
@@ -1037,13 +1028,19 @@ public class ScheduleJobTest {
     }
 
     @Test
-    public void executeCommitsTheTransactionBeforeReleasingTheExecutionLock() throws Exception {
-        // Reproduces a race a live run exposed: two overlapping firings for the same job both
-        // read it as "pending" and both ran completeJob(). Root cause was the execution lock
-        // releasing (inside execute()) before the surrounding @Transactional commit (which only
-        // happened once execute() itself returned) - a second firing could acquire the freed lock
-        // and read pre-commit (stale) state. Proves the fix: lock release now waits for the
-        // explicit TransactionTemplate commit to actually finish first.
+    public void executeReleasesTheExecutionLockOnlyAfterProcessingCompletes() throws Exception {
+        // Reproduces (and now guards against a different way of reintroducing) a race a live run
+        // once exposed: two overlapping firings for the same job both read it as "pending" and
+        // both ran completeJob(). The original root cause was the execution lock releasing (inside
+        // execute()) before a single surrounding @Transactional commit had actually finished, so a
+        // second firing could acquire the freed lock and read pre-commit (stale) state. execute()
+        // no longer wraps doRunExecution in one transaction at all (see the class comment on
+        // ScheduleJob) - every write it makes (jobRepository.save, workspaceRepository.save, etc.)
+        // is its own already-committed call by the time it returns, via Spring Data's own
+        // per-repository-method transaction. What this test proves instead: the lock is still held
+        // across the entire operation - acquired before job loading, released only after every
+        // write doRunExecution makes has already happened - so there's no window for a second
+        // firing to see a state this firing hasn't finished writing yet.
         Job job = job(JobStatus.completed);
         doReturn(false).when(tclService).isTemplatePlanOnly(any());
         doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
@@ -1055,13 +1052,8 @@ public class ScheduleJobTest {
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
-        doReturn(job).when(jobRepository).getReferenceById(job.getId());
+        doReturn(Optional.of(job)).when(jobRepository).findById(job.getId());
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
-
-        TransactionStatus transactionStatus = mock(TransactionStatus.class, new FailUnkownMethod<TransactionStatus>());
-        doReturn(transactionStatus).when(transactionManager).getTransaction(any());
-        doNothing().when(transactionManager).commit(transactionStatus);
-        lenient().doNothing().when(transactionManager).rollback(transactionStatus);
 
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put(ScheduleJob.JOB_ID, job.getId());
@@ -1075,14 +1067,14 @@ public class ScheduleJobTest {
         doReturn(quartzScheduler).when(jobExecutionContext).getScheduler();
         doReturn("InstanceId").when(jobExecutionContext).getFireInstanceId();
 
-        InOrder inOrder = inOrder(valueOperations, transactionManager, redisTemplate);
+        InOrder inOrder = inOrder(valueOperations, jobRepository, workspaceRepository, redisTemplate);
 
         subject().execute(jobExecutionContext);
 
         inOrder.verify(valueOperations).setIfAbsent(any(), any(), any(Duration.class)); // lock acquired
-        inOrder.verify(transactionManager).getTransaction(any());                        // tx begins
-        inOrder.verify(transactionManager).commit(transactionStatus);                    // tx commits
-        inOrder.verify(redisTemplate).delete("job-execution-lock:" + job.getId());       // lock released last
+        inOrder.verify(jobRepository).findById(job.getId());                            // job loaded
+        inOrder.verify(workspaceRepository).save(job.getWorkspace());                   // a write happens
+        inOrder.verify(redisTemplate).delete("job-execution-lock:" + job.getId());      // lock released last
     }
 
     @Test

@@ -1,69 +1,39 @@
-import { DeleteOutlined, EditOutlined, GithubOutlined, GitlabOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Divider, List, Popconfirm, Row, Typography, message } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Divider, Flex, List, Row, Space, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { IconContext } from "react-icons";
-import { SiBitbucket } from "react-icons/si";
-import { VscAzureDevops } from "react-icons/vsc";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { VcsModel, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
 import { EditVCS } from "./EditVCS";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import VcsLogo from "@/components/display/VcsLogo";
+import { Loading } from "@/components/feedback/Loading";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 const { Paragraph } = Typography;
 
 type Props = {
-  vcsMode?: string;
+  vcsMode?: "new" | "edit" | "list";
+  vcsId?: string;
   managePermission?: boolean;
 };
 
-export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
+export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) => {
   const { orgid } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState<"list" | "new" | "edit">(
-    vcsMode != null ? (vcsMode as "list" | "new" | "edit") : "list"
-  );
   const [vcs, setVCS] = useState<VcsModel[]>([]);
-  const [editVcsId, setEditVcsId] = useState<string | undefined>(undefined);
+  const [pendingDelete, setPendingDelete] = useState<VcsModel | null>(null);
 
-  const onAddVCS = () => {
-    setMode("new");
-  };
-
-  const onEditVCS = (id: string) => {
-    setEditVcsId(id);
-    setMode("edit");
-  };
-
-  const renderVCSLogo = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "20px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <SiBitbucket />
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-          </IconContext.Provider>
-        );
-      case "AZURE_SP_MI":
-        return (
-          <IconContext.Provider value={{ size: "20px" }}>
-            <VscAzureDevops />
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "20px" }} />;
-    }
-  };
+  const mode: "list" | "new" | "edit" = vcsMode ?? "list";
+  const editVcsId = vcsId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/vcs`);
 
   const renderVCSType = (vcs: VcsType) => {
     switch (vcs) {
@@ -158,27 +128,27 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : mode === "list" ? (
         <div>
-          {" "}
-          <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
-            VCS Providers
-            <Button
-              type="primary"
-              onClick={onAddVCS}
-              className="addVCS"
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Add a VCS Provider
-            </Button>{" "}
-          </Typography.Title>
-          <br />
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/vcs-providers"
+            title="VCS Providers"
+            description="Connect version control providers so workspaces and modules can read from your repositories."
+            actions={
+              <LinkButton
+                to={`/organizations/${orgid}/settings/vcs/new`}
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Add a VCS Provider
+              </LinkButton>
+            }
+          />
           <SettingsSection maxWidth="100%">
             {loading ? (
-              <p>Data loading...</p>
+              <Loading loading description="Loading VCS providers..." />
             ) : (
               <List
                 className="vcsList"
@@ -191,44 +161,33 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
                       style={{ width: "100%" }}
                       title={
                         <span>
-                          {renderVCSLogo(item.attributes.vcsType)}&nbsp;&nbsp;
+                          <VcsLogo type={item.attributes.vcsType} size={20} />
+                          &nbsp;&nbsp;
                           {item.attributes.name}
                         </span>
                       }
                       actions={[
-                        <div key="actions" style={{ float: "right" }}>
-                          <Button
-                            type="default"
-                            icon={<EditOutlined />}
-                            disabled={!managePermission}
-                            onClick={() => onEditVCS(item.id)}
-                          >
-                            Edit Client
-                          </Button>
-                          &nbsp;&nbsp;&nbsp;
-                          <Popconfirm
-                            onConfirm={() => {
-                              onDelete(item.id);
-                            }}
-                            style={{ width: "100px" }}
-                            title={
-                              <p>
-                                Deleting this {renderVCSType(item.attributes.vcsType)} client will disconnect <br /> any
-                                workspaces currently using it. <br /> This means that VCS changes will not trigger{" "}
-                                <br /> jobs on those workspaces. <br />
-                                Are you sure?
-                              </p>
-                            }
-                            okText="Yes"
-                            cancelText="Cancel"
-                          >
-                            {" "}
-                            <Button type="primary" icon={<DeleteOutlined />} danger disabled={!managePermission}>
+                        <Flex key="actions" justify="flex-end" style={{ paddingInline: 24 }}>
+                          <Space>
+                            <LinkButton
+                              to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}
+                              type="default"
+                              icon={<EditOutlined />}
+                              disabled={!managePermission}
+                            >
+                              Edit Client
+                            </LinkButton>
+                            <Button
+                              type="primary"
+                              icon={<DeleteOutlined />}
+                              danger
+                              disabled={!managePermission}
+                              onClick={() => setPendingDelete(item)}
+                            >
                               Delete Client
                             </Button>
-                          </Popconfirm>
-                          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                        </div>,
+                          </Space>
+                        </Flex>,
                       ]}
                     >
                       <div className="paragraph">
@@ -322,11 +281,28 @@ export const VCSSettings = ({ vcsMode, managePermission = true }: Props) => {
               />
             )}
           </SettingsSection>
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete VCS provider"
+            message={
+              <>
+                Deleting the {pendingDelete && renderVCSType(pendingDelete.attributes.vcsType)} client{" "}
+                <strong>{pendingDelete?.attributes.name}</strong> will disconnect any workspaces currently using it.
+                This means that VCS changes will not trigger jobs on those workspaces.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </div>
       ) : mode === "new" ? (
-        <AddVCS setMode={setMode} loadVCS={loadVCS} />
+        <AddVCS setMode={closeEditor} loadVCS={loadVCS} />
       ) : (
-        <EditVCS vcsId={editVcsId!} setMode={setMode} loadVCS={loadVCS} />
+        <EditVCS vcsId={editVcsId!} setMode={closeEditor} loadVCS={loadVCS} />
       )}
     </div>
   );

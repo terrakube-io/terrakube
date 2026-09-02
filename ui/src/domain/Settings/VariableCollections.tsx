@@ -6,12 +6,16 @@ import {
   AppstoreOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Typography, Pagination, message } from "antd";
+import { Alert, Button, Card, Input, List, Space, Typography, Pagination, message } from "antd";
+import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 // Type definitions for Variable Collections
 type Collection = {
@@ -39,26 +43,16 @@ type Props = {
 
 export const VariableCollectionsSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
-  const navigate = useNavigate();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Collection | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  const handleViewDetails = (id: string) => {
-    navigate(`/organizations/${orgid}/settings/collection/edit/${id}`);
-  };
-
-  const handleEditCollection = (id: string) => {
-    navigate(`/organizations/${orgid}/settings/collection/edit/${id}`);
-  };
-
-  const handleCreateCollection = () => {
-    navigate(`/organizations/${orgid}/settings/collection/new`);
-  };
+  const editCollectionLink = (id: string) => `/organizations/${orgid}/settings/collection/edit/${id}`;
 
   const onDelete = async (id: string) => {
     try {
@@ -178,21 +172,21 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
   return (
     <div className="setting">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Variable Collections
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Variable Collections allow you to define and apply variables one time across multiple workspaces within an
-          organization.
-        </Typography.Text>
-      </div>
-      <SettingsSection maxWidth="100%">
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
-          <Button type="primary" onClick={handleCreateCollection} icon={<PlusOutlined />} disabled={!managePermission}>
+      <SettingsPageHeader
+        title="Variable Collections"
+        description="Variable Collections allow you to define and apply variables one time across multiple workspaces within an organization."
+        actions={
+          <LinkButton
+            to={`/organizations/${orgid}/settings/collection/new`}
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={!managePermission}
+          >
             Create variable collection
-          </Button>
-        </div>
+          </LinkButton>
+        }
+      />
+      <SettingsSection maxWidth="100%">
         <div style={{ marginBottom: "20px", width: "100%" }}>
           <Input
             prefix={<SearchOutlined />}
@@ -205,26 +199,22 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
         {error ? (
           <Alert
-            message={error.includes("permission") ? "Access Denied" : "Error"}
+            title={error.includes("permission") ? "Access Denied" : "Error"}
             description={error}
             type="error"
             showIcon
             style={{ marginTop: "20px" }}
           />
         ) : (
-          <Spin spinning={loading}>
+          <Loading loading={loading} description="Loading Variable Collections...">
             <List
               grid={{ gutter: 16, column: 1 }}
               dataSource={paginatedCollections}
               renderItem={(item) => (
                 <List.Item>
-                  <Card
-                    hoverable
-                    style={{ width: "100%", cursor: "pointer" }}
-                    onClick={() => handleViewDetails(item.id)}
-                  >
+                  <Card hoverable style={{ width: "100%" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
+                      <Link to={editCollectionLink(item.id)} style={{ display: "block", flex: 1, color: "inherit" }}>
                         <Typography.Title level={4} style={{ margin: 0 }}>
                           {item.attributes.name}
                         </Typography.Title>
@@ -241,41 +231,29 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                             {item.relationships?.variables?.data?.length || 0} variables
                           </span>
                         </Space>
-                      </div>
+                      </Link>
                       <Space>
-                        <Button
+                        <LinkButton
+                          to={editCollectionLink(item.id)}
                           type="text"
                           icon={<EditOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditCollection(item.id);
-                          }}
                           disabled={!managePermission}
                         >
                           Edit
-                        </Button>
-                        <Popconfirm
-                          title="Delete this variable collection?"
-                          description="This will permanently delete this variable collection and all its variables. Are you sure?"
-                          onConfirm={(e) => {
-                            e?.stopPropagation();
-                            onDelete(item.id);
+                        </LinkButton>
+                        <Button
+                          danger
+                          type="text"
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDelete(item);
                           }}
-                          onCancel={(e) => e?.stopPropagation()}
-                          okText="Yes"
-                          cancelText="No"
+                          loading={deleteLoading === item.id}
+                          disabled={!managePermission}
                         >
-                          <Button
-                            danger
-                            type="text"
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => e.stopPropagation()}
-                            loading={deleteLoading === item.id}
-                            disabled={!managePermission}
-                          >
-                            Delete
-                          </Button>
-                        </Popconfirm>
+                          Delete
+                        </Button>
                       </Space>
                     </div>
                   </Card>
@@ -295,9 +273,26 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
                 />
               )}
             </div>
-          </Spin>
+          </Loading>
         )}
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete variable collection"
+        message={
+          <>
+            Deleting the variable collection <strong>{pendingDelete?.attributes.name}</strong> and all its variables
+            cannot be undone.
+          </>
+        }
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

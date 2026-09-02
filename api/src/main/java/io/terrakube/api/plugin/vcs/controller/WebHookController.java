@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import io.terrakube.api.plugin.vcs.RepoWebhookDispatchService;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 
@@ -15,6 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -29,6 +32,9 @@ public class WebHookController {
 
     @Autowired
     RepoWebhookService repoWebhookService;
+
+    @Autowired
+    RepoWebhookDispatchService repoWebhookDispatchService;
 
     @Autowired
     ObjectMapper objectMapper;
@@ -53,15 +59,24 @@ public class WebHookController {
             return ResponseEntity.status(401).build();
         }
         log.info("Processing v2 webhook");
+        UUID deliveryId;
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            repoWebhookService.processV2Webhook(repoWebhookId, jsonPayload, headers);
+            deliveryId = repoWebhookService.acceptV2Webhook(repoWebhookId, jsonPayload, headers);
         } catch (IllegalArgumentException | SecurityException e) {
             log.warn("V2 webhook request rejected");
             return ResponseEntity.status(401).build();
         } catch (Exception e) {
             log.error("Error processing v2 webhook", e);
             return ResponseEntity.internalServerError().build();
+        }
+        try {
+            repoWebhookDispatchService.dispatchAsync(deliveryId);
+        } catch (RejectedExecutionException e) {
+            // The dispatch executor's queue is full - the row is still PENDING (this submission
+            // never claimed it), so RepoWebhookDeliveryPollerJob picks it up on its next tick.
+            log.warn("Repo webhook dispatch executor rejected delivery {}, will be picked up by the poller",
+                    deliveryId);
         }
         return ResponseEntity.ok().build();
     }

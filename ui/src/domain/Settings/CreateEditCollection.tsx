@@ -1,24 +1,13 @@
-import {
-  Button,
-  Checkbox,
-  Form,
-  Input,
-  Modal,
-  Radio,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Button, Col, Form, Input, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
 
 // Type definitions
 type Collection = {
@@ -56,7 +45,7 @@ export const CreateEditCollection = ({
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([]);
   const [variables, setVariables] = useState<any[]>([]);
-  const [variableForm] = Form.useForm();
+  const [variableForm] = Form.useForm<CollectionVariableFormValues>();
   const [collectionForm] = Form.useForm();
   const [addingVariable, setAddingVariable] = useState(false);
   const [variableMode, setVariableMode] = useState<"create" | "edit">("create");
@@ -106,10 +95,6 @@ export const CreateEditCollection = ({
       });
     }
   }, [orgid, collectionid, mode, collectionForm]);
-
-  const handleCancel = () => {
-    navigate(`/organizations/${orgid}/settings/collection`);
-  };
 
   const handleSave = async () => {
     try {
@@ -239,10 +224,16 @@ export const CreateEditCollection = ({
     }
   };
 
-  const handleUpdateVariable = async () => {
+  const closeVariableModal = () => {
+    setAddingVariable(false);
+    setVariableMode("create");
+    setEditingVariableId("");
+    variableForm.resetFields();
+  };
+
+  const handleUpdateVariable = async (values: CollectionVariableFormValues) => {
     try {
       setVariableLoading(true);
-      const values = await variableForm.validateFields();
 
       // Update local state for temp variables
       if (editingVariableId.startsWith("temp-")) {
@@ -296,10 +287,7 @@ export const CreateEditCollection = ({
         }
       }
 
-      variableForm.resetFields();
-      setAddingVariable(false);
-      setVariableMode("create");
-      setEditingVariableId("");
+      closeVariableModal();
     } catch (error) {
       console.error("Failed to update variable:", error);
       message.error("Failed to update variable");
@@ -308,10 +296,9 @@ export const CreateEditCollection = ({
     }
   };
 
-  const handleAddVariable = async () => {
+  const handleAddVariable = async (values: CollectionVariableFormValues) => {
     try {
       setVariableLoading(true);
-      const values = await variableForm.validateFields();
 
       // Add variable to local state
       const newVariable = {
@@ -361,10 +348,7 @@ export const CreateEditCollection = ({
         message.success("Variable added to collection");
       }
 
-      variableForm.resetFields();
-      setAddingVariable(false);
-      setVariableMode("create");
-      setEditingVariableId("");
+      closeVariableModal();
     } catch (error) {
       console.error("Failed to add variable:", error);
       message.error("Failed to add variable");
@@ -464,120 +448,6 @@ export const CreateEditCollection = ({
     },
   ];
 
-  // Replace the Card for adding a variable with a Modal
-  const addVariableModal = (
-    <Modal
-      title={variableMode === "edit" ? "Edit variable" : "Add variable"}
-      open={addingVariable}
-      onCancel={() => {
-        setAddingVariable(false);
-        setVariableMode("create");
-        setEditingVariableId("");
-        variableForm.resetFields();
-      }}
-      footer={[
-        <Button
-          key="cancel"
-          onClick={() => {
-            setAddingVariable(false);
-            setVariableMode("create");
-            setEditingVariableId("");
-            variableForm.resetFields();
-          }}
-        >
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          onClick={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
-          loading={variableLoading}
-        >
-          {variableMode === "edit" ? "Save changes" : "Add variable"}
-        </Button>,
-      ]}
-      width={600}
-      closeIcon={<CloseCircleOutlined />}
-    >
-      <Form
-        form={variableForm}
-        layout="vertical"
-        initialValues={{
-          category: "TERRAFORM",
-          hcl: false,
-          sensitive: false,
-        }}
-      >
-        <Typography.Title level={5} style={{ margin: "20px 0 15px 0" }}>
-          Select variable category
-        </Typography.Title>
-
-        <Form.Item name="category">
-          <Radio.Group>
-            <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-              <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
-                <div>
-                  <div>Terraform variable</div>
-                  <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                    These variables should match the declarations in your configuration. Click the HCL box to use
-                    interpolation or set a non-string value.
-                  </div>
-                </div>
-              </Radio>
-
-              <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
-                <div>
-                  <div>Environment variable</div>
-                  <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                    These variables are available in the Terraform runtime environment.
-                  </div>
-                </div>
-              </Radio>
-            </div>
-          </Radio.Group>
-        </Form.Item>
-
-        <Form.Item name="key" label="Key" rules={[{ required: true, message: "Please enter a key" }]}>
-          <Input placeholder="Enter key name" />
-        </Form.Item>
-
-        <Form.Item name="value" label="Value" rules={[{ required: true, message: "Please enter a value" }]}>
-          <Input.TextArea rows={3} placeholder="Enter variable value" />
-        </Form.Item>
-
-        <div style={{ display: "flex", gap: "30px", marginBottom: "15px" }}>
-          <Form.Item name="hcl" valuePropName="checked" style={{ marginBottom: 0 }}>
-            <Checkbox>
-              <Space>
-                HCL
-                <InfoCircleOutlined
-                  style={{ color: "rgba(0,0,0,0.45)" }}
-                  title="When enabled, this field will be processed as HCL code, allowing for variable interpolation and complex data structures during runtime execution."
-                />
-              </Space>
-            </Checkbox>
-          </Form.Item>
-
-          <Form.Item name="sensitive" valuePropName="checked" style={{ marginBottom: 0 }}>
-            <Checkbox>
-              <Space>
-                Sensitive
-                <InfoCircleOutlined
-                  style={{ color: "rgba(0,0,0,0.45)" }}
-                  title="Mark as sensitive to hide values in the user interface and API responses. Note that these values might still be visible in OpenTofu/Terraform logs if explicitly output by your configuration."
-                />
-              </Space>
-            </Checkbox>
-          </Form.Item>
-        </div>
-
-        <Form.Item name="description" label="Description (Optional)">
-          <Input.TextArea rows={3} placeholder="Enter description (optional)" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  );
-
   const variableListing = (
     <div>
       <div style={{ marginBottom: "15px" }}>
@@ -610,7 +480,14 @@ export const CreateEditCollection = ({
           Add variable
         </Button>
 
-        {addVariableModal}
+        <CollectionVariableModal
+          open={addingVariable}
+          mode={variableMode}
+          form={variableForm}
+          confirmLoading={variableLoading}
+          onCancel={closeVariableModal}
+          onSubmit={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
+        />
       </div>
     </div>
   );
@@ -618,20 +495,14 @@ export const CreateEditCollection = ({
   return (
     <div className="setting">
       <Spin spinning={loading}>
-        <div style={{ marginBottom: "20px" }}>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            {mode === "create"
+        <SettingsPageHeader
+          title={
+            mode === "create"
               ? "Create a new organization variable collection"
-              : "Edit organization variable collection"}
-          </Typography.Title>
-        </div>
-
-        <div style={{ marginBottom: "20px" }}>
-          <Typography.Text type="secondary" className="App-text">
-            Variable collections allow you to define and apply variables one time across multiple workspaces within an
-            organization.
-          </Typography.Text>
-        </div>
+              : "Edit organization variable collection"
+          }
+          description="Variable collections allow you to define and apply variables one time across multiple workspaces within an organization."
+        />
 
         <Form
           form={collectionForm}
@@ -643,30 +514,35 @@ export const CreateEditCollection = ({
             scope: "specific",
           }}
         >
-          <SettingsSection title="Configure settings">
-            <Form.Item
-              name="name"
-              label="Name"
-              rules={[{ required: true, message: "Please enter a name for the collection" }]}
-            >
-              <Input placeholder="Collection name" />
-            </Form.Item>
+          <SettingsSection title="Configure settings" maxWidth={960}>
+            <Row gutter={16}>
+              <Col xs={24} md={16}>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  rules={[{ required: true, message: "Please enter a name for the collection" }]}
+                >
+                  <Input placeholder="Collection name" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item
+                  name="priority"
+                  label="Priority"
+                  rules={[{ required: true, message: "Please enter a priority" }]}
+                  tooltip="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
+                >
+                  <Input type="number" min={1} max={100} defaultValue={10} />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Form.Item name="description" label="Description (Optional)">
               <Input.TextArea rows={3} placeholder="Describe the purpose of this collection" />
             </Form.Item>
-
-            <Form.Item
-              name="priority"
-              label="Priority"
-              rules={[{ required: true, message: "Please enter a priority" }]}
-              help="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
-            >
-              <Input type="number" min={1} max={100} defaultValue={10} />
-            </Form.Item>
           </SettingsSection>
 
-          <SettingsSection title="Variable collection scope">
+          <SettingsSection title="Variable collection scope" maxWidth={960}>
             <div style={{ marginBottom: "10px" }}>
               <Typography.Text strong>Apply to workspaces</Typography.Text>
             </div>
@@ -699,9 +575,9 @@ export const CreateEditCollection = ({
             )}
           </SettingsSection>
 
-          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "30px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "30px" }}>
             <Space>
-              <Button onClick={handleCancel}>Cancel</Button>
+              <LinkButton to={`/organizations/${orgid}/settings/collection`}>Cancel</LinkButton>
               <Button type="primary" onClick={handleSave} loading={saveLoading} disabled={!managePermission}>
                 {mode === "create" ? "Create variable collection" : "Save Variable Collection"}
               </Button>

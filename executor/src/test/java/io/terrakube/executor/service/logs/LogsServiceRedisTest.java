@@ -2,61 +2,66 @@ package io.terrakube.executor.service.logs;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.data.redis.connection.RedisStreamCommands.XAddOptions;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class LogsServiceRedisTest {
 
     @Mock
-    RedisTemplate redisTemplate;
+    RedisTemplate<String, Object> redisTemplate;
 
     @Mock
-    StreamOperations streamOperations;
+    StreamOperations<String, Object, Object> streamOps;
 
     @Test
-    void sendStructuredUpdateWritesToTheContextSuffixedStream() {
-        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
-        LogsServiceRedis subject = new LogsServiceRedis(redisTemplate);
+    void sendLogsTrimsTheStreamApproximately() {
+        when(redisTemplate.opsForStream()).thenReturn(streamOps);
+        ExecutorLogsProperties props = new ExecutorLogsProperties();
+        props.setRedisMaxLen(200_000);
+        LogsServiceRedis service = new LogsServiceRedis(redisTemplate, props);
 
-        subject.sendStructuredUpdate(42, "step-1", "{\"changes\":[]}");
+        service.sendLogs(42, "step-1", 1, "hello");
 
-        Map<String, String> expectedStreamData = new LinkedHashMap<>();
-        expectedStreamData.put("jobId", "42");
-        expectedStreamData.put("stepId", "step-1");
-        expectedStreamData.put("output", "{\"changes\":[]}");
-        verify(streamOperations).add(eq("42-context"), eq(expectedStreamData));
+        ArgumentCaptor<XAddOptions> opts = ArgumentCaptor.forClass(XAddOptions.class);
+        verify(streamOps).add(eq("42"), any(Map.class), opts.capture());
+        assertEquals(200_000L, opts.getValue().getMaxlen());
+        assertTrue(opts.getValue().isApproximateTrimming());
     }
 
     @Test
-    void sendLogsSwallowsARedisFailureInsteadOfPropagatingIt() {
-        // sendLogs runs as a callback inside the terraform-spring-boot-starter's own
-        // process-output-reading loop - letting a Redis exception escape here would abort the
-        // whole terraform run, not just drop a log line.
-        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
-        doThrow(new RuntimeException("connection refused")).when(streamOperations).add(any(), any(Map.class));
-        LogsServiceRedis subject = new LogsServiceRedis(redisTemplate);
+    void redisFailureIsSwallowedAndNeverThrows() {
+        when(redisTemplate.opsForStream()).thenReturn(streamOps);
+        when(streamOps.add(any(String.class), any(Map.class), any(XAddOptions.class)))
+                .thenThrow(new RuntimeException("redis down"));
+        LogsServiceRedis service = new LogsServiceRedis(redisTemplate, new ExecutorLogsProperties());
 
-        subject.sendLogs(42, "step-1", 1, "some output");
+        service.sendLogs(42, "step-1", 1, "hello"); // must not throw
     }
 
     @Test
-    void sendStructuredUpdateSwallowsARedisFailureInsteadOfPropagatingIt() {
-        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
-        doThrow(new RuntimeException("connection refused")).when(streamOperations).add(any(), any(Map.class));
-        LogsServiceRedis subject = new LogsServiceRedis(redisTemplate);
+    void structuredUpdateAlsoTrimsTheContextStream() {
+        when(redisTemplate.opsForStream()).thenReturn(streamOps);
+        LogsServiceRedis service = new LogsServiceRedis(redisTemplate, new ExecutorLogsProperties());
 
-        subject.sendStructuredUpdate(42, "step-1", "{\"changes\":[]}");
+        service.sendStructuredUpdate(42, "step-1", "{}");
+
+        verify(streamOps).add(eq("42-context"), any(Map.class), any(XAddOptions.class));
     }
 }

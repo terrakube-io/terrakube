@@ -23,11 +23,12 @@ export const WORKSPACE_STATUS_PALETTE: WorkspaceStatusPaletteEntry[] = [
   { value: WorkspaceStatusFilter.All, label: "All", icon: <BarsOutlined /> },
   {
     value: JobStatus.WaitingApproval,
-    label: "Awaiting approval",
+    label: "Waiting Approval",
     icon: <ExclamationCircleOutlined />,
     color: "#fa8f37",
   },
   { value: JobStatus.Failed, label: "Failed", icon: <StopOutlined />, color: "#FB0136" },
+  { value: JobStatus.Pending, label: "Pending", icon: <ClockCircleOutlined />, color: "#8c8c8c" },
   { value: JobStatus.Queue, label: "Queued", icon: <ClockCircleOutlined />, color: "#8c8c8c" },
   { value: JobStatus.Running, label: "Running", icon: <SyncOutlined />, color: "#108ee9" },
   { value: JobStatus.Completed, label: "Completed", icon: <CheckCircleOutlined />, color: "#2eb039" },

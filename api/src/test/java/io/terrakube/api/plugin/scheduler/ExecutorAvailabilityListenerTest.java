@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 
@@ -21,7 +22,8 @@ class ExecutorAvailabilityListenerTest {
     private final ScheduleJobService scheduleJobService = mock(ScheduleJobService.class);
 
     private ExecutorAvailabilityListener subject() {
-        return new ExecutorAvailabilityListener(container, jobRepository, scheduleJobService);
+        return new ExecutorAvailabilityListener(container, jobRepository, scheduleJobService,
+                new SimpleMeterRegistry());
     }
 
     @Test

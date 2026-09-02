@@ -3,9 +3,6 @@
 }
 
 .terminal-container {
-  max-height: calc(100vh - 280px);
-  min-height: 400px;
-  overflow-y: auto;
   background-color: #1e1e1e;
   width: 100%;
 }
@@ -13,9 +10,39 @@
 .terminal-content {
   color: #ffffff;
   font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
-  padding: 20px;
   font-size: 0.875em;
-  white-space: pre-wrap;
+}
+
+/* Windowed log view: fixed-height lines, its own vertical + horizontal scroll. */
+.terminal-viewport {
+  max-height: calc(100vh - 280px);
+  min-height: 400px;
+  padding: 20px;
+  white-space: pre;
+}
+
+.terminal-content--empty {
+  padding: 20px;
+  opacity: 0.6;
+}
+
+.terminal-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  color: #d4d4d4;
+  font-size: 0.8125em;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.terminal-notice--error {
+  color: #ffb4b4;
+}
+
+.tf-log-line {
+  display: inline;
 }
 
 .terminal-toolbar {

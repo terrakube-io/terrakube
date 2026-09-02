@@ -1,6 +1,6 @@
 import { Button } from "antd";
 import { SettingOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 
 type Props = {
@@ -8,7 +8,6 @@ type Props = {
 };
 
 export default function OrgSettingsButton({ orgId }: Props) {
-  const navigate = useNavigate();
   const { permissions, loading } = useOrgPermissions(orgId);
 
   if (loading || !permissions.managePermission) {
@@ -16,15 +15,10 @@ export default function OrgSettingsButton({ orgId }: Props) {
   }
 
   return (
-    <Button
-      type="text"
-      size="small"
-      icon={<SettingOutlined />}
-      aria-label="organization settings"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigate(`/organizations/${orgId}/settings`);
-      }}
-    />
+    <Button type="text" size="small" onClick={(e) => e.stopPropagation()}>
+      <Link to={`/organizations/${orgId}/settings`} aria-label="organization settings">
+        <SettingOutlined />
+      </Link>
+    </Button>
   );
 }

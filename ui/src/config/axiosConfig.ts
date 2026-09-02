@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosResponse } from "axios";
 import { mgr } from "./authConfig";
 import getUserFromStorage from "./authUser";
+import { setBackendError, FATAL_API_STATUSES } from "@/modules/api/backendStatus";
 
 type RuntimeEnv = Window["_env_"] & { REACT_APP_TERRAKUBE_SEND_COOKIES?: string };
 
@@ -46,10 +47,14 @@ axiosRegistry.interceptors.request.use(attachAuthToken, rejectError);
 
 // Shared response interceptor that enriches 403 errors with a clear message
 function handleResponseSuccess(response: AxiosResponse) {
+  setBackendError(null);
   return response;
 }
 
 function handleResponseError(error: AxiosError) {
+  if (error.response && FATAL_API_STATUSES.includes(error.response.status)) {
+    setBackendError(error.response.status);
+  }
   if (error.response?.status === 401) {
     // Token rejected by the API - sign out so the user lands back on Login.
     mgr.removeUser();

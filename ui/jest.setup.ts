@@ -4,7 +4,6 @@
 // learn more: https://github.com/testing-library/jest-dom
 import "@testing-library/jest-dom";
 import { TextEncoder, TextDecoder } from "node:util";
-import { MessageChannel } from "node:worker_threads";
 
 // In the real app, window._env_ is injected by env-config.js at runtime. Several
 // modules (apiWrapper.ts, axiosConfig.ts) read it at import time, so it must exist
@@ -33,16 +32,48 @@ global.TextDecoder = TextDecoder as typeof global.TextDecoder;
 const originalGetComputedStyle = window.getComputedStyle.bind(window);
 window.getComputedStyle = ((elt: Element) => originalGetComputedStyle(elt)) as typeof window.getComputedStyle;
 
-// jsdom doesn't provide MessageChannel, but rc-select (antd Select's open/close scheduling) needs one.
-// Ports are unref'd so a leftover scheduled message doesn't keep the Jest worker process alive.
-class UnrefMessageChannel extends MessageChannel {
-  constructor() {
-    super();
-    (this.port1 as unknown as { unref: () => void }).unref();
-    (this.port2 as unknown as { unref: () => void }).unref();
+// jsdom doesn't provide MessageChannel, but rc-select (antd Select's scheduling) and React 19's
+// `scheduler` both need one. A prior shim wrapped node:worker_threads' MessageChannel with
+// .unref()'d ports; those ports deadlock the scheduler's module init under jsdom on some hosts
+// (WSL2), hanging every test that renders. This pure-JS version schedules delivery on a macrotask -
+// enough for both consumers - and needs no unref because setTimeout(0) never keeps the loop alive.
+class FakeMessagePort {
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  private peer!: FakeMessagePort;
+  private listeners = new Set<(event: { data: unknown }) => void>();
+  _link(peer: FakeMessagePort) {
+    this.peer = peer;
+  }
+  private deliver(data: unknown) {
+    const event = { data };
+    this.onmessage?.(event);
+    this.listeners.forEach((fn) => fn(event));
+  }
+  postMessage(data: unknown) {
+    setTimeout(() => this.peer.deliver(data), 0);
+  }
+  start() {}
+  close() {}
+  addEventListener(type: string, fn: (event: { data: unknown }) => void) {
+    if (type === "message") {
+      this.listeners.add(fn);
+    }
+  }
+  removeEventListener(type: string, fn: (event: { data: unknown }) => void) {
+    if (type === "message") {
+      this.listeners.delete(fn);
+    }
   }
 }
-global.MessageChannel = UnrefMessageChannel as unknown as typeof global.MessageChannel;
+class FakeMessageChannel {
+  port1 = new FakeMessagePort();
+  port2 = new FakeMessagePort();
+  constructor() {
+    this.port1._link(this.port2);
+    this.port2._link(this.port1);
+  }
+}
+global.MessageChannel = FakeMessageChannel as unknown as typeof global.MessageChannel;
 
 // jsdom doesn't implement ResizeObserver, but antd's Table/rc-resize-observer needs one.
 global.ResizeObserver = class ResizeObserver {

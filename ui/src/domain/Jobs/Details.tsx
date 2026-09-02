@@ -1,28 +1,32 @@
+import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
 import {
-  CheckCircleOutlined,
-  CheckOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
-  CloseOutlined,
-  CommentOutlined,
-  ExclamationCircleOutlined,
-  StopOutlined,
-  SyncOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
-import { Alert, Avatar, Button, Card, Collapse, message, Radio, RadioChangeEvent, Space, Spin, Tag, Typography } from "antd";
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  Collapse,
+  message,
+  Radio,
+  RadioChangeEvent,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { AxiosResponse } from "axios";
-import parse from "html-react-parser";
-import { DateTime } from "luxon";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import axiosInstance, { axiosClient } from "../../config/axiosConfig";
+import axiosInstance from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
+import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
+import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
+import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
 import { IncludedItem, Job, JobStep, Workspace } from "../types";
-import { LiveTerminalOutput } from "./LiveTerminalOutput";
-import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
+import { getPublicApiOrigin } from "./outputUrl";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
-import { StructuredPlanOutput } from "./StructuredPlanOutput";
+import { isTerminalStatus } from "./stepStatus";
+import { StepConsole } from "./StepConsole";
 import {
   JobDiagnosticsByStep,
   StructuredApplyOutputByStep,
@@ -34,13 +38,12 @@ import {
   normalizeStructuredPlanOutput,
   normalizeUITemplates,
 } from "./structuredPlan";
+import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   jobId: string;
 };
 
-
-const TERMINAL_JOB_STATUSES = new Set(["completed", "noChanges", "failed", "cancelled", "rejected", "notExecuted"]);
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
 
 const UI_TYPE_STORAGE_KEY = "terrakube.jobDetails.uiType";
@@ -121,13 +124,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
 
-  const isTerminalJobStatus = (status?: string) => {
-    if (!status) {
-      return false;
-    }
-
-    return TERMINAL_JOB_STATUSES.has(status);
-  };
 
   const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
     if (jobOutput == null) {
@@ -166,35 +162,14 @@ export const DetailsJob = ({ jobId }: Props) => {
     return stepName === INCOMPLETE_VARIABLE_GUARD_STEP_NAME;
   };
 
-  const outputLog = async (output: string | undefined, status: string, signal: AbortSignal) => {
-    if (output != null) {
-      const outputUrl = getJobOutputRequestUrl(output);
-
-      try {
-        if (isTerrakubeApiUrl(outputUrl)) {
-          const response = await axiosInstance.get(outputUrl, { signal });
-          return response.data;
-        }
-
-        const response = await axiosClient.get(outputUrl, { signal });
-        return response.data;
-      } catch {
-        return "No logs available";
-      }
-    } else {
-      if (status === "running") return "Initializing the backend...";
-      else return "Waiting logs...";
-    }
-  };
-
   const renderIncompleteVariableAlert = (guard: IncompleteVariableGuard) => {
     return (
       <Alert
         type="error"
         showIcon
-        message="Run stopped before execution"
+        title="Run stopped before execution"
         description={
-          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          <Space orientation="vertical" size="small" style={{ width: "100%" }}>
             <Typography.Text>{guard.title}</Typography.Text>
             {guard.variables.length > 0 && (
               <Space size={[8, 8]} wrap>
@@ -219,7 +194,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <Alert
         type="warning"
         showIcon
-        message={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
+        title={`Failed to post output to pull request${prNumber ? ` #${prNumber}` : ""}`}
         description={prCommentError}
       />
     );
@@ -237,10 +212,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     } catch {
       // ignore storage errors (private browsing, quota, etc.) - preference just won't persist.
     }
-  };
-
-  const renderConsoleOutput = (item: JobStep) => {
-    return <LiveTerminalOutput jobId={jobId} organizationId={organizationId ?? ""} item={item} />;
   };
 
   const getStepStructuredData = (item: JobStep) => {
@@ -264,7 +235,6 @@ export const DetailsJob = ({ jobId }: Props) => {
       return null;
     }
 
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- purely a propagation
     // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
     return (
       <div onClick={(event) => event.stopPropagation()}>
@@ -278,41 +248,17 @@ export const DetailsJob = ({ jobId }: Props) => {
 
   const renderStepContent = (item: JobStep) => {
     const guard = parseIncompleteVariableGuard(job?.data?.attributes.output);
+    const isGuardStep = guard != null && isIncompleteVariableGuardStep(item.name);
 
-    if (guard != null && isIncompleteVariableGuardStep(item.name)) {
-      return renderConsoleOutput(item);
-    }
-
-    const { template, structuredChanges, structuredApplyChanges, stepOutputs, stepJobDiagnostics, hasStructuredView } =
-      getStepStructuredData(item);
-
-    if (!hasStructuredView) {
-      return renderConsoleOutput(item);
-    }
-
-    const structuredContent = structuredApplyChanges ? (
-      <StructuredPlanOutput
-        changes={structuredApplyChanges}
-        outputLog={item.outputLog}
-        applyMode
-        outputs={stepOutputs}
-        jobDiagnostics={stepJobDiagnostics}
-      />
-    ) : structuredChanges ? (
-      <StructuredPlanOutput changes={structuredChanges} outputLog={item.outputLog} jobDiagnostics={stepJobDiagnostics} />
-    ) : (
-      <div>{parse(template ?? "")}</div>
-    );
-
-    // Keep both mounted and toggle visibility with CSS instead of conditionally rendering one or
-    // the other - unmounting StructuredPlanOutput every time the user flips between structured
-    // and console would reset its internal expanded-row/attribute state, closing any dropdowns
-    // they'd already opened.
     return (
-      <>
-        <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
-        <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsoleOutput(item)}</div>
-      </>
+      <StepConsole
+        item={item}
+        jobId={jobId}
+        organizationId={organizationId ?? ""}
+        guardMessage={isGuardStep ? item.outputLog : undefined}
+        structured={getStepStructuredData(item)}
+        uiType={uiType}
+      />
     );
   };
 
@@ -321,7 +267,7 @@ export const DetailsJob = ({ jobId }: Props) => {
       <span>
         {getIconStatus(item)}
         <h3 style={{ display: "inline" }}>
-          &nbsp; {item.name} {item.status}
+          &nbsp; {item.name} {getWorkspaceStatusText(item.status)}
         </h3>
       </span>
     );
@@ -353,23 +299,12 @@ export const DetailsJob = ({ jobId }: Props) => {
       });
   };
 
+  // Delegates to the same status -> icon/color map WorkspaceStatusTag uses, so a step's icon
+  // always matches the color/shape used everywhere else status is shown for the same status value.
   const getIconStatus = (item: JobStep) => {
-    switch (item.status) {
-      case "completed":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "noChanges":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#52c41a" }} />;
-      case "notExecuted":
-        return <CheckCircleOutlined style={{ fontSize: "20px", color: "#fa8f37" }} />;
-      case "running":
-        return <SyncOutlined spin style={{ color: "#108ee9", fontSize: "20px" }} />;
-      case "failed":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      case "cancelled":
-        return <CloseCircleOutlined style={{ fontSize: "20px", color: "#FB0136" }} />;
-      default:
-        return <ClockCircleOutlined style={{ fontSize: "20px" }} />;
-    }
+    return cloneElement(getWorkspaceStatusIcon(item.status), {
+      style: { fontSize: "20px", color: statusColors[item.status] },
+    });
   };
 
   const handleApprove = () => {
@@ -433,10 +368,9 @@ export const DetailsJob = ({ jobId }: Props) => {
     const signal = getJobSignal();
 
     try {
-      const response = await axiosInstance.get(
-        `organization/${organizationId}/job/${jobId}?include=step,workspace`,
-        { signal }
-      );
+      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step,workspace`, {
+        signal,
+      });
       if (requestId !== jobRequestRef.current) {
         return;
       }
@@ -450,8 +384,11 @@ export const DetailsJob = ({ jobId }: Props) => {
       );
       const incompleteVariableGuard = parseIncompleteVariableGuard(response.data.data.attributes.output);
 
-      const stepsPromise = Promise.all(
-        stepEntries.map(async (stepItem: any) => ({
+      // Steps render immediately from their entity data; each StepConsole fetches its own log
+      // lazily (on expand) via useStepLog, so first paint never blocks on log fetches and the
+      // 5s poll below refreshes step *status* only.
+      const stepsPromise = Promise.resolve(
+        stepEntries.map((stepItem: any) => ({
           id: stepItem.id,
           stepNumber: stepItem.attributes.stepNumber,
           status: stepItem.attributes.status,
@@ -460,9 +397,7 @@ export const DetailsJob = ({ jobId }: Props) => {
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
-              : stepItem.attributes.status === "running"
-              ? ""
-              : await outputLog(stepItem.attributes.output, stepItem.attributes.status, signal),
+              : "",
         }))
       );
 
@@ -534,8 +469,14 @@ export const DetailsJob = ({ jobId }: Props) => {
       // SSE stream (useStructuredOutputStream's effect below), which pushes per-step updates as
       // soon as the executor emits them. Replacing wholesale on every 5s poll would intermittently
       // wipe out a step's just-pushed live data with a stale snapshot that hasn't caught up yet.
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput) }));
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(response?.data?.planStructuredOutput),
+      }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(response?.data?.applyStructuredOutput),
+      }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
     } catch (error) {
@@ -570,7 +511,7 @@ export const DetailsJob = ({ jobId }: Props) => {
     },
     {
       interval: 5000,
-      enabled: Boolean(jobId) && !isTerminalJobStatus(job?.data?.attributes.status),
+      enabled: Boolean(jobId) && !isTerminalStatus(job?.data?.attributes.status),
       immediate: false,
     }
   );
@@ -599,20 +540,26 @@ export const DetailsJob = ({ jobId }: Props) => {
     setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(liveStructuredOutput.jobDiagnostics) }));
 
     if (liveStructuredOutput.phase === "plan") {
-      setPlanStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredPlanOutput(liveStructuredOutput.changes) }));
+      setPlanStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredPlanOutput(liveStructuredOutput.changes),
+      }));
     } else {
-      setApplyStructuredOutput((previous) => ({ ...previous, ...normalizeStructuredApplyOutput(liveStructuredOutput.changes) }));
+      setApplyStructuredOutput((previous) => ({
+        ...previous,
+        ...normalizeStructuredApplyOutput(liveStructuredOutput.changes),
+      }));
     }
   }, [liveStructuredOutput]);
 
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
-        <Spin spinning={true} tip="Loading Job...">
+        <Spin spinning={true} description="Loading Job...">
           <p style={{ marginTop: "50px" }}></p>
         </Spin>
       ) : (
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           {(() => {
             const guard = parseIncompleteVariableGuard(job.data.attributes.output);
 
@@ -626,42 +573,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             ? renderPrCommentErrorAlert(job.data.attributes.prCommentError, job.data.attributes.prNumber)
             : null}
           <div>
-            <Tag
-              icon={
-                job.data.attributes.status === "completed" ? (
-                  <CheckCircleOutlined />
-                ) : job.data.attributes.status === "running" ? (
-                  <SyncOutlined spin />
-                ) : job.data.attributes.status === "waitingApproval" ? (
-                  <ExclamationCircleOutlined />
-                ) : job.data.attributes.status === "cancelled" ? (
-                  <StopOutlined />
-                ) : job.data.attributes.status === "failed" ? (
-                  <StopOutlined />
-                ) : (
-                  <ClockCircleOutlined />
-                )
-              }
-              color={
-                job.data.attributes.status === "completed"
-                  ? "#2eb039"
-                  : job.data.attributes.status === "noChanges"
-                    ? "#2eb039"
-                    : job.data.attributes.status === "notExecuted"
-                      ? "#fa8f37"
-                      : job.data.attributes.status === "running"
-                        ? "#108ee9"
-                        : job.data.attributes.status == "waitingApproval"
-                          ? "#fa8f37"
-                          : job.data.attributes.status == "rejected"
-                            ? "#FB0136"
-                            : job.data.attributes.status == "failed"
-                              ? "#FB0136"
-                              : ""
-              }
-            >
-              {job.data.attributes.status}
-            </Tag>{" "}
+            <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
             <h2 style={{ display: "inline" }}>Triggered via UI</h2>
           </div>
 
@@ -673,9 +585,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                   <span>
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
-                    {job.data.attributes.createdDate
-                      ? DateTime.fromISO(job.data.attributes.createdDate || "").toRelative()
-                      : ""}
+                    {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
                   </span>
                 ),
                 children: (
@@ -730,20 +640,17 @@ export const DetailsJob = ({ jobId }: Props) => {
           {steps.length > 0 ? (
             steps.map((item) => {
               const stepLabel = renderStepLabel(item);
-
-              if (!shouldStepBeCollapsible(item)) {
-                return (
-                  <Card key={item.id} size="small" style={{ width: "100%" }}>
-                    {stepLabel}
-                  </Card>
-                );
-              }
+              // Steps with nothing to show yet (e.g. a pending approval step) still render through
+              // Collapse rather than a bare Card - a disabled panel keeps the same arrow/label/extra
+              // grid as every expandable step, so rows stay in one aligned column instead of the
+              // Card variant's text sitting flush left of the others.
+              const isCollapsible = shouldStepBeCollapsible(item);
 
               return (
                 <Collapse
                   key={item.id}
                   style={{ width: "100%" }}
-                  activeKey={activeStepKeys[item.id] ?? []}
+                  activeKey={isCollapsible ? (activeStepKeys[item.id] ?? []) : []}
                   onChange={(keys) => {
                     userToggledStepIds.current.add(item.id);
                     setActiveStepKeys((previous) => ({
@@ -755,8 +662,9 @@ export const DetailsJob = ({ jobId }: Props) => {
                     {
                       key: "2",
                       label: stepLabel,
-                      extra: renderStepExtra(item),
-                      children: renderStepContent(item),
+                      collapsible: isCollapsible ? undefined : "disabled",
+                      extra: isCollapsible ? renderStepExtra(item) : undefined,
+                      children: isCollapsible ? renderStepContent(item) : undefined,
                     },
                   ]}
                 />
@@ -771,8 +679,14 @@ export const DetailsJob = ({ jobId }: Props) => {
               <Card
                 title={
                   <span style={{ fontSize: "14px" }}>
-                    <b>Needs Confirmation:</b> Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to
-                    continue.
+                    <b>Needs Confirmation:</b>{" "}
+                    {job.data.attributes.approvalTeam ? (
+                      <>
+                        Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to continue.
+                      </>
+                    ) : (
+                      "Someone must confirm to continue."
+                    )}
                   </span>
                 }
               >

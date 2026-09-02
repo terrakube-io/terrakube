@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!-- Follow-up to changelog-2.33.0-notification.xml (that file's changesets have shipped and
+         must not be edited). Adds the job status each outbox row's payload was rendered for, so
+         the dispatcher can re-check it against the job's live status at delivery time and drop a
+         row that no longer describes reality - typically a transient "failed" from a lost
+         API->executor dispatch response that the executor's own status callback then corrected.
+         Nullable: rows written before this column exists have null and are always delivered,
+         exactly as before. -->
+    <changeSet id="2-33-1-notification-outbox-job-status" author="jake">
+        <addColumn tableName="notification_outbox">
+            <column name="job_status" type="varchar(20)" />
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

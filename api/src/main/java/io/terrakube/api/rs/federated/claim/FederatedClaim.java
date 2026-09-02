@@ -1,7 +1,6 @@
 package io.terrakube.api.rs.federated.claim;
 
 import com.yahoo.elide.annotation.*;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.federated.Federated;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -23,7 +22,6 @@ public class FederatedClaim {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

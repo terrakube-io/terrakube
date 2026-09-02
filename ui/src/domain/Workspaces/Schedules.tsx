@@ -8,6 +8,7 @@ import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionType
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import * as C2Q from "cron-to-quartz";
 import { FlatSchedule, Template } from "../types";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 type ScheduleForm = {
   templateId: string;
@@ -86,6 +87,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
                 Edit
               </Button>
               <Popconfirm
+                okButtonProps={{ danger: true }}
                 onConfirm={() => {
                   onDelete(record.id);
                 }}
@@ -264,7 +266,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
             });
         }}
       >
-        <Space style={{ width: "100%" }} direction="vertical">
+        <Space style={{ width: "100%" }} orientation="vertical">
           <Form name="create-org" form={form} layout="vertical" validateMessages={validateMessages}>
             <Form.Item
               name="templateId"
@@ -276,7 +278,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
               }}
             >
               {loading || !templates ? (
-                <p>Data loading...</p>
+                <LoadingFallback />
               ) : (
                 <Select>
                   {templates.map((item: Template) => (

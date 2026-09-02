@@ -4,12 +4,6 @@ import WorkspaceTable from "../WorkspaceTable";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { JobStatus } from "@/domain/types";
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: () => mockNavigate,
-}));
-
 const workspaces: WorkspaceListItem[] = [
   {
     id: "ws-1",
@@ -56,7 +50,6 @@ function renderTable(props = {}) {
 
 describe("WorkspaceTable", () => {
   beforeEach(() => {
-    mockNavigate.mockClear();
     defaultProps.onSelectProject.mockClear();
     (defaultProps.onSortChange as jest.Mock).mockClear();
   });
@@ -82,11 +75,10 @@ describe("WorkspaceTable", () => {
     expect(document.querySelector(".workspace-name-line3")).not.toBeInTheDocument();
   });
 
-  it("calls onSelectProject with the project id when the project chip is clicked, without navigating", () => {
+  it("calls onSelectProject with the project id when the project chip is clicked", () => {
     renderTable();
     fireEvent.click(screen.getByText("platform"));
     expect(defaultProps.onSelectProject).toHaveBeenCalledWith("proj-1");
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("shows a lock icon only for locked workspaces", () => {
@@ -116,10 +108,10 @@ describe("WorkspaceTable", () => {
     expect(container.querySelector(".workspace-status-icon .anticon")).toBeInTheDocument();
   });
 
-  it("navigates to the workspace on row click", () => {
+  it("links to the workspace from the row", () => {
     renderTable();
-    fireEvent.click(screen.getByText("billing-api-staging"));
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
+    const link = screen.getByLabelText("Open workspace billing-api-staging");
+    expect(link).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1");
   });
 
   it("truncates the source with a title attribute holding the full path", () => {
@@ -131,6 +123,54 @@ describe("WorkspaceTable", () => {
   it("shows pagination in flat mode", () => {
     const { container } = renderTable();
     expect(container.querySelector(".ant-pagination")).toBeInTheDocument();
+  });
+
+  it("stays on the current page when a background refresh supplies a new array with the same workspaces", () => {
+    const manyWorkspaces: WorkspaceListItem[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `bulk-${i}`,
+      name: `bulk-workspace-${i}`,
+      iacType: "terraform",
+      source: "",
+    }));
+
+    const { container, rerender } = renderTable({ workspaces: manyWorkspaces });
+
+    fireEvent.click(screen.getByTitle("2"));
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+
+    // Simulate a polling refresh: same workspaces, but a brand-new array reference.
+    rerender(
+      <MemoryRouter>
+        <WorkspaceTable {...defaultProps} workspaces={[...manyWorkspaces]} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+    expect(container.querySelector(".ant-pagination-item-active")).toHaveTextContent("2");
+  });
+
+  it("clamps to the last valid page when a refresh shrinks the workspace list below the current page", () => {
+    const manyWorkspaces: WorkspaceListItem[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `bulk-${i}`,
+      name: `bulk-workspace-${i}`,
+      iacType: "terraform",
+      source: "",
+    }));
+
+    const { rerender } = renderTable({ workspaces: manyWorkspaces });
+
+    fireEvent.click(screen.getByTitle("2"));
+    expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
+
+    const shrunkWorkspaces = manyWorkspaces.slice(0, 5);
+    rerender(
+      <MemoryRouter>
+        <WorkspaceTable {...defaultProps} workspaces={shrunkWorkspaces} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("bulk-workspace-0")).toBeInTheDocument();
+    expect(screen.queryByText("bulk-workspace-20")).not.toBeInTheDocument();
   });
 
   it("clicking the Name header sorts ascending when not already active", () => {
@@ -151,14 +191,11 @@ describe("WorkspaceTable", () => {
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("status");
   });
 
-  it("is keyboard-operable: Enter on a sortable header sorts, and on a row navigates", () => {
+  it("is keyboard-operable: Enter on a sortable header sorts", () => {
     renderTable({ sortOption: "status" });
 
     fireEvent.keyDown(screen.getByText("Name"), { key: "Enter" });
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("name_asc");
-
-    fireEvent.keyDown(screen.getByText("billing-api-staging"), { key: " " });
-    expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-1/workspaces/ws-1");
   });
 
   describe("grouped mode", () => {

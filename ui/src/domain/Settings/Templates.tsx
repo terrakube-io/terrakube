@@ -1,35 +1,35 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, List, message, Popconfirm, Typography } from "antd";
+import { Button, List, message, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { Loading } from "@/components/feedback/Loading";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
-  key: string;
+  editorMode?: "new" | "edit";
+  editorId?: string;
   managePermission?: boolean;
 };
 
-export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
+export const TemplatesSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [mode, setMode] = useState("list");
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [templateID, setTemplateID] = useState<string>();
-
-  const onAddVCS = () => {
-    setMode("new");
-  };
-
-  const onEditVCS = (id: string) => {
-    setMode("edit");
-    setTemplateID(id);
-  };
+  const [pendingDelete, setPendingDelete] = useState<Template | null>(null);
+  const navigate = useNavigate();
+  const mode = editorMode ?? "list";
+  const templateID = editorId;
+  const closeEditor = () => navigate(`/organizations/${orgid}/settings/templates`);
 
   const onDelete = (id: string) => {
     axiosInstance
@@ -45,7 +45,7 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
   useEffect(() => {
     setLoading(true);
     loadTemplates();
-  }, [orgid, templateID, key]);
+  }, [orgid, templateID]);
 
   const loadTemplates = () => {
     axiosInstance
@@ -67,31 +67,31 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
-        (mode === "new" && <AddTemplate setMode={setMode} loadTemplates={loadTemplates} />) ||
+        (mode === "new" && <AddTemplate setMode={closeEditor} loadTemplates={loadTemplates} />) ||
         (mode === "edit" && (
-          <EditTemplate setMode={setMode} templateId={templateID} loadTemplates={loadTemplates} />
+          <EditTemplate setMode={closeEditor} templateId={templateID} loadTemplates={loadTemplates} />
         )) || (
           <div>
-            {" "}
-            <Typography.Title level={1} style={{ paddingBottom: "10px", margin: 0 }}>
-              Templates
-              <Button
-                type="primary"
-                onClick={onAddVCS}
-                className="addVCS"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Add a Template
-              </Button>{" "}
-            </Typography.Title>
-            <br />
+            <SettingsPageHeader
+              docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
+              title="Templates"
+              description="Templates define the job flows a workspace can run, such as plan, apply, or custom steps."
+              actions={
+                <LinkButton
+                  to={`/organizations/${orgid}/settings/templates/new`}
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  disabled={!managePermission}
+                >
+                  Add a Template
+                </LinkButton>
+              }
+            />
             <SettingsSection maxWidth="100%">
               {loading ? (
-                <p>Data loading...</p>
+                <Loading loading description="Loading templates..." />
               ) : (
                 <List
                   className="vcsList"
@@ -100,35 +100,23 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
                   renderItem={(item) => (
                     <List.Item
                       actions={[
-                        <Button
-                          onClick={() => {
-                            onEditVCS(item.id);
-                          }}
+                        <LinkButton
+                          to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}
                           icon={<EditOutlined />}
                           type="link"
                           disabled={!managePermission}
                         >
                           Edit
-                        </Button>,
-                        <Popconfirm
-                          onConfirm={() => {
-                            onDelete(item.id);
-                          }}
-                          style={{ width: "20px" }}
-                          title={
-                            <p>
-                              This will permanently delete this template. <br />
-                              Are you sure?
-                            </p>
-                          }
-                          okText="Yes"
-                          cancelText="No"
+                        </LinkButton>,
+                        <Button
+                          icon={<DeleteOutlined />}
+                          type="link"
+                          danger
+                          disabled={!managePermission}
+                          onClick={() => setPendingDelete(item)}
                         >
-                          {" "}
-                          <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                            Delete
-                          </Button>
-                        </Popconfirm>,
+                          Delete
+                        </Button>,
                       ]}
                     >
                       <List.Item.Meta title={item.attributes.name} description={item.attributes.description} />
@@ -137,6 +125,21 @@ export const TemplatesSettings = ({ key, managePermission = true }: Props) => {
                 />
               )}
             </SettingsSection>
+            <DeleteConfirmationModal
+              open={pendingDelete !== null}
+              title="Delete template"
+              message={
+                <>
+                  Deleting the template <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                </>
+              }
+              okText="Delete"
+              onConfirm={() => {
+                if (pendingDelete) onDelete(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              onCancel={() => setPendingDelete(null)}
+            />
           </div>
         )
       )}

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriUtils;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -56,6 +57,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private static final String API_VERSION = "7.0";
+    private static final int MAX_PR_FILE_PAGES = 100;
     private static final String HOOKS_API_VERSION = "7.1";
     private static final String TOKEN_HEADER = "x-terrakube-token";
     /**
@@ -675,24 +677,56 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             return changedFiles;
         }
 
-        String changesUrl = String.format(
-                "%s/%s/_apis/git/repositories/%s/pullRequests/%s/iterations/%s/changes?api-version=%s",
-                repo.orgBaseUrl, encodedProject, repositoryId, prNumber, latestIteration, API_VERSION);
+        // GitPullRequestIterationChanges paginates via $top/$skip (default $top=100, max 2000) and
+        // echoes the next page's values back as nextTop/nextSkip in the response body itself (not
+        // a header) - both are 0 once there are no more changes. A single unpaginated request
+        // silently truncates the file list for any PR touching more than 100 files, which is
+        // common for monorepo PRs. MAX_PR_FILE_PAGES is a defensive cap (100 pages), not a real
+        // Azure DevOps limit.
+        int top = 100;
+        int skip = 0;
+        for (int page = 0; page < MAX_PR_FILE_PAGES; page++) {
+            String changesUrl = String.format(
+                    "%s/%s/_apis/git/repositories/%s/pullRequests/%s/iterations/%s/changes?$top=%s&$skip=%s&api-version=%s",
+                    repo.orgBaseUrl, encodedProject, repositoryId, prNumber, latestIteration, top, skip, API_VERSION);
 
-        ResponseEntity<String> changesResponse = callAzureApi(vcs, "", changesUrl, HttpMethod.GET);
-        if (changesResponse == null || !changesResponse.getStatusCode().is2xxSuccessful()) {
-            log.error("Failed to fetch Azure DevOps changes for pull request {}", prNumber);
-            return changedFiles;
-        }
-        try {
-            JsonNode rootNode = objectMapper.readTree(changesResponse.getBody());
-            for (JsonNode change : rootNode.path("changeEntries")) {
-                addChangedFile(changedFiles, change);
+            ResponseEntity<String> changesResponse = callAzureApi(vcs, "", changesUrl, HttpMethod.GET);
+            if (changesResponse == null || !changesResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Failed to fetch Azure DevOps changes for pull request {}", prNumber);
+                break;
             }
-        } catch (Exception e) {
-            log.error("Error parsing Azure DevOps pull request changes", e);
+            ChangesPage changesPage;
+            try {
+                changesPage = parseChangesPage(changesResponse.getBody());
+            } catch (Exception e) {
+                log.error("Error parsing Azure DevOps pull request changes", e);
+                break;
+            }
+            changedFiles.addAll(changesPage.files());
+            if (changesPage.nextTop() == 0 && changesPage.nextSkip() == 0) {
+                break;
+            }
+            top = changesPage.nextTop();
+            skip = changesPage.nextSkip();
         }
         return changedFiles;
+    }
+
+    // A page of GitPullRequestIterationChanges: nextTop/nextSkip are both 0 once there are no more
+    // pages (see getPullRequestChanges).
+    record ChangesPage(List<String> files, int nextTop, int nextSkip) {
+    }
+
+    // Package-private (not private) so AzDevOpsWebhookServiceTest can exercise the pagination
+    // decision - including the nextTop/nextSkip "no more pages" sentinel - directly against a JSON
+    // fixture, without standing up an HTTP stack for what's really just a JSON-shape question.
+    ChangesPage parseChangesPage(String responseBody) throws JsonProcessingException {
+        List<String> files = new ArrayList<>();
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+        for (JsonNode change : rootNode.path("changeEntries")) {
+            addChangedFile(files, change);
+        }
+        return new ChangesPage(files, rootNode.path("nextTop").asInt(0), rootNode.path("nextSkip").asInt(0));
     }
 
     private void addChangedFile(List<String> changedFiles, JsonNode change) {

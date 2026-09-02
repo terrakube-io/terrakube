@@ -7,6 +7,10 @@ public interface StorageTypeService {
 
     byte[] getStepOutput(String organizationId, String jobId, String stepId);
 
+    io.terrakube.api.plugin.storage.model.StepOutputStream getStepOutputStream(
+            String organizationId, String jobId, String stepId,
+            io.terrakube.api.plugin.storage.model.ByteRange range);
+
     byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId);
 
     byte[] getTerraformStateJson(String organizationId, String workspaceId, String stateFileName);

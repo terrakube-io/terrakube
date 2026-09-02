@@ -183,7 +183,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     Consumer<String> jsonLineConsumer = (line) -> {
                         String humanMessage = eventParser.parseLine(line, liveChanges, jobDiagnostics);
                         if (humanMessage != null) {
-                            planOutput.accept(humanMessage);
+                            acceptConsoleLines(planOutput, humanMessage);
                         }
 
                         long now = System.currentTimeMillis();
@@ -196,17 +196,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     };
 
                     TerraformClient jsonPlanClient = buildJsonEnabledPlanClient();
+                    Consumer<String> guardedJsonLineConsumer = guardConsumer(jsonLineConsumer);
 
                     if (isDestroy) {
                         log.warn("Executor running a plan to destroy resources...");
                         exitCode = jsonPlanClient.planDestroyDetailExitCode(
                                 getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
-                                jsonLineConsumer,
+                                guardedJsonLineConsumer,
                                 null).get();
                     } else {
                         exitCode = jsonPlanClient.planDetailExitCode(
                                 getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
-                                jsonLineConsumer,
+                                guardedJsonLineConsumer,
                                 null).get();
                     }
 
@@ -271,7 +272,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setPlan(true);
             result.setExitCode(exitCode);
         } catch (IOException | ExecutionException | InterruptedException exception) {
-            result = setError(exception);
+            result = setError(exception, jobOutput.toString());
+            result.setPlan(true);
             result.setExitCode(1);
         }
         return result;
@@ -351,7 +353,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
-            result = setError(exception);
+            result = setError(exception, terraformOutput.toString());
+            result.setExitCode(1);
         }
         return result;
     }
@@ -365,7 +368,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // No plan structured output to seed from (custom TCL with 0/2+ plan steps, or plan
             // publishing failed) — fall back to a plain apply through the shared client, exactly
             // as before this feature existed.
-            return terraformClient.apply(terraformProcessData, applyOutput, null).get();
+            return terraformClient.apply(terraformProcessData, guardConsumer(applyOutput), null).get();
         }
 
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
@@ -381,7 +384,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Consumer<String> jsonLineConsumer = (line) -> {
             String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
             if (humanMessage != null) {
-                applyOutput.accept(humanMessage);
+                acceptConsoleLines(applyOutput, humanMessage);
             }
 
             long now = System.currentTimeMillis();
@@ -395,7 +398,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonApplyClient = buildJsonEnabledApplyClient();
 
-        boolean execution = jsonApplyClient.apply(terraformProcessData, jsonLineConsumer, null).get();
+        boolean execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
 
         String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
         if (stateJson != null) {
@@ -425,7 +428,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         Consumer<String> jsonLineConsumer = (line) -> {
             String humanMessage = eventParser.parseLine(line, changes, jobDiagnostics);
             if (humanMessage != null) {
-                destroyOutput.accept(humanMessage);
+                acceptConsoleLines(destroyOutput, humanMessage);
             }
 
             long now = System.currentTimeMillis();
@@ -443,13 +446,22 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonDestroyClient = buildJsonEnabledDestroyClient();
 
-        boolean execution = jsonDestroyClient.destroy(terraformProcessData, jsonLineConsumer, null).get();
+        boolean execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
 
         applyStructuredOutputService.publishApplyProgress(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
         pushLiveStructuredUpdate("apply", terraformJob, changes, jobDiagnostics);
 
         return execution;
+    }
+
+    // The json event stream is one event per line, but a single diagnostic event renders as a
+    // multi-line block (header, source snippet, explanatory detail). Split it so every line gets
+    // its own log record and line number, instead of one record carrying embedded newlines.
+    private static void acceptConsoleLines(Consumer<String> output, String message) {
+        for (String line : message.split("\n", -1)) {
+            output.accept(line);
+        }
     }
 
     // Best-effort live push over the new structured-output SSE channel - never lets a
@@ -467,7 +479,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             payload.put("jobDiagnostics", Map.of(terraformJob.getStepId(), jobDiagnostics));
             logsService.sendStructuredUpdate(Integer.valueOf(terraformJob.getJobId()), terraformJob.getStepId(),
                     objectMapper.writeValueAsString(payload));
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
+            // Best-effort: a serialization error, a null stepId in Map.of, or a transport failure
+            // in sendStructuredUpdate must never abort the plan/apply - some of these call sites
+            // run on terraform-spring-boot's output-reader thread, where an uncaught exception
+            // kills stream capture entirely.
             log.warn("Unable to push live structured update for job {} step {}", terraformJob.getJobId(), terraformJob.getStepId(), e);
         }
     }
@@ -570,7 +586,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             waitForStreamCompletion(terraformJob.getJobId(), 300);
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
-            result = setError(exception);
+            result = setError(exception, jobOutput.toString());
+            result.setExitCode(1);
         }
         return result;
     }
@@ -762,13 +779,54 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     private ExecutorJobResult setError(Exception exception) {
-        ExecutorJobResult error = generateJobResult(false, "", exception.getMessage());
-        log.error(exception.getMessage());
+        return setError(exception, "");
+    }
+
+    // Keep everything Terraform/OpenTofu already streamed to the console before the failure. The
+    // previous behaviour replaced it all with just exception.getMessage(), so an operation that
+    // failed late - a data source erroring after the plan diff was already printed, or the
+    // terraform-spring-boot client's stream-drain watchdog firing on a large burst of output -
+    // reached the UI and CLI as a bare "java.lang.RuntimeException: Failed to capture process
+    // output stream" with none of the real Terraform output, and none of the real error (the
+    // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
+    // that actually caused it.
+    private ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
+        String message = exception.getMessage() != null ? exception.getMessage() : exception.toString();
+        log.error("Terraform operation failed: {}", message, exception);
+
+        TextStringBuilder consoleOutput = new TextStringBuilder();
+        if (partialConsoleOutput != null && !partialConsoleOutput.isBlank()) {
+            consoleOutput.append(partialConsoleOutput);
+            if (!partialConsoleOutput.endsWith("\n")) {
+                consoleOutput.appendNewLine();
+            }
+            consoleOutput.appendNewLine();
+        }
+        consoleOutput.appendln("Error: the Terrakube executor could not finish this operation");
+        consoleOutput.appendln(message);
+
+        ExecutorJobResult error = generateJobResult(false, consoleOutput.toString(), message);
 
         if (exception instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }
         return error;
+    }
+
+    // terraform-spring-boot invokes the -json line consumer from inside its process-output reader
+    // loop; any exception thrown out of the consumer propagates back into that loop, kills the
+    // reader thread and fails the whole run with "Failed to capture process output stream",
+    // discarding every line already read. A dropped structured-progress update is recoverable; a
+    // killed reader is not. (LogsServiceRedis.sendLogs guards the plain-log consumer for the same
+    // reason.)
+    private Consumer<String> guardConsumer(Consumer<String> lineConsumer) {
+        return line -> {
+            try {
+                lineConsumer.accept(line);
+            } catch (Exception e) {
+                log.warn("Skipping a terraform output line that could not be processed: {}", e.getMessage(), e);
+            }
+        };
     }
 
     private boolean prepareTerraformOperation(TerraformJob terraformJob, File executorTempDirectory, File terraformWorkingDirectory, Consumer<String> output)

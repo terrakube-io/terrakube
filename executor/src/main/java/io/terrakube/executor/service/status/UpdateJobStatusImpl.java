@@ -115,9 +115,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         log.info("output: {}", jobOutput.length());
         log.info("outputError: {}", jobErrorOutput.length());
 
-        job.getAttributes().setOutput(
-                job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput() + " Step " + stepId + " completed\n"
-        );
+        // Append-only per-step marker. The null check guards the first step (no prior output),
+        // it must not also swallow the marker itself - the parenthesised ternary is the base
+        // string, the marker is always appended.
+        String existingOutput = job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput();
+        job.getAttributes().setOutput(existingOutput + " Step " + stepId + " completed\n");
         job.getAttributes().setTerraformPlan(jobPlan);
         job.getAttributes().setCommitId(commitId);
 

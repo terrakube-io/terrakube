@@ -151,7 +151,6 @@ export type FlatJob = {
   id: string;
   title: string;
   status: JobStatus;
-  statusColor: string;
   latestChange: string;
   commitId?: string;
   createdBy: string;

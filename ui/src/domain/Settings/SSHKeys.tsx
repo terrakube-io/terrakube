@@ -1,26 +1,23 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, List, message, Modal, Popconfirm, Select, Space, Typography, theme } from "antd";
+import { Button, Form, List, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { SshKey } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
 import "./Settings.css";
-const { TextArea } = Input;
+import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { Loading } from "@/components/feedback/Loading";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import SshKeyFormModal, { AddSshKeyFormValues, UpdateSshKeyFormValues } from "./components/SshKeyFormModal";
 
 type Params = {
   orgid: string;
 };
 
-type AddSshKeyForm = {
-  name: string;
-} & UpdateSshKeyForm;
+type AddSshKeyForm = AddSshKeyFormValues;
 
-type UpdateSshKeyForm = {
-  description: string;
-  sshType: string;
-  privateKey: string;
-};
+type UpdateSshKeyForm = UpdateSshKeyFormValues;
 
 type Props = {
   managePermission?: boolean;
@@ -35,8 +32,8 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
   const [sshKeyName, setSSHKeyName] = useState<string>();
   const [mode, setMode] = useState("create");
   const [sshKeyId] = useState([]);
+  const [pendingDelete, setPendingDelete] = useState<SshKey | null>(null);
   const [form] = Form.useForm<AddSshKeyForm | UpdateSshKeyForm>();
-  const { token } = theme.useToken();
 
   const onCancel = () => {
     setVisible(false);
@@ -142,127 +139,79 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
   return (
     <div className="setting">
       {error ? (
-        <Alert message="Access Denied" description={error} type="error" showIcon />
+        <AccessDeniedAlert description={error} />
       ) : (
         <>
-          <Typography.Title level={1} style={{ margin: 0 }}>
-            SSH Keys
-          </Typography.Title>
-          <div>
-            <Typography.Text type="secondary" className="App-text">
-              Terrakube uses these private SSH keys for downloading private Terraform modules with Git-based sources
-              during a Terraform run. SSH keys for downloading modules are assigned per-workspace.
-            </Typography.Text>
-          </div>
-          <SettingsSection maxWidth="100%">
-            <Button
-              type="primary"
-              onClick={onNew}
-              htmlType="button"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Add a Private SSH Key
-            </Button>
-
-            <Typography.Title level={3} style={{ marginTop: "30px" }}>
-              SSH Keys
-            </Typography.Title>
-            {loading ? (
-              <p>Data loading...</p>
-            ) : (
-              <List
-                itemLayout="horizontal"
-                dataSource={sshKeys}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Popconfirm
-                        onConfirm={() => {
-                          onDelete(item.id);
-                        }}
-                        style={{ width: "20px" }}
-                        title={
-                          <p>
-                            This will permanently delete this SSH Key <br />
-                            Any workspaces configured with this SSH key will no longer use it to download Terraform
-                            modules. <br />
-                            Are you sure?
-                          </p>
-                        }
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        {" "}
-                        <Button icon={<DeleteOutlined />} type="link" danger disabled={!managePermission}>
-                          Delete
-                        </Button>
-                      </Popconfirm>,
-                    ]}
-                  >
-                    <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                  </List.Item>
-                )}
-              />
-            )}
-          </SettingsSection>
-
-          <Modal
-            width="650px"
-            open={visible}
-            title={mode === "edit" ? "Edit Private SSH Key " + sshKeyName : "Add a new Private SSH Key"}
-            okText="Save SSH Key"
-            onCancel={onCancel}
-            cancelText="Cancel"
-            onOk={() => {
-              form
-                .validateFields()
-                .then((values) => {
-                  if (mode === "create") onCreate(values as AddSshKeyForm);
-                  else onUpdate(values);
-                })
-                .catch((info) => {
-                  console.log("Validate Failed:", info);
-                });
-            }}
-          >
-            <Space style={{ width: "100%" }} direction="vertical">
-              <Form name="sshKey" form={form} layout="vertical">
-                {mode === "create" ? (
-                  <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                ) : (
-                  ""
-                )}
-
-                <Form.Item name="description" label="Description" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="sshType" label="SSH Type" rules={[{ required: true }]}>
-                  <Select placeholder="Please select a ssh type">
-                    <Select.Option value="rsa">RSA</Select.Option>
-                    <Select.Option value="ed25519">ED25519</Select.Option>
-                  </Select>
-                </Form.Item>
-                <Form.Item
-                  name="privateKey"
-                  rules={[{ required: true }]}
-                  label="Private SSH Key"
-                  extra={
-                    <p>
-                      Generate a new key with{" "}
-                      <code style={{ backgroundColor: token.colorBgContainer }}>ssh-keygen -t rsa -m PEM</code>, make
-                      sure the private key starts with{" "}
-                      <code style={{ backgroundColor: token.colorBgContainer }}>-----BEGIN RSA PRIVATE KEY-----</code>
-                    </p>
-                  }
+          <SettingsPageHeader
+            docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
+            title="SSH Keys"
+            description="Terrakube uses these private SSH keys for downloading private Terraform modules with Git-based sources during a Terraform run. SSH keys for downloading modules are assigned per-workspace."
+            actions={
+              <Button
+                type="primary"
+                onClick={onNew}
+                htmlType="button"
+                icon={<PlusOutlined />}
+                disabled={!managePermission}
+              >
+                Add a Private SSH Key
+              </Button>
+            }
+          />
+          {loading ? (
+            <Loading loading description="Loading SSH keys..." />
+          ) : (
+            <List
+              itemLayout="horizontal"
+              dataSource={sshKeys}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      icon={<DeleteOutlined />}
+                      type="link"
+                      danger
+                      disabled={!managePermission}
+                      onClick={() => setPendingDelete(item)}
+                    >
+                      Delete
+                    </Button>,
+                  ]}
                 >
-                  <TextArea rows={6} />
-                </Form.Item>
-              </Form>
-            </Space>
-          </Modal>
+                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
+                </List.Item>
+              )}
+            />
+          )}
+
+          <SshKeyFormModal
+            open={visible}
+            mode={mode === "create" ? "create" : "edit"}
+            sshKeyName={sshKeyName}
+            form={form}
+            onCancel={onCancel}
+            onSubmit={(values) => {
+              if (mode === "create") onCreate(values as AddSshKeyForm);
+              else onUpdate(values);
+            }}
+          />
+
+          <DeleteConfirmationModal
+            open={pendingDelete !== null}
+            title="Delete SSH key"
+            message={
+              <>
+                Deleting the SSH key <strong>{pendingDelete?.attributes.name}</strong> cannot be undone. Any workspaces
+                configured with this SSH key will no longer use it to download Terraform modules.
+              </>
+            }
+            okText="Delete"
+            onConfirm={() => {
+              if (pendingDelete) onDelete(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </>
       )}
     </div>

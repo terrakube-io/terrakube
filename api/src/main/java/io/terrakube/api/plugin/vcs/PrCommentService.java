@@ -2,12 +2,13 @@ package io.terrakube.api.plugin.vcs;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.VcsType;
@@ -18,7 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -43,29 +43,28 @@ public class PrCommentService {
             "(Plan: (?:\\d+ to import, )?\\d+ to add, \\d+ to change, \\d+ to destroy\\."
             + "|No changes\\. Your infrastructure matches the configuration\\."
             + "|Apply complete! Resources: \\d+ added, \\d+ changed, \\d+ destroyed\\.)");
-    private static final Pattern ANSI_PATTERN = Pattern.compile(
-            "[\\u001b\\u009b][\\[()#;?]*(?:\\d{1,4}(?:;\\d{1,4})*)?[0-9A-ORZcf-nq-uy=><~]");
-
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
     BitBucketWebhookService bitBucketWebhookService;
     JobRepository jobRepository;
+    StepRepository stepRepository;
     StorageTypeService storageTypeService;
-    StreamingService streamingService;
+    StepOutputReader stepOutputReader;
     ObjectMapper objectMapper;
 
     @Value("${io.terrakube.ui.url:}")
     String uiUrl;
 
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
-            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository,
-            StorageTypeService storageTypeService, StreamingService streamingService, ObjectMapper objectMapper) {
+            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
+            StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper) {
         this.gitHubWebhookService = gitHubWebhookService;
         this.gitLabWebhookService = gitLabWebhookService;
         this.bitBucketWebhookService = bitBucketWebhookService;
         this.jobRepository = jobRepository;
+        this.stepRepository = stepRepository;
         this.storageTypeService = storageTypeService;
-        this.streamingService = streamingService;
+        this.stepOutputReader = stepOutputReader;
         this.objectMapper = objectMapper;
     }
 
@@ -174,17 +173,21 @@ public class PrCommentService {
      * previous behavior) if none do - e.g. the run failed before Terraform printed one.
      */
     private String fetchStepOutputText(Job job) {
-        if (job.getStep() == null || job.getStep().isEmpty()) {
+        // job.getStep() is a lazy collection: callers here include ScheduleJob's
+        // doRunExecution path, which reads the job outside any open Hibernate session, so
+        // touching the proxy throws LazyInitializationException. Load steps explicitly instead.
+        List<Step> steps = stepRepository.findByJobId(job.getId());
+        if (steps.isEmpty()) {
             return null;
         }
 
-        List<Step> stepsNewestFirst = job.getStep().stream()
+        List<Step> stepsNewestFirst = steps.stream()
                 .sorted(Comparator.comparingInt(Step::getStepNumber).reversed())
                 .collect(Collectors.toList());
 
         String lastStepOutput = null;
         for (Step step : stepsNewestFirst) {
-            String output = readStepOutputText(job, step);
+            String output = stepOutputReader.read(job, step);
             if (lastStepOutput == null) {
                 lastStepOutput = output;
             }
@@ -194,30 +197,6 @@ public class PrCommentService {
         }
 
         return lastStepOutput;
-    }
-
-    private String readStepOutputText(Job job, Step step) {
-        try {
-            String stepId = step.getId().toString();
-            String liveLogs = streamingService.getCurrentLogs(stepId, "");
-            if (liveLogs != null && !liveLogs.isEmpty()) {
-                return stripAnsi(liveLogs);
-            }
-
-            byte[] storedOutput = storageTypeService.getStepOutput(
-                    job.getOrganization().getId().toString(), String.valueOf(job.getId()), stepId);
-            if (storedOutput == null || storedOutput.length == 0) {
-                return null;
-            }
-            return stripAnsi(new String(storedOutput, StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            log.error("Error fetching step output for job {}: {}", job.getId(), e.getMessage());
-            return null;
-        }
-    }
-
-    private String stripAnsi(String text) {
-        return ANSI_PATTERN.matcher(text).replaceAll("");
     }
 
     private String matchRunSummary(String output) {

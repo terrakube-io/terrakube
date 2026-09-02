@@ -1,16 +1,16 @@
 import { ClockCircleOutlined, FolderOutlined } from "@ant-design/icons";
 import { Card, Space, Row, Col, Tag, Typography, Flex } from "antd";
-import { DateTime } from "luxon";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
-import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
+import VcsLogo from "@/components/display/VcsLogo";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import WorkspaceCardTags from "@/modules/workspaces/components/WorkspaceCardTags";
 import { TagModel } from "@/modules/organizations/types";
 import IacTypeLogo from "./IacTypeLogo";
+import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   item: WorkspaceListItem;
@@ -48,9 +48,7 @@ export default function WorkspaceCard({ item, tags }: Props) {
           </Space>
           <Space>
             <ClockCircleOutlined />
-            <Typography.Text>
-              {item.lastRun ? DateTime.fromISO(item.lastRun).toRelative() : "Never Executed"}
-            </Typography.Text>
+            <Typography.Text>{relativeTime(item.lastRun) ?? "Never Executed"}</Typography.Text>
           </Space>
           <Space>
             <IacTypeLogo type={item.iacType} />
@@ -64,7 +62,7 @@ export default function WorkspaceCard({ item, tags }: Props) {
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                style={{ position: "relative", zIndex: 1 }}
+                style={{ position: "relative", zIndex: 2 }}
               >
                 {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
               </Typography.Link>

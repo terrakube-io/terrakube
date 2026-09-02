@@ -120,6 +120,46 @@ describe("DetailsJob apply structured output", () => {
       expect(screen.getByRole("button", { name: /aws_instance\.example/i })).toBeInTheDocument();
     });
   });
+
+  it("does not claim 'no changes needed' while a plan step is still running with no changes streamed yet", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+
+      return Promise.resolve({
+        data: {
+          data: {
+            id: "1",
+            attributes: { status: "running" },
+          },
+          included: [
+            {
+              id: "step-1",
+              type: "step",
+              attributes: { name: "Plan", status: "running", stepNumber: "1" },
+            },
+          ],
+        },
+      });
+    });
+
+    useStructuredOutputStreamMock.mockReturnValue({
+      phase: "plan",
+      changes: { "step-1": [] },
+      jobDiagnostics: {},
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/plan is running/i)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("DetailsJob SSE reconnect behavior", () => {
@@ -200,7 +240,7 @@ describe("DetailsJob SSE reconnect behavior", () => {
       // for the transition to actually happen.
       await waitFor(
         () => {
-          expect(screen.getByText("completed")).toBeInTheDocument();
+          expect(screen.getByText("Completed")).toBeInTheDocument();
         },
         { timeout: 8000 }
       );
@@ -209,4 +249,38 @@ describe("DetailsJob SSE reconnect behavior", () => {
     },
     10000
   );
+});
+
+describe("DetailsJob progressive render", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("paints steps before the step-log fetch resolves and never blocks first paint on it", async () => {
+    const logPending = new Promise(() => {}); // stays pending for the whole test
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+      if (url.includes("/tfoutput/")) {
+        return logPending; // never resolves during the assertion window
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [
+            { id: "step-1", type: "step", attributes: { name: "Plan", status: "completed", stepNumber: "1" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    // The step label is on screen even though its log fetch is still pending.
+    await waitFor(() => {
+      expect(screen.getByText(/Plan/)).toBeInTheDocument();
+    });
+  });
 });

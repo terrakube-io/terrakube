@@ -1,15 +1,16 @@
-import { Editor, type OnMount, type OnValidate } from "@monaco-editor/react";
-import { Button, Card, Form, Input, List, message, Space, Steps, Typography, theme } from "antd";
+import type { OnMount, OnValidate } from "@monaco-editor/react";
+import { CodeEditor } from "@/components/forms/CodeEditor";
+import { InfoCircleOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Flex, Form, Input, List, message, Row, Space, Steps, Typography } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
-import { HiOutlineExternalLink } from "react-icons/hi";
 import { useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
-import { getMonacoTheme, monacoOptions } from "../../config/monacoConfig";
 import { TemplateAttributes } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
-const { Step } = Steps;
+import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 const { Meta } = Card;
 const validateMessages = {
   required: "${label} is required!",
@@ -35,17 +36,16 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
   const [tcl, setTCL] = useState("");
   const [templates, setTemplates] = useState<TemplateAttributes[]>([]);
   const editorRef = useRef<IStandaloneCodeEditor>(null);
-  const { token } = theme.useToken();
 
   function handleEditorDidMount(editor: IStandaloneCodeEditor) {
     editorRef.current = editor;
   }
 
   const handleChange = (currentVal: number) => {
-    setCurrent(currentVal);
-    if (currentVal === 2) {
-      editorRef.current.defaultValue = tcl;
+    if (current === 1 && editorRef.current) {
+      setTCL(editorRef.current.getValue());
     }
+    setCurrent(currentVal);
   };
   const handleClick = (item: TemplateAttributes) => {
     const buff = Buffer.from(item.tcl, "base64");
@@ -143,138 +143,121 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
       .catch((error) => {
         if (error.response) {
           if (error.response.status === 403) {
-            message.error(
-              <span>
-                You are not authorized to create Templates. <br /> Please contact your administrator and request the{" "}
-                <b>Manage Templates</b> permission. <br /> For more information, visit the{" "}
-                <a
-                  target="_blank"
-                  href="https://docs.terrakube.io/user-guide/organizations/team-management"
-                  rel="noreferrer"
-                >
-                  Terrakube documentation
-                </a>
-                .
-              </span>
-            );
+            message.error(<PermissionErrorMessage action="create Templates" permission="Manage Templates" />);
           }
         }
       });
   };
   return (
     <div>
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Create a new Template
-      </Typography.Title>
-      <div>
-        <Typography.Text type="secondary" className="App-text">
-          Templates allow you to define a custom flow so you can run any tool before or after terraform
-          plan/apply/destroy.
-        </Typography.Text>
-      </div>
-      <Steps direction="horizontal" size="small" current={current} onChange={handleChange}>
-        <Step title="Choose Type" />
-        <Step title="Define Template" />
-        <Step title="Configure Settings" />
-      </Steps>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
+        title="Create a new Template"
+        description="Templates allow you to define a custom flow so you can run any tool before or after terraform plan/apply/destroy."
+      />
+      <Steps
+        direction="horizontal"
+        size="small"
+        current={current}
+        onChange={handleChange}
+        style={{ maxWidth: 960, margin: "8px 0 32px" }}
+        items={[
+          { title: "Choose Type", description: "Pick a starting point" },
+          { title: "Define Template", description: "Write the job flow" },
+          { title: "Configure Settings", description: "Name and create" },
+        ]}
+      />
       {current == 0 && (
-        <SettingsSection maxWidth="100%">
-          <Space className="chooseType" direction="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Choose your template
-            </Typography.Title>
-            <List
-              grid={{ gutter: 20, column: 3 }}
-              dataSource={templates}
-              renderItem={(item) => (
-                <List.Item>
-                  <Card
-                    hoverable
-                    onClick={() => handleClick(item)}
-                    style={{ width: 300, height: 300 }}
-                    cover={
-                      <img
-                        style={{
-                          padding: "10px",
-                          height: 120,
-                          backgroundColor: token.colorBgContainer,
-                        }}
-                        alt="example"
-                        src={item.image}
-                      />
+        <SettingsSection
+          maxWidth="100%"
+          title="Choose your template"
+          description="Start from a blank template or from one of the built-in tool integrations."
+        >
+          <List
+            grid={{ gutter: 24, column: 3, xs: 1, sm: 2, md: 2, lg: 3, xl: 3, xxl: 4 }}
+            dataSource={templates}
+            renderItem={(item) => (
+              <List.Item>
+                <Card
+                  hoverable
+                  className="template-card"
+                  onClick={() => handleClick(item)}
+                  cover={
+                    <div className="template-card-cover">
+                      <img alt={item.name} src={item.image} />
+                    </div>
+                  }
+                >
+                  <Meta
+                    title={item.name}
+                    description={
+                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                        {item.description}
+                      </Typography.Paragraph>
                     }
-                  >
-                    <Meta
-                      title={item.name}
-                      description={<div style={{ height: "90px", overflow: "hidden" }}>{item.description}</div>}
-                    />
-                  </Card>
-                </List.Item>
-              )}
-            />
-          </Space>
+                  />
+                </Card>
+              </List.Item>
+            )}
+          />
         </SettingsSection>
       )}
       {current == 1 && (
-        <SettingsSection>
-          <Space className="chooseType" direction="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Set up template
-            </Typography.Title>
-            <p className="paragraph">
-              For additional information about templates and custom flows in Terrakube, please read our{" "}
-              <Button
-                className="link"
-                target="_blank"
-                href="https://docs.terrakube.io/user-guide/organizations/templates"
-                type="link"
-              >
-                documentation&nbsp; <HiOutlineExternalLink />.
+        <>
+          <SettingsSection
+            maxWidth={960}
+            title="Set up template"
+            description="Define the YAML flow this template runs."
+          >
+            <CodeEditor
+              height="45vh"
+              onMount={handleEditorDidMount}
+              onValidate={handleEditorValidation}
+              defaultLanguage="yaml"
+              defaultValue={tcl}
+            />
+          </SettingsSection>
+          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Space>
+              <Button onClick={() => handleChange(0)}>Back</Button>
+              <Button type="primary" onClick={handleContinue} htmlType="button">
+                Continue
               </Button>
-            </p>
-            <br />
-            <div className="editor">
-              <Editor
-                height="40vh"
-                onMount={handleEditorDidMount}
-                onValidate={handleEditorValidation}
-                defaultLanguage="yaml"
-                defaultValue={tcl}
-                theme={getMonacoTheme(token.colorBgContainer === "#141414" ? "dark" : "light")}
-                options={monacoOptions}
-              />
-            </div>
-            <br />
-            <Button style={{ float: "right" }} type="primary" onClick={handleContinue} htmlType="button">
-              Continue
-            </Button>
-          </Space>
-        </SettingsSection>
+            </Space>
+          </Flex>
+        </>
       )}
       {current == 2 && (
-        <SettingsSection>
-          <Space className="chooseType" direction="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Configure settings
-            </Typography.Title>
-            <Form onFinish={onFinish} validateMessages={validateMessages} name="create-vcs" layout="vertical">
-              <Form.Item
-                name="name"
-                label="Name"
-                extra=" A name for your Template. This will appear in the workspaces when you execute a new job."
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item name="description" label="Description">
-                <Input.TextArea />
-              </Form.Item>
+        <Form onFinish={onFinish} validateMessages={validateMessages} name="create-template" layout="vertical">
+          <SettingsSection maxWidth={960} title="Configure settings">
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  tooltip={{
+                    title: "A name for your Template. This will appear in the workspaces when you execute a new job.",
+                    icon: <InfoCircleOutlined />,
+                  }}
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="description" label="Description" style={{ marginBottom: 0 }}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
+          </SettingsSection>
+          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
+            <Space>
+              <Button onClick={() => setCurrent(1)}>Back</Button>
               <Button type="primary" htmlType="submit">
                 Create Template
               </Button>
-            </Form>
-          </Space>
-        </SettingsSection>
+            </Space>
+          </Flex>
+        </Form>
       )}
     </div>
   );

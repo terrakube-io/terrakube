@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.repository.NotificationOutboxRepository;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 
@@ -49,6 +50,9 @@ public class NotificationOutboxTransactions {
         if (outbox == null) {
             return null;
         }
+        if (skipSupersededRow(outbox, now)) {
+            return null;
+        }
         // The delivery call happens after this transaction (and its Hibernate session) has
         // closed, so a still-lazy configuration proxy would blow up with a
         // LazyInitializationException the moment the sender reads a field off it. Force it to
@@ -56,6 +60,31 @@ public class NotificationOutboxTransactions {
         Hibernate.initialize(outbox.getConfiguration());
         return new ClaimedOutbox(outbox.getConfiguration(), outbox.getPayload(), outbox.getAttemptCount(),
                 outbox.getLastAttemptAt());
+    }
+
+    // False-alarm guard for a row that has just been claimed (PENDING -> SENDING). The payload
+    // was rendered for outbox.jobStatus; if the job has since moved to a different status that
+    // state no longer holds - the common case being a transient "failed" from a lost
+    // API->executor dispatch response (ScheduleJob.errorJobAtStep) that the executor's own
+    // status callback then corrected. Marks the row SKIPPED (terminal) and returns true so
+    // nothing is delivered and the poller never retries it. Rows written before the jobStatus
+    // column existed have null here and are always delivered, exactly as before.
+    private boolean skipSupersededRow(NotificationOutbox outbox, Date now) {
+        JobStatus renderedFor = outbox.getJobStatus();
+        JobStatus liveStatus = renderedFor == null ? null : outbox.getJob().getStatus();
+        if (renderedFor == null || liveStatus == renderedFor) {
+            return false;
+        }
+        // Same conditional-update discipline as the rest of this class - keyed on SENDING and
+        // the lastAttemptAt claimForDelivery just wrote - rather than a read-then-write.
+        notificationOutboxRepository.recordDeliveryResult(outbox.getId(), NotificationOutboxStatus.SENDING,
+                outbox.getLastAttemptAt(), NotificationOutboxStatus.SKIPPED,
+                "Job status changed from " + renderedFor + " to " + liveStatus
+                        + " before delivery; suppressed as a false alarm",
+                null, now);
+        log.info("Skipping notification outbox {} - job {} status moved from {} to {} before delivery",
+                outbox.getId(), outbox.getJob().getId(), renderedFor, liveStatus);
+        return true;
     }
 
     @Transactional
@@ -103,13 +132,15 @@ public class NotificationOutboxTransactions {
         }
     }
 
-    // Housekeeping: without this, notification_outbox grows forever - every SENT/FAILED row from
-    // every job status change with a matching trigger sits around indefinitely. Public for the
-    // same cross-package reason as sweepStuckSendingRows.
+    // Housekeeping: without this, notification_outbox grows forever - every SENT/FAILED/SKIPPED
+    // row from every job status change with a matching trigger sits around indefinitely. Public
+    // for the same cross-package reason as sweepStuckSendingRows.
     @Transactional
     public int pruneTerminalRowsOlderThan(Date cutoff) {
         int deleted = notificationOutboxRepository.deleteTerminalRowsCreatedBefore(
-                List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED), cutoff);
+                List.of(NotificationOutboxStatus.SENT, NotificationOutboxStatus.FAILED,
+                        NotificationOutboxStatus.SKIPPED),
+                cutoff);
         if (deleted > 0) {
             log.info("Notification outbox retention sweep deleted {} row(s) older than {}", deleted, cutoff);
         }

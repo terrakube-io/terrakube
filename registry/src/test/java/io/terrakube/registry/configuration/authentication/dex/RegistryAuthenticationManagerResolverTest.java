@@ -30,6 +30,9 @@ class RegistryAuthenticationManagerResolverTest {
     @Mock
     private HttpServletRequest request;
 
+    @Mock
+    private org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder;
+
     private RegistryAuthenticationManagerResolver resolver;
 
     private final String issuerUri = "https://dex.example.com";
@@ -41,6 +44,12 @@ class RegistryAuthenticationManagerResolverTest {
                 .internalSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
                 .issuerUri(issuerUri)
                 .terrakubeClient(terrakubeClient)
+                .jwtDecoderFactory(url -> {
+                    if (url.equals(issuerUri)) {
+                        throw new IllegalArgumentException("Unable to resolve the Configuration with the provided Issuer of \"" + url + "\"");
+                    }
+                    return jwtDecoder;
+                })
                 .build();
     }
 
@@ -173,6 +182,107 @@ class RegistryAuthenticationManagerResolverTest {
         assertEquals(200, customResolver.getProviderManagerCacheMaximumSize());
         assertNotNull(customResolver.getFederatedCache());
         assertNotNull(customResolver.getProviderManagerCache());
+    }
+
+    private String createRealSignedToken(String issuer, String base64Secret) {
+        byte[] secretBytes = io.jsonwebtoken.io.Decoders.BASE64URL.decode(base64Secret);
+        javax.crypto.SecretKey key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretBytes);
+        return io.jsonwebtoken.Jwts.builder()
+                .issuer(issuer)
+                .subject("Test Subject")
+                .audience().add(issuer).and()
+                .id(UUID.randomUUID().toString())
+                .claim("email", "test@terrakube.io")
+                .claim("email_verified", true)
+                .claim("name", "Test User")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 60000))
+                .signWith(key)
+                .compact();
+    }
+
+    @Test
+    void resolve_internalToken_32ByteSecret_supportsHS256() {
+        byte[] secretBytes = RandomStringUtils.secure().nextAlphanumeric(32).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+        RegistryAuthenticationManagerResolver customResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(secret)
+                .internalSecret(secret)
+                .issuerUri(issuerUri)
+                .build();
+
+        String token = createRealSignedToken("TerrakubeInternal", secret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+
+        AuthenticationManager manager = customResolver.resolve(request);
+        assertNotNull(manager);
+
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertNotNull(authResult);
+        assertTrue(authResult.isAuthenticated());
+    }
+
+    @Test
+    void resolve_internalToken_48ByteSecret_supportsHS384() {
+        byte[] secretBytes = RandomStringUtils.secure().nextAlphanumeric(48).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+        RegistryAuthenticationManagerResolver customResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(secret)
+                .internalSecret(secret)
+                .issuerUri(issuerUri)
+                .build();
+
+        String token = createRealSignedToken("TerrakubeInternal", secret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+
+        AuthenticationManager manager = customResolver.resolve(request);
+        assertNotNull(manager);
+
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertNotNull(authResult);
+        assertTrue(authResult.isAuthenticated());
+    }
+
+    @Test
+    void resolve_internalToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+        RegistryAuthenticationManagerResolver customResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(secret)
+                .internalSecret(secret)
+                .issuerUri(issuerUri)
+                .build();
+
+        String token = createRealSignedToken("TerrakubeInternal", secret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+
+        AuthenticationManager manager = customResolver.resolve(request);
+        assertNotNull(manager);
+
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertNotNull(authResult);
+        assertTrue(authResult.isAuthenticated());
+    }
+
+    @Test
+    void resolve_patToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+        RegistryAuthenticationManagerResolver customResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(secret)
+                .internalSecret(secret)
+                .issuerUri(issuerUri)
+                .build();
+
+        String token = createRealSignedToken("Terrakube", secret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+
+        AuthenticationManager manager = customResolver.resolve(request);
+        assertNotNull(manager);
+
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertNotNull(authResult);
+        assertTrue(authResult.isAuthenticated());
     }
 
     private String createMockJwtToken(Map<String, Object> payloadMap) throws Exception {

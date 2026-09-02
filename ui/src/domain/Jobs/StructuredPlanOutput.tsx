@@ -42,6 +42,11 @@ type Props = {
   applyMode?: boolean;
   outputs?: TerraformOutputValue[];
   jobDiagnostics?: Diagnostic[];
+  // Whether the owning step is still executing. An empty `changes` array is indistinguishable
+  // from "plan finished, nothing differs" while the step is running - the backend just hasn't
+  // streamed any resource changes yet. Defaults to false (finished) so existing call sites that
+  // only ever render this component once a step's output is final keep their current behavior.
+  isStepRunning?: boolean;
 };
 
 type ActionName = "create" | "update" | "replace" | "delete" | "read" | "import" | "unknown" | "no-op" | "ephemeral";
@@ -1313,7 +1318,14 @@ const matchesAddressFilter = (row: PreparedChangeRow, filterValue: string) => {
   });
 };
 
-export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, outputs, jobDiagnostics }: Props) => {
+export const StructuredPlanOutput = ({
+  changes,
+  outputLog,
+  applyMode = false,
+  outputs,
+  jobDiagnostics,
+  isStepRunning = false,
+}: Props) => {
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
   const [expandedAttributeKeys, setExpandedAttributeKeys] = useState<string[]>([]);
   const [addressFilter, setAddressFilter] = useState("");
@@ -1449,10 +1461,20 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
 
   // An empty changes list normally means "we compared and nothing differs" - but it's also what
   // a failed plan looks like before any resource address was ever seen (see
-  // TerraformExecutorServiceImpl.plan()'s final flush). Job-level diagnostics are how that
-  // failure reaches this component, so their presence means "we don't actually know", not
-  // "nothing changed" - fall through to the diagnostics panel below instead of claiming success.
+  // TerraformExecutorServiceImpl.plan()'s final flush), and what a plan that's still running
+  // looks like before the backend has streamed any resource changes at all. Job-level
+  // diagnostics or a still-running step are both ways of saying "we don't actually know", not
+  // "nothing changed" - fall through instead of claiming success.
   if (!changes?.length && !hasJobDiagnostics) {
+    if (isStepRunning) {
+      return (
+        <div className="structured-plan-noChanges structured-plan-inProgress">
+          <LoadingOutlined className="structured-plan-noChangesIcon" />
+          <span>Plan is running — waiting for results…</span>
+        </div>
+      );
+    }
+
     return (
       <div className="structured-plan-noChanges">
         <CheckCircleOutlined className="structured-plan-noChangesIcon" />
@@ -1569,7 +1591,6 @@ export const StructuredPlanOutput = ({ changes, outputLog, applyMode = false, ou
                   <div
                     key={segment.key}
                     className={`structured-plan-summarySegment structured-plan-summarySegment--${segment.key}`}
-                    style={{ flexGrow: segment.count }}
                   >
                     <span className="structured-plan-summarySymbol">{segment.symbol}</span>
                     <span>{segment.label}</span>

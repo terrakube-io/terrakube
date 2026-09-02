@@ -7,7 +7,6 @@ import com.yahoo.elide.annotation.Include;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.job.Job;
 
 import jakarta.persistence.*;
@@ -23,7 +22,6 @@ public class Address extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

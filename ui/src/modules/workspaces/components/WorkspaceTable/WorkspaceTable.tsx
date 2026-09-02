@@ -6,19 +6,19 @@ import {
   CaretUpOutlined,
   CaretDownOutlined,
 } from "@ant-design/icons";
-import { DateTime } from "luxon";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
-import WorkspaceStatusTag from "@/modules/workspaces/components/WorkspaceStatusTag";
+import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
 import IacTypeLogo from "@/modules/workspaces/components/IacTypeLogo";
-import VcsLogo from "@/modules/workspaces/components/VcsLogo";
+import VcsLogo from "@/components/display/VcsLogo";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
 import "./WorkspaceTable.css";
+import { relativeTime } from "@/modules/utils/dates";
 
 const GROUP_PREVIEW_SIZE = 10;
 
@@ -86,8 +86,8 @@ function SortableHeader({
     >
       {label}
       <span className="workspace-sort-carets">
-        <CaretUpOutlined style={{ color: isAsc ? "#1890ff" : undefined }} />
-        <CaretDownOutlined style={{ color: isDesc ? "#1890ff" : undefined }} />
+        <CaretUpOutlined style={{ color: isAsc ? "var(--tk-accent)" : undefined }} />
+        <CaretDownOutlined style={{ color: isDesc ? "var(--tk-accent)" : undefined }} />
       </span>
     </span>
   );
@@ -143,7 +143,7 @@ function WorkspaceRow({
       </div>
       <div className="workspace-col-run">
         <ClockCircleOutlined />
-        <span>{item.lastRun ? DateTime.fromISO(item.lastRun).toRelative() : "Never Executed"}</span>
+        <span>{relativeTime(item.lastRun) ?? "Never Executed"}</span>
       </div>
       <div className="workspace-col-version">
         <IacTypeLogo type={item.iacType} />
@@ -188,8 +188,8 @@ export default function WorkspaceTable({
   const isGrouped = !!groups;
 
   useEffect(() => {
-    setPage(1);
-  }, [workspaces]);
+    setPage((prev) => Math.min(prev, Math.max(1, Math.ceil(workspaces.length / pageSize))));
+  }, [workspaces, pageSize]);
 
   const pagedWorkspaces = useMemo(() => {
     const start = (page - 1) * pageSize;

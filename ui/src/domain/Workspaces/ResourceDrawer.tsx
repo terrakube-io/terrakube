@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import axiosInstance from "../../config/axiosConfig";
 import { ActionWithSettings, Resource, Workspace } from "../types.js";
 import { getServiceIcon } from "./Icons.jsx";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
 
 const ActionLoader = lazy(() => import("../../ActionLoader"));
 
@@ -126,15 +127,13 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
       open={drawerOpen}
     >
       {loading ? (
-        <Spin tip="Loading...">
-          <Space size={10} style={{ width: "100%" }} direction="vertical" />
-        </Spin>
+        <LoadingFallback />
       ) : (
-        <Suspense fallback={<Spin tip="Loading..." />}>
-          <Space size={10} style={{ width: "100%" }} direction="vertical">
+        <Suspense fallback={<LoadingFallback />}>
+          <Space size={10} style={{ width: "100%" }} orientation="vertical">
             <Row>
               <Col span={24}>
-                <Space size={5} direction="horizontal">
+                <Space size={5} orientation="horizontal">
                   {actions &&
                     actions
                       .filter((action) => action?.attributes.type === "Workspace/ResourceDrawer/Action")

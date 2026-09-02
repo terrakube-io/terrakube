@@ -25,6 +25,9 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
@@ -32,6 +35,7 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 
 @Configuration
 @EnableConfigurationProperties({
@@ -42,6 +46,24 @@ import java.net.URI;
 @ConditionalOnMissingBean(StorageTypeService.class)
 @Slf4j
 public class StorageTypeAutoConfiguration {
+
+    static ClientOverrideConfiguration storageClientOverride(AwsStorageTypeProperties props) {
+        return ClientOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(props.getApiCallTimeoutSeconds()))
+                .apiCallAttemptTimeout(Duration.ofSeconds(props.getApiCallAttemptTimeoutSeconds()))
+                .retryPolicy(RetryPolicy.builder(RetryMode.STANDARD)
+                        .numRetries(props.getMaxRetryAttempts())
+                        .build())
+                .build();
+    }
+
+    static S3Configuration s3ServiceConfiguration(AwsStorageTypeProperties props) {
+        return S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .chunkedEncodingEnabled(props.isChunkedEncodingEnabled())
+                .checksumValidationEnabled(props.isChecksumValidationEnabled())
+                .build();
+    }
 
     @Bean
     public StorageTypeService terraformOutput(StreamingService streamingService, StorageTypeProperties storageTypeProperties, AzureStorageTypeProperties azureStorageTypeProperties, AwsStorageTypeProperties awsStorageTypeProperties, GcpStorageTypeProperties gcpStorageTypeProperties) {
@@ -62,25 +84,26 @@ public class StorageTypeAutoConfiguration {
                 break;
             case AWS:
                 S3Client s3client;
+                ClientOverrideConfiguration s3Override = storageClientOverride(awsStorageTypeProperties);
                 if (awsStorageTypeProperties.isEnableRoleAuthentication()) {
                     log.info("Creating AWS SDK with default credentials");
                     s3client = S3Client.builder()
                             .region(Region.of(awsStorageTypeProperties.getRegion()))
                             .credentialsProvider(DefaultCredentialsProvider.create())
+                            .overrideConfiguration(s3Override)
                             .build();
                 } else if (awsStorageTypeProperties.getEndpoint() != null && !awsStorageTypeProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
 
-                    S3Configuration serviceConfiguration = S3Configuration.builder()
-                            .pathStyleAccessEnabled(true)
-                            .build();
+                    S3Configuration serviceConfiguration = s3ServiceConfiguration(awsStorageTypeProperties);
 
                     s3client = S3Client.builder()
-                            .region(Region.of("auto"))
+                            .region(Region.of(awsStorageTypeProperties.getEndpointRegion()))
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageTypeProperties)))
                             .endpointOverride(URI.create(awsStorageTypeProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
                             .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                            .overrideConfiguration(s3Override)
                             .build();
 
                 } else {
@@ -88,6 +111,7 @@ public class StorageTypeAutoConfiguration {
                     s3client = S3Client.builder()
                             .region(Region.of(awsStorageTypeProperties.getRegion()))
                             .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageTypeProperties)))
+                            .overrideConfiguration(s3Override)
                             .build();
                 }
 

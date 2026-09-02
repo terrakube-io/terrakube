@@ -3,7 +3,8 @@ import { Alert, Button, Form, Input, Modal, Typography, message } from "antd";
 import { useState } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -102,15 +103,16 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Locking
-      </Typography.Title>
+      <SettingsPageHeader
+        title="Locking"
+        description="Prevent new runs from starting on this workspace while it is locked."
+      />
 
       <SettingsSection>
         {isLocked ? (
           <>
             <Alert
-              message={
+              title={
                 <span>
                   This workspace is <Text strong>currently locked</Text>.
                   {lockDescription

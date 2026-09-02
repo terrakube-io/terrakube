@@ -1,8 +1,11 @@
 package io.terrakube.api.plugin.scheduler;
 
+import java.util.concurrent.atomic.AtomicLong;
+
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.api.repository.JobRepository;
 import jakarta.annotation.PostConstruct;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.SchedulerException;
 import org.springframework.dao.DataAccessException;
@@ -14,7 +17,6 @@ import org.springframework.stereotype.Component;
 
 // Reacts to the executor module's "capacity available" doorbell by immediately waking the
 // current front of the FIFO dispatch queue, instead of waiting for its next 30s Quartz retry.
-@AllArgsConstructor
 @Component
 @Slf4j
 public class ExecutorAvailabilityListener implements MessageListener {
@@ -23,9 +25,23 @@ public class ExecutorAvailabilityListener implements MessageListener {
     // shared module for this constant.
     public static final String CHANNEL = "terrakube:executor-available";
 
-    RedisMessageListenerContainer redisMessageListenerContainer;
-    JobRepository jobRepository;
-    ScheduleJobService scheduleJobService;
+    private final RedisMessageListenerContainer redisMessageListenerContainer;
+    private final JobRepository jobRepository;
+    private final ScheduleJobService scheduleJobService;
+    // Initialized to "now" at startup, not zero, so the gauge below doesn't report a huge bogus
+    // age before the very first real signal arrives after a fresh deploy.
+    private final AtomicLong lastSignalEpochMillis = new AtomicLong(System.currentTimeMillis());
+
+    public ExecutorAvailabilityListener(RedisMessageListenerContainer redisMessageListenerContainer,
+            JobRepository jobRepository, ScheduleJobService scheduleJobService, MeterRegistry meterRegistry) {
+        this.redisMessageListenerContainer = redisMessageListenerContainer;
+        this.jobRepository = jobRepository;
+        this.scheduleJobService = scheduleJobService;
+        Gauge.builder("executor.availability.age.seconds", lastSignalEpochMillis,
+                        signal -> (System.currentTimeMillis() - signal.get()) / 1000.0)
+                .description("Seconds since the executor module last signalled it has capacity available")
+                .register(meterRegistry);
+    }
 
     @PostConstruct
     public void subscribe() {
@@ -34,6 +50,7 @@ public class ExecutorAvailabilityListener implements MessageListener {
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
+        lastSignalEpochMillis.set(System.currentTimeMillis());
         try {
             Integer nextJobId = jobRepository.findNextDispatchableJobId();
             if (nextJobId != null) {

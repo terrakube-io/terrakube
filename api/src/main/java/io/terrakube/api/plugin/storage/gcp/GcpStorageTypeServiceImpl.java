@@ -1,16 +1,20 @@
 package io.terrakube.api.plugin.storage.gcp;
 
 import com.google.api.gax.paging.Page;
+import com.google.cloud.ReadChannel;
 import com.google.cloud.storage.*;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -49,6 +53,35 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
             log.error(e.getMessage());
         }
         return response;
+    }
+
+    @Override
+    public StepOutputStream getStepOutputStream(String organizationId, String jobId, String stepId, ByteRange range) {
+        String key = String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId);
+        Blob blob = storage.get(BlobId.of(bucketName, key));
+        if (blob == null || !blob.exists()) {
+            return StepOutputStream.missing();
+        }
+        long size = blob.getSize();
+        if (range == null) {
+            return StepOutputStream.of(Channels.newInputStream(blob.reader()), size, size);
+        }
+        long start = range.isSuffix() ? Math.max(0, size - range.getSuffixLength()) : range.getStart();
+        long endInclusive = range.isSuffix() ? size - 1
+                : (range.getEnd() >= 0 ? Math.min(range.getEnd(), size - 1) : size - 1);
+        if (start >= size) {
+            return StepOutputStream.missing();
+        }
+        ReadChannel reader = blob.reader();
+        try {
+            reader.seek(start);
+        } catch (IOException e) {
+            log.error("Failed to seek GCP step output {}: {}", key, e.getMessage());
+            return StepOutputStream.missing();
+        }
+        reader.limit(endInclusive + 1);
+        String contentRange = "bytes " + start + "-" + endInclusive + "/" + size;
+        return StepOutputStream.partial(Channels.newInputStream(reader), endInclusive - start + 1, contentRange, size);
     }
 
     @Override

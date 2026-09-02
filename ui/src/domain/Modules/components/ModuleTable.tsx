@@ -1,6 +1,6 @@
 import { DownloadOutlined } from "@ant-design/icons";
 import { Table, Typography } from "antd";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import formatVersion from "@/modules/utils/formatVersion";
 import { FlatModule } from "../../types";
 
@@ -31,14 +31,14 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       key: "name",
       sorter: (a: FlatModule, b: FlatModule) => a.name.localeCompare(b.name),
       render: (name: string, record: FlatModule) => (
-        <div>
+        <Link to={`/organizations/${orgid}/registry/${record.id}`} style={{ color: "inherit", display: "block" }}>
           <Typography.Text strong>{name}</Typography.Text>
           <div>
             <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
               {record.description || "No description provided for this module"}
             </Typography.Text>
           </div>
-        </div>
+        </Link>
       ),
     },
     {
@@ -63,7 +63,7 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       sorter: (a: FlatModule, b: FlatModule) => (a.downloadQuantity ?? 0) - (b.downloadQuantity ?? 0),
       render: (count: number) => (
         <span>
-          <DownloadOutlined style={{ marginRight: 6, color: "#8c97a8" }} />
+          <DownloadOutlined style={{ marginRight: 6, color: "var(--ant-color-text-secondary)" }} />
           {count ?? 0}
         </span>
       ),
@@ -77,7 +77,10 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       columns={columns}
       pagination={{ defaultPageSize: 10, showSizeChanger: true }}
       onRow={(record) => ({
-        onClick: () => navigate(`/organizations/${orgid}/registry/${record.id}`),
+        onClick: (event) => {
+          if ((event.target as HTMLElement).closest("a")) return;
+          navigate(`/organizations/${orgid}/registry/${record.id}`);
+        },
         style: { cursor: "pointer" },
       })}
       locale={{ emptyText: "No modules match your search." }}

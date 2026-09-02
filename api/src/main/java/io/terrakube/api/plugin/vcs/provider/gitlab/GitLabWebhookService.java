@@ -343,6 +343,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
                                                                 log.debug("Added new path: {}", diffModel.getNewPath());
                                                             }
                                                         }
+                                                        // Renamed files need the old path too, or a workspace whose path
+                                                        // filter only matches the pre-rename location never sees the
+                                                        // change that moved it out.
+                                                        if (diffModel.isRenamedFile() && diffModel.getOldPath() != null
+                                                                && !diffModel.getOldPath().equals(diffModel.getNewPath())
+                                                                && !fileChanges.contains(diffModel.getOldPath())) {
+                                                            fileChanges.add(diffModel.getOldPath());
+                                                            log.debug("Added old path for rename: {}", diffModel.getOldPath());
+                                                        }
 
                                                         log.debug("Processing diff - Old: {}, New: {}, NewFile: {}, DeletedFile: {}, RenamedFile: {}",
                                                                 diffModel.getOldPath(),
@@ -446,7 +455,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         ResponseEntity<String> response;
         if (remoteHookId == null) {
-            URI gitlabUri = UriComponentsBuilder.fromHttpUrl(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks").build(true).toUri();
+            URI gitlabUri = UriComponentsBuilder.fromUriString(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks").build(true).toUri();
             // Make the request using the GitLab API only when the entity is saved
             response = restTemplate.exchange(
                     gitlabUri, HttpMethod.POST, entity, String.class);
@@ -464,7 +473,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 log.info("GitLab Hook created successfully for workspace {}/{} with id {}", workspace.getOrganization().getName(), workspace.getName(), remoteHookId);
             }
         } else {
-            URI gitlabUri = UriComponentsBuilder.fromHttpUrl(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks/" + webhook.getRemoteHookId()).build(true).toUri();
+            URI gitlabUri = UriComponentsBuilder.fromUriString(workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/hooks/" + webhook.getRemoteHookId()).build(true).toUri();
             response = restTemplate.exchange(
                     gitlabUri, HttpMethod.PUT, entity, String.class);
             log.info("GitLab Hook updating Status {} for workspace {}/{} with id {}", response.getStatusCode(), workspace.getOrganization().getName(), workspace.getName(), remoteHookId);

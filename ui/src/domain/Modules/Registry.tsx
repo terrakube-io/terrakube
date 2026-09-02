@@ -7,8 +7,8 @@ import {
   CloudServerOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ModuleList } from "./ModuleList";
 import ModuleTable from "./components/ModuleTable";
 import { ProviderList } from "../Providers/ProviderList";
@@ -17,8 +17,8 @@ import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import { FlatModule, FlatProvider } from "../types";
 import { ErrorInformation } from "@/modules/api/types";
-import ListViewToggle from "@/modules/layout/ListViewToggle/ListViewToggle";
-import { getStoredListViewMode, ListViewMode } from "@/modules/layout/ListViewToggle/listViewPreference";
+import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
+import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import type { MenuProps } from "antd";
 
 type Params = {
@@ -86,7 +86,6 @@ async function fetchOrgName(orgId: string): Promise<string> {
 
 export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const { orgid } = useParams<Params>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchFilter, setSearchFilter] = useState("");
   const [modules, setModules] = useState<FlatModule[]>([]);
@@ -129,6 +128,8 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   useEffect(() => {
     if (!orgid) return;
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
+    modulesLoaded.current = false;
+    providersLoaded.current = false;
 
     const init = async () => {
       setLoading(true);
@@ -179,15 +180,10 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
     }
   };
 
-  const handleSearchPublicRegistry = () => {
-    navigate(`/organizations/${orgid}/registry/search`);
-  };
-
   const publishMenuItems: MenuProps["items"] = [
     {
       key: "module",
-      label: "Publish module",
-      onClick: () => navigate(`/organizations/${orgid}/registry/create`),
+      label: <Link to={`/organizations/${orgid}/registry/create`}>Publish module</Link>,
     },
   ];
 
@@ -235,14 +231,11 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },
       ]}
-      fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
       actions={
         <Space>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
-          <Button type="default" icon={<SearchOutlined />} onClick={handleSearchPublicRegistry}>
-            Search public registry
+          <Button type="default" icon={<SearchOutlined />}>
+            <Link to={`/organizations/${orgid}/registry/search`}>Search public registry</Link>
           </Button>
           <Dropdown menu={{ items: publishMenuItems }} trigger={["click"]}>
             <Button type="primary" icon={<CloudUploadOutlined />}>

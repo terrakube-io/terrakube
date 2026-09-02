@@ -6,7 +6,6 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 
 import jakarta.persistence.*;
-import io.terrakube.api.rs.IdConverter;
 
 import java.sql.Types;
 import java.util.UUID;
@@ -19,7 +18,6 @@ public class Implementation {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

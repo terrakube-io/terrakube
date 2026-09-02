@@ -1,5 +1,4 @@
 import { AxiosInstance } from "axios";
-import { DateTime } from "luxon";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import {
   FlatJob,
@@ -12,6 +11,7 @@ import {
   StateOutputValue,
 } from "../types";
 import { getIaCNameById } from "./Workspaces";
+import { relativeTime } from "@/modules/utils/dates";
 
 export type StateOutputVariableWithName = { name: string } & StateOutputValue;
 
@@ -114,37 +114,12 @@ export async function setupWorkspaceIncludes(
         );
         break;
       case include.JOB:
-        let finalColor = "";
-        switch (element.attributes.status) {
-          case "completed":
-            finalColor = "#2eb039";
-            break;
-          case "noChanges":
-            finalColor = "#9f37fa";
-            break;
-          case "rejected":
-            finalColor = "#FB0136";
-            break;
-          case "failed":
-            finalColor = "#FB0136";
-            break;
-          case "running":
-            finalColor = "#108ee9";
-            break;
-          case "waitingApproval":
-            finalColor = "#fa8f37";
-            break;
-          default:
-            finalColor = "";
-            break;
-        }
         jobs.push({
           id: element.id,
           title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          statusColor: finalColor,
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
-          latestChange: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          latestChange: relativeTime(element.attributes.createdDate),
           ...element.attributes,
         });
         setLastRun(element.attributes.updatedDate);
@@ -154,7 +129,7 @@ export async function setupWorkspaceIncludes(
         history.push({
           id: element.id,
           title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
-          relativeDate: DateTime.fromISO(element.attributes.createdDate).toRelative(),
+          relativeDate: relativeTime(element.attributes.createdDate),
           createdDate: element.attributes.createdDate,
           ...element.attributes,
         });
@@ -244,9 +219,9 @@ export async function setupWorkspaceIncludes(
   setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
 
   // set state data
-  const lastState = history
-    .sort((a: FlatJobHistory, b: FlatJobHistory) => parseInt(a.jobReference) - parseInt(b.jobReference))
-    .reverse()[0];
+  const lastState = [...history].sort(
+    (a: FlatJobHistory, b: FlatJobHistory) => parseInt(b.jobReference) - parseInt(a.jobReference)
+  )[0];
   // reload state only if there is a new version
 
   if (currentStateId !== lastState?.id) {
@@ -455,7 +430,7 @@ export function parseOldState(state: any) {
     state?.resources.forEach((value: any) => {
       const moduleName = value.module != null ? value.module : "root_module";
       const provider = value.provider
-        ? value.provider.replace('provider["', "").replace('provider[', "").replace('"]', "").replace(']', "")
+        ? value.provider.replace('provider["', "").replace("provider[", "").replace('"]', "").replace("]", "")
         : "";
       if (value.instances != null && value.instances.length > 0) {
         value.instances.forEach((instance: any) => {

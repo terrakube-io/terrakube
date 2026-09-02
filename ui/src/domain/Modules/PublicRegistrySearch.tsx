@@ -12,8 +12,8 @@ import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws, FaGoogle } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
-import { useNavigate, useParams } from "react-router-dom";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
@@ -185,10 +185,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const isModuleImported = (module: TerraformRegistryModule): boolean => {
     const key = `${module.name}/${module.provider}`.toLowerCase();
     return existingModules.has(key);
-  };
-
-  const handleBack = () => {
-    navigate(`/organizations/${orgid}/registry`);
   };
 
   const searchProviders = async (query: string) => {
@@ -536,15 +532,17 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         >
           <Space size={16}>
             <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-              <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
+              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                 {formatDownloads(provider.downloads)}
               </Typography.Text>
             </Space>
           </Space>
           <Space size={6}>
             {renderProviderLogo(provider)}
-            <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>provider</Typography.Text>
+            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+              provider
+            </Typography.Text>
           </Space>
         </div>
       </Card>
@@ -613,15 +611,17 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         >
           <Space size={16}>
             <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "#8c97a8" }} />
-              <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>
+              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
+              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
                 {formatDownloads(module.downloads)}
               </Typography.Text>
             </Space>
           </Space>
           <Space size={6}>
             {renderModuleProviderIcon(module.provider)}
-            <Typography.Text style={{ fontSize: 13, color: "#8c97a8" }}>{module.provider}</Typography.Text>
+            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+              {module.provider}
+            </Typography.Text>
           </Space>
         </div>
       </Card>
@@ -676,6 +676,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
   return (
     <PageWrapper
       title="Public Registry Search"
+      width="reading"
       subTitle="Search and import modules and providers from the Terraform Registry"
       breadcrumbs={[
         { label: organizationName, path: "/" },
@@ -683,12 +684,12 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         { label: "Public Registry Search", path: `/organizations/${orgid}/registry/search` },
       ]}
       actions={
-        <Button type="default" icon={<ArrowLeftOutlined />} onClick={handleBack}>
-          Back to your registry
+        <Button type="default" icon={<ArrowLeftOutlined />}>
+          <Link to={`/organizations/${orgid}/registry`}>Back to your registry</Link>
         </Button>
       }
     >
-      <div className="registry-centered" style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 24 }}>
         <Search
           placeholder="Search Terraform Registry..."
           allowClear
@@ -777,7 +778,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                 </Typography.Text>
                 {loadingVersions ? (
                   <div style={{ textAlign: "center", padding: 20 }}>
-                    <Spin tip="Loading versions..." />
+                    <Spin />
                   </div>
                 ) : (
                   <Select

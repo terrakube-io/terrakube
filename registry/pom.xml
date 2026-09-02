@@ -16,24 +16,24 @@
     <properties>
         <java.version>25</java.version>
         <azure.version>6.5.0</azure.version>
-        <msal4j.version>1.25.1</msal4j.version>
+        <msal4j.version>1.26.0</msal4j.version>
         <lombok.version>1.18.46</lombok.version>
-        <terrakube-client-starter.version>1.9.0</terrakube-client-starter.version>
+        <terrakube-client-starter.version>1.10.0</terrakube-client-starter.version>
         <jgit.version>7.7.1.202607240634-r</jgit.version>
         <bouncy.castle>1.85</bouncy.castle>
         <commons-io.version>2.22.0</commons-io.version>
-        <rest-assured.version>5.5.6</rest-assured.version>
+        <rest-assured.version>6.0.1</rest-assured.version>
         <wiremock.version>4.2.2</wiremock.version>
         <!--groovy.version>3.0.8</groovy.version-->
-        <aws-sdk.version>2.53.1</aws-sdk.version>
+        <aws-sdk.version>2.54.7</aws-sdk.version>
         <zt-zip.version>1.18.2</zt-zip.version>
-        <gcp-libraries-bom.version>26.86.0</gcp-libraries-bom.version>
+        <gcp-libraries-bom.version>26.87.0</gcp-libraries-bom.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.58</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:22.3.0</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.28.1</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.64</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:22.4.0</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.29.0</buildpack.telemetry>
     </properties>
     <build>
         <plugins>
@@ -166,6 +166,13 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sts</artifactId>
+        </dependency>
+        <!-- Explicit sync HTTP client so S3Client/S3Presigner connection pool, connect, and
+             socket timeouts are configurable (see AwsStorageServiceProperties) instead of relying
+             on whatever the SDK auto-detects on the classpath. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
         </dependency>
         <dependency>
             <groupId>org.wiremock.integrations</groupId>

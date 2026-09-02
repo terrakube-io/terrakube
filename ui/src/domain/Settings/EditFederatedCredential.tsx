@@ -1,11 +1,12 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Space, Spin, Table, message, Typography } from "antd";
+import { Button, Flex, Form, Input, Space, Spin, Table, message, Typography, Row, Col } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { FederatedClaim } from "../types";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 type Props = {
   mode: "edit" | "create";
@@ -221,32 +222,42 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   return (
     <Spin spinning={loading}>
       <div className="edit-team">
-        <Typography.Title level={3}>
-          {mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
-        </Typography.Title>
-        <SettingsSection>
+        <SettingsPageHeader
+          docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
+          title={mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
+          description="Federated credentials let external identity providers exchange OIDC tokens for Terrakube access without storing secrets."
+        />
+        <SettingsSection maxWidth={960}>
           <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Form.Item
-              name="name"
-              label="Name"
-              rules={[{ required: true, message: "Please enter the federated credential name" }]}
-            >
-              <Input placeholder="e.g. GitHub Actions" />
-            </Form.Item>
-            <Form.Item
-              name="issuerUrl"
-              label="Issuer URL"
-              rules={[{ required: true, message: "Please enter the issuer URL" }]}
-            >
-              <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
-            </Form.Item>
-            <Form.Item
-              name="audience"
-              label="Audience"
-              rules={[{ required: true, message: "Please enter the audience" }]}
-            >
-              <Input placeholder="e.g. terrakube-audience" />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col xs={24} md={9}>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  rules={[{ required: true, message: "Please enter the federated credential name" }]}
+                >
+                  <Input placeholder="e.g. GitHub Actions" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={9}>
+                <Form.Item
+                  name="issuerUrl"
+                  label="Issuer URL"
+                  rules={[{ required: true, message: "Please enter the issuer URL" }]}
+                >
+                  <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
+                <Form.Item
+                  name="audience"
+                  label="Audience"
+                  rules={[{ required: true, message: "Please enter the audience" }]}
+                >
+                  <Input placeholder="e.g. terrakube-audience" />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Typography.Title level={5} style={{ marginTop: 24 }}>
               Claim Conditions
@@ -302,12 +313,14 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
             />
 
             <Form.Item>
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  {mode === "create" ? "Create" : "Update"}
-                </Button>
-                <Button onClick={() => setMode("list")}>Cancel</Button>
-              </Space>
+              <Flex justify="flex-end">
+                <Space>
+                  <Button onClick={() => setMode("list")}>Cancel</Button>
+                  <Button type="primary" htmlType="submit">
+                    {mode === "create" ? "Create" : "Update"}
+                  </Button>
+                </Space>
+              </Flex>
             </Form.Item>
           </Form>
         </SettingsSection>

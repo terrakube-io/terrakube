@@ -169,6 +169,38 @@ public class PersistentExecutorServiceTest {
     }
 
     @Test
+    public void badGatewayResponseBecomesExecutorUnavailableException() {
+        // A proxy/ingress between the API and the executor dropped the upstream connection -
+        // possibly after the executor already accepted the job. Retryable, not a job failure.
+        WebClientResponseException badGateway = WebClientResponseException.create(
+                502, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], null);
+        doReturn(Mono.error(badGateway)).when(responseSpec).toEntity(ExecutorContext.class);
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+    }
+
+    @Test
+    public void gatewayTimeoutResponseBecomesExecutorUnavailableException() {
+        WebClientResponseException gatewayTimeout = WebClientResponseException.create(
+                504, "Gateway Timeout", HttpHeaders.EMPTY, new byte[0], null);
+        doReturn(Mono.error(gatewayTimeout)).when(responseSpec).toEntity(ExecutorContext.class);
+
+        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+    }
+
+    @Test
+    public void otherHttpErrorResponseStaysAHardExecutionException() {
+        WebClientResponseException serverError = WebClientResponseException.create(
+                500, "Internal Server Error", HttpHeaders.EMPTY, new byte[0], null);
+        doReturn(Mono.error(serverError)).when(responseSpec).toEntity(ExecutorContext.class);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context()));
+        // not the retryable subclass
+        org.junit.jupiter.api.Assertions.assertFalse(thrown instanceof ExecutorUnavailableException);
+    }
+
+    @Test
     public void postsToConfiguredExecutor() throws ExecutionException, URISyntaxException {
         Globalvar executorUrl = new Globalvar();
         executorUrl.setValue("http://ze-executor/");

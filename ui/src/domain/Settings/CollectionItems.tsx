@@ -1,24 +1,12 @@
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, CloseCircleOutlined } from "@ant-design/icons";
-import {
-  Button,
-  Form,
-  Input,
-  message,
-  Modal,
-  Popconfirm,
-  Radio,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  Checkbox,
-} from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Form, message, Spin, Table, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 // Type definitions for Collection Items
 type CollectionItem = {
@@ -27,15 +15,6 @@ type CollectionItem = {
 };
 
 type CollectionItemAttributes = {
-  key: string;
-  value?: string;
-  hcl: boolean;
-  category: string;
-  description: string;
-  sensitive: boolean;
-};
-
-type CollectionItemFormValues = {
   key: string;
   value?: string;
   hcl: boolean;
@@ -56,9 +35,10 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const [itemKey, setItemKey] = useState<string>("");
-  const [mode, setMode] = useState("create");
+  const [mode, setMode] = useState<"create" | "edit">("create");
   const [itemId, setItemId] = useState<string>("");
-  const [form] = Form.useForm<CollectionItemFormValues>();
+  const [pendingDelete, setPendingDelete] = useState<CollectionItem | null>(null);
+  const [form] = Form.useForm<CollectionVariableFormValues>();
 
   const ITEM_COLUMNS = (onEdit: (id: string) => void) => [
     {
@@ -104,25 +84,9 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
             <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)}>
               Edit
             </Button>
-            <Popconfirm
-              onConfirm={() => {
-                onDelete(record.id);
-              }}
-              title={
-                <p>
-                  This will permanently delete this variable <br />
-                  from the collection. <br />
-                  Are you sure?
-                </p>
-              }
-              okText="Yes"
-              cancelText="No"
-            >
-              {" "}
-              <Button danger type="link" icon={<DeleteOutlined />}>
-                Delete
-              </Button>
-            </Popconfirm>
+            <Button danger type="link" icon={<DeleteOutlined />} onClick={() => setPendingDelete(record)}>
+              Delete
+            </Button>
           </div>
         );
       },
@@ -174,7 +138,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
       });
   };
 
-  const onCreate = (values: CollectionItemFormValues) => {
+  const onCreate = (values: CollectionVariableFormValues) => {
     const body = {
       data: {
         type: "item",
@@ -206,7 +170,7 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
       });
   };
 
-  const onUpdate = (values: CollectionItemFormValues) => {
+  const onUpdate = (values: CollectionVariableFormValues) => {
     const body = {
       data: {
         type: "item",
@@ -272,107 +236,37 @@ export const CollectionItemsSettings = ({ collectionId, collectionName }: Props)
         <Typography.Title level={3} style={{ marginTop: "30px" }}>
           Collection Variables
         </Typography.Title>
-        <Spin spinning={loading} tip="Loading Collection Variables...">
+        <Spin spinning={loading} description="Loading Collection Variables...">
           <Table dataSource={items} columns={ITEM_COLUMNS(onEdit)} rowKey="id" />
         </Spin>
       </SettingsSection>
 
-      <Modal
-        width="600px"
+      <CollectionVariableModal
         open={visible}
-        title={mode === "edit" ? "Edit variable" : "Add variable"}
-        okText={mode === "edit" ? "Save changes" : "Add variable"}
+        mode={mode}
+        form={form}
         onCancel={onCancel}
-        cancelText="Cancel"
-        closeIcon={<CloseCircleOutlined />}
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
-            })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+        onSubmit={(values) => {
+          if (mode === "create") onCreate(values);
+          else onUpdate(values);
         }}
-      >
-        <Form
-          name="collectionItem"
-          form={form}
-          layout="vertical"
-          initialValues={{ category: "TERRAFORM", hcl: false, sensitive: false }}
-        >
-          <Typography.Title level={5} style={{ margin: "20px 0 15px 0" }}>
-            Select variable category
-          </Typography.Title>
+      />
 
-          <Form.Item name="category">
-            <Radio.Group>
-              <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                <Radio value="TERRAFORM" style={{ display: "flex", alignItems: "flex-start" }}>
-                  <div>
-                    <div>Terraform variable</div>
-                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                      These variables should match the declarations in your configuration. Click the HCL box to use
-                      interpolation or set a non-string value.
-                    </div>
-                  </div>
-                </Radio>
-
-                <Radio value="ENV" style={{ display: "flex", alignItems: "flex-start" }}>
-                  <div>
-                    <div>Environment variable</div>
-                    <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px" }}>
-                      These variables are available in the Terraform runtime environment.
-                    </div>
-                  </div>
-                </Radio>
-              </div>
-            </Radio.Group>
-          </Form.Item>
-
-          <Form.Item name="key" label="Key" rules={[{ required: true }]}>
-            <Input placeholder="Enter key name" />
-          </Form.Item>
-
-          <Form.Item name="value" label="Value" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} placeholder="Enter variable value" />
-          </Form.Item>
-
-          <div style={{ display: "flex", gap: "30px", marginBottom: "15px" }}>
-            <Form.Item name="hcl" valuePropName="checked" style={{ marginBottom: 0 }}>
-              <Checkbox>
-                <Space>
-                  HCL
-                  <InfoCircleOutlined
-                    style={{ color: "rgba(0,0,0,0.45)" }}
-                    title="When enabled, this field will be processed as HCL code, allowing for variable interpolation and complex data structures during runtime execution."
-                  />
-                </Space>
-              </Checkbox>
-            </Form.Item>
-
-            {mode === "create" && (
-              <Form.Item name="sensitive" valuePropName="checked" style={{ marginBottom: 0 }}>
-                <Checkbox>
-                  <Space>
-                    Sensitive
-                    <InfoCircleOutlined
-                      style={{ color: "rgba(0,0,0,0.45)" }}
-                      title="Mark as sensitive to hide values in the user interface and API responses. Note that these values might still be visible in OpenTofu/Terraform logs if explicitly output by your configuration."
-                    />
-                  </Space>
-                </Checkbox>
-              </Form.Item>
-            )}
-          </div>
-
-          <Form.Item name="description" label="Description (Optional)">
-            <Input.TextArea placeholder="Enter description (optional)" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete variable"
+        message={
+          <>
+            Deleting the variable <strong>{pendingDelete?.attributes.key}</strong> from the collection cannot be undone.
+          </>
+        }
+        okText="Delete"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import { LeftOutlined } from "@ant-design/icons";
 import { Spin } from "antd";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ApiReferenceReact } from "@scalar/api-reference-react";
 import "@scalar/api-reference-react/style.css";
 import getUserFromStorage from "@/config/authUser";
@@ -21,7 +21,6 @@ function attachBearerToken({ requestBuilder }: { requestBuilder: RequestBuilder 
 
 export const ApiDocsPage = () => {
   const [spec, setSpec] = useState<object | null>(null);
-  const navigate = useNavigate();
 
   useEffect(() => {
     axiosRegistry.get("/doc").then((response) => {
@@ -32,9 +31,9 @@ export const ApiDocsPage = () => {
   return (
     <div className="api-docs-page">
       <div className="api-docs-topbar">
-        <button type="button" className="api-docs-back-link" onClick={() => navigate("/")}>
+        <Link to="/" className="api-docs-back-link">
           <LeftOutlined /> Back to Terrakube
-        </button>
+        </Link>
       </div>
       <div className="api-docs-content">
         {spec ? (

@@ -28,12 +28,12 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
+import org.hibernate.LazyInitializationException;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -42,8 +42,6 @@ import org.quartz.SchedulerException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.text.ParseException;
 import java.time.Duration;
@@ -75,14 +73,17 @@ public class ScheduleJob implements org.quartz.Job {
     private final GitLabWebhookService gitLabWebhookService;
 
     // Guarantees only one worker (in this pod or any other replica) processes a given job id at a
-    // time - held via withExecutionLock for the entire duration of execute()'s explicit
-    // transaction, not just around dispatch. A second overlapping firing that reaches this after
-    // the first has already dispatched and moved on would otherwise redo status checks, VCS
-    // notifications, PR comments and history cleanup against stale (pre-commit) state, and - since
-    // a step is only marked queue/running after the fact - could re-dispatch a terraform apply
-    // against an already-changed state. TTL comfortably covers the slowest thing execute() does
-    // (PersistentExecutorService's connect+response timeout, 10s + 60s), so an orphaned lock (e.g.
-    // a pod crash mid-run) self-heals well before the next 30s retry needs it.
+    // time - held via withExecutionLock for the entire duration of doRunExecution, not just around
+    // a single write. A second overlapping firing that reaches this after the first has already
+    // dispatched and moved on would otherwise redo status checks, VCS notifications, PR comments
+    // and history cleanup against stale state, and - since a step is only marked queue/running
+    // after the fact - could re-dispatch a terraform apply against an already-changed state.
+    // doRunExecution runs with no single transaction wrapping it (see execute()) - every write it
+    // makes is its own already-committed Spring Data JPA call by the time it returns, so by the
+    // time this lock releases, everything doRunExecution wrote is already durably visible to
+    // whichever worker acquires the lock next. TTL comfortably covers the slowest thing
+    // execute() does (PersistentExecutorService's connect+response timeout, 10s + 60s), so an
+    // orphaned lock (e.g. a pod crash mid-run) self-heals well before the next 30s retry needs it.
     private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
     private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
 
@@ -106,7 +107,6 @@ public class ScheduleJob implements org.quartz.Job {
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
-    PlatformTransactionManager transactionManager;
     // Real job status transitions happen here via plain jobRepository.save(), never through an
     // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
     // them. Every save below that follows a job.setStatus(...) call is followed by a call to
@@ -118,22 +118,14 @@ public class ScheduleJob implements org.quartz.Job {
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
         int jobId = jobExecutionContext.getJobDetail().getJobDataMap().getInt(JOB_ID);
         withExecutionLock(jobId, () -> {
-            Boolean deschedule;
-            try {
-                // Explicit TransactionTemplate, not @Transactional on this method: an annotation-
-                // driven transaction commits after withExecutionLock releases the lock (which
-                // happens inside this method), reopening the exact race the lock exists to close -
-                // a second overlapping trigger acquiring the freed lock and reading pre-commit state.
-                deschedule = new TransactionTemplate(transactionManager).execute(status -> {
-                    Job job = jobRepository.getReferenceById(jobId);
-                    boolean shouldDeschedule = doRunExecution(job);
-                    if (shouldDeschedule) {
-                        redisTemplate.delete(String.valueOf(job.getId()));
-                        removeJobContext(job.getId(), jobExecutionContext);
-                    }
-                    return shouldDeschedule;
-                });
-            } catch (EntityNotFoundException e) {
+            // findById() (not getReferenceById()) issues a real SELECT immediately, so job -
+            // along with workspace/organization/vcs, all plain @ManyToOne with no fetch override
+            // and therefore JPA-default EAGER - is fully materialized here, in the one place this
+            // method still needs an open Hibernate session. Everything doRunExecution reads off
+            // job afterwards is safe even once this repository call's own transaction has closed.
+            // An empty result is not an error here - see below.
+            Optional<Job> existingJob = jobRepository.findById(jobId);
+            if (existingJob.isEmpty()) {
                 // The Job row no longer exists - deleted (or soft-deleted, which the entity's
                 // @SQLRestriction makes equally invisible) after this trigger was scheduled,
                 // typically by KEEP_JOB_HISTORY pruning racing this job's own terminal-status
@@ -141,9 +133,35 @@ public class ScheduleJob implements org.quartz.Job {
                 // refire forever, so remove it by id (the entity is gone; only the id is usable).
                 log.warn("Job {} no longer exists (deleted after scheduling, e.g. KEEP_JOB_HISTORY pruning); removing orphaned job context", jobId);
                 removeJobContext(jobId, jobExecutionContext);
-                deschedule = true;
+                return true;
             }
-            return Boolean.TRUE.equals(deschedule);
+            Job job = existingJob.get();
+
+            boolean shouldDeschedule;
+            try {
+                // No transaction wraps this call - see the EXECUTION_LOCK_PREFIX comment above and
+                // this class's top-of-file comment for why that's safe for the execution lock's
+                // invariant. Every jobRepository/stepRepository/workspaceRepository.save() call
+                // doRunExecution (or something it calls) makes now runs, and commits, on its own.
+                shouldDeschedule = doRunExecution(job);
+            } catch (LazyInitializationException e) {
+                // Safety net: doRunExecution's own extensive test suite (ScheduleJobTest) mocks
+                // every repository, so it cannot catch a real Hibernate lazy-loading regression -
+                // if some association gets touched here that isn't one of the eagerly-fetched ones
+                // findById() already materialized (or the job.getStep() collection this class's
+                // errorJobAtStep fixed the one known touch-point for), fail this attempt safely
+                // instead of letting a confusing unhandled exception surface. The existing 30s
+                // recurring trigger retries it.
+                log.error("Job {} hit a lazy-loading error outside its expected transaction "
+                        + "boundary, will retry: {}", jobId, e.getMessage(), e);
+                return false;
+            }
+
+            if (shouldDeschedule) {
+                redisTemplate.delete(String.valueOf(job.getId()));
+                removeJobContext(job.getId(), jobExecutionContext);
+            }
+            return shouldDeschedule;
         });
     }
 
@@ -540,7 +558,7 @@ public class ScheduleJob implements org.quartz.Job {
         String logMessage = String.format(
             "Error when sending context to executor marking job %s as failed, step count %s",
             job.getId(),
-            job.getStep().size()
+            stepRepository.findByJobId(job.getId()).size()
         );
         log.error(logMessage, e);
         job.setStatus(JobStatus.failed);

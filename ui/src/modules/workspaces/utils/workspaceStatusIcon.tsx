@@ -18,6 +18,8 @@ export function getWorkspaceStatusIcon(status?: string) {
       return <SyncOutlined spin />;
     case JobStatus.WaitingApproval:
       return <ExclamationCircleOutlined />;
+    case JobStatus.NotExecuted:
+      return <CheckCircleOutlined />;
     case "NeverExecuted":
       return <InfoCircleOutlined />;
     case JobStatus.Rejected:
@@ -26,7 +28,12 @@ export function getWorkspaceStatusIcon(status?: string) {
     case JobStatus.Failed:
       return <StopOutlined />;
     case JobStatus.Queue:
+    case JobStatus.Pending:
       return <ClockCircleOutlined />;
+    case JobStatus.Approved:
+      return <CheckCircleOutlined />;
+    case JobStatus.Unknown:
+      return <ExclamationCircleOutlined />;
     default:
       return <ClockCircleOutlined />;
   }

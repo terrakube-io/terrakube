@@ -6,7 +6,6 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.hooks.webhook.WebhookManageHook;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -37,7 +36,6 @@ public class Webhook extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     private UUID id;
 
     @Column(name = "remote_hook_id")

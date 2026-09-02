@@ -1,10 +1,13 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Popconfirm, Space, Typography, message } from "antd";
+import { Button, Space, Typography, message } from "antd";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { genericHeader } from "../Workspaces";
-import SettingsSection from "@/modules/layout/SettingsSection/SettingsSection";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 const { Text } = Typography;
 
@@ -16,6 +19,7 @@ type Props = {
 export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
   const organizationId = workspace.relationships.organization.data.id;
   const navigate = useNavigate();
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
   function generateRandomString(length: number) {
@@ -54,7 +58,7 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           },
         }
       )
-      .then(() => {
+      .then(() =>
         axiosInstance.patch(`organization/${organizationId}/workspace/${id}`, body, genericHeader).then((response) => {
           if (response.status === 204) {
             message.success("Workspace deleted successfully");
@@ -62,7 +66,11 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           } else {
             message.error("Workspace deletion failed");
           }
-        });
+        })
+      )
+      .catch((error) => {
+        console.error("error deleting workspace:", error);
+        message.error(getErrorMessage(error));
       });
   };
 
@@ -71,14 +79,10 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
 
   return (
     <div className="generalSettings">
-      <Typography.Title level={1} style={{ margin: 0 }}>
-        Destruction and Deletion
-      </Typography.Title>
-      <Text type="secondary">
-        There are two independent steps for destroying this workspace and any infrastructure associated with it. First,
-        any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube,
-        including any variables, settings, and alert history can be deleted.
-      </Text>
+      <SettingsPageHeader
+        title="Destruction and Deletion"
+        description="There are two independent steps for destroying this workspace and any infrastructure associated with it. First, any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube, including any variables, settings, and alert history can be deleted."
+      />
 
       <SettingsSection
         danger
@@ -93,34 +97,32 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
           </>
         }
       >
-        <Popconfirm
-          onConfirm={() => {
-            onDelete(workspace);
-          }}
-          title={
-            <p>
-              Workspace will be permanently deleted <br /> from this organization.
-              <br />
-              Are you sure?
-            </p>
-          }
-          okText="Yes"
-          cancelText="No"
-          placement="bottom"
+        <Button
+          type="primary"
+          danger
+          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+          disabled={!manageWorkspace}
+          onClick={() => setDeleteModalOpen(true)}
         >
-          <Button
-            type="primary"
-            danger
-            style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-            disabled={!manageWorkspace}
-          >
-            <Space>
-              <DeleteOutlined />
-              Delete from Terrakube
-            </Space>
-          </Button>
-        </Popconfirm>
+          <Space>
+            <DeleteOutlined />
+            Delete from Terrakube
+          </Space>
+        </Button>
       </SettingsSection>
+
+      <DeleteConfirmationModal
+        open={deleteModalOpen}
+        title="Delete this workspace"
+        message={`Workspace "${workspace.attributes.name}" will be permanently deleted from this organization, including its variables, settings, run history, and Terraform state.`}
+        confirmValue={workspace.attributes.name}
+        okText="Delete this workspace"
+        onConfirm={() => {
+          setDeleteModalOpen(false);
+          onDelete(workspace);
+        }}
+        onCancel={() => setDeleteModalOpen(false)}
+      />
     </div>
   );
 };

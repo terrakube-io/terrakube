@@ -48,6 +48,8 @@ public class WebhookService {
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
+        // HTTP header names are case-insensitive; provider services look them up in lowercase.
+        headers = WebhookHeaders.caseInsensitive(headers);
         String result = "";
         Webhook webhook = webhookRepository.getReferenceById(UUID.fromString(webhookId));
         if (webhook == null) {

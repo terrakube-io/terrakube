@@ -6,7 +6,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -21,6 +24,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,6 +62,48 @@ class AwsStorageTypeServiceImplTest {
                 request.bucket().equals(bucketName) &&
                 request.key().equals("tfoutput/org1/job1/step1.tfoutput")
         ), any(ResponseTransformer.class));
+    }
+
+    @Test
+    void getStepOutputStreamReturnsContentAndLength() {
+        GetObjectResponse response = GetObjectResponse.builder().contentLength(11L).build();
+        ResponseInputStream<GetObjectResponse> ris =
+                new ResponseInputStream<>(response, new ByteArrayInputStream("hello world".getBytes()));
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(ris);
+
+        StepOutputStream result = awsStorageTypeService.getStepOutputStream("org1", "job1", "step1", null);
+
+        assertTrue(result.isExists());
+        assertFalse(result.isPartial());
+        assertEquals(11L, result.getContentLength());
+    }
+
+    @Test
+    void getStepOutputStreamReturnsMissingOnNoSuchKey() {
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(NoSuchKeyException.builder().build());
+
+        StepOutputStream result = awsStorageTypeService.getStepOutputStream("org1", "job1", "step1", null);
+
+        assertFalse(result.isExists());
+    }
+
+    @Test
+    void getStepOutputStreamPassesRangeToS3AndReportsContentRange() {
+        GetObjectResponse response = GetObjectResponse.builder()
+                .contentLength(100L).contentRange("bytes 900-999/1000").build();
+        ResponseInputStream<GetObjectResponse> ris =
+                new ResponseInputStream<>(response, new ByteArrayInputStream(new byte[100]));
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(ris);
+
+        ByteRange range = ByteRange.parse("bytes=-100").orElseThrow();
+        StepOutputStream result = awsStorageTypeService.getStepOutputStream("org1", "job1", "step1", range);
+
+        assertTrue(result.isPartial());
+        assertEquals("bytes 900-999/1000", result.getContentRange());
+        assertEquals(1000L, result.getTotalLength());
+        verify(s3Client).getObject(argThat((GetObjectRequest r) -> "bytes=-100".equals(r.range())),
+                any(ResponseTransformer.class));
     }
 
     @Test

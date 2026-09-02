@@ -4,8 +4,6 @@ import {
   CloudOutlined,
   DeleteOutlined,
   DownOutlined,
-  GithubOutlined,
-  GitlabOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
 import {
@@ -24,20 +22,20 @@ import {
   Typography,
 } from "antd";
 import { Buffer } from "buffer";
-import { DateTime } from "luxon";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
-import { SiBitbucket } from "react-icons/si";
-import { VscAzure, VscAzureDevops } from "react-icons/vsc";
+import { VscAzure } from "react-icons/vsc";
 import { useNavigate, useParams } from "react-router-dom";
-import LoadingFallback from "@/components/LoadingFallback";
-import PageWrapper from "@/modules/layout/PageWrapper/PageWrapper";
+import LoadingFallback from "@/components/feedback/LoadingFallback";
+import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
+import VcsLogo from "@/components/display/VcsLogo";
+import { relativeTime } from "@/modules/utils/dates";
 
 const Markdown = lazy(async () => {
   const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
@@ -291,29 +289,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       });
   };
 
-  const renderVCSLogo = (vcs?: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "18px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <SiBitbucket />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <VscAzureDevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "18px" }} />;
-    }
-  };
-
   return (
     <PageWrapper
       title={moduleName}
@@ -326,15 +301,13 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         { label: "Registry", path: `/organizations/${orgid}/registry` },
         { label: moduleName, path: `/organizations/${orgid}/registry/${id}` },
       ]}
-      fluid
-      innerClassName="registry-centered"
-      contentClassName="registry-centered"
+      width="reading"
     >
       {module && (
         <div>
           <Row>
             <Col span={16}>
-              <Space direction="vertical" style={{ marginTop: "10px", width: "95%" }}>
+              <Space orientation="vertical" style={{ marginTop: "10px", width: "95%" }}>
                 {submodule === "" && (
                   <>
                     <Space size="large" wrap>
@@ -360,7 +333,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "#1677ff",
+                              color: "var(--tk-accent)",
                               cursor: "pointer",
                             }}
                           >
@@ -369,11 +342,10 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         </Dropdown>
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        <ClockCircleOutlined /> Published{" "}
-                        {DateTime.fromISO(module.attributes.createdDate ?? "").toRelative()}
+                        <ClockCircleOutlined /> Published {relativeTime(module.attributes.createdDate)}
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        Source {renderVCSLogo(vcsProvider)}{" "}
+                        Source <VcsLogo type={vcsProvider} />{" "}
                         {module.attributes.source && (
                           <a href={fixSshURL(module.attributes.source)} target="_blank" rel="noopener noreferrer">
                             {new URL(fixSshURL(module.attributes.source)).pathname.replace(".git", "").substring(1)}
@@ -465,7 +437,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "2",
                       children:
                         hclObject && hclObject?.variable ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Inputs</h3>
                             <span>These variables should be set in the module block when using this module.</span>
                             <table
@@ -604,7 +576,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "3",
                       children:
                         hclObject && hclObject?.output ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Outputs</h3>
                             <span>These outputs are returned by this module.</span>
                             <table
@@ -688,7 +660,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       key: "5",
                       children:
                         hclObject && hclObject?.resource ? (
-                          <Space direction="vertical">
+                          <Space orientation="vertical">
                             <h3>Resources</h3>
                             <span>This is the list of resources this module can create.</span>
                             <span>This module defines {Object.keys(hclObject?.resource)?.length} resources.</span>
@@ -714,7 +686,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
             </Col>
             <Col span={8}>
               <Card>
-                <Space style={{ paddingRight: "10px", width: "100%" }} direction="vertical">
+                <Space style={{ paddingRight: "10px", width: "100%" }} orientation="vertical">
                   <div style={{ width: "100%" }}>
                     <Dropdown
                       menu={{
@@ -723,6 +695,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                             key: "delete",
                             label: (
                               <Popconfirm
+                                okButtonProps={{ danger: true }}
                                 title={
                                   <p>
                                     Module <b>{module.attributes.name}</b> will be permanently deleted.

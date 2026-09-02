@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
-import io.terrakube.api.rs.IdConverter;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.archive.Archive;
 
@@ -26,7 +25,6 @@ public class History extends GenericAuditFields {
 
     @Id
     @JdbcTypeCode(Types.VARCHAR)
-    @Convert(converter = IdConverter.class)
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 

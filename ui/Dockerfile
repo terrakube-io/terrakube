@@ -1,5 +1,5 @@
 #=> Build container (node:24-alpine)
-FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS builder
 WORKDIR /app
 
 # Enable Corepack so it picks up the Yarn version pinned in
@@ -23,7 +23,7 @@ RUN mkdir -p /etc/sbom && \
     syft scan dir:/app -o spdx-json=/etc/sbom/sbom.spdx.json -o cyclonedx-json=/etc/sbom/sbom.cdx.json
 
 # => Run container (nginx-unprivileged:latest)
-FROM nginxinc/nginx-unprivileged:latest@sha256:1ab63ed666197d757cd3ce0ad84c5136f18f774465345785f33423bd1bba4353
+FROM nginxinc/nginx-unprivileged:latest@sha256:a7caff5bdcb3e3ba5dafacbdfc8f2d6d4d9f256d63f47cfeee9e1f9c289dd833
 
 # Default Terraform version, updated at build time
 ARG REACT_APP_TERRAKUBE_VERSION=2.0.0
@@ -34,3 +34,4 @@ WORKDIR /usr/share/nginx/html
 COPY --from=builder /app/build .
 COPY --from=builder /etc/sbom /etc/sbom
 COPY conf/conf.d/terrakube-ui.conf /etc/nginx/conf.d/default.conf
+COPY conf/conf.d/gzip.conf /etc/nginx/conf.d/gzip.conf
