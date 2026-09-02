@@ -36,6 +36,8 @@ public class ContextController {
             JobStatus.completed,
             JobStatus.noChanges);
 
+    private static final String PENDING_BODY = "{\"structuredOutputStatus\":{\"state\":\"PENDING\"}}";
+
     private final StorageTypeService storageTypeService;
 
     private final JobRepository jobRepository;
@@ -44,24 +46,54 @@ public class ContextController {
 
     private final StreamingService streamingService;
 
+    private final ContextStorageMetrics contextStorageMetrics;
+
+    private final ContextReadService contextReadService;
+
+    private final ContextProperties contextProperties;
+
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) throws IOException {
-        String context = storageTypeService.getContext(jobId);
-        if (context == null || context.isBlank()) {
-            context = "{}";
+    public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) {
+        String context;
+        try {
+            context = contextReadService.read(jobId);
+        } catch (RuntimeException e) {
+            log.warn("Controlled context-read failure for job {}: {}", jobId, e.getMessage());
+            return unavailable();
         }
-        return new ResponseEntity<>(contextSanitizer.sanitize(context), HttpStatus.OK);
+
+        // A missing object is "not persisted yet", distinct from an empty plan and from an outage.
+        if (context == null || context.isBlank()) {
+            return new ResponseEntity<>(PENDING_BODY, HttpStatus.OK);
+        }
+
+        try {
+            return new ResponseEntity<>(contextSanitizer.sanitize(context), HttpStatus.OK);
+        } catch (IOException e) {
+            log.warn("Controlled failure sanitizing context for job {}: {}", jobId, e.getMessage());
+            return unavailable();
+        }
+    }
+
+    private ResponseEntity<String> unavailable() {
+        int retryAfter = contextProperties.getRetryAfterSeconds();
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", String.valueOf(retryAfter))
+                .body("{\"structuredOutputStatus\":{\"state\":\"UNAVAILABLE\"},\"retryAfterSeconds\":" + retryAfter + "}");
     }
 
     @PostMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
-    public ResponseEntity<String> saveContext(@PathVariable("jobId") int jobId, @RequestBody String context) throws IOException {
+    public ResponseEntity<String> saveContext(@PathVariable("jobId") int jobId, @RequestBody String context) {
         String sanitizedContext;
         try {
             sanitizedContext = contextSanitizer.sanitize(context);
         } catch (JacksonException e) {
             log.warn("Invalid context payload for job {}", jobId, e);
             return new ResponseEntity<>("{}", HttpStatus.BAD_REQUEST);
+        } catch (IOException e) {
+            log.warn("Controlled failure sanitizing context for job {}: {}", jobId, e.getMessage());
+            return new ResponseEntity<>("{}", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
         Optional<Job> jobOptional = jobRepository.findById(jobId);
@@ -76,7 +108,16 @@ public class ContextController {
             return new ResponseEntity<>("{}", HttpStatus.CONFLICT);
         }
 
-        String savedContext = storageTypeService.saveContext(jobId, sanitizedContext);
+        String savedContext;
+        try {
+            String contextToSave = sanitizedContext;
+            savedContext = contextStorageMetrics.time("write", () -> storageTypeService.saveContext(jobId, contextToSave));
+        } catch (IOException | RuntimeException e) {
+            log.warn("Controlled failure saving context for job {}: {}", jobId, e.getMessage());
+            return new ResponseEntity<>("{}", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        // Refresh the read cache so a Job Details page open right after the write sees this snapshot.
+        contextReadService.invalidate(jobId, savedContext);
         return new ResponseEntity<>(savedContext, HttpStatus.OK);
     }
 

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.logs;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.repository.StepRepository;
@@ -28,6 +29,7 @@ class StepLogServiceTest {
 
     StepLogService service;
     LogsProperties props;
+    SimpleMeterRegistry registry;
 
     UUID stepId = UUID.randomUUID();
 
@@ -37,7 +39,8 @@ class StepLogServiceTest {
         props.setCacheMaxWeightBytes(1_000_000);
         props.setCacheTtl(Duration.ofMinutes(10));
         props.setCacheableMaxObjectBytes(1_000_000);
-        service = new StepLogService(storage, stepRepository, props);
+        registry = new SimpleMeterRegistry();
+        service = new StepLogService(storage, stepRepository, props, registry);
     }
 
     private void stepWithStatus(JobStatus status) {
@@ -60,6 +63,16 @@ class StepLogServiceTest {
         assertArrayEquals(data, first.getBody());
         assertArrayEquals(data, second.getBody());
         verify(storage, times(1)).getStepOutputStream("o", "j", stepId.toString(), null);
+    }
+
+    @Test
+    void storageFailureSurfacesAsStepLogUnavailableAndIsCounted() {
+        stepWithStatus(JobStatus.completed);
+        when(storage.getStepOutputStream("o", "j", stepId.toString(), null))
+                .thenThrow(new RuntimeException("S3 timeout"));
+
+        assertThrows(StepLogUnavailableException.class, () -> service.resolve("o", "j", stepId.toString()));
+        assertEquals(1.0, registry.get("terrakube.api.step.log.storage.failures").counter().count());
     }
 
     @Test
