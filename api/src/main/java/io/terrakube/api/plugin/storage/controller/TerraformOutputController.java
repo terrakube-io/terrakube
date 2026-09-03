@@ -19,6 +19,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
+
 @AllArgsConstructor
 @RestController
 @Slf4j
@@ -31,6 +33,7 @@ public class TerraformOutputController {
 
     private final JobLogBroadcasterRegistry broadcasterRegistry;
 
+    @SuppressWarnings("java:S2095") // Stream lifecycle is handed off to Spring's InputStreamResource in StepLogResponses.streamed
     @GetMapping(
             value = "/organization/{organizationId}/job/{jobId}/step/{stepId}",
             produces = MediaType.APPLICATION_OCTET_STREAM_VALUE
@@ -59,6 +62,11 @@ public class TerraformOutputController {
         ByteRange range = ByteRange.parse(rangeHeader).orElse(null);
         StepOutputStream out = stepLogService.openStream(organizationId, jobId, stepId, range);
         if (!out.isExists()) {
+            try {
+                out.close();
+            } catch (IOException ignored) {
+                // stream missing, ignore
+            }
             return StepLogResponses.notFound();
         }
         return StepLogResponses.streamed(out);

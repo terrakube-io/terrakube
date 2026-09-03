@@ -4,11 +4,12 @@ on:
   release:
     types: [created]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build:
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [jammy, jammy-arm, alpaquita]
