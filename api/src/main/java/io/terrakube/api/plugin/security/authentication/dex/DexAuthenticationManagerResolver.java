@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.security.authentication.dex;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.plugin.security.federated.FederatedTokenClaims;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
@@ -28,9 +29,14 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Builder
@@ -68,14 +74,14 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
 
         boolean federatedCredentialFound = false;
         for (String audience : audiences) {
-            Optional<Federated> federated = federatedRepository.findByIssuerUrlAndAudience(issuer, audience);
-            if (federated.isEmpty()) {
-                continue;
-            }
-            federatedCredentialFound = true;
-            if (FederatedClaimMatcher.matchesClaims(federated.get(), tokenAttributes)) {
-                log.debug("Federated issuer found: {}", federated.get().getIssuerUrl());
-                return new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(federated.get().getIssuerUrl())));
+            List<Federated> federatedCredentials =
+                    federatedRepository.findAllByIssuerUrlAndAudience(issuer, audience);
+            federatedCredentialFound |= !federatedCredentials.isEmpty();
+            for (Federated federated : federatedCredentials) {
+                if (FederatedClaimMatcher.matchesClaims(federated, tokenAttributes)) {
+                    log.debug("Federated issuer found: {}", federated.getIssuerUrl());
+                    return new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(federated.getIssuerUrl())));
+                }
             }
         }
 
@@ -85,17 +91,20 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             throw new BadCredentialsException("Federated token is not authorized");
         }
 
-        switch (issuer) {
-            case jwtTypePat:
+        return switch (issuer) {
+            case jwtTypePat -> {
                 log.debug("Using Terrakube Authentication Provider");
-                return new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
-            case jwtTypeInternal:
+                yield new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
+            }
+            case jwtTypeInternal -> {
                 log.debug("Using Terrakube Internal Authentication Provider");
-                return new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypeInternal)));
-            default:
+                yield new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypeInternal)));
+            }
+            default -> {
                 log.debug("Using Dex JWT Authentication Provider");
-                return new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(this.dexIssuerUri)));
-        }
+                yield new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(this.dexIssuerUri)));
+            }
+        };
     }
 
     // computeIfAbsent drops failed mappings, so a failed fetch is retried next request.
@@ -118,10 +127,23 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             return cached;
         }
         String jwtSecret = (issuerType.equals(jwtTypePat) ? patJwtSecret : internalJwtSecret);
-        SecretKey jwtSecretKey = new SecretKeySpec(Decoders.BASE64URL.decode(jwtSecret), "HMACSHA256");
-        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        byte[] secretBytes = Decoders.BASE64URL.decode(jwtSecret);
+        SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+                .macAlgorithm(getMacAlgorithm(secretBytes.length))
+                .build();
         decoderCache.putIfAbsent(cacheKey, decoder);
         return decoderCache.get(cacheKey);
+    }
+
+    private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {
+        if (keyLengthBytes >= 64) {
+            return MacAlgorithm.HS512;
+        } else if (keyLengthBytes >= 48) {
+            return MacAlgorithm.HS384;
+        } else {
+            return MacAlgorithm.HS256;
+        }
     }
 
     private Map<String, Object> getJwtClaims(HttpServletRequest request) {
@@ -158,20 +180,12 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             Optional<Pat> searchPat = patRepository.findById(id);
             Optional<Group> searchGroupToken = teamTokenRepository.findById(id);
             if (searchPat.isPresent()) {
-                Pat pat = searchPat.get();
-                if (pat.isDeleted()) {
-                    return true;
-                } else return false;
+                return searchPat.get().isDeleted();
             }
-
             if (searchGroupToken.isPresent()) {
-                Group group = searchGroupToken.get();
-                if (group.isDeleted()) {
-                    return true;
-                } else return false;
+                return searchGroupToken.get().isDeleted();
             }
         }
-
         return false;
     }
 }

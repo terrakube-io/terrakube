@@ -88,9 +88,9 @@ public interface NotificationOutboxRepository extends JpaRepository<Notification
     int rearmFailedForRetry(@Param("id") UUID id, @Param("failed") NotificationOutboxStatus failed,
             @Param("pending") NotificationOutboxStatus pending, @Param("now") Date now);
 
-    // Retention sweep: only ever targets rows in a terminal state (SENT/FAILED) older than the
-    // cutoff - a row still PENDING/SENDING is mid-flight regardless of age and must never be
-    // deleted out from under the dispatch pipeline.
+    // Retention sweep: only ever targets rows in a terminal state (SENT/FAILED/SKIPPED) older
+    // than the cutoff - a row still PENDING/SENDING is mid-flight regardless of age and must
+    // never be deleted out from under the dispatch pipeline.
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM notification_outbox o WHERE o.status IN :terminalStatuses AND o.createdDate < :cutoff")
     int deleteTerminalRowsCreatedBefore(@Param("terminalStatuses") List<NotificationOutboxStatus> terminalStatuses,

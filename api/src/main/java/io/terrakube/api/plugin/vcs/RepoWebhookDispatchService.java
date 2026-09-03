@@ -84,8 +84,11 @@ public class RepoWebhookDispatchService {
     }
 
     private Map<String, String> deserializeHeaders(String headersJson) throws Exception {
-        return objectMapper.readValue(headersJson, new TypeReference<Map<String, String>>() {
-        });
+        // Stored as plain JSON, so it rehydrates into a case-sensitive map - re-wrap it so the
+        // provider services' lowercase header lookups keep working (see WebhookHeaders).
+        return WebhookHeaders.caseInsensitive(
+                objectMapper.readValue(headersJson, new TypeReference<Map<String, String>>() {
+                }));
     }
 
     private long backoffMillis(int attemptCount) {

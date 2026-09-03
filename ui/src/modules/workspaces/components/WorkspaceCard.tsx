@@ -62,7 +62,7 @@ export default function WorkspaceCard({ item, tags }: Props) {
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                style={{ position: "relative", zIndex: 1 }}
+                style={{ position: "relative", zIndex: 2 }}
               >
                 {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
               </Typography.Link>

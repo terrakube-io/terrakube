@@ -1,7 +1,6 @@
 package io.terrakube.executor.service.workspace.security;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +64,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("workspaceId", workspaceId)
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(Instant.now().plus(30, ChronoUnit.DAYS)))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .signWith(key)
                 .compact();
 
     }
@@ -84,7 +83,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("name", WorkspaceSecurityImpl.NAME)
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(Instant.now().plus(minutes, ChronoUnit.MINUTES)))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .signWith(key)
                 .compact();
     }
 

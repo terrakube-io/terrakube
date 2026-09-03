@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -37,9 +38,9 @@ public class FederatedLookupService {
      * the verdict depends on per-user token claims, so caching it under an issuer/audience key would
      * let one user's result stand in for another's.
      */
-    public Optional<Federated> findByIssuerUrlAndAudience(String issuerUrl, String audience) {
+    public List<Federated> findAllByIssuerUrlAndAudience(String issuerUrl, String audience) {
         return RequestScopedMemo.memoize(CACHE_ATTRIBUTE, Arrays.asList(issuerUrl, audience),
-                () -> federatedRepository.findByIssuerUrlAndAudience(issuerUrl, audience));
+                () -> federatedRepository.findAllByIssuerUrlAndAudience(issuerUrl, audience));
     }
 
     /**
@@ -55,8 +56,7 @@ public class FederatedLookupService {
             return Optional.empty();
         }
         return FederatedTokenClaims.audiences(tokenAttributes).stream()
-                .map(audience -> findByIssuerUrlAndAudience(issuer, audience))
-                .flatMap(Optional::stream)
+                .flatMap(audience -> findAllByIssuerUrlAndAudience(issuer, audience).stream())
                 .filter(federated -> FederatedClaimMatcher.matchesClaims(federated, tokenAttributes))
                 .findFirst();
     }

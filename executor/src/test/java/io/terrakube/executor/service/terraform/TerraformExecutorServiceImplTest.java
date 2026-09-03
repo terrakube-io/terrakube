@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -426,5 +427,182 @@ class TerraformExecutorServiceImplTest {
         verify(planStructuredOutputService, Mockito.atLeastOnce()).publishPlanProgress(
                 eq("org"), eq("42"), eq("1"), any(), any());
         verify(logsService, Mockito.atLeastOnce()).sendStructuredUpdate(eq(42), eq("1"), anyString());
+    }
+
+    // Regression test for the reported bug: running `tofu plan` from the CLI showed only a bare
+    // "Error: Unsupported attribute" header with no file, line or explanation. Under `-json` the
+    // diagnostic's detail lives in the structured event, not in @message - the executor must
+    // reconstruct the full rendering into the console stream the CLI reads.
+    @Test
+    void planForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String diagnosticLine = "{\"@message\":\"Error: Unsupported attribute\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Unsupported attribute\","
+                + "\"detail\":\"This object has no argument, nested block, or exported attribute named \\\"identifier\\\".\","
+                + "\"range\":{\"filename\":\"main.tf\",\"start\":{\"line\":12,\"column\":12}}}}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(1);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(logsService, Mockito.atLeastOnce()).sendLogs(eq(42), eq("1"), anyInt(),
+                argThat(line -> line != null && line.contains("no argument, nested block")));
+        verify(logsService, Mockito.atLeastOnce()).sendLogs(eq(42), eq("1"), anyInt(),
+                argThat(line -> line != null && line.contains("on main.tf line 12")));
+    }
+
+    // Same regression as the plan case, on the apply path: apply -json's diagnostic events must
+    // land in the console stream with their detail and location, not just the "Error:" header.
+    @Test
+    void applyForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        Map<String, Object> seededChange = new HashMap<>();
+        seededChange.put("address", "null_resource.fails");
+        seededChange.put("status", "pending");
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        String diagnosticLine = "{\"@message\":\"Error: Missing required argument\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Missing required argument\","
+                + "\"detail\":\"The argument \\\"triggers\\\" is required, but no definition was found.\","
+                + "\"range\":{\"filename\":\"main.tf\",\"start\":{\"line\":5,\"column\":1}}}}";
+
+        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(false);
+                });
+        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.getOutputLog().contains("The argument \"triggers\" is required, but no definition was found."),
+                result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("on main.tf line 5"), result.getOutputLog());
+    }
+
+    // Same regression on the destroy path.
+    @Test
+    void destroyForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        String diagnosticLine = "{\"@message\":\"Error: Provider configuration not present\",\"type\":\"diagnostic\","
+                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Provider configuration not present\","
+                + "\"detail\":\"To work with null_resource.fails its original provider configuration is required.\"}}";
+
+        TerraformClient jsonDestroyClient = Mockito.mock(TerraformClient.class);
+        when(jsonDestroyClient.destroy(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(false);
+                });
+        doReturn(jsonDestroyClient).when(subject).buildJsonEnabledDestroyClient();
+
+        ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
+
+        assertTrue(result.getOutputLog().contains(
+                "To work with null_resource.fails its original provider configuration is required."),
+                result.getOutputLog());
+    }
+
+    // Regression test for the reported bug: a plan that fails late (a data source erroring after
+    // the diff was already streamed) surfaced in the UI/CLI as a bare
+    // "java.lang.RuntimeException: Failed to capture process output stream" - the executor's
+    // catch block replaced every line Terraform had already printed with just the exception
+    // message. The console output that was already collected must be preserved.
+    @Test
+    void planKeepsAlreadyStreamedOutputWhenTheClientFutureFails() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":"
+                + "{\"addr\":\"aws_instance.example\"},\"action\":\"create\"},"
+                + "\"@message\":\"aws_instance.example: Plan to create\"}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    return CompletableFuture.failedFuture(
+                            new RuntimeException("Failed to capture process output stream"));
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("Failed to capture process output stream"), result.getOutputLog());
+        assertTrue(result.getOutputErrorLog().contains("Failed to capture process output stream"));
+    }
+
+    // A failure inside the -json line consumer (here: the live structured-update push blowing up)
+    // must not propagate into terraform-spring-boot's process-output reader loop - that kills the
+    // reader and fails the whole run with "Failed to capture process output stream", losing the
+    // console output that had already been read.
+    @Test
+    void planSurvivesAFailureRaisedFromInsideTheJsonLineConsumer() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        Mockito.doThrow(new RuntimeException("redis is unreachable"))
+                .when(logsService).sendStructuredUpdate(anyInt(), anyString(), anyString());
+
+        String plannedChangeLine = "{\"type\":\"planned_change\",\"change\":{\"resource\":"
+                + "{\"addr\":\"aws_instance.example\"},\"action\":\"create\"},"
+                + "\"@message\":\"aws_instance.example: Plan to create\"}";
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(plannedChangeLine);
+                    return CompletableFuture.completedFuture(2);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(2, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
     }
 }

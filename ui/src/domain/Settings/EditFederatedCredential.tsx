@@ -72,6 +72,11 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   };
 
   const onFinish = async (values: FederatedForm) => {
+    if (claims.length === 0) {
+      message.error("At least one claim condition is required");
+      return;
+    }
+
     const body = {
       data: {
         type: "federated",
@@ -251,6 +256,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
                 <Form.Item
                   name="audience"
                   label="Audience"
+                  extra="Configure one accepted audience per credential. Tokens with a multi-value aud claim are supported."
                   rules={[{ required: true, message: "Please enter the audience" }]}
                 >
                   <Input placeholder="e.g. terrakube-audience" />
@@ -262,8 +268,8 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
               Claim Conditions
             </Typography.Title>
             <Typography.Text type="secondary">
-              Add conditions to restrict which tokens are accepted. All conditions must match for a token to be
-              authorized.
+              Add at least one condition to restrict which tokens are accepted. All conditions must match for a token to
+              be authorized.
             </Typography.Text>
             <div
               style={{
@@ -307,7 +313,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
               dataSource={claims}
               pagination={false}
               size="small"
-              locale={{ emptyText: "No claim conditions - all tokens from this issuer will be accepted" }}
+              locale={{ emptyText: "At least one claim condition is required" }}
               style={{ marginBottom: 24 }}
             />
 

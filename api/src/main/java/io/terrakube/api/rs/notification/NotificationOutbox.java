@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -47,6 +48,16 @@ public class NotificationOutbox extends GenericAuditFields {
 
     @Enumerated(EnumType.STRING)
     private NotificationOutboxStatus status = NotificationOutboxStatus.PENDING;
+
+    // The job status this row's payload was rendered for. Re-checked against the job's live
+    // status when the row is claimed for delivery: if the job has since moved to a different
+    // status, this notification described a state that no longer holds (e.g. a transient
+    // "failed" from a lost executor-dispatch response that the executor callback then undid)
+    // and the row is marked SKIPPED instead of sent. Null on rows created before this column
+    // existed - those are always sent, exactly as before.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "job_status")
+    private JobStatus jobStatus;
 
     @Column(name = "attempt_count")
     private int attemptCount = 0;

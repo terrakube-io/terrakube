@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.federated.Federated;
 import io.terrakube.client.model.federated.claim.FederatedClaim;
@@ -17,6 +18,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -25,7 +27,6 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -57,10 +58,10 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     @Builder.Default
     private java.util.function.Function<String, JwtDecoder> jwtDecoderFactory = JwtDecoders::fromIssuerLocation;
 
-    private Cache<String, Optional<FederatedConfig>> federatedCache;
+    private Cache<FederatedCacheKey, List<FederatedConfig>> federatedCache;
     private Cache<String, ProviderManager> providerManagerCache;
 
-    public Cache<String, Optional<FederatedConfig>> getFederatedCache() {
+    public Cache<FederatedCacheKey, List<FederatedConfig>> getFederatedCache() {
         if (federatedCache == null) {
             federatedCache = Caffeine.newBuilder()
                     .expireAfterWrite(federatedCacheExpireAfterWrite, TimeUnit.MINUTES)
@@ -87,16 +88,17 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         String tokenIssuer = extractClaimString(payloadMap, "iss");
         List<String> audiences = extractClaimStrings(payloadMap, "aud");
 
+        boolean federatedCredentialFound = false;
         if (!tokenIssuer.isEmpty() && !audiences.isEmpty()
                 && !tokenIssuer.equals(jwtPat)
                 && !tokenIssuer.equals(jwtInternal)
                 && !tokenIssuer.equals(this.issuerUri)) {
             for (String audience : audiences) {
-                String cacheKey = tokenIssuer + ":" + audience;
-                Optional<FederatedConfig> federatedOpt = getFederatedCache().get(
-                        cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
-                if (federatedOpt.isPresent()) {
-                    FederatedConfig config = federatedOpt.get();
+                FederatedCacheKey cacheKey = new FederatedCacheKey(tokenIssuer, audience);
+                List<FederatedConfig> federatedConfigs = getFederatedCache().get(
+                        cacheKey, key -> fetchFederatedConfigs(key.issuer(), key.audience()));
+                federatedCredentialFound |= !federatedConfigs.isEmpty();
+                for (FederatedConfig config : federatedConfigs) {
                     if (validateClaims(payloadMap, config.getClaims())) {
                         log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
                         return getProviderManagerCache().get(config.getIssuerUrl(), url ->
@@ -107,52 +109,79 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
             }
         }
 
+        if (federatedCredentialFound) {
+            throw new BadCredentialsException("Federated token is not authorized");
+        }
+
         switch (tokenIssuer) {
             case jwtInternal:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal)));
+                // Cache key is stable: same secret → same decoder for the process lifetime.
+                providerManager = getProviderManagerCache().get("internal",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtInternal))));
                 break;
             case jwtPat:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat)));
+                providerManager = getProviderManagerCache().get("pat",
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat))));
                 break;
             default:
-                providerManager = new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri)));
+                providerManager = getProviderManagerCache().get(this.issuerUri,
+                        k -> new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri))));
                 break;
         }
         return providerManager;
     }
 
-    private Optional<FederatedConfig> fetchFederatedConfig(String issuer, String audience) {
+    private List<FederatedConfig> fetchFederatedConfigs(String issuer, String audience) {
         if (terrakubeClient == null || issuer.isEmpty() || audience.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             ResponseWithInclude<List<Federated>, FederatedClaim> response =
                     terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience);
             if (response != null && response.getData() != null && !response.getData().isEmpty()) {
-                Federated federated = response.getData().get(0);
-                FederatedConfig config = new FederatedConfig();
-                config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
-                config.setAudience(federated.getAttributes().getAudience());
-                Map<String, String> claimsMap = new HashMap<>();
+                Map<String, FederatedClaim> includedClaims = new HashMap<>();
                 if (response.getIncluded() != null) {
-                    for (FederatedClaim claim : response.getIncluded()) {
-                        if (claim.getAttributes() != null && claim.getAttributes().getClaimKey() != null) {
-                            claimsMap.put(claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue());
-                        }
-                    }
+                    response.getIncluded().stream()
+                            .filter(Objects::nonNull)
+                            .filter(claim -> claim.getId() != null)
+                            .forEach(claim -> includedClaims.put(claim.getId(), claim));
                 }
-                config.setClaims(claimsMap);
-                return Optional.of(config);
+                return response.getData().stream()
+                        .filter(Objects::nonNull)
+                        .map(federated -> toFederatedConfig(federated, includedClaims))
+                        .toList();
             }
         } catch (Exception ex) {
             log.error("Error fetching federated config from TerrakubeClient: {}", ex.getMessage());
         }
-        return Optional.empty();
+        return List.of();
+    }
+
+    private FederatedConfig toFederatedConfig(Federated federated, Map<String, FederatedClaim> includedClaims) {
+        FederatedConfig config = new FederatedConfig();
+        if (federated.getAttributes() != null) {
+            config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
+            config.setAudience(federated.getAttributes().getAudience());
+        }
+        Map<String, String> claimsMap = new LinkedHashMap<>();
+        if (federated.getRelationships() != null
+                && federated.getRelationships().getClaims() != null
+                && federated.getRelationships().getClaims().getData() != null) {
+            federated.getRelationships().getClaims().getData().stream()
+                    .map(claimResource -> includedClaims.get(claimResource.getId()))
+                    .filter(Objects::nonNull)
+                    .filter(claim -> claim.getAttributes() != null)
+                    .filter(claim -> claim.getAttributes().getClaimKey() != null)
+                    .forEach(claim -> claimsMap.put(
+                            claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue()));
+        }
+        config.setClaims(claimsMap);
+        return config;
     }
 
     private boolean validateClaims(Map<String, Object> payloadMap, Map<String, String> requiredClaims) {
         if (requiredClaims == null || requiredClaims.isEmpty()) {
-            return true;
+            return false;
         }
         for (Map.Entry<String, String> entry : requiredClaims.entrySet()) {
             Object tokenVal = payloadMap.get(entry.getKey());
@@ -231,8 +260,20 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
 
     private JwtDecoder getJwtEncoder(String issuerType) {
         String tokenSecret = (issuerType.equals(jwtPat) ? patSecret : internalSecret);
-        SecretKey jwtTokenKey = new SecretKeySpec(Decoders.BASE64URL.decode(tokenSecret), "HMACSHA256");
-        return NimbusJwtDecoder.withSecretKey(jwtTokenKey).macAlgorithm(MacAlgorithm.HS256).build();
+        byte[] secretBytes = Decoders.BASE64URL.decode(tokenSecret);
+        SecretKey jwtTokenKey = Keys.hmacShaKeyFor(secretBytes);
+        MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
+        return NimbusJwtDecoder.withSecretKey(jwtTokenKey).macAlgorithm(macAlgorithm).build();
+    }
+
+    private MacAlgorithm getMacAlgorithm(int keyLengthBytes) {
+        if (keyLengthBytes >= 64) {
+            return MacAlgorithm.HS512;
+        } else if (keyLengthBytes >= 48) {
+            return MacAlgorithm.HS384;
+        } else {
+            return MacAlgorithm.HS256;
+        }
     }
 
     @Getter
@@ -244,5 +285,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         private String audience;
         private Map<String, String> claims;
     }
+
+    public record FederatedCacheKey(String issuer, String audience) {}
 
 }

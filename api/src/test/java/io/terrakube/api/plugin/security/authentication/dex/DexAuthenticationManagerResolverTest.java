@@ -20,16 +20,12 @@ import org.springframework.security.oauth2.jwt.JwtDecoders;
 
 import java.util.Base64;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,10 +42,7 @@ class DexAuthenticationManagerResolverTest {
 
     private HttpServletRequest dexTokenRequest() {
         String jti = UUID.randomUUID().toString();
-        return tokenRequest("{\"iss\":\"https://dummy-dex-issuer\",\"aud\":\"terrakube\",\"jti\":\"" + jti + "\"}");
-    }
-
-    private HttpServletRequest tokenRequest(String payloadJson) {
+        String payloadJson = "{\"iss\":\"https://dummy-dex-issuer\",\"aud\":\"terrakube\",\"jti\":\"" + jti + "\"}";
         String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.getBytes());
         String token = "header." + payload + ".signature";
 
@@ -71,7 +64,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void reusesTheDecoderAcrossRequestsInsteadOfRefetchingIssuerMetadataEveryTime() {
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
         JwtDecoder decoder = mock(JwtDecoder.class);
@@ -90,7 +83,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void translatesAnUnreachableIssuerIntoAnAuthenticationExceptionInsteadOfALeakingRuntimeException() {
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
 
@@ -105,7 +98,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void retriesOnTheNextRequestAfterAFailedFetchInsteadOfCachingTheFailure() {
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
         JwtDecoder decoder = mock(JwtDecoder.class);
@@ -126,50 +119,170 @@ class DexAuthenticationManagerResolverTest {
     }
 
     @Test
-    void acceptsExternalTokenWithNonUuidIdAndMatchingAudienceInAList() {
-        String issuer = "https://token.actions.githubusercontent.com";
-        Federated federated = federated(issuer, "terrakube", "repository", "acme/infra");
-        when(federatedRepository.findByIssuerUrlAndAudience(issuer, "other-service")).thenReturn(Optional.empty());
-        when(federatedRepository.findByIssuerUrlAndAudience(issuer, "terrakube")).thenReturn(Optional.of(federated));
+    void checksAllCredentialsForTheSameIssuerAndAudience() {
+        Federated first = federated("team-a", "repository", "acme/service-a");
+        Federated second = federated("team-b", "repository", "acme/service-b");
+        when(federatedRepository.findAllByIssuerUrlAndAudience(
+                "https://token.actions.githubusercontent.com", "terrakube"))
+                .thenReturn(List.of(first, second));
         JwtDecoder decoder = mock(JwtDecoder.class);
 
-        HttpServletRequest request = tokenRequest("{\"iss\":\"" + issuer
-                + "\",\"aud\":[\"other-service\",\"terrakube\"],\"jti\":\"provider-specific-id\""
-                + ",\"repository\":\"acme/infra\"}");
-
         try (MockedStatic<JwtDecoders> jwtDecoders = Mockito.mockStatic(JwtDecoders.class)) {
-            jwtDecoders.when(() -> JwtDecoders.fromIssuerLocation(issuer)).thenReturn(decoder);
+            jwtDecoders.when(() -> JwtDecoders.fromIssuerLocation("https://token.actions.githubusercontent.com"))
+                    .thenReturn(decoder);
 
-            assertThat(newResolver().resolve(request)).isNotNull();
+            AuthenticationManager manager = newResolver().resolve(tokenRequest(
+                    "{\"iss\":\"https://token.actions.githubusercontent.com\","
+                            + "\"aud\":\"terrakube\",\"repository\":\"acme/service-b\"}"));
 
-            jwtDecoders.verify(() -> JwtDecoders.fromIssuerLocation(issuer), Mockito.times(1));
-            verify(patRepository, never()).findById(any());
-            verify(teamTokenRepository, never()).findById(any());
+            assertThat(manager).isNotNull();
         }
     }
 
     @Test
-    void rejectsFederatedTokenWhenConfiguredClaimsDoNotMatch() {
-        String issuer = "https://token.actions.githubusercontent.com";
-        when(federatedRepository.findByIssuerUrlAndAudience(issuer, "terrakube"))
-                .thenReturn(Optional.of(federated(issuer, "terrakube", "repository", "acme/infra")));
+    void rejectsFederatedCredentialWithoutClaimConditions() {
+        Federated federated = new Federated();
+        federated.setIssuerUrl("https://token.actions.githubusercontent.com");
+        federated.setAudience("terrakube");
+        federated.setClaims(List.of());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(
+                "https://token.actions.githubusercontent.com", "terrakube"))
+                .thenReturn(List.of(federated));
 
-        HttpServletRequest request = tokenRequest("{\"iss\":\"" + issuer
-                + "\",\"aud\":\"terrakube\",\"repository\":\"attacker/infra\"}");
-
-        assertThatThrownBy(() -> newResolver().resolve(request))
-                .isInstanceOf(BadCredentialsException.class)
-                .hasMessage("Federated token is not authorized");
+        assertThatThrownBy(() -> newResolver().resolve(tokenRequest(
+                "{\"iss\":\"https://token.actions.githubusercontent.com\",\"aud\":\"terrakube\"}")))
+                .isInstanceOf(BadCredentialsException.class);
     }
 
-    private Federated federated(String issuer, String audience, String claimKey, String claimValue) {
+    private Federated federated(String name, String claimKey, String claimValue) {
         Federated federated = new Federated();
-        federated.setIssuerUrl(issuer);
-        federated.setAudience(audience);
+        federated.setName(name);
+        federated.setIssuerUrl("https://token.actions.githubusercontent.com");
+        federated.setAudience("terrakube");
         FederatedClaim claim = new FederatedClaim();
         claim.setClaimKey(claimKey);
         claim.setClaimValue(claimValue);
         federated.setClaims(List.of(claim));
         return federated;
+    }
+
+    private HttpServletRequest tokenRequest(String payloadJson) {
+        String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.getBytes());
+        return mockTokenRequest("header." + payload + ".signature");
+    }
+
+    private HttpServletRequest mockTokenRequest(String token) {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+        return request;
+    }
+
+    private String createSignedToken(String issuer, String base64Secret) {
+        byte[] secretBytes = io.jsonwebtoken.io.Decoders.BASE64URL.decode(base64Secret);
+        javax.crypto.SecretKey key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretBytes);
+        return io.jsonwebtoken.Jwts.builder()
+                .issuer(issuer)
+                .subject("Test Subject")
+                .audience().add(issuer).and()
+                .id(UUID.randomUUID().toString())
+                .claim("email", "test@terrakube.io")
+                .claim("email_verified", true)
+                .claim("name", "Test User")
+                .issuedAt(java.util.Date.from(java.time.Instant.now()))
+                .expiration(java.util.Date.from(java.time.Instant.now().plus(60, java.time.temporal.ChronoUnit.SECONDS)))
+                .signWith(key)
+                .compact();
+    }
+
+    @Test
+    void resolve_patToken_32ByteSecret_supportsHS256() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(32).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_patToken_48ByteSecret_supportsHS384() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(48).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_patToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("Terrakube", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_internalToken_64ByteSecret_supportsHS512() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+
+        String token = createSignedToken("TerrakubeInternal", secret);
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
     }
 }

@@ -13,6 +13,7 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -102,12 +103,17 @@ public class PersistentExecutorService {
                         executorUrlForRequest);
                 throw new ExecutorUnavailableException(new Throwable(ex.getMessage() + hint, ex));
             }
-            if (ex instanceof WebClientResponseException wcre
-                    && wcre.getStatusCode().equals(HttpStatus.SERVICE_UNAVAILABLE)) {
-                // The executor pod's per-pod capacity gate was already held by another job
-                // (persistent-executor-admission-control) - retryable, not a job failure.
+            if (ex instanceof WebClientResponseException wcre && isRetryableGatewayStatus(wcre.getStatusCode())) {
+                // 503: the executor pod's per-pod capacity gate was already held by another job
+                // (persistent-executor-admission-control). 502/504: a proxy/ingress between the
+                // API and the executor dropped or timed out the upstream connection - which can
+                // happen *after* the executor already accepted the job (its response, not the
+                // request, was lost). None of these mean the job is broken, and failing it here
+                // fires a spurious "failed" notification for a run the executor goes on to
+                // finish - so treat them all as retryable capacity/transport problems.
                 throw new ExecutorUnavailableException(new Throwable(
-                        "Executor at " + executorUrlForRequest + " is busy (503), will retry", ex));
+                        "Executor at " + executorUrlForRequest + " returned " + wcre.getStatusCode().value()
+                                + ", will retry", ex));
             }
             throw new ExecutionException(new Throwable(ex.getMessage(), ex));
         }
@@ -125,6 +131,15 @@ public class PersistentExecutorService {
                     response.getBody());
             throw new ExecutionException(new Throwable(message));
         }
+    }
+
+    // 503 (per-pod admission control) plus the two proxy/ingress statuses that show up when the
+    // hop between the API and the executor fails rather than the executor itself - retryable
+    // capacity/transport problems, not a broken job.
+    private static boolean isRetryableGatewayStatus(HttpStatusCode status) {
+        return status.equals(HttpStatus.SERVICE_UNAVAILABLE)
+                || status.equals(HttpStatus.BAD_GATEWAY)
+                || status.equals(HttpStatus.GATEWAY_TIMEOUT);
     }
 
     private String getExecutorUrl(Job job) throws URISyntaxException {

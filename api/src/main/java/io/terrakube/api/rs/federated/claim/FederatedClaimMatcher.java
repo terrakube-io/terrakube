@@ -15,7 +15,8 @@ public final class FederatedClaimMatcher {
     public static boolean matchesClaims(Federated federated, Map<String, Object> tokenAttributes) {
         List<FederatedClaim> claims = federated.getClaims();
         if (claims == null || claims.isEmpty()) {
-            return true;
+            log.debug("Federated credential {} has no claim conditions and is denied", federated.getId());
+            return false;
         }
         for (FederatedClaim claim : claims) {
             Object tokenValue = tokenAttributes.get(claim.getClaimKey());

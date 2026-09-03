@@ -71,7 +71,7 @@ class FederatedLookupTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value());
 
         return mockingDetails(federatedRepository).getInvocations().stream()
-                .filter(invocation -> "findByIssuerUrlAndAudience".equals(invocation.getMethod().getName()))
+                .filter(invocation -> "findAllByIssuerUrlAndAudience".equals(invocation.getMethod().getName()))
                 .count();
     }
 }

@@ -87,11 +87,13 @@ public class TerraformStateAutoConfiguration {
 
                         S3Configuration serviceConfiguration = S3Configuration.builder()
                                 .pathStyleAccessEnabled(true)
+                                .chunkedEncodingEnabled(awsTerraformStateProperties.isChunkedEncodingEnabled())
+                                .checksumValidationEnabled(awsTerraformStateProperties.isChecksumValidationEnabled())
                                 .build();
 
                         s3client = S3Client.builder()
                                 .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsTerraformStateProperties)))
-                                .region(Region.of("auto"))
+                                .region(Region.of(awsTerraformStateProperties.getEndpointRegion()))
                                 .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
                                 .serviceConfiguration(serviceConfiguration)
                                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)

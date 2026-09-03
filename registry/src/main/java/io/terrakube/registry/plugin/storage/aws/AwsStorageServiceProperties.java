@@ -35,4 +35,11 @@ public class AwsStorageServiceProperties {
     // object's bytes through the registry pod. Off by default for staged rollout; also doubles as
     // the rollback switch back to the byte-proxy path.
     private boolean presignedRedirectEnabled;
+
+    // S3-compatible backends (Qumulo, MinIO, ...) may require a real signing region instead of
+    // "auto" and may not support chunked transfer encoding or checksum validation. Defaults keep
+    // the previous behavior for custom endpoints.
+    private String endpointRegion = "auto";
+    private boolean chunkedEncodingEnabled = true;
+    private boolean checksumValidationEnabled = true;
 }
