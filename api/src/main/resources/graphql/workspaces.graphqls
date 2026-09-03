@@ -1,0 +1,63 @@
+extend type Query {
+    workspacePage(
+        organizationId: ID!
+        first: Int = 20
+        after: String
+        search: String
+        status: String
+        tagIds: [ID!]
+        projectId: ID
+        sort: WorkspaceSort = NAME_ASC
+    ): WorkspacePage!
+}
+
+enum WorkspaceSort {
+    NAME_ASC
+    NAME_DESC
+    LAST_RUN_ASC
+    LAST_RUN_DESC
+    STATUS
+    SOURCE_ASC
+    SOURCE_DESC
+    TERRAFORM_VERSION_ASC
+    TERRAFORM_VERSION_DESC
+}
+
+type WorkspacePage {
+    nodes: [WorkspaceListItem!]!
+    pageInfo: WorkspacePageInfo!
+    statusCounts: WorkspaceStatusCounts!
+}
+
+type WorkspacePageInfo {
+    endCursor: String
+    hasNextPage: Boolean!
+    totalRecords: Int!
+}
+
+type WorkspaceStatusCounts {
+    all: Int!
+    waitingApproval: Int!
+    failed: Int!
+    pending: Int!
+    queue: Int!
+    running: Int!
+    completed: Int!
+    neverExecuted: Int!
+}
+
+type WorkspaceListItem {
+    id: ID!
+    name: String!
+    description: String
+    source: String
+    branch: String
+    terraformVersion: String
+    iacType: String!
+    lastJobStatus: String
+    lastJobDate: String
+    locked: Boolean!
+    tagIds: [ID!]!
+    projectId: ID
+    projectName: String
+}

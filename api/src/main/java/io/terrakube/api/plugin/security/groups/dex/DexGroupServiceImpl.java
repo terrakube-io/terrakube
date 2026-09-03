@@ -22,10 +22,12 @@ import io.terrakube.api.rs.federated.Federated;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @AllArgsConstructor
@@ -104,16 +106,20 @@ public class DexGroupServiceImpl implements GroupService {
                 .anyMatch(federated -> federated.getName().equals(group));
     }
 
-    private List<String> getEffectiveGroups(User user) {
+    @Override
+    public Set<String> getEffectiveGroups(User user) {
         JwtAuthenticationToken principal = (JwtAuthenticationToken) user.getPrincipal();
         Map<String, Object> tokenAttributes = principal.getTokenAttributes();
-        List<String> groups = new ArrayList<>();
+        Set<String> groups = new LinkedHashSet<>();
 
         Object tokenGroups = tokenAttributes.get("groups");
-        if (tokenGroups instanceof Collection<?> values) {
+        if (tokenGroups instanceof String group && !group.isBlank()) {
+            groups.add(group);
+        } else if (tokenGroups instanceof Collection<?> values) {
             values.stream()
                     .filter(Objects::nonNull)
                     .map(Object::toString)
+                    .filter(group -> !group.isBlank())
                     .forEach(groups::add);
         }
 
@@ -122,7 +128,7 @@ public class DexGroupServiceImpl implements GroupService {
                 .filter(Objects::nonNull)
                 .forEach(groups::add);
 
-        return groups.stream().distinct().toList();
+        return groups;
     }
 
     private String[] toStringArray(Object array) {
@@ -167,7 +173,7 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithLimitedAccessV2(User user, Organization organization){
-        List<String> groups = getEffectiveGroups(user);
+        List<String> groups = new ArrayList<>(getEffectiveGroups(user));
         if (groups.isEmpty()) {
             log.debug("No groups found for user in workspace limited access check");
             return false;
@@ -183,7 +189,7 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithProjectAccess(User user, Organization organization){
-        List<String> groups = getEffectiveGroups(user);
+        List<String> groups = new ArrayList<>(getEffectiveGroups(user));
         if (groups.isEmpty()) {
             log.debug("No groups found for user in project access check");
             return false;

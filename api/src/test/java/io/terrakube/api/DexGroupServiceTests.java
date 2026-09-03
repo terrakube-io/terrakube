@@ -19,8 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import java.util.Set;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +47,7 @@ class DexGroupServiceTests {
                 "repository", "acme/infra"));
 
         assertTrue(groupService.isServiceMember(user, GROUP));
+        assertEquals(Set.of(GROUP), groupService.getEffectiveGroups(user));
     }
 
     @Test
@@ -86,6 +88,7 @@ class DexGroupServiceTests {
 
         assertTrue(groupService.isServiceMember(user, "TERRAKUBE_ADMIN"));
         assertFalse(groupService.isServiceMember(user, "other-group"));
+        assertEquals(Set.of("TERRAKUBE_ADMIN"), groupService.getEffectiveGroups(user));
     }
 
     @Test

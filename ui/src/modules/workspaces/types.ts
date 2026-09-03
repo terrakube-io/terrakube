@@ -22,3 +22,35 @@ export type ListWorkspacesResponse = {
   organizationName: string;
   workspaces: WorkspaceListItem[];
 };
+
+export type WorkspacePageInfo = {
+  endCursor?: string;
+  hasNextPage: boolean;
+  totalRecords: number;
+};
+
+export type WorkspacePageResponse = {
+  workspaces: WorkspaceListItem[];
+  pageInfo: WorkspacePageInfo;
+  statusCounts: Record<string, number>;
+};
+
+export type WorkspacePageRequest = {
+  organizationId: string;
+  first: number;
+  after?: string;
+  search?: string;
+  status?: string;
+  tagIds?: string[];
+  projectId?: string | null;
+  sort:
+    | "name_asc"
+    | "name_desc"
+    | "lastRun_desc"
+    | "lastRun_asc"
+    | "status"
+    | "source_asc"
+    | "source_desc"
+    | "terraformVersion_asc"
+    | "terraformVersion_desc";
+};
