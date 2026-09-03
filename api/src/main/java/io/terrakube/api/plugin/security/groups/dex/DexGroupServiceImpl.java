@@ -17,8 +17,14 @@ import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 
+import io.terrakube.api.rs.federated.Federated;
+
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -46,9 +52,14 @@ public class DexGroupServiceImpl implements GroupService {
     public boolean isMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
         boolean isMember = false;
-        for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
-            if (groupName.equals(group))
-                isMember = true;
+        Object tokenGroups = principal.getTokenAttributes().get("groups");
+        if (tokenGroups instanceof Collection<?> values) {
+            for (Object groupName : values) {
+                if (groupName != null && groupName.toString().equals(group)) {
+                    isMember = true;
+                    break;
+                }
+            }
         }
         log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
         return isMember;
@@ -65,9 +76,14 @@ public class DexGroupServiceImpl implements GroupService {
             if (isFederated && isFederatedMember(user, group))
                 isMember = true;
 
-            for (String groupName : toStringArray((java.util.ArrayList) principal.getTokenAttributes().get("groups"))) {
-                if (groupName.equals(group))
-                    isMember = true;
+            Object tokenGroups = principal.getTokenAttributes().get("groups");
+            if (tokenGroups instanceof Collection<?> values) {
+                for (Object groupName : values) {
+                    if (groupName != null && groupName.toString().equals(group)) {
+                        isMember = true;
+                        break;
+                    }
+                }
             }
             log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
         }else{
@@ -78,26 +94,42 @@ public class DexGroupServiceImpl implements GroupService {
 
     private boolean isFederatedAccount(User user) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        return federatedLookupService.findAuthorized(principal.getTokenAttributes()).isPresent();
+        return !federatedLookupService.findAllAuthorized(principal.getTokenAttributes()).isEmpty();
     }
 
     @Override
     public boolean isFederatedMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        return federatedLookupService.findAuthorized(principal.getTokenAttributes())
-                .map(federated -> federated.getName().equals(group))
-                .orElse(false);
+        return federatedLookupService.findAllAuthorized(principal.getTokenAttributes()).stream()
+                .anyMatch(federated -> federated.getName().equals(group));
     }
 
-    private String[] toStringArray(java.util.ArrayList array) {
-        if (array == null)
-            return new String[0];
+    private List<String> getEffectiveGroups(User user) {
+        JwtAuthenticationToken principal = (JwtAuthenticationToken) user.getPrincipal();
+        Map<String, Object> tokenAttributes = principal.getTokenAttributes();
+        List<String> groups = new ArrayList<>();
 
-        String[] arr = new String[array.size()];
-        for (int i = 0; i < arr.length; i++) {
-            arr[i] = (String) array.get(i);
+        Object tokenGroups = tokenAttributes.get("groups");
+        if (tokenGroups instanceof Collection<?> values) {
+            values.stream()
+                    .filter(Objects::nonNull)
+                    .map(Object::toString)
+                    .forEach(groups::add);
         }
-        return arr;
+
+        federatedLookupService.findAllAuthorized(tokenAttributes).stream()
+                .map(Federated::getName)
+                .filter(Objects::nonNull)
+                .forEach(groups::add);
+
+        return groups.stream().distinct().toList();
+    }
+
+    private String[] toStringArray(Object array) {
+        if (array instanceof Collection<?> values) {
+            return values.stream().filter(Objects::nonNull).map(Object::toString).toArray(String[]::new);
+        }
+        return new String[0];
     }
 
     @Override
@@ -135,19 +167,27 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithLimitedAccessV2(User user, Organization organization){
-        List<String> groups = (List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups");
+        List<String> groups = getEffectiveGroups(user);
+        if (groups.isEmpty()) {
+            log.debug("No groups found for user in workspace limited access check");
+            return false;
+        }
         Optional<List<Access>> accessList = RequestScopedMemo.memoize(
                 WORKSPACE_ACCESS_MEMO,
                 Arrays.asList(organization.getId(), groups),
                 () -> accessRepository.findAllByWorkspaceOrganizationIdAndNameIn(organization.getId(), groups));
-        log.debug("Groups Size: {}, IsPresent: {},  Group Access {}", groups.size(), accessList.isPresent(), accessList.get().isEmpty());
-        return !accessList.get().isEmpty();
+        log.debug("Groups Size: {}, IsPresent: {}, Group Access {}", groups.size(), accessList.isPresent(), accessList.map(l -> !l.isEmpty()).orElse(false));
+        return accessList.map(l -> !l.isEmpty()).orElse(false);
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithProjectAccess(User user, Organization organization){
-        List<String> groups = (List<String>)((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("groups");
+        List<String> groups = getEffectiveGroups(user);
+        if (groups.isEmpty()) {
+            log.debug("No groups found for user in project access check");
+            return false;
+        }
         Optional<List<ProjectAccess>> accessList = RequestScopedMemo.memoize(
                 PROJECT_ACCESS_MEMO,
                 Arrays.asList(organization.getId(), groups),
