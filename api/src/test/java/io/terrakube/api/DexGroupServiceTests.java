@@ -12,7 +12,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,6 +38,18 @@ class DexGroupServiceTests {
     }
 
     @Test
+    void federatedTokenWithDecodedAudienceCollectionIsMember() {
+        DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
+
+        User user = userWith(Map.of(
+                "iss", ISSUER,
+                "aud", List.of("another-service", AUDIENCE),
+                "repository", "acme/infra"));
+
+        assertTrue(groupService.isServiceMember(user, GROUP));
+    }
+
+    @Test
     void federatedTokenWithClaimMismatchIsNotMember() {
         DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
 
@@ -53,7 +64,7 @@ class DexGroupServiceTests {
     @Test
     void tokenWithGroupsClaimIsStillMember() {
         FederatedRepository federatedRepository = mock(FederatedRepository.class);
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
         DexGroupServiceImpl groupService =
                 new DexGroupServiceImpl(null, null, null, new FederatedLookupService(federatedRepository));
 
@@ -68,7 +79,7 @@ class DexGroupServiceTests {
 
     private DexGroupServiceImpl groupServiceWith(Federated federated) {
         FederatedRepository federatedRepository = mock(FederatedRepository.class);
-        when(federatedRepository.findByIssuerUrlAndAudience(ISSUER, AUDIENCE)).thenReturn(Optional.of(federated));
+        when(federatedRepository.findAllByIssuerUrlAndAudience(ISSUER, AUDIENCE)).thenReturn(List.of(federated));
         return new DexGroupServiceImpl(null, null, null, new FederatedLookupService(federatedRepository));
     }
 

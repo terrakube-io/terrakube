@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.security.authentication.dex;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
+import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.federated.claim.FederatedClaim;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,16 +14,16 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 
 import java.util.Base64;
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -62,9 +64,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void reusesTheDecoderAcrossRequestsInsteadOfRefetchingIssuerMetadataEveryTime() {
-        when(patRepository.findById(any())).thenReturn(Optional.empty());
-        when(teamTokenRepository.findById(any())).thenReturn(Optional.empty());
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
         JwtDecoder decoder = mock(JwtDecoder.class);
@@ -83,9 +83,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void translatesAnUnreachableIssuerIntoAnAuthenticationExceptionInsteadOfALeakingRuntimeException() {
-        when(patRepository.findById(any())).thenReturn(Optional.empty());
-        when(teamTokenRepository.findById(any())).thenReturn(Optional.empty());
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
 
@@ -100,9 +98,7 @@ class DexAuthenticationManagerResolverTest {
 
     @Test
     void retriesOnTheNextRequestAfterAFailedFetchInsteadOfCachingTheFailure() {
-        when(patRepository.findById(any())).thenReturn(Optional.empty());
-        when(teamTokenRepository.findById(any())).thenReturn(Optional.empty());
-        when(federatedRepository.findByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(Optional.empty());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
 
         DexAuthenticationManagerResolver resolver = newResolver();
         JwtDecoder decoder = mock(JwtDecoder.class);
@@ -120,6 +116,59 @@ class DexAuthenticationManagerResolverTest {
             assertThat(recovered).isNotNull();
             jwtDecoders.verify(() -> JwtDecoders.fromIssuerLocation("https://dummy-dex-issuer"), Mockito.times(2));
         }
+    }
+
+    @Test
+    void checksAllCredentialsForTheSameIssuerAndAudience() {
+        Federated first = federated("team-a", "repository", "acme/service-a");
+        Federated second = federated("team-b", "repository", "acme/service-b");
+        when(federatedRepository.findAllByIssuerUrlAndAudience(
+                "https://token.actions.githubusercontent.com", "terrakube"))
+                .thenReturn(List.of(first, second));
+        JwtDecoder decoder = mock(JwtDecoder.class);
+
+        try (MockedStatic<JwtDecoders> jwtDecoders = Mockito.mockStatic(JwtDecoders.class)) {
+            jwtDecoders.when(() -> JwtDecoders.fromIssuerLocation("https://token.actions.githubusercontent.com"))
+                    .thenReturn(decoder);
+
+            AuthenticationManager manager = newResolver().resolve(tokenRequest(
+                    "{\"iss\":\"https://token.actions.githubusercontent.com\","
+                            + "\"aud\":\"terrakube\",\"repository\":\"acme/service-b\"}"));
+
+            assertThat(manager).isNotNull();
+        }
+    }
+
+    @Test
+    void rejectsFederatedCredentialWithoutClaimConditions() {
+        Federated federated = new Federated();
+        federated.setIssuerUrl("https://token.actions.githubusercontent.com");
+        federated.setAudience("terrakube");
+        federated.setClaims(List.of());
+        when(federatedRepository.findAllByIssuerUrlAndAudience(
+                "https://token.actions.githubusercontent.com", "terrakube"))
+                .thenReturn(List.of(federated));
+
+        assertThatThrownBy(() -> newResolver().resolve(tokenRequest(
+                "{\"iss\":\"https://token.actions.githubusercontent.com\",\"aud\":\"terrakube\"}")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    private Federated federated(String name, String claimKey, String claimValue) {
+        Federated federated = new Federated();
+        federated.setName(name);
+        federated.setIssuerUrl("https://token.actions.githubusercontent.com");
+        federated.setAudience("terrakube");
+        FederatedClaim claim = new FederatedClaim();
+        claim.setClaimKey(claimKey);
+        claim.setClaimValue(claimValue);
+        federated.setClaims(List.of(claim));
+        return federated;
+    }
+
+    private HttpServletRequest tokenRequest(String payloadJson) {
+        String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.getBytes());
+        return mockTokenRequest("header." + payload + ".signature");
     }
 
     private HttpServletRequest mockTokenRequest(String token) {

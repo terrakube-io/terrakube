@@ -18,6 +18,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -57,10 +58,10 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     @Builder.Default
     private java.util.function.Function<String, JwtDecoder> jwtDecoderFactory = JwtDecoders::fromIssuerLocation;
 
-    private Cache<String, Optional<FederatedConfig>> federatedCache;
+    private Cache<FederatedCacheKey, List<FederatedConfig>> federatedCache;
     private Cache<String, ProviderManager> providerManagerCache;
 
-    public Cache<String, Optional<FederatedConfig>> getFederatedCache() {
+    public Cache<FederatedCacheKey, List<FederatedConfig>> getFederatedCache() {
         if (federatedCache == null) {
             federatedCache = Caffeine.newBuilder()
                     .expireAfterWrite(federatedCacheExpireAfterWrite, TimeUnit.MINUTES)
@@ -85,23 +86,31 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         ProviderManager providerManager = null;
         Map<String, Object> payloadMap = getJwtPayload(request);
         String tokenIssuer = extractClaimString(payloadMap, "iss");
-        String audience = extractClaimString(payloadMap, "aud");
+        List<String> audiences = extractClaimStrings(payloadMap, "aud");
 
-        if (!tokenIssuer.isEmpty() && !audience.isEmpty()
+        boolean federatedCredentialFound = false;
+        if (!tokenIssuer.isEmpty() && !audiences.isEmpty()
                 && !tokenIssuer.equals(jwtPat)
                 && !tokenIssuer.equals(jwtInternal)
                 && !tokenIssuer.equals(this.issuerUri)) {
-            String cacheKey = tokenIssuer + ":" + audience;
-            Optional<FederatedConfig> federatedOpt = getFederatedCache().get(cacheKey, key -> fetchFederatedConfig(tokenIssuer, audience));
-            if (federatedOpt.isPresent()) {
-                FederatedConfig config = federatedOpt.get();
-                if (validateClaims(payloadMap, config.getClaims())) {
-                    log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
-                    return getProviderManagerCache().get(config.getIssuerUrl(), url ->
-                            new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
-                    );
+            for (String audience : audiences) {
+                FederatedCacheKey cacheKey = new FederatedCacheKey(tokenIssuer, audience);
+                List<FederatedConfig> federatedConfigs = getFederatedCache().get(
+                        cacheKey, key -> fetchFederatedConfigs(key.issuer(), key.audience()));
+                federatedCredentialFound |= !federatedConfigs.isEmpty();
+                for (FederatedConfig config : federatedConfigs) {
+                    if (validateClaims(payloadMap, config.getClaims())) {
+                        log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
+                        return getProviderManagerCache().get(config.getIssuerUrl(), url ->
+                                new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
+                        );
+                    }
                 }
             }
+        }
+
+        if (federatedCredentialFound) {
+            throw new BadCredentialsException("Federated token is not authorized");
         }
 
         switch (tokenIssuer) {
@@ -122,47 +131,73 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         return providerManager;
     }
 
-    private Optional<FederatedConfig> fetchFederatedConfig(String issuer, String audience) {
+    private List<FederatedConfig> fetchFederatedConfigs(String issuer, String audience) {
         if (terrakubeClient == null || issuer.isEmpty() || audience.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         try {
             ResponseWithInclude<List<Federated>, FederatedClaim> response =
                     terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience);
             if (response != null && response.getData() != null && !response.getData().isEmpty()) {
-                Federated federated = response.getData().get(0);
-                FederatedConfig config = new FederatedConfig();
-                config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
-                config.setAudience(federated.getAttributes().getAudience());
-                Map<String, String> claimsMap = new HashMap<>();
+                Map<String, FederatedClaim> includedClaims = new HashMap<>();
                 if (response.getIncluded() != null) {
-                    for (FederatedClaim claim : response.getIncluded()) {
-                        if (claim.getAttributes() != null && claim.getAttributes().getClaimKey() != null) {
-                            claimsMap.put(claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue());
-                        }
-                    }
+                    response.getIncluded().stream()
+                            .filter(Objects::nonNull)
+                            .filter(claim -> claim.getId() != null)
+                            .forEach(claim -> includedClaims.put(claim.getId(), claim));
                 }
-                config.setClaims(claimsMap);
-                return Optional.of(config);
+                return response.getData().stream()
+                        .filter(Objects::nonNull)
+                        .map(federated -> toFederatedConfig(federated, includedClaims))
+                        .toList();
             }
         } catch (Exception ex) {
             log.error("Error fetching federated config from TerrakubeClient: {}", ex.getMessage());
         }
-        return Optional.empty();
+        return List.of();
+    }
+
+    private FederatedConfig toFederatedConfig(Federated federated, Map<String, FederatedClaim> includedClaims) {
+        FederatedConfig config = new FederatedConfig();
+        if (federated.getAttributes() != null) {
+            config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
+            config.setAudience(federated.getAttributes().getAudience());
+        }
+        Map<String, String> claimsMap = new LinkedHashMap<>();
+        if (federated.getRelationships() != null
+                && federated.getRelationships().getClaims() != null
+                && federated.getRelationships().getClaims().getData() != null) {
+            federated.getRelationships().getClaims().getData().stream()
+                    .map(claimResource -> includedClaims.get(claimResource.getId()))
+                    .filter(Objects::nonNull)
+                    .filter(claim -> claim.getAttributes() != null)
+                    .filter(claim -> claim.getAttributes().getClaimKey() != null)
+                    .forEach(claim -> claimsMap.put(
+                            claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue()));
+        }
+        config.setClaims(claimsMap);
+        return config;
     }
 
     private boolean validateClaims(Map<String, Object> payloadMap, Map<String, String> requiredClaims) {
         if (requiredClaims == null || requiredClaims.isEmpty()) {
-            return true;
+            return false;
         }
         for (Map.Entry<String, String> entry : requiredClaims.entrySet()) {
             Object tokenVal = payloadMap.get(entry.getKey());
-            if (tokenVal == null || !entry.getValue().equals(String.valueOf(tokenVal))) {
+            if (tokenVal == null || !claimMatches(tokenVal, entry.getValue())) {
                 log.debug("Federated claim mismatch for key {}: expected {}, got {}", entry.getKey(), entry.getValue(), tokenVal);
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean claimMatches(Object tokenValue, String expected) {
+        if (tokenValue instanceof Collection<?> values) {
+            return values.stream().filter(Objects::nonNull).anyMatch(value -> expected.equals(value.toString()));
+        }
+        return expected.equals(tokenValue.toString());
     }
 
     private Map<String, Object> getJwtPayload(HttpServletRequest request) {
@@ -204,6 +239,25 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         return "";
     }
 
+    private List<String> extractClaimStrings(Map<String, Object> payloadMap, String claim) {
+        if (payloadMap == null || !payloadMap.containsKey(claim)) {
+            return List.of();
+        }
+        Object value = payloadMap.get(claim);
+        if (value instanceof String stringValue) {
+            return stringValue.isEmpty() ? List.of() : List.of(stringValue);
+        }
+        if (value instanceof Collection<?> values) {
+            return values.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .filter(item -> !item.isEmpty())
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
+    }
+
     private JwtDecoder getJwtEncoder(String issuerType) {
         String tokenSecret = (issuerType.equals(jwtPat) ? patSecret : internalSecret);
         byte[] secretBytes = Decoders.BASE64URL.decode(tokenSecret);
@@ -231,5 +285,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         private String audience;
         private Map<String, String> claims;
     }
+
+    public record FederatedCacheKey(String issuer, String audience) {}
 
 }

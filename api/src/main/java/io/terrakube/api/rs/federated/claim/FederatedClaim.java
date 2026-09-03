@@ -3,6 +3,7 @@ package io.terrakube.api.rs.federated.claim;
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.rs.federated.Federated;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -26,9 +27,11 @@ public class FederatedClaim {
     private UUID id;
 
     @Column(name = "claim_key")
+    @NotBlank(message = "claimKey is required")
     private String claimKey;
 
     @Column(name = "claim_value")
+    @NotBlank(message = "claimValue is required")
     private String claimValue;
 
     @ManyToOne

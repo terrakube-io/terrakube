@@ -2,8 +2,6 @@ package io.terrakube.api.plugin.security.user.dex;
 
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
-import io.terrakube.api.rs.federated.Federated;
-import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,24 +54,7 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
     @Override
     public boolean isFederatedAccount(User user) {
         JwtAuthenticationToken principal = getSecurityPrincipal(user);
-        String issuer = principal.getTokenAttributes().get("iss").toString();
-        Object audienceObj = principal.getTokenAttributes().get("aud");
-        String audience = "";
-
-        if (audienceObj instanceof String) {
-            audience = (String) audienceObj;
-        } else if (audienceObj instanceof java.util.List) {
-            java.util.List<String> audienceList = (java.util.List<String>) audienceObj;
-            if (!audienceList.isEmpty()) {
-                audience = audienceList.get(0);
-            }
-        }
-
-        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
-        if (federated == null) {
-            return false;
-        }
-        return FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
+        return federatedLookupService.findAuthorized(principal.getTokenAttributes()).isPresent();
     }
 
     @Override

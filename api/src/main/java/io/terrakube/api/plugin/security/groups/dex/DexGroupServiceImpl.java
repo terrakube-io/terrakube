@@ -3,8 +3,6 @@ package io.terrakube.api.plugin.security.groups.dex;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.plugin.security.request.RequestScopedMemo;
-import io.terrakube.api.rs.federated.Federated;
-import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -80,25 +78,15 @@ public class DexGroupServiceImpl implements GroupService {
 
     private boolean isFederatedAccount(User user) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        String issuer = principal.getTokenAttributes().get("iss").toString();
-        String audience = principal.getTokenAttributes().get("aud").toString();
-        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
-        if (federated != null) {
-            return FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
-        }
-        return false;
+        return federatedLookupService.findAuthorized(principal.getTokenAttributes()).isPresent();
     }
 
     @Override
     public boolean isFederatedMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        String issuer = principal.getTokenAttributes().get("iss").toString();
-        String audience = principal.getTokenAttributes().get("aud").toString();
-        Federated federated = federatedLookupService.findByIssuerUrlAndAudience(issuer, audience).orElse(null);
-        if (federated != null) {
-            return federated.getName().equals(group) && FederatedClaimMatcher.matchesClaims(federated, principal.getTokenAttributes());
-        }
-        return false;
+        return federatedLookupService.findAuthorized(principal.getTokenAttributes())
+                .map(federated -> federated.getName().equals(group))
+                .orElse(false);
     }
 
     private String[] toStringArray(java.util.ArrayList array) {
