@@ -187,6 +187,27 @@ class FederatedLookupServiceTests {
         assertFalse(service.findAuthorized(Map.of("iss", ISSUER, "aud", AUDIENCE)).isPresent());
     }
 
+    @Test
+    void findAllAuthorizedReturnsAllMatchingCredentials() {
+        Federated cred1 = federated("team-a", Map.of("repository", "acme/shared"));
+        Federated cred2 = federated("team-b", Map.of("repository", "acme/shared"));
+        Federated cred3 = federated("team-c", Map.of("repository", "acme/other"));
+
+        FederatedRepository repository = mock(FederatedRepository.class);
+        when(repository.findAllByIssuerUrlAndAudience(ISSUER, AUDIENCE))
+                .thenReturn(List.of(cred1, cred2, cred3));
+        FederatedLookupService service = new FederatedLookupService(repository);
+
+        List<Federated> authorized = service.findAllAuthorized(Map.of(
+                "iss", ISSUER,
+                "aud", AUDIENCE,
+                "repository", "acme/shared"));
+
+        assertEquals(2, authorized.size());
+        assertTrue(authorized.stream().anyMatch(c -> "team-a".equals(c.getName())));
+        assertTrue(authorized.stream().anyMatch(c -> "team-b".equals(c.getName())));
+    }
+
     private void bindRequest() {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
     }

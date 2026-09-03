@@ -134,9 +134,9 @@ public class TeamTokenService {
     }
 
     public List<String> getCurrentGroups(JwtAuthenticationToken principalJwt) {
-        Optional<Federated> federated = federatedLookupService.findAuthorized(principalJwt.getTokenAttributes());
-        if (federated.isPresent()) {
-            return List.of(federated.get().getName());
+        List<Federated> federatedList = federatedLookupService.findAllAuthorized(principalJwt.getTokenAttributes());
+        if (!federatedList.isEmpty()) {
+            return federatedList.stream().map(Federated::getName).filter(Objects::nonNull).distinct().toList();
         }
 
         Object groups = principalJwt.getTokenAttributes().get("groups");

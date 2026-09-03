@@ -44,20 +44,28 @@ public class FederatedLookupService {
     }
 
     /**
-     * Resolves and authorizes a federated credential from decoded token claims.
+     * Resolves and authorizes all federated credentials that match decoded token claims.
      *
      * <p>Every audience is considered because OIDC tokens may contain more than one intended
      * recipient. Claim conditions remain part of this method so a caller cannot accidentally treat
      * an issuer/audience match as authorization.
      */
-    public Optional<Federated> findAuthorized(Map<String, Object> tokenAttributes) {
+    public List<Federated> findAllAuthorized(Map<String, Object> tokenAttributes) {
         String issuer = FederatedTokenClaims.issuer(tokenAttributes);
         if (issuer.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         return FederatedTokenClaims.audiences(tokenAttributes).stream()
                 .flatMap(audience -> findAllByIssuerUrlAndAudience(issuer, audience).stream())
                 .filter(federated -> FederatedClaimMatcher.matchesClaims(federated, tokenAttributes))
-                .findFirst();
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * Resolves and authorizes a federated credential from decoded token claims.
+     */
+    public Optional<Federated> findAuthorized(Map<String, Object> tokenAttributes) {
+        return findAllAuthorized(tokenAttributes).stream().findFirst();
     }
 }
