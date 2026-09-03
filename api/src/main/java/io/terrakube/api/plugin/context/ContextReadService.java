@@ -101,6 +101,11 @@ public class ContextReadService {
             String result = future.get(properties.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS);
             if (result != null && !result.isBlank()) {
                 cache.put(jobId, result);
+            } else {
+                // A missing object is intentionally not cached. Remove its completed future before
+                // returning so an immediate next caller starts a fresh object-store read instead
+                // of coalescing onto the already-completed null result.
+                inFlight.remove(jobId, future);
             }
             return result;
         } catch (TimeoutException e) {
