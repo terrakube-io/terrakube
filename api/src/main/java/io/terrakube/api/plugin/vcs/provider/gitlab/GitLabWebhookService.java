@@ -146,16 +146,15 @@ public class GitLabWebhookService extends WebhookServiceBase {
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
         try {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
-			JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            JsonNode rootNode = objectMapper.readTree(jsonPayload);
 
             String action = mrModel.getObjectAttributes().getAction();
 
-			// Ignore update events triggered by resolving blocking discussions
-			if ("update".equals(action) && rootNode.has("blocking_discussions_resolved")) {
-				log.info("Ignoring GitLab MR update event: blocking discussions resolved");
-				result.setValid(false);
-				return result;
-			}
+            if ("update".equals(action) && !isCodeChangeUpdate(rootNode)) {
+                log.info("Ignoring GitLab MR update event with no source branch change (metadata-only update)");
+                result.setValid(false);
+                return result;
+            }
 
             switch (action) {
                 case "open":
@@ -191,6 +190,25 @@ public class GitLabWebhookService extends WebhookServiceBase {
         }
 
         return result;
+    }
+
+    /**
+     * GitLab emits a {@code merge_request} event with action {@code update} for every metadata
+     * change on an MR: resolving a thread, editing the title or description, adding labels or
+     * reviewers, approvals, merge status recomputation. None of those change the code being
+     * planned.
+     * <p>
+     * {@code object_attributes.oldrev} is only populated when the source branch head actually
+     * moved (new commits pushed, rebase, or a suggestion applied), so it is the reliable signal
+     * that a re-plan is warranted. Retargeting the MR changes the effective diff without moving
+     * the source branch, so {@code changes.target_branch} counts as well.
+     */
+    private boolean isCodeChangeUpdate(JsonNode rootNode) {
+        String oldrev = rootNode.path("object_attributes").path("oldrev").asText("");
+        if (!oldrev.isEmpty()) {
+            return true;
+        }
+        return rootNode.path("changes").has("target_branch");
     }
 
     private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
@@ -880,9 +898,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
             GitlabMergeRequestModel mrModel = objectMapper.readValue(jsonPayload, GitlabMergeRequestModel.class);
             String action = mrModel.getObjectAttributes().getAction();
 
-            // Ignore update events triggered by resolving blocking discussions
-            if ("update".equals(action) && rootNode.has("blocking_discussions_resolved")) {
-                log.info("Ignoring GitLab MR update event: blocking discussions resolved");
+            if ("update".equals(action) && !isCodeChangeUpdate(rootNode)) {
+                log.info("Ignoring GitLab MR update event with no source branch change (metadata-only update)");
                 result.setValid(false);
                 return;
             }
