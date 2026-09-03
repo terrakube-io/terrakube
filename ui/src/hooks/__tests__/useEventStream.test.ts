@@ -30,6 +30,76 @@ describe("useEventStream", () => {
     await waitFor(() => expect(result.current).toEqual(["a", "b"]));
   });
 
+  it("reconnects after a dropped connection and keeps folding messages", async () => {
+    jest.useFakeTimers();
+    let attempt = 0;
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      attempt += 1;
+      if (attempt === 1) {
+        onMessage("a", "1");
+        throw new Error("connection dropped"); // not an AbortError
+      }
+      onMessage("b", "2");
+      return new Promise(() => {});
+    });
+
+    const { result } = renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+      })
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current).toEqual(["a"]);
+
+    // First reconnect is scheduled at the initial 1s backoff.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1000);
+    });
+
+    await waitFor(() => expect(result.current).toEqual(["a", "b"]));
+    expect(attempt).toBe(2);
+    jest.useRealTimers();
+  });
+
+  it("reports failed status once reconnect backoff reaches its ceiling, then recovers", async () => {
+    jest.useFakeTimers();
+    const statuses: boolean[] = [];
+    let attempt = 0;
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      attempt += 1;
+      if (attempt <= 6) {
+        throw new Error("still down");
+      }
+      onMessage("recovered", "9");
+      return new Promise(() => {});
+    });
+
+    renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+        onStatus: ({ failed }) => statuses.push(failed),
+      })
+    );
+
+    // Drive well past the 30s ceiling of doubling backoff (1+2+4+8+16+32 ≈ 63s).
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(120000);
+    });
+
+    expect(statuses).toContain(true);
+    await waitFor(() => expect(statuses[statuses.length - 1]).toBe(false));
+    jest.useRealTimers();
+  });
+
   it("resets to initial when disabled, and never connects", () => {
     const { result } = renderHook(() =>
       useEventStream<string[]>({

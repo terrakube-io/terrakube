@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,7 +52,7 @@ public class PersistentExecutorServiceTest {
     @SuppressWarnings("rawtypes")
     private RequestHeadersSpec requestHeadersSpec;
     private ResponseSpec responseSpec;
-    private ResponseEntity<ExecutorContext> responseEntity;
+    private ResponseEntity<Void> responseEntity;
 
     @SuppressWarnings("unchecked")
     @BeforeEach
@@ -77,7 +78,7 @@ public class PersistentExecutorServiceTest {
         doReturn(requestBodySpec).when(requestBodySpec).header(anyString(), anyString());
         doReturn(requestHeadersSpec).when(requestBodySpec).bodyValue(any(ExecutorContext.class));
         doReturn(responseSpec).when(requestHeadersSpec).retrieve();
-        doReturn(Mono.just(responseEntity)).when(responseSpec).toEntity(ExecutorContext.class);
+        doReturn(Mono.just(responseEntity)).when(responseSpec).toBodilessEntity();
     }
 
     private PersistentExecutorService subject() {
@@ -121,19 +122,28 @@ public class PersistentExecutorServiceTest {
                 .build();
     }
 
-    private ExecutorContext response() {
-        return ExecutorContext.builder().build();
-    }
-
     @Test
     public void postsToDefaultExecutor() throws ExecutionException {
         doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
-        doReturn(response()).when(responseEntity).getBody();
 
         subject().send(jobOnDefaultExecutor(), context());
 
         verify(requestBodyUriSpec).uri("http://default-executor/");
         verify(requestHeadersSpec, times(1)).retrieve();
+    }
+
+    @Test
+    public void acknowledgementBodyIsNeverDeserialized() throws ExecutionException {
+        // toEntity(ExecutorContext.class) is deliberately NOT stubbed. A regression to reading a
+        // typed body makes that unstubbed call throw via FailUnkownMethod and fails this test,
+        // protecting the "202 is a bodyless acknowledgement" contract without depending on any
+        // particular executor response body.
+        doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
+
+        subject().send(jobOnDefaultExecutor(), context());
+
+        verify(responseSpec, times(1)).toBodilessEntity();
+        verify(responseSpec, never()).toEntity(ExecutorContext.class);
     }
 
     @Test
@@ -150,7 +160,6 @@ public class PersistentExecutorServiceTest {
     @Test
     public void propagatesHttpFailures() throws ExecutionException {
         doReturn(HttpStatus.BAD_REQUEST).when(responseEntity).getStatusCode();
-        doReturn(response()).when(responseEntity).getBody();
 
         assertThrows(ExecutionException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
 
@@ -161,7 +170,7 @@ public class PersistentExecutorServiceTest {
     public void busyExecutorResponseBecomesExecutorUnavailableException() {
         WebClientResponseException busy = WebClientResponseException.create(
                 503, "Service Unavailable", HttpHeaders.EMPTY, new byte[0], null);
-        doReturn(Mono.error(busy)).when(responseSpec).toEntity(ExecutorContext.class);
+        doReturn(Mono.error(busy)).when(responseSpec).toBodilessEntity();
 
         assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
 
@@ -174,7 +183,7 @@ public class PersistentExecutorServiceTest {
         // possibly after the executor already accepted the job. Retryable, not a job failure.
         WebClientResponseException badGateway = WebClientResponseException.create(
                 502, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], null);
-        doReturn(Mono.error(badGateway)).when(responseSpec).toEntity(ExecutorContext.class);
+        doReturn(Mono.error(badGateway)).when(responseSpec).toBodilessEntity();
 
         assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
     }
@@ -183,7 +192,7 @@ public class PersistentExecutorServiceTest {
     public void gatewayTimeoutResponseBecomesExecutorUnavailableException() {
         WebClientResponseException gatewayTimeout = WebClientResponseException.create(
                 504, "Gateway Timeout", HttpHeaders.EMPTY, new byte[0], null);
-        doReturn(Mono.error(gatewayTimeout)).when(responseSpec).toEntity(ExecutorContext.class);
+        doReturn(Mono.error(gatewayTimeout)).when(responseSpec).toBodilessEntity();
 
         assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
     }
@@ -192,7 +201,7 @@ public class PersistentExecutorServiceTest {
     public void otherHttpErrorResponseStaysAHardExecutionException() {
         WebClientResponseException serverError = WebClientResponseException.create(
                 500, "Internal Server Error", HttpHeaders.EMPTY, new byte[0], null);
-        doReturn(Mono.error(serverError)).when(responseSpec).toEntity(ExecutorContext.class);
+        doReturn(Mono.error(serverError)).when(responseSpec).toBodilessEntity();
 
         ExecutionException thrown = assertThrows(ExecutionException.class,
                 () -> subject().send(jobOnDefaultExecutor(), context()));
@@ -206,7 +215,6 @@ public class PersistentExecutorServiceTest {
         executorUrl.setValue("http://ze-executor/");
         doReturn(Optional.of(executorUrl)).when(globalVarRepository).findByOrganizationAndKey(any(), any());
         doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
-        doReturn(response()).when(responseEntity).getBody();
 
         subject().send(jobOnDefaultExecutor(), context());
 
@@ -217,7 +225,6 @@ public class PersistentExecutorServiceTest {
     @Test
     public void postsToAgent() throws ExecutionException {
         doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
-        doReturn(response()).when(responseEntity).getBody();
 
         subject().send(jobOnAgent(), context());
 

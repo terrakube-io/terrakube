@@ -9,12 +9,26 @@ import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.net.HttpURLConnection;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JobContextServiceTest {
+
+    @Test
+    void connectAndReadTimeoutsComeFromConfiguredValues() throws Exception {
+        JobContextService service = new JobContextService(
+                Mockito.mock(WorkspaceSecurity.class), new ObjectMapper(),
+                "http://api.example", Mockito.mock(TerrakubeClient.class), 1234, 5678);
+
+        HttpURLConnection connection = service.buildConnection("http://api.example/context/v1/1", "GET");
+
+        assertEquals(1234, connection.getConnectTimeout());
+        assertEquals(5678, connection.getReadTimeout());
+    }
 
     @Test
     @SuppressWarnings("unchecked")
