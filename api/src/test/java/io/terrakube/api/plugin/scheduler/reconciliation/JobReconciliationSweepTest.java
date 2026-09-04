@@ -131,7 +131,7 @@ class JobReconciliationSweepTest {
     @Test
     void failsARunningJobPastTheGracePeriodWithNoHeartbeat() throws Exception {
         Job running = job(21, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000)); // 90s old
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000)); // 350s old (> 300s grace period)
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_21"));
@@ -149,6 +149,39 @@ class JobReconciliationSweepTest {
         // UI would keep showing the job's previous status (e.g. "running") forever.
         org.junit.jupiter.api.Assertions.assertEquals(JobStatus.failed, running.getWorkspace().getLastJobStatus());
         verify(workspaceRepository, times(1)).save(running.getWorkspace());
+    }
+
+    @Test
+    void leavesARunningJobAloneWhenWithinExtendedGracePeriodWithNoHeartbeat() throws Exception {
+        // Issue #3521: a cold-start ephemeral pod reaches ~70-90s before writing its first heartbeat.
+        // With the 300s default grace period, the sweep must not fail it.
+        Job running = job(21, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000)); // 90s old (< 300s)
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_21"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:21");
+
+        subject().execute(null);
+
+        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(21));
+    }
+
+    @Test
+    void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
+        JobReconciliationSweep customSweep = new JobReconciliationSweep(
+                jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, 600);
+
+        Job running = job(30, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 450_000)); // 450s old (< 600s)
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_30"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:30");
+
+        customSweep.execute(null);
+
+        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(30));
     }
 
     @Test
