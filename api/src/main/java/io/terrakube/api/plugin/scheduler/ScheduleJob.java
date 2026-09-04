@@ -11,6 +11,7 @@ import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.scheduler.dependency.WorkspaceDependencyService;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
@@ -116,6 +117,10 @@ public class ScheduleJob implements org.quartz.Job {
     // this so status-change notifications actually fire for real runs, not just for a job
     // updated via a direct API PATCH.
     JobNotificationTrigger jobNotificationTrigger;
+
+    // Triggers runs on workspaces that consume this one's output. Only fires on a
+    // successful terminal status, so a failed producer never cascades.
+    WorkspaceDependencyService workspaceDependencyService;
 
     // Shared routine that reconciles a job with no remaining executable step to its real terminal
     // status (see reconcileOutOfSteps). ReconciliationProperties gates the guarded FIFO-admission
@@ -272,6 +277,7 @@ public class ScheduleJob implements org.quartz.Job {
                     updateJobStepsWithStatus(job.getId(), JobStatus.notExecuted);
                     updateJobStatusOnVcs(job, JobStatus.completed);
                     postPrCommentIfNeeded(job);
+                    workspaceDependencyService.triggerDependents(job);
                     deleteOldJobs(job);
                     break;
                 case cancelled:

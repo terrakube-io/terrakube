@@ -123,4 +123,5 @@
     <include file="/db/changelog/local/changelog-2.33.0-provider-trust-signature.xml"/>
     <include file="/db/changelog/local/changelog-2.33.0-repo-webhook-delivery.xml" />
     <include file="/db/changelog/local/changelog-2.33.1-notification-outbox-job-status.xml" />
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-dependency.xml" />
 </databaseChangeLog>

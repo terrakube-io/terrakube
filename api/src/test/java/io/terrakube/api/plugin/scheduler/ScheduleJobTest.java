@@ -101,6 +101,7 @@ public class ScheduleJobTest {
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
     JobNotificationTrigger jobNotificationTrigger;
+    io.terrakube.api.plugin.scheduler.dependency.WorkspaceDependencyService workspaceDependencyService;
     io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService jobReconciliationService;
     io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
 
@@ -142,6 +143,9 @@ public class ScheduleJobTest {
         lenient().doReturn(true).when(jobRepository).isJobNextInDispatchOrder(anyInt());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableJobId();
 
+        workspaceDependencyService = mock(
+                io.terrakube.api.plugin.scheduler.dependency.WorkspaceDependencyService.class);
+
         jobReconciliationService = mock(
                 io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService.class,
                 new FailUnkownMethod<>());
@@ -171,6 +175,7 @@ public class ScheduleJobTest {
                 variableRepository,
                 workspaceVariableValidationService,
                 jobNotificationTrigger,
+                workspaceDependencyService,
                 jobReconciliationService,
                 reconciliationProperties);
     }

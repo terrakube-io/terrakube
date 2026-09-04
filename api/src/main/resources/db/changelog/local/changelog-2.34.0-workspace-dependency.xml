@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!--
+      Directed dependency between workspaces: a successful apply on depends_on_workspace_id
+      triggers a run on workspace_id. Both FKs cascade on delete so removing either side
+      does not leave dangling edges. The unique constraint keeps the same edge from being
+      declared twice, and both columns are indexed because the graph is walked in both
+      directions - consumers of a producer when cascading, dependencies of a workspace
+      when rendering the UI.
+    -->
+    <changeSet id="2-34-0-workspace-dependency" author="kleber.rocha@cora.com.br">
+        <createTable tableName="workspace_dependency">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="workspace_id" type="varchar(36)">
+                <constraints nullable="false"
+                             foreignKeyName="fk_workspace_dependency_workspace"
+                             references="workspace(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="depends_on_workspace_id" type="varchar(36)">
+                <constraints nullable="false"
+                             foreignKeyName="fk_workspace_dependency_depends_on"
+                             references="workspace(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="template_reference" type="varchar(36)"/>
+        </createTable>
+
+        <addUniqueConstraint tableName="workspace_dependency"
+                             columnNames="workspace_id, depends_on_workspace_id"
+                             constraintName="uk_workspace_dependency_edge"/>
+
+        <createIndex tableName="workspace_dependency" indexName="idx_workspace_dependency_workspace_id">
+            <column name="workspace_id"/>
+        </createIndex>
+        <createIndex tableName="workspace_dependency" indexName="idx_workspace_dependency_depends_on">
+            <column name="depends_on_workspace_id"/>
+        </createIndex>
+    </changeSet>
+
+    <!--
+      Records how many dependency hops produced a job. Nullable: jobs created before this
+      column exists, and every job started by a human or webhook, simply have no depth.
+    -->
+    <changeSet id="2-34-0-job-dependency-depth" author="kleber.rocha@cora.com.br">
+        <addColumn tableName="job">
+            <column name="dependency_depth" type="int"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

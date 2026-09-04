@@ -128,6 +128,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "pr_comment_error")
     private String prCommentError;
 
+    /**
+     * How many dependency hops produced this job: null or 0 when a human or webhook
+     * started it, N when it was cascaded from a workspace it depends on. Used to stop a
+     * cyclic dependency graph from triggering runs forever.
+     */
+    @Column(name = "dependency_depth")
+    private Integer dependencyDepth;
+
     @ManyToOne
     private Organization organization;
 

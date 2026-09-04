@@ -6,6 +6,7 @@ import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
+import io.terrakube.api.rs.workspace.dependency.WorkspaceDependency;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -149,6 +150,10 @@ public class Workspace extends GenericAuditFields {
 
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<Reference> reference;
+
+    /** Workspaces this one consumes output from. */
+    @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
+    private List<WorkspaceDependency> dependency;
 
     @OneToMany(mappedBy = "workspace")
     @UpdatePermission(expression = "user is a superuser OR team manage workspace OR team workspace admin manages access field")
