@@ -54,6 +54,14 @@ public class WorkspaceDependencyService {
     private boolean enabled;
 
     /**
+     * Upper bound on how many consumers a single apply may trigger. HCP Terraform caps run
+     * triggers at 20 source workspaces; this is the same protection seen from the producer
+     * side, so one apply in a badly modelled graph cannot queue an unbounded number of runs.
+     */
+    @Value("${io.terrakube.dependency.maxDependentsPerApply:20}")
+    private int maxDependentsPerApply;
+
+    /**
      * Called when a job reaches a successful terminal state. Creates a job on every
      * workspace that declares a dependency on this one.
      */
@@ -89,12 +97,18 @@ public class WorkspaceDependencyService {
             if (!alreadyTriggered.add(consumer.getId())) {
                 continue;
             }
-            createDependentJob(consumer, dependency, producer, depth + 1);
+            if (alreadyTriggered.size() > maxDependentsPerApply) {
+                log.warn("Workspace {} has more than {} dependents; not triggering the rest. " +
+                                "Raise io.terrakube.dependency.maxDependentsPerApply if this is intended.",
+                        producer.getName(), maxDependentsPerApply);
+                break;
+            }
+            createDependentJob(consumer, dependency, producer, depth + 1, completedJob.getId());
         }
     }
 
     private void createDependentJob(Workspace consumer, WorkspaceDependency dependency,
-                                    Workspace producer, int depth) {
+                                    Workspace producer, int depth, int triggeredByJobId) {
         String template = dependency.getTemplateReference() != null
                 ? dependency.getTemplateReference()
                 : consumer.getDefaultTemplate();
@@ -121,6 +135,7 @@ public class WorkspaceDependencyService {
         job.setVia(TRIGGERED_VIA);
         job.setStatus(JobStatus.pending);
         job.setDependencyDepth(depth);
+        job.setTriggeredByJobId(triggeredByJobId);
 
         Job savedJob = jobRepository.save(job);
         try {

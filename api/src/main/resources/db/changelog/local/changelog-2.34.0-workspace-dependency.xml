@@ -51,5 +51,8 @@
         <addColumn tableName="job">
             <column name="dependency_depth" type="int"/>
         </addColumn>
+        <addColumn tableName="job">
+            <column name="triggered_by_job_id" type="int"/>
+        </addColumn>
     </changeSet>
 </databaseChangeLog>

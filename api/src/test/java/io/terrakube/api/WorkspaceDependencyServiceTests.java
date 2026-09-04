@@ -43,6 +43,7 @@ class WorkspaceDependencyServiceTests {
         service = new WorkspaceDependencyService(dependencyRepository, jobRepository, scheduleJobService);
         ReflectionTestUtils.setField(service, "maxCascadeDepth", 5);
         ReflectionTestUtils.setField(service, "enabled", true);
+        ReflectionTestUtils.setField(service, "maxDependentsPerApply", 20);
 
         organization = new Organization();
         organization.setId(UUID.randomUUID());
@@ -152,6 +153,38 @@ class WorkspaceDependencyServiceTests {
         service.triggerDependents(completedJobOn(producer, null));
 
         verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    /** Provenance: the triggered run records which job caused it. */
+    @Test
+    void recordsTheJobThatTriggeredTheRun() {
+        when(dependencyRepository.findByDependsOnId(producer.getId()))
+                .thenReturn(List.of(edge(consumer, producer)));
+
+        service.triggerDependents(completedJobOn(producer, null));
+
+        ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals(1, captor.getValue().getTriggeredByJobId(), "should point back at the producer job");
+    }
+
+    /**
+     * A badly modelled graph should not let a single apply queue an unbounded number of
+     * runs; HCP Terraform caps this at 20 source workspaces.
+     */
+    @Test
+    void stopsAfterTheFanOutLimit() {
+        ReflectionTestUtils.setField(service, "maxDependentsPerApply", 2);
+        List<WorkspaceDependency> many = List.of(
+                edge(workspace("c1", "Plan"), producer),
+                edge(workspace("c2", "Plan"), producer),
+                edge(workspace("c3", "Plan"), producer),
+                edge(workspace("c4", "Plan"), producer));
+        when(dependencyRepository.findByDependsOnId(producer.getId())).thenReturn(many);
+
+        service.triggerDependents(completedJobOn(producer, null));
+
+        verify(jobRepository, times(2)).save(any(Job.class));
     }
 
     @Test

@@ -136,6 +136,13 @@ public class Job extends GenericAuditFields {
     @Column(name = "dependency_depth")
     private Integer dependencyDepth;
 
+    /**
+     * The job whose successful apply triggered this one, when it was created by a
+     * workspace dependency. Makes "why did this run?" answerable without reading logs.
+     */
+    @Column(name = "triggered_by_job_id")
+    private Integer triggeredByJobId;
+
     @ManyToOne
     private Organization organization;
 
