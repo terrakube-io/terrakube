@@ -65,8 +65,10 @@ public class JobReconciliationService {
                 .map(s -> new StepEvidence(s.getStepNumber(), s.getStatus()))
                 .toList();
 
-        long pendingSteps = steps.stream().filter(s -> s.getStatus() == JobStatus.pending).count();
-        if (pendingSteps > 0) {
+        boolean hasActiveWork = steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending
+                || s.getStatus() == JobStatus.running
+                || s.getStatus() == JobStatus.queue);
+        if (hasActiveWork) {
             return new ReconciliationResult(jobId, job.getStatus(), null, null,
                     ReconciliationDisposition.SKIPPED_HAS_WORK, evidence);
         }
@@ -113,7 +115,10 @@ public class JobReconciliationService {
         return jobRepository.findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES).stream()
                 .map(job -> {
                     List<Step> steps = stepRepository.findByJobId(job.getId());
-                    if (steps.isEmpty() || steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending)) {
+                    boolean hasActiveWork = steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending
+                            || s.getStatus() == JobStatus.running
+                            || s.getStatus() == JobStatus.queue);
+                    if (steps.isEmpty() || hasActiveWork) {
                         return null;
                     }
                     DerivedOutcome outcome = deriver.derive(job, steps);

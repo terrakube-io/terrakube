@@ -148,7 +148,7 @@ class JobReconciliationSweepTest {
 
         subject().execute(null);
 
-        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(20));
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(20), any());
     }
 
     @Test
@@ -160,12 +160,12 @@ class JobReconciliationSweepTest {
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_21"));
         doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:21");
         doReturn(List.of()).when(stepRepository).findByJobId(21);
-        doReturn(1).when(jobRepository).updateStatusById(JobStatus.failed, 21);
+        doReturn(1).when(jobRepository).updateStatusByIdAndStatusIn(JobStatus.failed, 21, List.of(JobStatus.queue, JobStatus.running));
         doReturn(true).when(scheduler).deleteJob(new JobKey("TerrakubeV2_Job_21"));
 
         subject().execute(null);
 
-        verify(jobRepository, times(1)).updateStatusById(JobStatus.failed, 21);
+        verify(jobRepository, times(1)).updateStatusByIdAndStatusIn(JobStatus.failed, 21, List.of(JobStatus.queue, JobStatus.running));
         verify(scheduler, times(1)).deleteJob(new JobKey("TerrakubeV2_Job_21"));
         // updateStatusById is a bulk update that bypasses Elide's JobManageHook, which normally
         // keeps workspace.lastJobStatus in sync - without this explicit save the workspace list
@@ -185,7 +185,7 @@ class JobReconciliationSweepTest {
 
         subject().execute(null);
 
-        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(22));
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(22), any());
     }
 
     @Test
@@ -202,7 +202,7 @@ class JobReconciliationSweepTest {
 
         // A Redis outage must never be treated as "the job is dead" - that would fail every
         // in-flight job on a transient blip, which is far worse than a delayed detection.
-        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(23));
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(23), any());
     }
 
     @Test
@@ -221,7 +221,7 @@ class JobReconciliationSweepTest {
 
         subject().execute(null);
 
-        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(25));
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(25), any());
     }
 
     @Test
@@ -236,7 +236,7 @@ class JobReconciliationSweepTest {
 
         subject().execute(null);
 
-        verify(jobRepository, times(0)).updateStatusById(eq(JobStatus.failed), eq(26));
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(26), any());
     }
 
     @Test
@@ -309,5 +309,60 @@ class JobReconciliationSweepTest {
         subject().execute(null);
 
         verify(reconciliationService, never()).reconcile(anyInt(), anyBoolean());
+    }
+
+    @Test
+    void sweepDoesNotRecreateTriggerAfterReconcilingToTerminal() throws Exception {
+        Job zombie = job(40, JobStatus.approved);
+        doReturn(List.of(zombie)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(step(JobStatus.completed))).when(stepRepository).findByJobId(40);
+        doReturn(false).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_40"));
+        doReturn(new ReconciliationResult(40, JobStatus.approved, DerivedOutcome.COMPLETED,
+                JobStatus.completed, ReconciliationResult.ReconciliationDisposition.APPLIED, List.of()))
+                .when(reconciliationService).reconcile(40, false);
+
+        subject().execute(null);
+
+        verify(reconciliationService, times(1)).reconcile(40, false);
+        verify(scheduleJobService, never()).createJobContext(any());
+    }
+
+    @Test
+    void sweepDoesNotFlagInFlightJobOnFinalStepAsAnomaly() throws Exception {
+        Job running = job(41, JobStatus.running);
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        // Step 1 completed, Step 2 running (in flight)
+        doReturn(List.of(step(JobStatus.completed), step(JobStatus.running)))
+                .when(stepRepository).findByJobId(41);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_41"));
+        doReturn(true).when(redisTemplate).hasKey("executor-job-heartbeat:41");
+
+        subject().execute(null);
+
+        // Active work in progress: must never call reconcile
+        verify(reconciliationService, never()).reconcile(anyInt(), anyBoolean());
+    }
+
+    @Test
+    void sweepDoesNotOverwriteJobWhenItIsNoLongerInExecutorOwnedStatus() throws Exception {
+        Job running = job(42, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_42"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:42");
+        // Simulated race: by the time heartbeat check executes, job was completed in DB (rows updated = 0)
+        doReturn(0).when(jobRepository).updateStatusByIdAndStatusIn(
+                JobStatus.failed, 42, List.of(JobStatus.queue, JobStatus.running));
+
+        subject().execute(null);
+
+        verify(jobRepository, times(1)).updateStatusByIdAndStatusIn(
+                JobStatus.failed, 42, List.of(JobStatus.queue, JobStatus.running));
+        verify(stepRepository, never()).save(any());
+        verify(workspaceRepository, never()).save(any());
+        verify(scheduler, never()).deleteJob(any());
     }
 }

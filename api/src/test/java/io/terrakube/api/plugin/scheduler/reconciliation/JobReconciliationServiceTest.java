@@ -130,6 +130,19 @@ class JobReconciliationServiceTest {
     }
 
     @Test
+    void runningOrQueueStepsFoundAfterLockMeansSkippedHasWork() {
+        Job j = job(755, JobStatus.running);
+        doReturn(j).when(jobRepository).lockForUpdate(755);
+        doReturn(List.of(step(JobStatus.completed, 100), step(JobStatus.running, 200)))
+                .when(stepRepository).findByJobId(755);
+
+        ReconciliationResult result = subject.reconcile(755, false);
+
+        assertThat(result.disposition()).isEqualTo(ReconciliationDisposition.SKIPPED_HAS_WORK);
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
     void anomalyIsHeldNotTransitioned() {
         Job j = job(755, JobStatus.approved);
         doReturn(j).when(jobRepository).lockForUpdate(755);

@@ -79,7 +79,16 @@ public class JobReconciliationSweep implements org.quartz.Job {
         boolean redisRecentlyRestarted = isRedisWithinWarmupPeriod();
         for (Job job : jobRepository.findAllByStatusInOrderByIdAsc(ACTIVE_STATUSES)) {
             if (properties.isSweepEnabled()) {
-                reconcileZeroPendingJob(job);
+                ReconciliationResult result = reconcileZeroPendingJob(job);
+                if (result != null) {
+                    if (result.disposition() == ReconciliationResult.ReconciliationDisposition.APPLIED && result.targetStatus() != null) {
+                        job.setStatus(result.targetStatus());
+                    }
+                    if (result.disposition() == ReconciliationResult.ReconciliationDisposition.APPLIED
+                            || result.disposition() == ReconciliationResult.ReconciliationDisposition.ALREADY_TERMINAL) {
+                        continue;
+                    }
+                }
             }
             reconcileTrigger(job);
             if (isExecutorOwnedStatus(job.getStatus())) {
@@ -88,22 +97,26 @@ public class JobReconciliationSweep implements org.quartz.Job {
         }
     }
 
-    // Hands a job that is non-terminal with >=1 step and no pending step to the shared
-    // reconciliation routine (dry-run when auto-remediate is off). Jobs with no steps yet keep
+    // Hands a job that is non-terminal with >=1 step and no active work (pending, running, or queue)
+    // to the shared reconciliation routine (dry-run when auto-remediate is off). Jobs with no steps yet keep
     // today's trigger-only reconciliation - they're just uninitialised, not stuck.
-    private void reconcileZeroPendingJob(Job job) {
+    private ReconciliationResult reconcileZeroPendingJob(Job job) {
         List<Step> steps = stepRepository.findByJobId(job.getId());
-        if (steps.isEmpty() || steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending)) {
-            return;
+        boolean hasActiveWork = steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending
+                || s.getStatus() == JobStatus.running
+                || s.getStatus() == JobStatus.queue);
+        if (steps.isEmpty() || hasActiveWork) {
+            return null;
         }
         if (!acquirePerJobLock(job.getId())) {
-            return; // a live ScheduleJob firing (or another replica's sweep) owns this job now
+            return null; // a live ScheduleJob firing (or another replica's sweep) owns this job now
         }
         try {
-            reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
+            return reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
         } catch (RuntimeException e) {
             log.warn("Reconciliation of zero-pending job {} failed this sweep, will retry: {}",
                     job.getId(), e.getMessage());
+            return null;
         } finally {
             releasePerJobLock(job.getId());
         }
@@ -154,6 +167,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
     }
 
     private void reconcileTrigger(Job job) {
+        if (!ACTIVE_STATUSES.contains(job.getStatus())) {
+            return;
+        }
         try {
             JobKey key = new JobKey(PREFIX_JOB_CONTEXT + job.getId());
             if (!scheduler.checkExists(key)) {
@@ -198,7 +214,13 @@ public class JobReconciliationSweep implements org.quartz.Job {
         }
 
         log.warn("Job {} has no executor heartbeat after {}, the executor that had it is gone - failing it", job.getId(), age);
-        jobRepository.updateStatusById(JobStatus.failed, job.getId());
+        int rowsUpdated = jobRepository.updateStatusByIdAndStatusIn(
+                JobStatus.failed, job.getId(), List.of(JobStatus.queue, JobStatus.running));
+        if (rowsUpdated == 0) {
+            log.info("Job {} is no longer in queue or running status in DB, skipping heartbeat failure", job.getId());
+            return;
+        }
+        job.setStatus(JobStatus.failed);
         for (Step step : stepRepository.findByJobId(job.getId())) {
             if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
                 step.setStatus(JobStatus.failed);

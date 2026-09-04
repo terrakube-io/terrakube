@@ -48,6 +48,10 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.status = :status where j.id = :jobId")
     int updateStatusById(@Param("status") JobStatus status, @Param("jobId") int jobId);
 
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
+    int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
+
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
 
