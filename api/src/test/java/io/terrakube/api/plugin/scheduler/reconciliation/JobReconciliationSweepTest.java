@@ -7,6 +7,7 @@ import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,11 @@ import java.util.List;
 import java.util.Properties;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
@@ -41,6 +46,9 @@ class JobReconciliationSweepTest {
     ScheduleJobService scheduleJobService;
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
+    ReconciliationProperties properties;
+    JobReconciliationService reconciliationService;
+    JobReconciliationMetrics metrics;
 
     @BeforeEach
     void setup() {
@@ -51,8 +59,16 @@ class JobReconciliationSweepTest {
         scheduleJobService = mock(ScheduleJobService.class, new FailUnkownMethod<ScheduleJobService>());
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
         valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
+        reconciliationService = mock(JobReconciliationService.class, new FailUnkownMethod<JobReconciliationService>());
+        properties = new ReconciliationProperties();
+        metrics = new JobReconciliationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doAnswer(invocation -> invocation.getArgument(0)).when(workspaceRepository).save(any());
+        // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
+        // test says otherwise (existing trigger/heartbeat tests are unaffected by this feature).
+        lenient().doReturn(List.of()).when(stepRepository).findByJobId(anyInt());
+        lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(java.time.Duration.class));
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
         // Default to "Redis has been comfortably up for a while" so existing tests aren't
         // affected by the warm-up check; the tests specifically about it override this.
         lenient().doReturn(uptimeProperties(3600)).when(redisTemplate).execute(any(RedisCallback.class));
@@ -65,7 +81,8 @@ class JobReconciliationSweepTest {
     }
 
     private JobReconciliationSweep subject() {
-        return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate);
+        return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler,
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics);
     }
 
     private Job job(int id, JobStatus status) {
@@ -75,6 +92,12 @@ class JobReconciliationSweepTest {
         job.setUpdatedDate(new Date(System.currentTimeMillis()));
         job.setWorkspace(new Workspace());
         return job;
+    }
+
+    private Step step(JobStatus status) {
+        Step s = new Step();
+        s.setStatus(status);
+        return s;
     }
 
     @Test
@@ -227,5 +250,64 @@ class JobReconciliationSweepTest {
         subject().execute(null);
 
         verify(redisTemplate, times(0)).hasKey(any());
+    }
+
+    @Test
+    void reconcilesAZombieApprovedJobBeforeReconcilingItsTrigger() throws Exception {
+        Job zombie = job(30, JobStatus.approved);
+        doReturn(List.of(zombie)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(step(JobStatus.completed))).when(stepRepository).findByJobId(30);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_30"));
+        doReturn(new ReconciliationResult(30, JobStatus.approved, DerivedOutcome.COMPLETED,
+                JobStatus.completed, ReconciliationResult.ReconciliationDisposition.APPLIED, List.of()))
+                .when(reconciliationService).reconcile(30, false); // autoRemediate default true
+
+        subject().execute(null);
+
+        verify(reconciliationService, times(1)).reconcile(30, false);
+    }
+
+    @Test
+    void runsReconcileInDryRunWhenAutoRemediateIsOff() throws Exception {
+        properties.setAutoRemediate(false);
+        Job zombie = job(31, JobStatus.approved);
+        doReturn(List.of(zombie)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(step(JobStatus.completed))).when(stepRepository).findByJobId(31);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_31"));
+        doReturn(new ReconciliationResult(31, JobStatus.approved, DerivedOutcome.COMPLETED,
+                JobStatus.completed, ReconciliationResult.ReconciliationDisposition.DRY_RUN, List.of()))
+                .when(reconciliationService).reconcile(31, true);
+
+        subject().execute(null);
+
+        verify(reconciliationService, times(1)).reconcile(31, true);
+    }
+
+    @Test
+    void doesNotReconcileAJobThatStillHasAPendingStep() throws Exception {
+        Job working = job(32, JobStatus.approved);
+        doReturn(List.of(working)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(step(JobStatus.pending))).when(stepRepository).findByJobId(32);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_32"));
+
+        subject().execute(null);
+
+        verify(reconciliationService, never()).reconcile(anyInt(), anyBoolean());
+    }
+
+    @Test
+    void doesNotReconcileWhenSweepDisabled() throws Exception {
+        properties.setSweepEnabled(false);
+        Job zombie = job(33, JobStatus.approved);
+        doReturn(List.of(zombie)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_33"));
+
+        subject().execute(null);
+
+        verify(reconciliationService, never()).reconcile(anyInt(), anyBoolean());
     }
 }

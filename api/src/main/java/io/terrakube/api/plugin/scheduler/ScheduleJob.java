@@ -7,6 +7,9 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableExc
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
+import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService;
+import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties;
+import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
@@ -113,6 +116,12 @@ public class ScheduleJob implements org.quartz.Job {
     // this so status-change notifications actually fire for real runs, not just for a job
     // updated via a direct API PATCH.
     JobNotificationTrigger jobNotificationTrigger;
+
+    // Shared routine that reconciles a job with no remaining executable step to its real terminal
+    // status (see reconcileOutOfSteps). ReconciliationProperties gates the guarded FIFO-admission
+    // queries used by isNextInDispatchOrder / wakeNextDispatchableJob.
+    JobReconciliationService jobReconciliationService;
+    ReconciliationProperties reconciliationProperties;
 
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
@@ -453,8 +462,7 @@ public class ScheduleJob implements org.quartz.Job {
                     break;
             }
         } else {
-            completeJob(job);
-            deleteOldJobs(job);
+            return reconcileOutOfSteps(job);
         }
         return true;
     }
@@ -493,14 +501,42 @@ public class ScheduleJob implements org.quartz.Job {
         return success;
     }
 
-    private void completeJob(Job job) {
-        job.setStatus(JobStatus.completed);
-        jobRepository.save(job);
-        jobNotificationTrigger.notifyStatusChanged(job);
-        updateJobStatusOnVcs(job, JobStatus.completed);
+    // A job that has run out of executable steps (getNextFlow returned nothing) is handed to the
+    // shared reconciliation routine, which derives the real terminal status from the persisted
+    // step outcomes - completed, or noChanges/failed/cancelled if the steps say so - instead of
+    // this path's old blind "mark completed". The routine owns the status transition, the
+    // status-change event, the workspace last-run status and Quartz trigger removal (idempotently,
+    // safely across API replicas). This method only re-applies the VCS-status / PR-comment /
+    // job-history-prune tail that completeJob and the failed switch arm used to run; the routine
+    // deliberately skips those so a stale job the 30s sweep reconciles doesn't emit a bogus VCS
+    // push. Returns whether the Quartz trigger should be removed now.
+    private boolean reconcileOutOfSteps(Job job) {
+        ReconciliationResult result = jobReconciliationService.reconcile(job.getId(), false);
+        switch (result.disposition()) {
+            case APPLIED:
+                // Align this method's detached copy with the just-committed status so the
+                // read-only side effects below (which inspect job.getStatus()) see the truth.
+                job.setStatus(result.targetStatus());
+                applyTerminalSideEffects(job, result.targetStatus());
+                return true;
+            case ALREADY_TERMINAL:
+                return true;
+            default:
+                // HELD_ANOMALY / SKIPPED_HAS_WORK / RACE: keep the existing 30s trigger so the
+                // state is retried; the guarded admission query keeps this job from blocking
+                // others in the meantime.
+                return false;
+        }
+    }
+
+    private void applyTerminalSideEffects(Job job, JobStatus target) {
+        if (target == JobStatus.completed) {
+            updateJobStatusOnVcs(job, JobStatus.completed);
+        } else {
+            updateJobStatusOnVcs(job, JobStatus.failed);
+        }
         postPrCommentIfNeeded(job);
-        updateWorkspaceStatus(job);
-        log.info("Update Job {} to completed", job.getId());
+        deleteOldJobs(job);
     }
 
     // Fails closed: if Redis itself is unreachable, treat it the same as losing the lock race
@@ -530,7 +566,10 @@ public class ScheduleJob implements org.quartz.Job {
     // rather than risking a newer job jumping ahead of an older one.
     private boolean isNextInDispatchOrder(Job job, String stepId) {
         try {
-            if (!jobRepository.isJobNextInDispatchOrder(job.getId())) {
+            boolean oldest = reconciliationProperties.isAdmissionGuardEnabled()
+                    ? jobRepository.isJobNextInDispatchOrderExecutable(job.getId())
+                    : jobRepository.isJobNextInDispatchOrder(job.getId());
+            if (!oldest) {
                 log.info("Job {} Step {} is not yet the oldest job waiting for the executor pool, will retry", job.getId(), stepId);
                 return false;
             }
@@ -545,7 +584,9 @@ public class ScheduleJob implements org.quartz.Job {
     // trigger still covers it.
     private void wakeNextDispatchableJob() {
         try {
-            Integer nextJobId = jobRepository.findNextDispatchableJobId();
+            Integer nextJobId = reconciliationProperties.isAdmissionGuardEnabled()
+                    ? jobRepository.findNextDispatchableExecutableJobId()
+                    : jobRepository.findNextDispatchableJobId();
             if (nextJobId != null) {
                 scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
             }
@@ -617,8 +658,12 @@ public class ScheduleJob implements org.quartz.Job {
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
             }
+            return true;
         }
-        return true;
+        // No next flow: the approved job has consumed every executable step. Historically this
+        // path just "return true"-ed, leaving the job stuck in 'approved' forever while the
+        // reconciliation sweep endlessly recreated its trigger and blocked the FIFO queue.
+        return reconcileOutOfSteps(job);
     }
 
     // Fire-and-forget: the job must stay rejected, so unlike the pending/approved paths the

@@ -21,10 +21,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.OrganizationRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 
 /**
@@ -72,6 +74,8 @@ class JobDispatchOrderRepositoryIntegrationTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private OrganizationRepository organizationRepository;
+    @Autowired
+    private StepRepository stepRepository;
 
     private Organization organization;
 
@@ -99,6 +103,14 @@ class JobDispatchOrderRepositoryIntegrationTest {
         job.setWorkspace(workspace);
         job.setStatus(status);
         return jobRepository.save(job);
+    }
+
+    private Step newStep(Job job, int stepNumber, JobStatus status) {
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(stepNumber);
+        step.setStatus(status);
+        return stepRepository.save(step);
     }
 
     @Test
@@ -159,5 +171,68 @@ class JobDispatchOrderRepositoryIntegrationTest {
         newJob(workspace, JobStatus.completed);
 
         assertThat(jobRepository.findNextDispatchableJobId()).isNull();
+    }
+
+    @Test
+    void guardedQuery_zombieApprovedJobWithNoPendingStepDoesNotBlockLaterJob() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job zombie = newJob(wsA, JobStatus.approved);           // older
+        newStep(zombie, 100, JobStatus.completed);              // has a step, none pending
+        Job later = newJob(wsB, JobStatus.pending);             // newer, different workspace
+        newStep(later, 100, JobStatus.pending);                 // genuine executable work
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(later.getId())).isTrue();
+        // the un-guarded query still (wrongly) reports it blocked - proves the guard is the fix
+        assertThat(jobRepository.isJobNextInDispatchOrder(later.getId())).isFalse();
+    }
+
+    @Test
+    void guardedQuery_earlierPendingJobWithAPendingStepStillBlocks() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job earlier = newJob(wsA, JobStatus.pending);
+        newStep(earlier, 100, JobStatus.pending);
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(later.getId())).isFalse();
+    }
+
+    @Test
+    void guardedQuery_earlierUninitialisedPendingJobWithNoStepsStillBlocks() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        newJob(wsA, JobStatus.pending);                         // steps not created yet
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(later.getId())).isFalse();
+    }
+
+    @Test
+    void guardedQuery_earlierRunningJobMidApplyStillBlocksItsWorkspaceSuccessor() {
+        Workspace ws = newWorkspace();
+        Job running = newJob(ws, JobStatus.running);            // executor owns it; step is running
+        newStep(running, 100, JobStatus.running);
+        Job later = newJob(ws, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        // the running job is the only workspace member with a lower id and it still blocks,
+        // so nothing in this workspace is eligible - later must not jump ahead of it
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isNull();
+    }
+
+    @Test
+    void guardedQuery_fifoPreservedAmongGenuinelyEligibleJobs() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job first = newJob(wsA, JobStatus.pending);
+        newStep(first, 100, JobStatus.pending);
+        Job second = newJob(wsB, JobStatus.approved);
+        newStep(second, 100, JobStatus.pending);
+
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(first.getId());
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(second.getId())).isFalse();
     }
 }

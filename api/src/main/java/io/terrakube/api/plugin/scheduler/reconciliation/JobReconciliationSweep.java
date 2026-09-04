@@ -58,22 +58,75 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // re-populate before trusting a missing key means the executor is actually dead.
     private static final Duration REDIS_WARMUP_PERIOD = Duration.ofSeconds(90);
 
+    // Same key ScheduleJob's withExecutionLock uses, so a sweep-driven reconcile and a live
+    // ScheduleJob firing for the same job id never run concurrently across replicas.
+    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
+    private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
+
     JobRepository jobRepository;
     StepRepository stepRepository;
     WorkspaceRepository workspaceRepository;
     Scheduler scheduler;
     ScheduleJobService scheduleJobService;
     RedisTemplate<String, Object> redisTemplate;
+    ReconciliationProperties properties;
+    JobReconciliationService reconciliationService;
+    JobReconciliationMetrics metrics;
 
     @Transactional
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
         boolean redisRecentlyRestarted = isRedisWithinWarmupPeriod();
         for (Job job : jobRepository.findAllByStatusInOrderByIdAsc(ACTIVE_STATUSES)) {
+            if (properties.isSweepEnabled()) {
+                reconcileZeroPendingJob(job);
+            }
             reconcileTrigger(job);
             if (isExecutorOwnedStatus(job.getStatus())) {
                 failIfExecutorHeartbeatExpired(job, redisRecentlyRestarted);
             }
+        }
+    }
+
+    // Hands a job that is non-terminal with >=1 step and no pending step to the shared
+    // reconciliation routine (dry-run when auto-remediate is off). Jobs with no steps yet keep
+    // today's trigger-only reconciliation - they're just uninitialised, not stuck.
+    private void reconcileZeroPendingJob(Job job) {
+        List<Step> steps = stepRepository.findByJobId(job.getId());
+        if (steps.isEmpty() || steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending)) {
+            return;
+        }
+        if (!acquirePerJobLock(job.getId())) {
+            return; // a live ScheduleJob firing (or another replica's sweep) owns this job now
+        }
+        try {
+            reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
+        } catch (RuntimeException e) {
+            log.warn("Reconciliation of zero-pending job {} failed this sweep, will retry: {}",
+                    job.getId(), e.getMessage());
+        } finally {
+            releasePerJobLock(job.getId());
+        }
+    }
+
+    // Fails closed like ScheduleJob.acquireExecutionLock: an unreachable Redis means "skip this
+    // job this sweep" rather than reconciling without the cross-replica guard.
+    private boolean acquirePerJobLock(int jobId) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (DataAccessException e) {
+            log.warn("Could not reach Redis for the reconciliation lock on job {}: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+
+    private void releasePerJobLock(int jobId) {
+        try {
+            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
+        } catch (DataAccessException e) {
+            log.warn("Could not release the reconciliation lock on job {} (TTL will clear it): {}", jobId, e.getMessage());
         }
     }
 
@@ -106,8 +159,10 @@ public class JobReconciliationSweep implements org.quartz.Job {
             if (!scheduler.checkExists(key)) {
                 log.warn("Job {} has no Quartz trigger despite status {}, recreating it", job.getId(), job.getStatus());
                 scheduleJobService.createJobContext(job);
+                metrics.quartzTriggerRecreated();
             }
         } catch (ObjectAlreadyExistsException e) {
+            metrics.quartzTriggerRace();
             log.info("Job {}'s trigger was recreated by another cluster member first, ignoring", job.getId());
         } catch (ParseException | SchedulerException e) {
             log.warn("Could not reconcile trigger for Job {}, will retry next sweep: {}", job.getId(), e.getMessage());

@@ -112,4 +112,57 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
             "   )", nativeQuery = true)
     Integer findNextDispatchableJobId();
+
+    // --- Guarded variants (design doc 2026-09-02 §3.6) --------------------------------------
+    // An earlier pending/approved job only blocks the FIFO queue when it still has an executable
+    // step: it has no steps yet (not initialised) OR at least one step is still pending. A job
+    // with steps but none pending has consumed all its work and must not block later jobs.
+    // queue/running/waitingApproval blockers are untouched - the executor or a user owns those,
+    // and a step can legitimately be 'running' with zero pending steps mid-apply.
+
+    /** Guarded variant of {@link #isJobNextInDispatchOrder}. */
+    @Query(value = "SELECT NOT EXISTS (" +
+            "  SELECT 1 FROM job earlier" +
+            "  WHERE earlier.id < :candidateJobId" +
+            "    AND earlier.status IN ('pending', 'approved')" +
+            "    AND earlier.deleted = false" +
+            "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = earlier.id)" +
+            "          OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = earlier.id AND s.status = 'pending') )" +
+            "    AND NOT EXISTS (" +
+            "      SELECT 1 FROM job blocker" +
+            "      WHERE blocker.workspace_id = earlier.workspace_id" +
+            "        AND blocker.id < earlier.id" +
+            "        AND blocker.deleted = false" +
+            "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "    )" +
+            ")", nativeQuery = true)
+    boolean isJobNextInDispatchOrderExecutable(@Param("candidateJobId") int candidateJobId);
+
+    /** Guarded variant of {@link #findNextDispatchableJobId}. */
+    @Query(value = "SELECT MIN(j.id) FROM job j" +
+            " WHERE j.status IN ('pending', 'approved')" +
+            "   AND j.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id AND s.status = 'pending') )" +
+            "   AND NOT EXISTS (" +
+            "     SELECT 1 FROM job earlier" +
+            "     WHERE earlier.workspace_id = j.workspace_id" +
+            "       AND earlier.id < j.id" +
+            "       AND earlier.deleted = false" +
+            "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "       AND ( earlier.status NOT IN ('pending','approved')" +
+            "             OR NOT EXISTS (SELECT 1 FROM step s2 WHERE s2.job_id = earlier.id)" +
+            "             OR EXISTS (SELECT 1 FROM step s2 WHERE s2.job_id = earlier.id AND s2.status = 'pending') )" +
+            "   )", nativeQuery = true)
+    Integer findNextDispatchableExecutableJobId();
+
+    /** Count of jobs the guarded FIFO-admission query currently considers eligible - a
+     *  pending/approved job that is uninitialised or still has a pending step. Queue-depth gauge. */
+    @Query(value = "SELECT COUNT(*) FROM job j" +
+            " WHERE j.status IN ('pending','approved')" +
+            "   AND j.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id AND s.status = 'pending') )",
+            nativeQuery = true)
+    int countDispatchEligibleJobs();
 }

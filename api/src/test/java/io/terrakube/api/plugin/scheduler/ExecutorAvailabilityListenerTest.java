@@ -12,6 +12,7 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 
@@ -20,17 +21,18 @@ class ExecutorAvailabilityListenerTest {
     private final RedisMessageListenerContainer container = mock(RedisMessageListenerContainer.class);
     private final JobRepository jobRepository = mock(JobRepository.class);
     private final ScheduleJobService scheduleJobService = mock(ScheduleJobService.class);
+    private final ReconciliationProperties reconciliationProperties = new ReconciliationProperties();
 
     private ExecutorAvailabilityListener subject() {
         return new ExecutorAvailabilityListener(container, jobRepository, scheduleJobService,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(), reconciliationProperties);
     }
 
     @Test
     void wakesTheOldestWaitingJobWhenAnExecutorReportsCapacity() throws Exception {
         Job nextJob = new Job();
         nextJob.setId(42);
-        when(jobRepository.findNextDispatchableJobId()).thenReturn(42);
+        when(jobRepository.findNextDispatchableExecutableJobId()).thenReturn(42);
         when(jobRepository.getReferenceById(42)).thenReturn(nextJob);
 
         subject().onMessage(null, null);
@@ -40,6 +42,16 @@ class ExecutorAvailabilityListenerTest {
 
     @Test
     void doesNothingWhenNoJobIsWaiting() throws Exception {
+        when(jobRepository.findNextDispatchableExecutableJobId()).thenReturn(null);
+
+        subject().onMessage(null, null);
+
+        verify(scheduleJobService, never()).createJobContextNow(any());
+    }
+
+    @Test
+    void usesTheUnguardedQueryWhenTheAdmissionGuardIsDisabled() throws Exception {
+        reconciliationProperties.setAdmissionGuardEnabled(false);
         when(jobRepository.findNextDispatchableJobId()).thenReturn(null);
 
         subject().onMessage(null, null);

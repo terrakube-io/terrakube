@@ -73,6 +73,8 @@ class JobReconciliationSweepIntegrationTest {
     @Autowired
     private WorkspaceRepository workspaceRepository;
     @Autowired
+    private io.terrakube.api.repository.StepRepository stepRepository;
+    @Autowired
     private OrganizationRepository organizationRepository;
     @Autowired
     private Scheduler scheduler;
@@ -80,10 +82,22 @@ class JobReconciliationSweepIntegrationTest {
     private Organization organization;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setup() {
         organization = new Organization();
         organization.setName("org-" + UUID.randomUUID().toString().substring(0, 8));
         organization = organizationRepository.save(organization);
+
+        // The sweep now takes a per-job Redis lock before reconciling a zero-pending job; the
+        // mocked RedisTemplate must let that lock be acquired and released.
+        org.springframework.data.redis.core.ValueOperations<String, Object> valueOperations =
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
+        org.mockito.Mockito.lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        org.mockito.Mockito.lenient().when(valueOperations.setIfAbsent(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(java.time.Duration.class))).thenReturn(true);
+        org.mockito.Mockito.lenient().when(redisTemplate.delete(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(true);
     }
 
     @Test
@@ -103,20 +117,67 @@ class JobReconciliationSweepIntegrationTest {
         job = jobRepository.save(job);
 
         JobKey key = new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + job.getId());
+        int jobId = job.getId();
         assertThat(scheduler.checkExists(key)).isFalse();
 
-        // Wait past one full sweep tick (registered at 30s intervals, plus the sweep's own
-        // immediate run-once-at-startup already happened before this job existed).
-        long deadline = System.currentTimeMillis() + 35_000;
-        boolean recreated = false;
+        // The sweep recreates the lost trigger, which fires ScheduleJob, which then processes the
+        // job (it has no template, so it fails fast and deschedules itself within ~0.2s). Accept
+        // either observation: the transient recreated trigger, or the durable proof that the job
+        // was picked back up - it left 'pending'. Polling only for the trigger is a race.
+        long deadline = System.currentTimeMillis() + 75_000;
+        boolean pickedUp = false;
         while (System.currentTimeMillis() < deadline) {
-            if (scheduler.checkExists(key)) {
-                recreated = true;
+            JobStatus status = jobRepository.findById(jobId).map(Job::getStatus).orElse(null);
+            if (scheduler.checkExists(key) || status != JobStatus.pending) {
+                pickedUp = true;
+                break;
+            }
+            Thread.sleep(200);
+        }
+
+        assertThat(pickedUp).isTrue();
+    }
+
+    @Test
+    void aZombieApprovedJobWithNoPendingStepsIsReconciledToCompletedBySweep() throws Exception {
+        Workspace workspace = new Workspace();
+        workspace.setName("ws-" + UUID.randomUUID().toString().substring(0, 8));
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.6.0");
+        workspace.setOrganization(organization);
+        workspace = workspaceRepository.save(workspace);
+
+        Job zombie = new Job();
+        zombie.setOrganization(organization);
+        zombie.setWorkspace(workspace);
+        zombie.setStatus(JobStatus.approved);
+        zombie = jobRepository.save(zombie);
+
+        io.terrakube.api.rs.job.step.Step done = new io.terrakube.api.rs.job.step.Step();
+        done.setJob(zombie);
+        done.setStepNumber(100);
+        done.setStatus(JobStatus.completed);
+        stepRepository.save(done);
+
+        int id = zombie.getId();
+
+        // the guarded FIFO head query must never hand the executor pool this dead job
+        Integer head = jobRepository.findNextDispatchableExecutableJobId();
+        assertThat(head == null || head != id).isTrue();
+
+        long deadline = System.currentTimeMillis() + 75_000;
+        boolean reconciled = false;
+        while (System.currentTimeMillis() < deadline) {
+            JobStatus status = jobRepository.findById(id).map(Job::getStatus).orElse(null);
+            if (status == JobStatus.completed) {
+                reconciled = true;
                 break;
             }
             Thread.sleep(500);
         }
 
-        assertThat(recreated).isTrue();
+        assertThat(reconciled).isTrue();
+        assertThat(scheduler.checkExists(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + id))).isFalse();
     }
 }
