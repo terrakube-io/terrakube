@@ -58,7 +58,9 @@ The key features of Terrakube are:
 - [Develop Terrakube using VS Code Dev Containers](.devcontainer/README.md)
 
 ### Documentation
-To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/) 
+To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/)
+Architecture decisions and internal component contracts are available in the
+[architecture documentation](docs/architecture/README.md).
 
 ### Contributing 
 Terrakube welcomes any idea or feedback from the community. If you want to contribute to this project, please read our [Contribution Guide](CONTRIBUTING.md) for more details.
