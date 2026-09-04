@@ -154,7 +154,7 @@ class JobReconciliationSweepTest {
     @Test
     void failsARunningJobPastTheGracePeriodWithNoHeartbeat() throws Exception {
         Job running = job(21, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000)); // 90s old
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000)); // 350s old (> 300s grace period)
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_21"));
@@ -175,9 +175,43 @@ class JobReconciliationSweepTest {
     }
 
     @Test
+    void leavesARunningJobAloneWhenWithinExtendedGracePeriodWithNoHeartbeat() throws Exception {
+        // Issue #3521: a cold-start ephemeral pod reaches ~70-90s before writing its first heartbeat.
+        // With the 300s default grace period, the sweep must not fail it.
+        Job running = job(21, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000)); // 90s old (< 300s)
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_21"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:21");
+
+        subject().execute(null);
+
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(21), any());
+    }
+
+    @Test
+    void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
+        JobReconciliationSweep customSweep = new JobReconciliationSweep(
+                jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate,
+                properties, reconciliationService, metrics, 600);
+
+        Job running = job(30, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 450_000)); // 450s old (< 600s)
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_30"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:30");
+
+        customSweep.execute(null);
+
+        verify(jobRepository, times(0)).updateStatusByIdAndStatusIn(eq(JobStatus.failed), eq(30), any());
+    }
+
+    @Test
     void leavesARunningJobAloneWhenItsHeartbeatIsStillAlive() throws Exception {
         Job running = job(22, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_22"));
@@ -191,7 +225,7 @@ class JobReconciliationSweepTest {
     @Test
     void doesNotFailAJobWhenRedisIsUnreachableDuringTheHeartbeatCheck() throws Exception {
         Job running = job(23, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_23"));
@@ -213,7 +247,7 @@ class JobReconciliationSweepTest {
         // would fail this test outright (FailUnkownMethod), proving the warm-up check short-
         // circuits before ever asking Redis about the heartbeat itself.
         Job running = job(25, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_25"));
@@ -227,7 +261,7 @@ class JobReconciliationSweepTest {
     @Test
     void treatsAnUndeterminableRedisUptimeAsRecentlyRestarted() throws Exception {
         Job running = job(26, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_26"));
@@ -242,7 +276,7 @@ class JobReconciliationSweepTest {
     @Test
     void doesNotCheckHeartbeatForNonExecutorStatuses() throws Exception {
         Job pending = job(24, JobStatus.pending);
-        pending.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        pending.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(pending)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_24"));
@@ -348,7 +382,7 @@ class JobReconciliationSweepTest {
     @Test
     void sweepDoesNotOverwriteJobWhenItIsNoLongerInExecutorOwnedStatus() throws Exception {
         Job running = job(42, JobStatus.running);
-        running.setUpdatedDate(new Date(System.currentTimeMillis() - 90_000));
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
         doReturn(List.of(running)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_42"));

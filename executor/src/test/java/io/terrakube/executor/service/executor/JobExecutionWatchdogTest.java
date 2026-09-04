@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.executor;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
@@ -32,8 +33,12 @@ class JobExecutionWatchdogTest {
     private final ValueOperations<String, Object> valueOperations = Mockito.mock(ValueOperations.class);
     private final UpdateJobStatus updateJobStatus = Mockito.mock(UpdateJobStatus.class);
 
-    private JobExecutionWatchdog subject() {
+    @BeforeEach
+    void setup() {
         doReturn(valueOperations).when(redisTemplate).opsForValue();
+    }
+
+    private JobExecutionWatchdog subject() {
         return new JobExecutionWatchdog(eventPublisher, 360, redisTemplate, updateJobStatus);
     }
 
@@ -87,13 +92,22 @@ class JobExecutionWatchdogTest {
     }
 
     @Test
+    void markBusyImmediatelyWritesHeartbeatKey() {
+        JobExecutionWatchdog watchdog = subject();
+
+        watchdog.markBusy(job("42"));
+
+        verify(valueOperations, times(1)).set("executor-job-heartbeat:42", "1", Duration.ofSeconds(45));
+    }
+
+    @Test
     void refreshesTheHeartbeatKeyWhileBusy() {
         JobExecutionWatchdog watchdog = subject();
 
         watchdog.markBusy(job("42"));
         watchdog.refreshHeartbeat();
 
-        verify(valueOperations, times(1)).set("executor-job-heartbeat:42", "1", Duration.ofSeconds(45));
+        verify(valueOperations, times(2)).set("executor-job-heartbeat:42", "1", Duration.ofSeconds(45));
     }
 
     @Test

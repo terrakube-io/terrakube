@@ -16,6 +16,8 @@ import org.quartz.JobKey;
 import org.quartz.ObjectAlreadyExistsException;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -40,7 +42,6 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
  *    FIFO isn't blocked on a callback that will never arrive.
  */
 @Slf4j
-@AllArgsConstructor
 @Component
 public class JobReconciliationSweep implements org.quartz.Job {
 
@@ -51,7 +52,6 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // Duplicated as a literal in executor's JobExecutionWatchdog - separate Spring Boot apps, no
     // shared module for this constant.
     private static final String HEARTBEAT_PREFIX = "executor-job-heartbeat:";
-    private static final Duration HEARTBEAT_GRACE_PERIOD = Duration.ofSeconds(60);
 
     // Redis here has no persistent volume, so a restart comes back completely empty - every
     // heartbeat gone at once. Give executors a full refresh cycle (15s) plus margin to
@@ -72,6 +72,44 @@ public class JobReconciliationSweep implements org.quartz.Job {
     ReconciliationProperties properties;
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
+    Duration heartbeatGracePeriod;
+
+    @Autowired
+    public JobReconciliationSweep(
+            JobRepository jobRepository,
+            StepRepository stepRepository,
+            WorkspaceRepository workspaceRepository,
+            Scheduler scheduler,
+            ScheduleJobService scheduleJobService,
+            RedisTemplate<String, Object> redisTemplate,
+            ReconciliationProperties properties,
+            JobReconciliationService reconciliationService,
+            JobReconciliationMetrics metrics,
+            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds) {
+        this.jobRepository = jobRepository;
+        this.stepRepository = stepRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.scheduler = scheduler;
+        this.scheduleJobService = scheduleJobService;
+        this.redisTemplate = redisTemplate;
+        this.properties = properties;
+        this.reconciliationService = reconciliationService;
+        this.metrics = metrics;
+        this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
+    }
+
+    public JobReconciliationSweep(
+            JobRepository jobRepository,
+            StepRepository stepRepository,
+            WorkspaceRepository workspaceRepository,
+            Scheduler scheduler,
+            ScheduleJobService scheduleJobService,
+            RedisTemplate<String, Object> redisTemplate,
+            ReconciliationProperties properties,
+            JobReconciliationService reconciliationService,
+            JobReconciliationMetrics metrics) {
+        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300);
+    }
 
     @Transactional
     @Override
@@ -186,7 +224,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
     }
 
     // Fails a job whose executor heartbeat has expired. Skips jobs younger than
-    // HEARTBEAT_GRACE_PERIOD so a freshly-dispatched job gets a full refresh cycle first. Unlike
+    // heartbeatGracePeriod so a freshly-dispatched job gets a full refresh cycle first. Unlike
     // most Redis errors elsewhere in this codebase, an unreachable Redis here does nothing rather
     // than assuming the job is dead - presuming a live job dead risks failing it mid-apply.
     private void failIfExecutorHeartbeatExpired(Job job, boolean redisRecentlyRestarted) {
@@ -194,7 +232,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
             return;
         }
         Duration age = Duration.between(job.getUpdatedDate().toInstant(), Instant.now());
-        if (age.compareTo(HEARTBEAT_GRACE_PERIOD) < 0) {
+        if (age.compareTo(heartbeatGracePeriod) < 0) {
             return;
         }
         if (redisRecentlyRestarted) {
