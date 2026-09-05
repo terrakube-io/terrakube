@@ -20,6 +20,8 @@ import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
+import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -149,6 +151,14 @@ public class Workspace extends GenericAuditFields {
 
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<Reference> reference;
+
+    /** Triggers that fire runs on THIS workspace when their source applies. */
+    @OneToMany(mappedBy = "destinationWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WorkspaceRunTrigger> runTriggers;
+
+    /** Triggers where THIS workspace is the source, i.e. the runs it sets off. */
+    @OneToMany(mappedBy = "sourceWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WorkspaceRunTrigger> sourceRunTriggers;
 
     @OneToMany(mappedBy = "workspace")
     @UpdatePermission(expression = "user is a superuser OR team manage workspace OR team workspace admin manages access field")
