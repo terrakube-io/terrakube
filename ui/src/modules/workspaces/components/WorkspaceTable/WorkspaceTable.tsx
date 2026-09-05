@@ -35,6 +35,10 @@ type Props = {
   onSelectProject: (projectId: string | null) => void;
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  onPageChange?: (page: number, pageSize: number) => void;
 };
 
 type SortSpec = { asc: WorkspaceSortOption; desc: WorkspaceSortOption } | { single: WorkspaceSortOption };
@@ -181,20 +185,30 @@ export default function WorkspaceTable({
   onSelectProject,
   sortOption,
   onSortChange,
+  page: controlledPage,
+  pageSize: controlledPageSize,
+  total,
+  onPageChange,
 }: Props) {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [internalPage, setInternalPage] = useState(1);
+  const [internalPageSize, setInternalPageSize] = useState(20);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const isGrouped = !!groups;
+  const isControlled = controlledPage !== undefined && controlledPageSize !== undefined && !!onPageChange;
+  const page = controlledPage ?? internalPage;
+  const pageSize = controlledPageSize ?? internalPageSize;
 
   useEffect(() => {
-    setPage((prev) => Math.min(prev, Math.max(1, Math.ceil(workspaces.length / pageSize))));
-  }, [workspaces, pageSize]);
+    if (!isControlled) {
+      setInternalPage((prev) => Math.min(prev, Math.max(1, Math.ceil(workspaces.length / pageSize))));
+    }
+  }, [workspaces, pageSize, isControlled]);
 
   const pagedWorkspaces = useMemo(() => {
+    if (isControlled) return workspaces;
     const start = (page - 1) * pageSize;
     return workspaces.slice(start, start + pageSize);
-  }, [workspaces, page, pageSize]);
+  }, [workspaces, page, pageSize, isControlled]);
 
   const toggleGroupExpanded = (key: string) => {
     setExpandedGroups((prev) => {
@@ -292,16 +306,20 @@ export default function WorkspaceTable({
             <WorkspaceRow key={item.id} item={item} organizationId={organizationId} onSelectProject={onSelectProject} />
           ))}
 
-      {!isGrouped && (
+      {(!isGrouped || isControlled) && (
         <div className="workspace-list-pagination">
           <Pagination
             current={page}
             pageSize={pageSize}
-            total={workspaces.length}
+            total={total ?? workspaces.length}
             showSizeChanger
             onChange={(newPage, newPageSize) => {
-              setPage(newPage);
-              setPageSize(newPageSize);
+              if (isControlled) {
+                onPageChange(newPage, newPageSize);
+              } else {
+                setInternalPage(newPage);
+                setInternalPageSize(newPageSize);
+              }
             }}
           />
         </div>

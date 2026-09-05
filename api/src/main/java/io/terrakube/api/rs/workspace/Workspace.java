@@ -31,7 +31,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
+@ReadPermission(expression = "user is a superuser OR workspace read filter")
 @CreatePermission(expression = "team manage workspace OR team project limited create workspace")
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
