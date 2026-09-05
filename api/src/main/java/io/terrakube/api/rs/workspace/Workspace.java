@@ -152,11 +152,19 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<Reference> reference;
 
-    /** Triggers that fire runs on THIS workspace when their source applies. */
+    /**
+     * Triggers that fire runs on THIS workspace when their source applies.
+     *
+     * Read-only through the workspace: edges are created and removed through the runTrigger
+     * resource, which carries the checks that validate both ends. Allowing them to be
+     * rewritten as a side effect of a workspace PATCH would bypass those.
+     */
+    @UpdatePermission(expression = "user is a superuser")
     @OneToMany(mappedBy = "destinationWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WorkspaceRunTrigger> runTriggers;
 
     /** Triggers where THIS workspace is the source, i.e. the runs it sets off. */
+    @UpdatePermission(expression = "user is a superuser")
     @OneToMany(mappedBy = "sourceWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WorkspaceRunTrigger> sourceRunTriggers;
 

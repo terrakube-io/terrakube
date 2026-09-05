@@ -1,6 +1,7 @@
 package io.terrakube.api.rs.workspace.trigger;
 
 import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.ReadPermission;
@@ -17,6 +18,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -38,7 +41,7 @@ import java.util.UUID;
 @ReadPermission(expression = "team view workspace trigger")
 @CreatePermission(expression = "team manage workspace trigger")
 @UpdatePermission(expression = "team manage workspace trigger")
-@DeletePermission(expression = "team manage workspace trigger")
+@DeletePermission(expression = "team delete workspace trigger")
 @Include(name = "runTrigger")
 @Getter
 @Setter
@@ -73,10 +76,16 @@ public class WorkspaceRunTrigger extends GenericAuditFields {
     private Template template;
 
     /**
-     * Denormalized owner of the edge. Both workspaces belong to it; keeping it here lets the
-     * cycle validation load an organization's whole graph in a single query instead of
-     * walking through the workspaces.
+     * Denormalized owner of the edge, derived from the destination workspace by
+     * WorkspaceRunTriggerHook. Excluded from the API surface entirely rather than merely
+     * permission-guarded: a client has no reason to set it, and accepting it would let an
+     * edge be attributed to a tenant that owns neither workspace, exposing it to the wrong
+     * organization through the read check. Keeping it on the row lets the
+     * cycle validation load an organization's whole graph in a single indexed query instead
+     * of walking through the workspaces; letting a client set it would let the edge be
+     * attributed to a tenant that owns neither workspace.
      */
+    @Exclude
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
@@ -84,4 +93,20 @@ public class WorkspaceRunTrigger extends GenericAuditFields {
     /** Lets an edge be turned off without losing its configuration. */
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
+
+    /**
+     * Derives the owning organization from the destination workspace.
+     *
+     * This runs as a JPA callback rather than an Elide lifecycle hook on purpose: Elide's
+     * PRECOMMIT phase fires after Hibernate has already flushed the insert, which leaves a
+     * NOT NULL column unset and fails at the database. @PrePersist is guaranteed to run
+     * before the statement is built.
+     */
+    @PrePersist
+    @PreUpdate
+    private void deriveOrganization() {
+        if (destinationWorkspace != null) {
+            this.organization = destinationWorkspace.getOrganization();
+        }
+    }
 }

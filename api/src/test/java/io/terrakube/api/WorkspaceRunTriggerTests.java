@@ -6,6 +6,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.Mockito.when;
 
 /**
@@ -17,7 +18,11 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
 
     private static final String ORGANIZATION = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
     private static final String WORKSPACE_SOURCE = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
-    private static final String WORKSPACE_DESTINATION = "58529721-425e-44d7-8b0d-1d515043c2f7";
+    private static final String WORKSPACE_TAG3 = "24480d33-2649-4c34-aabd-cbc988eb6265";
+    // Both are real workspaces of the organization above (simple.xml / simple-tag.xml).
+    // A previous revision used a team id here by mistake, which made the denial test pass
+    // on a 404 for a non-existent entity rather than on the permission check.
+    private static final String WORKSPACE_DESTINATION = "c20633b2-82cc-4105-9806-16e23ad0e1df";
 
     @BeforeEach
     public void setup() {
@@ -25,13 +30,16 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
-    private String triggerPayload(String sourceWorkspaceId) {
+    private String triggerPayload(String sourceWorkspaceId, String destinationWorkspaceId) {
         return "{\"data\":{\"type\":\"runTrigger\",\"attributes\":{\"enabled\":true},"
                 + "\"relationships\":{"
                 + "\"sourceWorkspace\":{\"data\":{\"type\":\"workspace\",\"id\":\"" + sourceWorkspaceId + "\"}},"
-                + "\"destinationWorkspace\":{\"data\":{\"type\":\"workspace\",\"id\":\"" + WORKSPACE_DESTINATION + "\"}},"
-                + "\"organization\":{\"data\":{\"type\":\"organization\",\"id\":\"" + ORGANIZATION + "\"}}"
+                + "\"destinationWorkspace\":{\"data\":{\"type\":\"workspace\",\"id\":\"" + destinationWorkspaceId + "\"}}"
                 + "}}}";
+    }
+
+    private String payloadWithoutOrganization(String sourceWorkspaceId, String destinationWorkspaceId) {
+        return triggerPayload(sourceWorkspaceId, destinationWorkspaceId);
     }
 
     @Test
@@ -76,32 +84,78 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
                 .log()
                 .all()
                 .statusCode(HttpStatus.OK.value())
-                .body("data.size()", org.hamcrest.Matchers.equalTo(0));
+                .body("data.size()", equalTo(0));
     }
 
-    /**
-     * Writing requires manage rights on the destination. A member without them is refused;
-     * Elide answers 404 rather than 403 when the caller cannot see the referenced
-     * workspaces, which is the safer of the two since it does not confirm they exist.
-     */
+    /** The happy path: an admin wires two real workspaces of the same organization. */
     @Test
-    void memberWithoutManageCannotCreateRunTrigger() {
-        int status = given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+    void adminCanCreateRunTrigger() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
                 .contentType("application/vnd.api+json")
-                .body(triggerPayload(WORKSPACE_SOURCE))
+                .body(triggerPayload(WORKSPACE_SOURCE, WORKSPACE_DESTINATION))
                 .when()
                 .post("/api/v1/runTrigger")
                 .then()
                 .assertThat()
                 .log()
                 .all()
-                .extract()
-                .statusCode();
+                .statusCode(HttpStatus.CREATED.value())
+                .body("data.attributes.enabled", equalTo(true));
+    }
 
-        org.junit.jupiter.api.Assertions.assertTrue(
-                status == HttpStatus.FORBIDDEN.value() || status == HttpStatus.NOT_FOUND.value(),
-                "creating a run trigger without manage rights must be denied, got " + status);
+    /**
+     * Writing requires manage rights on the destination: a member without them is refused
+     * even though both workspaces exist and are visible to the organization.
+     */
+    @Test
+    void memberWithoutManageCannotCreateRunTrigger() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .contentType("application/vnd.api+json")
+                .body(triggerPayload(WORKSPACE_SOURCE, WORKSPACE_DESTINATION))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    /** A workspace triggering itself would re-run on every apply until the cascade limit. */
+    @Test
+    void selfTriggerIsRejected() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .body(triggerPayload(WORKSPACE_SOURCE, WORKSPACE_SOURCE))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    /**
+     * The organization is derived from the destination workspace by the lifecycle hook, so
+     * omitting it must succeed rather than fail on the NOT NULL column.
+     */
+    @Test
+    void organizationIsDerivedWhenOmitted() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .body(payloadWithoutOrganization(WORKSPACE_SOURCE, WORKSPACE_TAG3))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.CREATED.value());
     }
 
     /** An anonymous caller must never reach the resource. */

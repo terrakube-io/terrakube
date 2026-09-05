@@ -71,6 +71,22 @@
     </changeSet>
 
     <!--
+      A workspace triggering itself would re-run on every apply until the cascade limit is
+      hit. The API rejects it, and this makes the invariant hold even for rows written
+      outside the API.
+    -->
+    <changeSet id="2-34-0-workspace-run-trigger-no-self" author="kleber.rocha@cora.com.br">
+        <sql>
+            ALTER TABLE workspace_run_trigger
+            ADD CONSTRAINT chk_run_trigger_no_self
+            CHECK (source_workspace_id != destination_workspace_id)
+        </sql>
+        <rollback>
+            ALTER TABLE workspace_run_trigger DROP CONSTRAINT chk_run_trigger_no_self
+        </rollback>
+    </changeSet>
+
+    <!--
       Run lineage on the job itself: which job caused this one, and how many hops in.
       Both are nullable/defaulted so existing rows need no backfill.
     -->
