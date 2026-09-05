@@ -75,37 +75,45 @@ describe("workspaceService.listWorkspaces", () => {
 describe("workspaceService.listWorkspacePage", () => {
   beforeEach(() => mockApiPost.mockReset());
 
-  it("sends cursor, filters, and sorting as GraphQL variables and maps the page", async () => {
+  it("uses Elide pagination, RSQL filtering, sorting, and page totals", async () => {
     mockApiPost.mockResolvedValue({
       isError: false,
       responseCode: 200,
       data: {
-        workspacePage: {
-          nodes: [
+        organization: {
+          edges: [
             {
-              id: "ws-1",
-              name: "platform",
-              source: "git@github.com:acme/platform.git",
-              iacType: "terraform",
-              lastJobStatus: "running",
-              lastJobDate: "2026-09-03T12:00:00Z",
-              locked: false,
-              tagIds: ["tag-1"],
-              projectId: "project-1",
-              projectName: "Platform",
+              node: {
+                name: "Acme",
+                workspace: {
+                  edges: [
+                    {
+                      node: {
+                        id: "ws-1",
+                        name: "platform",
+                        source: "git@github.com:acme/platform.git",
+                        iacType: "terraform",
+                        lastJobStatus: "running",
+                        lastJobDate: "2026-09-03T12:00:00Z",
+                        locked: false,
+                        workspaceTag: { edges: [{ node: { tagId: "tag-1" } }] },
+                        project: { edges: [{ node: { id: "project-1", name: "Platform" } }] },
+                      },
+                    },
+                  ],
+                  pageInfo: { endCursor: "40", hasNextPage: true, totalRecords: 42 },
+                },
+                all: { pageInfo: { totalRecords: 42 } },
+                waitingApproval: { pageInfo: { totalRecords: 1 } },
+                failed: { pageInfo: { totalRecords: 2 } },
+                pending: { pageInfo: { totalRecords: 3 } },
+                queue: { pageInfo: { totalRecords: 4 } },
+                running: { pageInfo: { totalRecords: 5 } },
+                completed: { pageInfo: { totalRecords: 6 } },
+                neverExecuted: { pageInfo: { totalRecords: 7 } },
+              },
             },
           ],
-          pageInfo: { endCursor: "opaque-next", hasNextPage: true, totalRecords: 42 },
-          statusCounts: {
-            all: 42,
-            waitingApproval: 1,
-            failed: 2,
-            pending: 3,
-            queue: 4,
-            running: 5,
-            completed: 6,
-            neverExecuted: 7,
-          },
         },
       },
     });
@@ -113,7 +121,7 @@ describe("workspaceService.listWorkspacePage", () => {
     const result = await workspaceService.listWorkspacePage({
       organizationId: "org-1",
       first: 20,
-      after: "opaque-current",
+      after: 20,
       search: "platform",
       status: "running",
       tagIds: ["tag-1"],
@@ -122,22 +130,23 @@ describe("workspaceService.listWorkspacePage", () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      "/graphql",
+      "/graphql/api/v1",
       expect.objectContaining({
-        variables: {
-          organizationId: "org-1",
-          first: 20,
-          after: "opaque-current",
-          search: "platform",
-          status: "running",
-          tagIds: ["tag-1"],
-          projectId: "project-1",
-          sort: "LAST_RUN_DESC",
-        },
+        variables: expect.objectContaining({
+          organizationIds: ["org-1"],
+          first: "20",
+          after: "20",
+          filter:
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running"',
+          sort: "-lastJobDate,-id",
+          allFilter:
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1"',
+        }),
       }),
       { dataWrapped: true, contentType: "application/json" }
     );
-    expect(result.data?.pageInfo).toEqual({ endCursor: "opaque-next", hasNextPage: true, totalRecords: 42 });
+    expect(result.data?.organizationName).toBe("Acme");
+    expect(result.data?.pageInfo).toEqual({ endCursor: "40", hasNextPage: true, totalRecords: 42 });
     expect(result.data?.statusCounts.running).toBe(5);
     expect(result.data?.workspaces[0]).toEqual(
       expect.objectContaining({

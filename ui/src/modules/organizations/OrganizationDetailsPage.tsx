@@ -21,7 +21,6 @@ import {
   setStoredWorkspaceSortOption,
   WorkspaceSortOption,
 } from "@/modules/workspaces/utils/workspaceSort";
-import organizationService from "@/modules/organizations/organizationService";
 import projectService from "@/modules/projects/projectService";
 import { ErrorInformation } from "@/modules/api/types";
 
@@ -42,7 +41,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [pageCursors, setPageCursors] = useState<Record<number, string | undefined>>({ 1: undefined });
   const [pageInfo, setPageInfo] = useState<WorkspacePageInfo>({ hasNextPage: false, totalRecords: 0 });
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [debouncedSearch, setDebouncedSearch] = useState(filterState.search);
@@ -58,36 +56,24 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
 
   useEffect(() => {
     setPage(1);
-    setPageCursors({ 1: undefined });
   }, [id, debouncedSearch, filterState.status, filterState.tagIds, filterState.projectId, sortOption, pageSize]);
 
-  const currentCursor = pageCursors[page];
   const request = useMemo<WorkspacePageRequest | null>(() => {
     if (!id) return null;
     return {
       organizationId: id,
       first: pageSize,
-      after: page === 1 ? undefined : currentCursor,
+      after: (page - 1) * pageSize,
       search: debouncedSearch,
       status: filterState.status,
       tagIds: filterState.tagIds,
       projectId: filterState.projectId,
       sort: sortOption,
     };
-  }, [
-    id,
-    page,
-    pageSize,
-    currentCursor,
-    debouncedSearch,
-    filterState.status,
-    filterState.tagIds,
-    filterState.projectId,
-    sortOption,
-  ]);
+  }, [id, page, pageSize, debouncedSearch, filterState.status, filterState.tagIds, filterState.projectId, sortOption]);
 
   const fetchPage = useCallback(async () => {
-    if (!request || (page > 1 && !request.after)) return;
+    if (!request) return;
     const sequence = ++requestSequence.current;
     const response = await workspaceService.listWorkspacePage(request);
     if (sequence !== requestSequence.current) return;
@@ -104,19 +90,16 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     }
 
     setWorkspaces(response.data.workspaces);
+    if (response.data.organizationName) {
+      sessionStorage.setItem(ORGANIZATION_NAME, response.data.organizationName);
+      setOrganizationName(response.data.organizationName);
+    }
     loadedOnce.current = true;
     setPageInfo(response.data.pageInfo);
     setStatusCounts(response.data.statusCounts);
     setError(undefined);
     setLoading(false);
-    if (response.data.pageInfo.hasNextPage && response.data.pageInfo.endCursor) {
-      setPageCursors((current) =>
-        current[page + 1] === response.data!.pageInfo.endCursor
-          ? current
-          : { ...current, [page + 1]: response.data!.pageInfo.endCursor }
-      );
-    }
-  }, [request, page]);
+  }, [request, setOrganizationName]);
 
   useEffect(() => {
     fetchPage();
@@ -128,19 +111,6 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   useEffect(() => {
     if (!id) return;
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, id);
-
-    organizationService
-      .getOrganizationNameGraphQL(id)
-      .then((name) => {
-        if (!name) return;
-        sessionStorage.setItem(ORGANIZATION_NAME, name);
-        setOrganizationName(name);
-      })
-      .catch((requestError: unknown) => {
-        // The workspace query still provides the useful page when only the breadcrumb lookup fails.
-        // eslint-disable-next-line no-console
-        console.error(requestError);
-      });
 
     projectService.listProjects(id).then((response) => {
       if (!response.isError && response.data) {
@@ -186,9 +156,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       setPageSize(nextPageSize);
       return;
     }
-    if (nextPage === 1 || pageCursors[nextPage] !== undefined) {
-      setPage(nextPage);
-    }
+    setPage(nextPage);
   };
 
   const showGrouped = listViewMode === "compact" && filterState.groupByProject && filterState.projectId === null;

@@ -30,6 +30,7 @@ export type WorkspacePageInfo = {
 };
 
 export type WorkspacePageResponse = {
+  organizationName: string;
   workspaces: WorkspaceListItem[];
   pageInfo: WorkspacePageInfo;
   statusCounts: Record<string, number>;
@@ -38,7 +39,7 @@ export type WorkspacePageResponse = {
 export type WorkspacePageRequest = {
   organizationId: string;
   first: number;
-  after?: string;
+  after: number;
   search?: string;
   status?: string;
   tagIds?: string[];
