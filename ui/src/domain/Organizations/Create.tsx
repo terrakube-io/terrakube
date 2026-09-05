@@ -6,6 +6,7 @@ import { IconSelector } from "./IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import { useState } from "react";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import "./Organizations.css";
 
 const validateMessages = {
@@ -27,6 +28,7 @@ type Props = {
 
 export const CreateOrganization = ({ setOrganizationName }: Props) => {
   const navigate = useNavigate();
+  const { upsertOrganization } = useOrganizationSummaries();
 
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
@@ -62,6 +64,12 @@ export const CreateOrganization = ({ setOrganizationName }: Props) => {
         message.success("Organization created successfully");
         sessionStorage.setItem(ORGANIZATION_ARCHIVE, response.data.data.id);
         sessionStorage.setItem(ORGANIZATION_NAME, response.data.data.attributes.name);
+        upsertOrganization({
+          id: response.data.data.id,
+          ...response.data.data.attributes,
+          workspaceCount: 0,
+          workspaceStatusCounts: {},
+        });
         setOrganizationName(response.data.data.attributes.name);
         navigate(`/organizations/${response.data.data.id}/settings/teams`);
       })
