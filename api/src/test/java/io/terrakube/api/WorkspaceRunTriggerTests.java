@@ -19,6 +19,7 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
     private static final String ORGANIZATION = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
     private static final String WORKSPACE_SOURCE = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
     private static final String WORKSPACE_TAG3 = "24480d33-2649-4c34-aabd-cbc988eb6265";
+    private static final String WORKSPACE_TAG2 = "5a7873bd-9fd3-4193-b3df-33ba586fb146";
     // Both are real workspaces of the organization above (simple.xml / simple-tag.xml).
     // A previous revision used a team id here by mistake, which made the denial test pass
     // on a 404 for a non-existent entity rather than on the permission check.
@@ -121,6 +122,43 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
                 .log()
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    /**
+     * Deletion is governed by TeamDeleteWorkspaceTrigger, which asks only for manage rights
+     * on the destination - so an admin can always detach a trigger from their own workspace.
+     */
+    @Test
+    void adminCanDeleteRunTrigger() {
+        String triggerId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .body(triggerPayload(WORKSPACE_SOURCE, WORKSPACE_TAG2))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract()
+                .path("data.id");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when()
+                .delete("/api/v1/runTrigger/" + triggerId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when()
+                .get("/api/v1/runTrigger/" + triggerId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NOT_FOUND.value());
     }
 
     /** A workspace triggering itself would re-run on every apply until the cascade limit. */
