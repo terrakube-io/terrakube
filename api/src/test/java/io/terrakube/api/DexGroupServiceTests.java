@@ -275,6 +275,19 @@ class DexGroupServiceTests {
         });
     }
 
+    @Test
+    void effectiveGroupsAcceptArraysAndIgnoreNullOrBlankEntries() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class));
+        for (Object groups : List.of(
+                new String[] {"TEAM", "", null, "TEAM"},
+                new Object[] {"TEAM", " ", null},
+                List.of("TEAM", ""),
+                "TEAM")) {
+            assertEquals(Set.of("TEAM"), service.getEffectiveGroups(userWith(Map.of("groups", groups))));
+        }
+        assertEquals(Set.of(), service.getEffectiveGroups(userWith(Map.of("sub", "no-groups"))));
+    }
+
     private DexGroupServiceImpl groupServiceWith(Federated federated) {
         FederatedRepository federatedRepository = mock(FederatedRepository.class);
         when(federatedRepository.findAllByIssuerUrlAndAudience(ISSUER, AUDIENCE)).thenReturn(List.of(federated));

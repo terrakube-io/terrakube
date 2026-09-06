@@ -113,6 +113,9 @@ public class DexGroupServiceImpl implements GroupService {
         Set<String> groups = new LinkedHashSet<>();
 
         Object tokenGroups = tokenAttributes.get("groups");
+        if (tokenGroups instanceof Object[] values) {
+            tokenGroups = Arrays.asList(values);
+        }
         if (tokenGroups instanceof String group && !group.isBlank()) {
             groups.add(group);
         } else if (tokenGroups instanceof Collection<?> values) {
@@ -129,13 +132,6 @@ public class DexGroupServiceImpl implements GroupService {
                 .forEach(groups::add);
 
         return groups;
-    }
-
-    private String[] toStringArray(Object array) {
-        if (array instanceof Collection<?> values) {
-            return values.stream().filter(Objects::nonNull).map(Object::toString).toArray(String[]::new);
-        }
-        return new String[0];
     }
 
     @Override

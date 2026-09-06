@@ -187,7 +187,7 @@ describe("WorkspaceTable", () => {
 
   it("clicking the Status header applies the single status sort", () => {
     renderTable({ sortOption: "name_asc" });
-    fireEvent.click(screen.getByText("Status"));
+    fireEvent.click(screen.getByText("Status (grouped)"));
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("status");
   });
 
@@ -199,6 +199,22 @@ describe("WorkspaceTable", () => {
   });
 
   describe("grouped mode", () => {
+    it("shows every row on a server page and labels counts as page-local", () => {
+      const items = Array.from({ length: 20 }, (_, i) => ({ ...workspaces[0], id: `ws-${i}`, name: `workspace-${i}` }));
+      const { container } = renderTable({
+        workspaces: items,
+        groups: [{ key: "proj-1", label: "platform", items }],
+        page: 2,
+        pageSize: 20,
+        total: 60,
+        onPageChange: jest.fn(),
+      });
+      expect(container.querySelectorAll(".workspace-row")).toHaveLength(20);
+      expect(screen.getByText("20 workspaces on this page")).toBeInTheDocument();
+      expect(container.querySelector(".workspace-group-show-more")).not.toBeInTheDocument();
+      expect(container.querySelector(".ant-pagination-item-active")).toHaveTextContent("2");
+    });
+
     const groups = [
       { key: "proj-1", label: "platform", items: [workspaces[0]] },
       { key: "__unassigned__", label: "(unassigned)", items: [workspaces[1]] },

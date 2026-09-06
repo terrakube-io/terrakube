@@ -235,7 +235,7 @@ export default function WorkspaceTable({
         </div>
         <div className="workspace-col-status">
           <SortableHeader
-            label="Status"
+            label="Status (grouped)"
             spec={{ single: "status" }}
             sortOption={sortOption}
             onSortChange={onSortChange}
@@ -270,7 +270,7 @@ export default function WorkspaceTable({
       {isGrouped
         ? groups!.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
-            const visibleItems = isExpanded ? group.items : group.items.slice(0, GROUP_PREVIEW_SIZE);
+            const visibleItems = isControlled || isExpanded ? group.items : group.items.slice(0, GROUP_PREVIEW_SIZE);
             const hiddenCount = group.items.length - visibleItems.length;
             return (
               <div key={group.key}>
@@ -278,6 +278,7 @@ export default function WorkspaceTable({
                   {group.label}{" "}
                   <span className="workspace-group-count">
                     {group.items.length} workspace{group.items.length === 1 ? "" : "s"}
+                    {isControlled ? " on this page" : ""}
                   </span>
                 </div>
                 {visibleItems.map((item) => (
@@ -288,7 +289,7 @@ export default function WorkspaceTable({
                     onSelectProject={onSelectProject}
                   />
                 ))}
-                {group.items.length > GROUP_PREVIEW_SIZE && (
+                {!isControlled && group.items.length > GROUP_PREVIEW_SIZE && (
                   <div
                     className="workspace-group-show-more"
                     role="button"

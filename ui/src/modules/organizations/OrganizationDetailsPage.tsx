@@ -72,34 +72,37 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     };
   }, [id, page, pageSize, debouncedSearch, filterState.status, filterState.tagIds, filterState.projectId, sortOption]);
 
-  const fetchPage = useCallback(async () => {
-    if (!request) return;
-    const sequence = ++requestSequence.current;
-    const response = await workspaceService.listWorkspacePage(request);
-    if (sequence !== requestSequence.current) return;
+  const fetchPage = useCallback(
+    async (includeStatusCounts = true) => {
+      if (!request) return;
+      const sequence = ++requestSequence.current;
+      const response = await workspaceService.listWorkspacePage(request, includeStatusCounts);
+      if (sequence !== requestSequence.current) return;
 
-    if (response.isError || !response.data) {
-      if (!loadedOnce.current) {
-        setError({
-          title: response.error?.status || "Failed to load workspaces",
-          message: response.error?.message,
-        });
+      if (response.isError || !response.data) {
+        if (!loadedOnce.current) {
+          setError({
+            title: response.error?.status || "Failed to load workspaces",
+            message: response.error?.message,
+          });
+        }
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
-    }
 
-    setWorkspaces(response.data.workspaces);
-    if (response.data.organizationName) {
-      sessionStorage.setItem(ORGANIZATION_NAME, response.data.organizationName);
-      setOrganizationName(response.data.organizationName);
-    }
-    loadedOnce.current = true;
-    setPageInfo(response.data.pageInfo);
-    setStatusCounts(response.data.statusCounts);
-    setError(undefined);
-    setLoading(false);
-  }, [request, setOrganizationName]);
+      setWorkspaces(response.data.workspaces);
+      if (response.data.organizationName) {
+        sessionStorage.setItem(ORGANIZATION_NAME, response.data.organizationName);
+        setOrganizationName(response.data.organizationName);
+      }
+      loadedOnce.current = true;
+      setPageInfo(response.data.pageInfo);
+      if (includeStatusCounts) setStatusCounts(response.data.statusCounts);
+      setError(undefined);
+      setLoading(false);
+    },
+    [request, setOrganizationName]
+  );
 
   useEffect(() => {
     fetchPage();
@@ -119,7 +122,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     });
   }, [id, setOrganizationName]);
 
-  usePolling(fetchPage, { interval: 10000, enabled: Boolean(request), immediate: false });
+  usePolling(() => fetchPage(false), { interval: 10000, enabled: Boolean(request), immediate: false });
 
   useOrganizationJobStatusSubscription({
     organizationId: id ?? "",

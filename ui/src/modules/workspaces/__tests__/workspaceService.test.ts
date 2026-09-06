@@ -1,5 +1,6 @@
 import { apiPost } from "@/modules/api/apiWrapper";
 import workspaceService from "../workspaceService";
+import { Kind, parse } from "graphql";
 
 jest.mock("@/modules/api/apiWrapper", () => ({
   __esModule: true,
@@ -74,6 +75,18 @@ describe("workspaceService.listWorkspaces", () => {
 
 describe("workspaceService.listWorkspacePage", () => {
   beforeEach(() => mockApiPost.mockReset());
+
+  it("omits status count queries during polling but keeps the page total", async () => {
+    mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
+    await workspaceService.listWorkspacePage({ organizationId: "org-1", first: 20, after: 0, sort: "status" }, false);
+    const { query, variables } = mockApiPost.mock.calls[0][1];
+    const document = parse(query);
+    expect(document.definitions[0].kind).toBe(Kind.OPERATION_DEFINITION);
+    expect(query).toContain("pageInfo { endCursor hasNextPage totalRecords }");
+    expect(query).not.toMatch(/\w+: workspace/);
+    expect(query).not.toContain("$allFilter");
+    expect(variables.sort).toBe("lastJobStatus,id");
+  });
 
   it("uses Elide pagination, RSQL filtering, sorting, and page totals", async () => {
     mockApiPost.mockResolvedValue({

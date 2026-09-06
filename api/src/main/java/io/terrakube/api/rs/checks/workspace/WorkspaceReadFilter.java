@@ -6,6 +6,7 @@ import com.yahoo.elide.core.filter.expression.AndFilterExpression;
 import com.yahoo.elide.core.filter.expression.FilterExpression;
 import com.yahoo.elide.core.filter.expression.OrFilterExpression;
 import com.yahoo.elide.core.filter.predicates.FilterPredicate;
+import com.yahoo.elide.core.filter.predicates.FalsePredicate;
 import com.yahoo.elide.core.filter.predicates.InInsensitivePredicate;
 import com.yahoo.elide.core.filter.predicates.InPredicate;
 import com.yahoo.elide.core.filter.predicates.IsNullPredicate;
@@ -32,6 +33,9 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
     @Override
     public FilterExpression getFilterExpression(Type<?> entityClass, RequestScope requestScope) {
         Object[] groups = groupService.getEffectiveGroups(requestScope.getUser()).toArray();
+        if (groups.length == 0) {
+            return new FalsePredicate(path(entityClass, requestScope, "id"));
+        }
 
         FilterExpression organizationAccess = new AndFilterExpression(
                 new InPredicate(path(entityClass, requestScope, "organization.team.name"), groups),
@@ -52,13 +56,19 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
             Workspace workspace, FilterPredicate predicate, RequestScope requestScope) {
         // Single-resource checks cannot traverse relations hidden by Elide security.
         Set<String> groups = groupService.getEffectiveGroups(requestScope.getUser());
-        boolean organizationAccess = workspace.getOrganization().getTeam().stream().anyMatch(team ->
-                groups.contains(team.getName())
-                        && (workspace.getProject() == null || rbacService.canManageWorkspace(team)));
+        if (groups.isEmpty()) {
+            return false;
+        }
+        boolean organizationAccess = workspace.getOrganization() != null
+                && workspace.getOrganization().getTeam() != null
+                && workspace.getOrganization().getTeam().stream().anyMatch(team ->
+                        groups.contains(team.getName())
+                                && (workspace.getProject() == null || rbacService.canManageWorkspace(team)));
         boolean projectAccess = workspace.getProject() != null
+                && workspace.getProject().getProjectAccess() != null
                 && workspace.getProject().getProjectAccess().stream()
                         .anyMatch(access -> groups.contains(access.getName()));
-        boolean workspaceAccess = workspace.getAccess().stream()
+        boolean workspaceAccess = workspace.getAccess() != null && workspace.getAccess().stream()
                 .anyMatch(access -> groups.contains(access.getName()) && rbacService.canManageWorkspace(access));
         return organizationAccess || projectAccess || workspaceAccess;
     }

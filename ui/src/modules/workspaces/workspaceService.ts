@@ -116,6 +116,7 @@ const workspaceSortMap: Record<WorkspacePageRequest["sort"], string> = {
   name_desc: "-name,-id",
   lastRun_asc: "lastJobDate,id",
   lastRun_desc: "-lastJobDate,-id",
+  // Server pagination uses the stored status order, without prioritizing active runs.
   status: "lastJobStatus,id",
   source_asc: "source,id",
   source_desc: "-source,-id",
@@ -153,7 +154,10 @@ function workspaceFilter(request: WorkspacePageRequest, status = request.status)
   );
 }
 
-async function listWorkspacePage(request: WorkspacePageRequest): Promise<ApiResponse<WorkspacePageResponse>> {
+async function listWorkspacePage(
+  request: WorkspacePageRequest,
+  includeStatusCounts = true
+): Promise<ApiResponse<WorkspacePageResponse>> {
   const baseFilter = workspaceFilter(request, "All");
   const body = {
     query: `query WorkspacePage(
@@ -162,14 +166,18 @@ async function listWorkspacePage(request: WorkspacePageRequest): Promise<ApiResp
       $after: StringOrInt
       $filter: String
       $sort: String
-      $allFilter: String
+      ${
+        includeStatusCounts
+          ? `$allFilter: String
       $waitingApprovalFilter: String
       $failedFilter: String
       $pendingFilter: String
       $queueFilter: String
       $runningFilter: String
       $completedFilter: String
-      $neverExecutedFilter: String
+      $neverExecutedFilter: String`
+          : ""
+      }
     ) {
       organization(ids: $organizationIds) {
         edges {
@@ -194,14 +202,18 @@ async function listWorkspacePage(request: WorkspacePageRequest): Promise<ApiResp
               }
               pageInfo { endCursor hasNextPage totalRecords }
             }
-            all: workspace(first: "1", filter: $allFilter) { pageInfo { totalRecords } }
+            ${
+              includeStatusCounts
+                ? `all: workspace(first: "1", filter: $allFilter) { pageInfo { totalRecords } }
             waitingApproval: workspace(first: "1", filter: $waitingApprovalFilter) { pageInfo { totalRecords } }
             failed: workspace(first: "1", filter: $failedFilter) { pageInfo { totalRecords } }
             pending: workspace(first: "1", filter: $pendingFilter) { pageInfo { totalRecords } }
             queue: workspace(first: "1", filter: $queueFilter) { pageInfo { totalRecords } }
             running: workspace(first: "1", filter: $runningFilter) { pageInfo { totalRecords } }
             completed: workspace(first: "1", filter: $completedFilter) { pageInfo { totalRecords } }
-            neverExecuted: workspace(first: "1", filter: $neverExecutedFilter) { pageInfo { totalRecords } }
+            neverExecuted: workspace(first: "1", filter: $neverExecutedFilter) { pageInfo { totalRecords } }`
+                : ""
+            }
           }
         }
       }
