@@ -164,7 +164,7 @@ public class ExecutorService {
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
 
         if (environmentVariables.containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
-            applyEphemeralDefaults(environmentVariables);
+            environmentVariables = mergeApiEphemeralDefaults(environmentVariables);
         }
 
         executorContext.setVariables(terraformVariables);
