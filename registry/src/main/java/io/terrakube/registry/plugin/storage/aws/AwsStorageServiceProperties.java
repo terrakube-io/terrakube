@@ -42,4 +42,9 @@ public class AwsStorageServiceProperties {
     private String endpointRegion = "auto";
     private boolean chunkedEncodingEnabled = true;
     private boolean checksumValidationEnabled = true;
+
+    // Some S3-compatible object stores reject path-style addressing outright.
+    // Alibaba OSS answers "Please use virtual hosted style to access" with HTTP
+    // 403 / SecondLevelDomainForbidden. Default true keeps existing behaviour.
+    private boolean pathStyleAccessEnabled = true;
 }

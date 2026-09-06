@@ -64,4 +64,14 @@ class StorageClientResilienceTest {
         assertFalse(config.checksumValidationEnabled());
         assertTrue(config.pathStyleAccessEnabled());
     }
+
+    @Test
+    void s3ServiceConfigurationHonorsDisabledPathStyleAccess() {
+        AwsStorageTypeProperties props = new AwsStorageTypeProperties();
+        props.setPathStyleAccessEnabled(false);
+
+        S3Configuration config = StorageTypeAutoConfiguration.s3ServiceConfiguration(props);
+
+        assertFalse(config.pathStyleAccessEnabled());
+    }
 }

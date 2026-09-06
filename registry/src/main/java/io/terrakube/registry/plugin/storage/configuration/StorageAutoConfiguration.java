@@ -108,7 +108,7 @@ public class StorageAutoConfiguration {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
 
                     S3Configuration serviceConfiguration = S3Configuration.builder()
-                            .pathStyleAccessEnabled(true)
+                            .pathStyleAccessEnabled(awsStorageServiceProperties.isPathStyleAccessEnabled())
                             .chunkedEncodingEnabled(awsStorageServiceProperties.isChunkedEncodingEnabled())
                             .checksumValidationEnabled(awsStorageServiceProperties.isChecksumValidationEnabled())
                             .build();
