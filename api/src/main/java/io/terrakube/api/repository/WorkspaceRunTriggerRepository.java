@@ -23,11 +23,26 @@ public interface WorkspaceRunTriggerRepository extends JpaRepository<WorkspaceRu
     List<WorkspaceRunTrigger> findEnabledBySourceWorkspaceId(@Param("sourceId") UUID sourceId);
 
     /**
-     * Every edge of an organization, used to build the adjacency map for cycle detection.
-     * Only ids are needed there, so the workspaces are left lazy on purpose.
+     * Edges of an organization as bare ids, for building the adjacency map used by cycle
+     * detection. Returns a projection rather than entities so validating a graph never
+     * materializes workspaces.
+     *
+     * Disabled edges are included on purpose. Validating only the enabled ones would leave a
+     * hole: declare A -> B disabled, then B -> A (accepted, since the first does not count),
+     * then enable A -> B and the cycle exists without any validation having seen it. Keeping
+     * the declared graph acyclic means enabling an edge can never introduce one.
      */
-    @Query("SELECT t FROM workspace_run_trigger t WHERE t.organization.id = :organizationId AND t.enabled = true AND t.sourceWorkspace.deleted = false AND t.destinationWorkspace.deleted = false")
-    List<WorkspaceRunTrigger> findEnabledByOrganizationId(@Param("organizationId") UUID organizationId);
+    @Query("SELECT t.id AS id, t.sourceWorkspace.id AS sourceId, t.destinationWorkspace.id AS destinationId "
+            + "FROM workspace_run_trigger t WHERE t.organization.id = :organizationId "
+            + "AND t.sourceWorkspace.deleted = false AND t.destinationWorkspace.deleted = false")
+    List<TriggerEdge> findEdgesByOrganizationId(@Param("organizationId") UUID organizationId);
+
+    /** Projection of a single edge: which trigger, from where, to where. */
+    interface TriggerEdge {
+        UUID getId();
+        UUID getSourceId();
+        UUID getDestinationId();
+    }
 
     /** Triggers whose destination is the given workspace, for the UI's inbound list. */
     @EntityGraph(attributePaths = {"sourceWorkspace"})

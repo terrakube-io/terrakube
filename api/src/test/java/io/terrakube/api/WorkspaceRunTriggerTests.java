@@ -20,6 +20,7 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
     private static final String WORKSPACE_SOURCE = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
     private static final String WORKSPACE_TAG3 = "24480d33-2649-4c34-aabd-cbc988eb6265";
     private static final String WORKSPACE_TAG2 = "5a7873bd-9fd3-4193-b3df-33ba586fb146";
+
     // Both are real workspaces of the organization above (simple.xml / simple-tag.xml).
     // A previous revision used a team id here by mistake, which made the denial test pass
     // on a 404 for a non-existent entity rather than on the permission check.
@@ -159,6 +160,35 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
+    /**
+     * The graph must stay acyclic: with source -> destination in place, the reverse edge
+     * closes a loop and is refused by the validation hook with 400.
+     */
+    @Test
+    void cyclicTriggerIsRejected() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .body(triggerPayload(WORKSPACE_TAG3, WORKSPACE_TAG2))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .body(triggerPayload(WORKSPACE_TAG2, WORKSPACE_TAG3))
+                .when()
+                .post("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.BAD_REQUEST.value());
     }
 
     /** A workspace triggering itself would re-run on every apply until the cascade limit. */

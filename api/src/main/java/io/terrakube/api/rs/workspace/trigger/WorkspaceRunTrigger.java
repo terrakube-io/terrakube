@@ -4,9 +4,11 @@ import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.hooks.trigger.WorkspaceRunTriggerHook;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -42,6 +44,10 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage workspace trigger")
 @UpdatePermission(expression = "team manage workspace trigger")
 @DeletePermission(expression = "team delete workspace trigger")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE,
+        phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceRunTriggerHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE,
+        phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceRunTriggerHook.class)
 @Include(name = "runTrigger")
 @Getter
 @Setter
