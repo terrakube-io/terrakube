@@ -2,6 +2,17 @@ import { VcsType } from "../../../domain/types";
 import getVcsTypeFromUrl from "./getVcsTypeFromUrl";
 
 describe("getVcsTypeFromUrl", () => {
+  test.each(["myorg/myrepo", "empty", "", "https://", "https://host:invalid/repo.git"])(
+    "invalid source %j returns UNKNOWN",
+    (source) => {
+      expect(getVcsTypeFromUrl(source)).toBe(VcsType.UNKNOWN);
+    }
+  );
+
+  test("SSH source returns the provider", () => {
+    expect(getVcsTypeFromUrl("git@github.com:myorg/myrepo.git")).toBe(VcsType.GITHUB);
+  });
+
   test("dev.azure.com returns correct", async () => {
     const result = getVcsTypeFromUrl("https://dev.azure.com/org-name/project-name/repo-name");
     expect(result).toBe(VcsType.AZURE_DEVOPS);
