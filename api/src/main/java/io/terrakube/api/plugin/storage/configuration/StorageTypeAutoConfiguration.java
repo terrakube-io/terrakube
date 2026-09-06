@@ -59,7 +59,7 @@ public class StorageTypeAutoConfiguration {
 
     static S3Configuration s3ServiceConfiguration(AwsStorageTypeProperties props) {
         return S3Configuration.builder()
-                .pathStyleAccessEnabled(true)
+                .pathStyleAccessEnabled(props.isPathStyleAccessEnabled())
                 .chunkedEncodingEnabled(props.isChunkedEncodingEnabled())
                 .checksumValidationEnabled(props.isChecksumValidationEnabled())
                 .build();

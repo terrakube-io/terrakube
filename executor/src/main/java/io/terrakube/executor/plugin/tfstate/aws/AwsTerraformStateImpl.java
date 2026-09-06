@@ -63,6 +63,17 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean useLockfile;
 
+    // Written into the generated backend as use_path_style. Must follow the same
+    // setting as the S3 client: an object store that rejects path-style rejects
+    // it for the backend too, and that failure surfaces as a client-side
+    // OpenTofu error rather than a server one.
+    //
+    // @Builder.Default is load-bearing. Without it an unset builder field is the
+    // primitive default false, which would silently turn path-style OFF for every
+    // existing custom-endpoint deployment.
+    @Builder.Default
+    private boolean pathStyleAccessEnabled = true;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -137,7 +148,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                     awsBackendHcl.appendln("    }");
                     awsBackendHcl.appendln("    skip_requesting_account_id = true");
                     awsBackendHcl.appendln("    skip_s3_checksum = true");
-                    awsBackendHcl.appendln("    use_path_style = true");
+                    awsBackendHcl.appendln("    use_path_style = " + pathStyleAccessEnabled);
                 }
 
                 awsBackendHcl.appendln("    skip_credentials_validation  = true");

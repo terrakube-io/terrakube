@@ -86,7 +86,7 @@ public class TerraformStateAutoConfiguration {
                         log.info("Creating AWS with custom endpoint and custom credentials");
 
                         S3Configuration serviceConfiguration = S3Configuration.builder()
-                                .pathStyleAccessEnabled(true)
+                                .pathStyleAccessEnabled(awsTerraformStateProperties.isPathStyleAccessEnabled())
                                 .chunkedEncodingEnabled(awsTerraformStateProperties.isChunkedEncodingEnabled())
                                 .checksumValidationEnabled(awsTerraformStateProperties.isChecksumValidationEnabled())
                                 .build();
@@ -116,6 +116,7 @@ public class TerraformStateAutoConfiguration {
                             .region(Region.of(awsTerraformStateProperties.getRegion()))
                             .includeBackendKeys(awsTerraformStateProperties.isIncludeBackendKeys())
                             .useLockfile(awsTerraformStateProperties.isUseLockfile())
+                            .pathStyleAccessEnabled(awsTerraformStateProperties.isPathStyleAccessEnabled())
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
