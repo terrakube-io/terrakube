@@ -63,12 +63,20 @@ public class WorkspaceRunTrigger extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    /** The upstream workspace whose successful apply fires this trigger. */
+    /**
+     * The upstream workspace whose successful apply fires this trigger.
+     *
+     * Immutable once set: repointing an edge is deleting one dependency and declaring
+     * another, and both deserve to go through their own permission checks. PATCH remains
+     * open for enabled and template.
+     */
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "source_workspace_id", nullable = false)
     private Workspace sourceWorkspace;
 
-    /** The downstream workspace that gets a run when the source applies. */
+    /** The downstream workspace that gets a run when the source applies. Immutable, as above. */
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "destination_workspace_id", nullable = false)
     private Workspace destinationWorkspace;
