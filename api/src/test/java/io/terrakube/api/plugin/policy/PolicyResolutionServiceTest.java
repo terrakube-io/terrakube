@@ -9,6 +9,7 @@ import io.terrakube.api.repository.PolicyExemptionRepository;
 import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.repository.TagRepository;
 import io.terrakube.api.repository.VariableRepository;
+import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -48,6 +49,7 @@ class PolicyResolutionServiceTest {
     private GlobalVarRepository globalVarRepository;
     private VariableRepository variableRepository;
     private TagRepository tagRepository;
+    private WorkspaceTagRepository workspaceTagRepository;
     private TokenService tokenService;
 
     private PolicyResolutionService policyResolutionService;
@@ -60,6 +62,7 @@ class PolicyResolutionServiceTest {
         globalVarRepository = Mockito.mock(GlobalVarRepository.class);
         variableRepository = Mockito.mock(VariableRepository.class);
         tagRepository = Mockito.mock(TagRepository.class);
+        workspaceTagRepository = Mockito.mock(WorkspaceTagRepository.class);
         tokenService = Mockito.mock(TokenService.class);
 
         policyResolutionService = new PolicyResolutionService(
@@ -69,6 +72,7 @@ class PolicyResolutionServiceTest {
                 globalVarRepository,
                 variableRepository,
                 tagRepository,
+                workspaceTagRepository,
                 tokenService
         );
     }
@@ -97,6 +101,7 @@ class PolicyResolutionServiceTest {
         WorkspaceTag wt = new WorkspaceTag();
         wt.setTagId(tagId.toString());
         ws.setWorkspaceTag(List.of(wt));
+        when(workspaceTagRepository.findByWorkspace(ws)).thenReturn(List.of(wt));
 
         Job job = new Job();
         job.setId(101);

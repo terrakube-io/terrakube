@@ -10,6 +10,7 @@ import io.terrakube.api.repository.PolicyExemptionRepository;
 import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.repository.TagRepository;
 import io.terrakube.api.repository.VariableRepository;
+import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.policy.PolicyAttachment;
@@ -47,6 +48,7 @@ public class PolicyResolutionService {
     private final GlobalVarRepository globalVarRepository;
     private final VariableRepository variableRepository;
     private final TagRepository tagRepository;
+    private final WorkspaceTagRepository workspaceTagRepository;
     private final TokenService tokenService;
 
     /**
@@ -86,7 +88,7 @@ public class PolicyResolutionService {
         }
 
         // 3. Tag-scoped attachments
-        List<WorkspaceTag> workspaceTags = job.getWorkspace().getWorkspaceTag();
+        List<WorkspaceTag> workspaceTags = workspaceTagRepository.findByWorkspace(job.getWorkspace());
         if (workspaceTags != null && !workspaceTags.isEmpty()) {
             List<UUID> tagUuids = workspaceTags.stream()
                     .map(WorkspaceTag::getTagId)
