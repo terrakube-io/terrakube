@@ -28,6 +28,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
@@ -85,10 +86,11 @@ public class TerraformStateAutoConfiguration {
                     } else if (awsTerraformStateProperties.getEndpoint() != null && !awsTerraformStateProperties.getEndpoint().isEmpty()) {
                         log.info("Creating AWS with custom endpoint and custom credentials");
 
+                        // Checksum behavior must be configured on the client only; setting it on
+                        // S3Configuration as well makes the SDK throw at build time (#3528).
                         S3Configuration serviceConfiguration = S3Configuration.builder()
                                 .pathStyleAccessEnabled(awsTerraformStateProperties.isPathStyleAccessEnabled())
                                 .chunkedEncodingEnabled(awsTerraformStateProperties.isChunkedEncodingEnabled())
-                                .checksumValidationEnabled(awsTerraformStateProperties.isChecksumValidationEnabled())
                                 .build();
 
                         s3client = S3Client.builder()
@@ -97,6 +99,9 @@ public class TerraformStateAutoConfiguration {
                                 .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
                                 .serviceConfiguration(serviceConfiguration)
                                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                                .responseChecksumValidation(awsTerraformStateProperties.isChecksumValidationEnabled()
+                                        ? ResponseChecksumValidation.WHEN_SUPPORTED
+                                        : ResponseChecksumValidation.WHEN_REQUIRED)
                                 .build();
                     } else {
                         log.info("Creating AWS SDK with custom credentials");

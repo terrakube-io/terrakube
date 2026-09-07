@@ -27,6 +27,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.core.retry.RetryPolicy;
@@ -107,17 +108,21 @@ public class StorageAutoConfiguration {
                         && !awsStorageServiceProperties.isEnableRoleAuthentication()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
 
+                    // Checksum behavior must be configured on the client only; setting it on
+                    // S3Configuration as well makes the SDK throw at build time (#3528).
                     S3Configuration serviceConfiguration = S3Configuration.builder()
                             .pathStyleAccessEnabled(awsStorageServiceProperties.isPathStyleAccessEnabled())
                             .chunkedEncodingEnabled(awsStorageServiceProperties.isChunkedEncodingEnabled())
-                            .checksumValidationEnabled(awsStorageServiceProperties.isChecksumValidationEnabled())
                             .build();
 
                     s3ClientBuilder
                             .region(Region.of(awsStorageServiceProperties.getEndpointRegion()))
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
-                            .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED);
+                            .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                            .responseChecksumValidation(awsStorageServiceProperties.isChecksumValidationEnabled()
+                                    ? ResponseChecksumValidation.WHEN_SUPPORTED
+                                    : ResponseChecksumValidation.WHEN_REQUIRED);
                     s3PresignerBuilder
                             .region(Region.of(awsStorageServiceProperties.getEndpointRegion()))
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
