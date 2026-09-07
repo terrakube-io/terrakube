@@ -115,14 +115,16 @@ public class EphemeralExecutorService {
             }
         }
 
-        Optional<Map<String, String>> nodeSelector = Optional
-                .ofNullable(executorContext.getEnvironmentVariables().get(NODE_SELECTOR))
+        Optional<Map<String, String>> nodeSelector = Optional.ofNullable(
+                executorContext.getEnvironmentVariables().get(NODE_SELECTOR))
                 .map(this::parseKeyValueString)
-                .map(HashMap::new)
-                .map(value -> (Map<String, String>) value)
                 .or(() -> Optional.ofNullable(ephemeralConfiguration.getNodeSelector()));
         Map<String, String> nodeSelectorInfo = nodeSelector.orElseGet(HashMap::new);
-        log.info("Custom Node selector: {}", nodeSelector.isPresent());
+        if (executorContext.getEnvironmentVariables().containsKey(NODE_SELECTOR)) {
+            log.info("Custom Node selector: true");
+        } else {
+            log.info("Using default node selector information");
+        }
 
         Optional<String> tolerationsInfo = Optional
                 .ofNullable(executorContext.getEnvironmentVariables().get(TOLERATIONS))
@@ -154,13 +156,17 @@ public class EphemeralExecutorService {
                 .or(() -> Optional.ofNullable(ephemeralConfiguration.getAnnotations()));
         Map<String, String> annotations = new HashMap<>();
         log.info("Custom Annotations: {}", annotationsInfo.isPresent());
-        annotationsInfo.ifPresent(value -> annotations.putAll(parseKeyValueString(value)));
+        if (annotationsInfo.isPresent()) {
+            annotations.putAll(parseKeyValueString(annotationsInfo.get()));
+        }
 
         Optional<String> podAnnotationsInfo = Optional
                 .ofNullable(executorContext.getEnvironmentVariables().get(POD_ANNOTATIONS))
                 .or(() -> Optional.ofNullable(ephemeralConfiguration.getPodAnnotations()));
         Map<String, String> podAnnotations = new HashMap<>();
-        podAnnotationsInfo.ifPresent(value -> podAnnotations.putAll(parseKeyValueString(value)));
+        if (podAnnotationsInfo.isPresent()) {
+            podAnnotations.putAll(parseKeyValueString(podAnnotationsInfo.get()));
+        }
 
         String serviceAccount = Optional
                 .ofNullable(executorContext.getEnvironmentVariables().get(SERVICE_ACCOUNT))
@@ -314,7 +320,9 @@ public class EphemeralExecutorService {
                 .or(() -> Optional.ofNullable(ephemeralConfiguration.getLabels()));
         Map<String, String> labels = new HashMap<>();
         log.info("Custom Labels: {}", labelsInfo.isPresent());
-        labelsInfo.ifPresent(value -> labels.putAll(parseKeyValueString(value)));
+        if (labelsInfo.isPresent()) {
+            labels.putAll(parseKeyValueString(labelsInfo.get()));
+        }
 
         labels.put("terrakube.io/organization", executorContext.getOrganizationId());
         labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());
@@ -396,14 +404,6 @@ public class EphemeralExecutorService {
             return message != null && message.contains("exceeded quota");
         }
         return false;
-    }
-
-    private String getConfigValue(ExecutorContext executorContext, String key, String deploymentDefault) {
-        String value = executorContext.getEnvironmentVariables().get(key);
-        if (value != null && !value.isBlank()) {
-            return value;
-        }
-        return deploymentDefault == null || deploymentDefault.isBlank() ? null : deploymentDefault;
     }
 
     private Map<String, String> parseKeyValueString(String input) {

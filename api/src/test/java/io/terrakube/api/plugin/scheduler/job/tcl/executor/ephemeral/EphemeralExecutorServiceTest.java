@@ -274,11 +274,13 @@ public class EphemeralExecutorServiceTest {
 
     @Test
     public void defaultsNodeSelectorToConfig() throws ExecutionException {
-        subject().send(job(), context());
+        ExecutorContext context = context();
+        subject().send(job(), context);
 
         verify(namespaced, times(1)).resource(job.capture());
         PodSpec podspec = job.getValue().getSpec().getTemplate().getSpec();
         assertEquals("node", podspec.getNodeSelector().get("some"));
+        assertTrue(context.getEnvironmentVariables().isEmpty());
     }
 
     @Test
