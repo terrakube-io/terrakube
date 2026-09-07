@@ -282,25 +282,52 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
-    public void appliesDeploymentDefaultsWithoutMutatingExecutorContext() throws ExecutionException {
-        config.getConfigMap().setEnvFrom("terrakube-executor-config");
-        config.setServiceAccount("terrakube-api-sa");
-        config.getConfigMap().setName("terrakube-ephemeral-ca-certs");
-        config.getConfigMap().setMountPath("/mnt/platform/bindings/ca-certificates");
-        config.setJobEnvVars("FOO=bar");
+    public void resolvesDeploymentDefaultsWithoutMutatingExecutorContext() throws ExecutionException {
+        config.setServiceAccount("terrakube-api-service-account");
+        config.setTolerations("dedicated=terrakube:Equal:NoSchedule");
+        config.setJobEnvVars("DEFAULT_ENV=value");
+        config.setLabels("team=platform");
+        config.setPodAnnotations("vault.hashicorp.com/agent-inject=true");
+        config.getConfigMap().setEnvFrom("terrakube-config");
 
         ExecutorContext context = context();
         subject().send(job(), context);
 
         verify(namespaced, times(1)).resource(job.capture());
-        PodSpec podspec = job.getValue().getSpec().getTemplate().getSpec();
-        Container container = podspec.getContainers().getFirst();
-        assertEquals("terrakube-api-sa", podspec.getServiceAccountName());
-        assertEquals("terrakube-executor-config", container.getEnvFrom().getFirst().getConfigMapRef().getName());
-        assertEquals("terrakube-ephemeral-ca-certs", podspec.getVolumes().getFirst().getConfigMap().getName());
-        assertEquals("/mnt/platform/bindings/ca-certificates", container.getVolumeMounts().getFirst().getMountPath());
-        assertEquals("bar", envVarsToMap(container.getEnv()).get("FOO"));
+        io.fabric8.kubernetes.api.model.batch.v1.Job kubernetesJob = job.getValue();
+        PodSpec podSpec = kubernetesJob.getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        assertEquals("terrakube-api-service-account", podSpec.getServiceAccountName());
+        assertEquals("terrakube-config", container.getEnvFrom().stream()
+                .filter(envFrom -> envFrom.getConfigMapRef() != null)
+                .findFirst()
+                .orElseThrow()
+                .getConfigMapRef()
+                .getName());
+        assertEquals("value", envVarsToMap(container.getEnv()).get("DEFAULT_ENV"));
+        assertEquals("platform", kubernetesJob.getMetadata().getLabels().get("team"));
+        assertEquals("true", kubernetesJob.getSpec().getTemplate().getMetadata().getAnnotations()
+                .get("vault.hashicorp.com/agent-inject"));
+        assertEquals("dedicated", podSpec.getTolerations().getFirst().getKey());
         assertTrue(context.getEnvironmentVariables().isEmpty());
+    }
+
+    @Test
+    public void contextEnvironmentOverridesDeploymentDefaults() throws ExecutionException {
+        config.setServiceAccount("deployment-service-account");
+        config.setJobEnvVars("DEFAULT_ENV=deployment");
+
+        ExecutorContext context = context();
+        context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_SERVICE_ACCOUNT", "context-service-account");
+        context.getEnvironmentVariables().put("EPHEMERAL_JOB_ENV_VARS", "DEFAULT_ENV=context");
+
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
+        assertEquals("context-service-account", job.getValue().getSpec().getTemplate().getSpec().getServiceAccountName());
+        assertEquals("context", envVarsToMap(container.getEnv()).get("DEFAULT_ENV"));
     }
 
     @Test

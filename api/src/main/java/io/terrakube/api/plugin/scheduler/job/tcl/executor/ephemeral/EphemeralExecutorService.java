@@ -66,10 +66,11 @@ public class EphemeralExecutorService {
             }
         }
 
-        String configMapEnvFromNames = getConfigValue(
-                executorContext, ENVFROM_CONFIG_MAP, ephemeralConfiguration.getConfigMap().getEnvFrom);
-        if (configMapEnvFromNames != null) {
-            for (String configMapName : configMapEnvFromNames.split(",")) {
+        Optional<String> configMapEnvFromNames = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(ENVFROM_CONFIG_MAP))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getConfigMap().getEnvFrom()));
+        if (configMapEnvFromNames.isPresent()) {
+            for (String configMapName : configMapEnvFromNames.get().split(",")) {
                 String trimmed = configMapName.trim();
                 if (trimmed.isEmpty()) {
                     continue;
@@ -100,11 +101,12 @@ public class EphemeralExecutorService {
         executorEnvVarFlags.add(executorFlagBatch);
         executorEnvVarFlags.add(executorFlagBatchJsonContent);
 
-        String additionalEnvVars = getConfigValue(
-                executorContext, EPHEMERAL_JOB_ENV_VARS, ephemeralConfiguration.getJobEnvVars());
+        Optional<String> additionalEnvVars = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_JOB_ENV_VARS))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getJobEnvVars()));
 
-        if (additionalEnvVars != null) {
-            Map<String, String> parsedEnvVars = parseKeyValueString(additionalEnvVars);
+        if (additionalEnvVars.isPresent()) {
+            Map<String, String> parsedEnvVars = parseKeyValueString(additionalEnvVars.get());
             for (Map.Entry<String, String> entry : parsedEnvVars.entrySet()) {
                 EnvVar envVar = new EnvVar();
                 envVar.setName(entry.getKey());
@@ -113,22 +115,22 @@ public class EphemeralExecutorService {
             }
         }
 
-        Optional<String> nodeSelector = Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(NODE_SELECTOR, null));
-        Map<String, String> nodeSelectorInfo = new HashMap<>();
-        log.info("Custom Node selector: {} {}", nodeSelector.isPresent(), nodeSelector.isEmpty());
-        if(nodeSelector.isPresent()) {
-            nodeSelectorInfo.putAll(parseKeyValueString(nodeSelector.get()));
-        } else {
-            log.info("Using default node selector information");
-            nodeSelectorInfo = ephemeralConfiguration.getNodeSelector();
-        }
+        Optional<Map<String, String>> nodeSelector = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(NODE_SELECTOR))
+                .map(this::parseKeyValueString)
+                .map(HashMap::new)
+                .map(value -> (Map<String, String>) value)
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getNodeSelector()));
+        Map<String, String> nodeSelectorInfo = nodeSelector.orElseGet(HashMap::new);
+        log.info("Custom Node selector: {}", nodeSelector.isPresent());
 
-        String tolerationsInfo = getConfigValue(
-                executorContext, TOLERATIONS, ephemeralConfiguration.getTolerations());
+        Optional<String> tolerationsInfo = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(TOLERATIONS))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getTolerations()));
         List<Toleration> tolerations = new ArrayList<>();
 
-        if (tolerationsInfo != null) {
-            for (String tolerationData : tolerationsInfo.split(";")) {
+        if (tolerationsInfo.isPresent()) {
+            for (String tolerationData : tolerationsInfo.get().split(";")) {
                 String[] info = tolerationData.split(":");
                 Toleration toleration = new Toleration();
 
@@ -147,34 +149,37 @@ public class EphemeralExecutorService {
             }
         }
 
-        String annotationsInfo = getConfigValue(
-                executorContext, ANNOTATIONS, ephemeralConfiguration.getAnnotations());
+        Optional<String> annotationsInfo = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(ANNOTATIONS))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getAnnotations()));
         Map<String, String> annotations = new HashMap<>();
-        log.info("Custom Annotations: {}", annotationsInfo != null);
-        if (annotationsInfo != null) {
-            annotations.putAll(parseKeyValueString(annotationsInfo));
-        }
+        log.info("Custom Annotations: {}", annotationsInfo.isPresent());
+        annotationsInfo.ifPresent(value -> annotations.putAll(parseKeyValueString(value)));
 
-        String podAnnotationsInfo = getConfigValue(
-                executorContext, POD_ANNOTATIONS, ephemeralConfiguration.getPodAnnotations());
+        Optional<String> podAnnotationsInfo = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(POD_ANNOTATIONS))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getPodAnnotations()));
         Map<String, String> podAnnotations = new HashMap<>();
-        if (podAnnotationsInfo != null) {
-            podAnnotations.putAll(parseKeyValueString(podAnnotationsInfo));
-        }
+        podAnnotationsInfo.ifPresent(value -> podAnnotations.putAll(parseKeyValueString(value)));
 
-        String serviceAccount = getConfigValue(
-                executorContext, SERVICE_ACCOUNT, ephemeralConfiguration.getServiceAccount());
+        String serviceAccount = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(SERVICE_ACCOUNT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getServiceAccount()))
+                .orElse(null);
 
         // Volume and VolumeMount for ConfigMap if specified
         List<Volume> volumes = new ArrayList<>();
         List<VolumeMount> volumeMounts = new ArrayList<>();
 
-        String configMapName = getConfigValue(
-                executorContext, CONFIG_MAP_NAME, ephemeralConfiguration.getConfigMap().getName());
-        if (configMapName != null) {
-            String mountPath = getConfigValue(
-                    executorContext, CONFIG_MAP_PATH, ephemeralConfiguration.getConfigMap().getMountPath());
-            mountPath = mountPath != null ? mountPath : "/data";  // Default mount path if not specified
+        Optional<String> configMapNameOpt = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(CONFIG_MAP_NAME))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getConfigMap().getName()));
+        Optional<String> configMapMountPathOpt = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(CONFIG_MAP_PATH))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getConfigMap().getMountPath()));
+        if (configMapNameOpt.isPresent()) {
+            String configMapName = configMapNameOpt.get();
+            String mountPath = configMapMountPathOpt.orElse("/data");  // Default mount path if not specified
 
             // Define ConfigMap volume
             Volume configMapVolume = new Volume();
@@ -221,12 +226,13 @@ public class EphemeralExecutorService {
             }
         }
 
-        String configPodSecurityContext = getConfigValue(
-                executorContext, POD_SECURITY_CONTEXT, ephemeralConfiguration.getPodSecurityContext());
+        Optional<String> configPodSecurityContext = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(POD_SECURITY_CONTEXT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getPodSecurityContext()));
         PodSecurityContext podSecurityContext = new PodSecurityContextBuilder().withFsGroup(1000L).build();
-        if (configPodSecurityContext != null) {
+        if (configPodSecurityContext.isPresent()) {
             log.info("Using custom pod security context");
-            Map<String, String> podSecurityContextData = parseKeyValueString(configPodSecurityContext);
+            Map<String, String> podSecurityContextData = parseKeyValueString(configPodSecurityContext.get());
             for (Map.Entry<String, String> entry : podSecurityContextData.entrySet()) {
                 switch (entry.getKey()) {
                     case "fsGroup":
@@ -244,12 +250,13 @@ public class EphemeralExecutorService {
             }
         }
 
-        String configSecurityContext = getConfigValue(
-                executorContext, SECURITY_CONTEXT, ephemeralConfiguration.getSecurityContext());
+        Optional<String> configSecurityContext = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(SECURITY_CONTEXT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getSecurityContext()));
         SecurityContext securityContext = new SecurityContext();
-        if (configSecurityContext != null) {
+        if (configSecurityContext.isPresent()) {
             log.info("Using custom security context");
-            Map<String, String> securityContextData = parseKeyValueString(configSecurityContext);
+            Map<String, String> securityContextData = parseKeyValueString(configSecurityContext.get());
             for (Map.Entry<String, String> entry : securityContextData.entrySet()) {
                 switch (entry.getKey()) {
                     case "allowPrivilegeEscalation":
@@ -261,54 +268,53 @@ public class EphemeralExecutorService {
             }
         }
 
-        String cpuRequest = getConfigValue(
-                executorContext, EPHEMERAL_CPU_REQUEST, ephemeralConfiguration.getResources().getCpuRequest());
-        String memoryRequest = getConfigValue(
-                executorContext, EPHEMERAL_MEMORY_REQUEST, ephemeralConfiguration.getResources().getMemoryRequest());
-        String storageRequest = getConfigValue(
-                executorContext, EPHEMERAL_STORAGE_REQUEST, ephemeralConfiguration.getResources().getEphemeralStorageRequest());
-        String cpuLimit = getConfigValue(
-                executorContext, EPHEMERAL_CPU_LIMIT, ephemeralConfiguration.getResources().getCpuLimit());
-        String memoryLimit = getConfigValue(
-                executorContext, EPHEMERAL_MEMORY_LIMIT, ephemeralConfiguration.getResources().getMemoryLimit());
-        String storageLimit = getConfigValue(
-                executorContext, EPHEMERAL_STORAGE_LIMIT, ephemeralConfiguration.getResources().getEphemeralStorageLimit());
+        Optional<String> cpuRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_REQUEST))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getCpuRequest()));
+        Optional<String> memoryRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_REQUEST))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getMemoryRequest()));
+        Optional<String> storageRequestOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_REQUEST))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getEphemeralStorageRequest()));
+        Optional<String> cpuLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_CPU_LIMIT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getCpuLimit()));
+        Optional<String> memoryLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_MEMORY_LIMIT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getMemoryLimit()));
+        Optional<String> storageLimitOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(EPHEMERAL_STORAGE_LIMIT))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getResources().getEphemeralStorageLimit()));
 
         ResourceRequirementsBuilder resourceBuilder = new ResourceRequirementsBuilder();
         boolean hasResources = false;
 
-        if (cpuRequest != null) {
-            resourceBuilder.addToRequests("cpu", new Quantity(cpuRequest));
+        if (cpuRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("cpu", new Quantity(cpuRequestOpt.get()));
             hasResources = true;
         }
-        if (memoryRequest != null) {
-            resourceBuilder.addToRequests("memory", new Quantity(memoryRequest));
+        if (memoryRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("memory", new Quantity(memoryRequestOpt.get()));
             hasResources = true;
         }
-        if (storageRequest != null) {
-            resourceBuilder.addToRequests("ephemeral-storage", new Quantity(storageRequest));
+        if (storageRequestOpt.isPresent()) {
+            resourceBuilder.addToRequests("ephemeral-storage", new Quantity(storageRequestOpt.get()));
             hasResources = true;
         }
-        if (cpuLimit != null) {
-            resourceBuilder.addToLimits("cpu", new Quantity(cpuLimit));
+        if (cpuLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("cpu", new Quantity(cpuLimitOpt.get()));
             hasResources = true;
         }
-        if (memoryLimit != null) {
-            resourceBuilder.addToLimits("memory", new Quantity(memoryLimit));
+        if (memoryLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("memory", new Quantity(memoryLimitOpt.get()));
             hasResources = true;
         }
-        if (storageLimit != null) {
-            resourceBuilder.addToLimits("ephemeral-storage", new Quantity(storageLimit));
+        if (storageLimitOpt.isPresent()) {
+            resourceBuilder.addToLimits("ephemeral-storage", new Quantity(storageLimitOpt.get()));
             hasResources = true;
         }
 
-        String labelsInfo = getConfigValue(
-                executorContext, LABELS, ephemeralConfiguration.getLabels());
+        Optional<String> labelsInfo = Optional
+                .ofNullable(executorContext.getEnvironmentVariables().get(LABELS))
+                .or(() -> Optional.ofNullable(ephemeralConfiguration.getLabels()));
         Map<String, String> labels = new HashMap<>();
-        log.info("Custom Labels: {}", labelsInfo != null);
-        if (labelsInfo != null) {
-            labels.putAll(parseKeyValueString(labelsInfo));
-        }
+        log.info("Custom Labels: {}", labelsInfo.isPresent());
+        labelsInfo.ifPresent(value -> labels.putAll(parseKeyValueString(value)));
 
         labels.put("terrakube.io/organization", executorContext.getOrganizationId());
         labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());

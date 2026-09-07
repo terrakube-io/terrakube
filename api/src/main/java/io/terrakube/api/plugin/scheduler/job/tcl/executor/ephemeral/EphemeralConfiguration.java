@@ -28,6 +28,8 @@ public class EphemeralConfiguration {
     private Map<String, String> nodeSelector;
     private String serviceAccount;
     private String tolerations;
+    private String annotations;
+    private String labels;
 
     // Shared ConfigMap configuration.
     private ConfigMap configMap = new ConfigMap();
