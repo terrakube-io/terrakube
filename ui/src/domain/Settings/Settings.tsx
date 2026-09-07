@@ -11,6 +11,7 @@ import { TagsSettings } from "./Tags";
 import { TeamSettings } from "./Teams";
 import { FederatedCredentials } from "./FederatedCredentials";
 import { OrgNotifications } from "./Notifications";
+import { PolicySetsSettings } from "./PolicySets";
 import { TemplatesSettings } from "./Templates";
 import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
@@ -31,6 +32,7 @@ const SETTINGS_TAB_PATHS: Record<string, string> = {
   "10": "actions",
   "11": "federated-credentials",
   "12": "notifications",
+  "13": "policies",
 };
 
 const SETTINGS_TAB_LABELS: Record<string, string> = {
@@ -46,6 +48,7 @@ const SETTINGS_TAB_LABELS: Record<string, string> = {
   "10": "Actions",
   "11": "Federated Credentials",
   "12": "Notifications",
+  "13": "Policy Sets",
 };
 
 type Props = {
@@ -145,6 +148,14 @@ export const OrganizationSettings = ({
       case "12":
         return (
           <OrgNotifications
+            editorMode={editorMode}
+            editorId={editorId}
+            managePermission={permissions.managePermission}
+          />
+        );
+      case "13":
+        return (
+          <PolicySetsSettings
             editorMode={editorMode}
             editorId={editorId}
             managePermission={permissions.managePermission}

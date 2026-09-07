@@ -537,6 +537,18 @@ const router = createBrowserRouter(
           element: <OrganizationSettings selectedTab="11" />,
         },
         {
+          path: "/organizations/:orgid/settings/policies/new",
+          element: <OrganizationSettings selectedTab="13" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/policies/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="13" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/policies",
+          element: <OrganizationSettings selectedTab="13" />,
+        },
+        {
           path: "/organizations/:orgid/settings/templates",
           element: <OrganizationSettings selectedTab="5" />,
         },

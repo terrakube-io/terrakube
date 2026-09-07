@@ -1743,7 +1743,12 @@ export const StructuredPlanOutput = ({
               const ProviderIcon = providerIconMap[normalizedProviderName];
 
               return (
-                <div key={row.key} className="structured-plan-row">
+                <div
+                  key={row.key}
+                  className="structured-plan-row"
+                  id={`resource-${row.resourceLabel}`}
+                  data-resource-address={row.resourceLabel}
+                >
                   <div className="structured-plan-rowHeader">
                     <button
                       aria-controls={row.panelId}

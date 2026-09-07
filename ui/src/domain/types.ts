@@ -596,3 +596,80 @@ export type StateOutputResource = {
   values: Record<string, any>;
   depends_on: any;
 };
+
+// Policy Governance (OPA)
+export type PolicySet = AttributeWrapped<PolicySetAttributes>;
+
+export type PolicySetAttributes = {
+  name: string;
+  description?: string;
+  source?: string;
+  branch?: string;
+  path?: string;
+  enforcementLevel: "hard-mandatory" | "soft-mandatory" | "advisory";
+  shadowEnforcementLevel?: string;
+  overrideTeam?: string;
+  global?: boolean;
+} & AuditFieldBase;
+
+export type PolicyAttachment = AttributeWrapped<PolicyAttachmentAttributes>;
+
+export type PolicyAttachmentAttributes = {
+  attachmentType: "WORKSPACE" | "PROJECT" | "TAG";
+  workspaceId?: string;
+  projectId?: string;
+  tagId?: string;
+} & AuditFieldBase;
+
+export type PolicyExemption = AttributeWrapped<PolicyExemptionAttributes>;
+
+export type PolicyExemptionAttributes = {
+  ruleId: string;
+  resourceAddress: string;
+  ticketReference: string;
+  justification: string;
+  expiresAt: string;
+} & AuditFieldBase;
+
+export type PolicyViolationItem = {
+  ruleId: string;
+  address?: string;
+  message?: string;
+  status?: string;
+  ticketReference?: string;
+  justification?: string;
+  expiresAt?: string;
+  suggestedFix?: string;
+};
+
+export type PolicyEvaluationResultItem = {
+  policySetId?: string;
+  policySetName?: string;
+  enforcementLevel?: string;
+  shadowEnforcementLevel?: string;
+  status?: string;
+  exitCode?: number;
+  passedRules?: number;
+  warningRules?: number;
+  softMandatoryViolations?: number;
+  hardMandatoryViolations?: number;
+  shadowHardViolations?: number;
+  shadowSoftViolations?: number;
+  violations?: PolicyViolationItem[];
+  exemptedViolations?: PolicyViolationItem[];
+  bufferedLogs?: string[];
+};
+
+export type PolicyEvaluationContext = {
+  jobId?: number | string;
+  stepId?: string;
+  totalPolicies?: number;
+  status?: string;
+  passedRules?: number;
+  warningRules?: number;
+  softMandatoryViolations?: number;
+  hardMandatoryViolations?: number;
+  shadowHardViolations?: number;
+  shadowSoftViolations?: number;
+  results?: PolicyEvaluationResultItem[];
+};

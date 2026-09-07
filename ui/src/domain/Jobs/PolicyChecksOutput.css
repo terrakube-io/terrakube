@@ -1,0 +1,203 @@
+.policy-checks-container {
+  padding: 16px;
+  background: var(--ant-color-bg-container, #ffffff);
+  border-radius: 8px;
+  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+}
+
+.policy-checks-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+}
+
+.policy-checks-summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.policy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.policy-pill--passed {
+  background: #f6ffed;
+  color: #389e0d;
+  border-color: #b7eb8f;
+}
+
+.policy-pill--exempted {
+  background: #f9f0ff;
+  color: #722ed1;
+  border-color: #d3adf7;
+}
+
+.policy-pill--warning {
+  background: #fffbe6;
+  color: #d48806;
+  border-color: #ffe58f;
+}
+
+.policy-pill--soft {
+  background: #fff7e6;
+  color: #d46b08;
+  border-color: #ffd591;
+}
+
+.policy-pill--hard {
+  background: #fff1f0;
+  color: #cf1322;
+  border-color: #ffa39e;
+}
+
+.policy-checks-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.policy-checks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.policy-rule-card {
+  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--ant-color-bg-elevated, #fafafa);
+  transition: all 0.2s ease-in-out;
+}
+
+.policy-rule-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-color: var(--ant-color-primary-hover, #40a9ff);
+}
+
+.policy-rule-card--hard {
+  border-left: 4px solid #ff4d4f;
+}
+
+.policy-rule-card--soft {
+  border-left: 4px solid #fa8c16;
+}
+
+.policy-rule-card--exempted {
+  border-left: 4px solid #722ed1;
+}
+
+.policy-rule-card--warning {
+  border-left: 4px solid #faad14;
+}
+
+.policy-rule-card--passed {
+  border-left: 4px solid #52c41a;
+}
+
+.policy-rule-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.policy-rule-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ant-color-text-heading, #1f1f1f);
+}
+
+.policy-resource-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--ant-color-bg-container, #ffffff);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border-secondary, #e8e8e8);
+  margin-bottom: 8px;
+}
+
+.policy-resource-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.policy-exemption-box {
+  background: #fcf9fe;
+  border: 1px solid #d3adf7;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-top: 10px;
+}
+
+.policy-exemption-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #531dab;
+  margin-bottom: 6px;
+}
+
+.policy-exemption-details {
+  font-size: 13px;
+  color: #595959;
+  line-height: 1.6;
+}
+
+.policy-message-box {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text, #434343);
+  line-height: 1.5;
+}
+
+.policy-suggested-fix {
+  margin-top: 8px;
+  background: #f5f5f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  border-left: 3px solid #1890ff;
+}
+
+.highlight-resource {
+  animation: resourcePulse 1.5s ease-in-out;
+}
+
+@keyframes resourcePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(24, 144, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0);
+  }
+}

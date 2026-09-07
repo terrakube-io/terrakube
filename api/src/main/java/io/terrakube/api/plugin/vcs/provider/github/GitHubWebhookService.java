@@ -212,17 +212,44 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return result;
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
+    public void sendCommitStatus(Job job, String customContext, GithubCommitStatus commitStatus, String description) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
         String[] ownerAndRepos = extractOwnerAndRepo(workspace.getSource());
 
-        GithubCommitStatus commitStatus = GithubCommitStatus.pending;
+        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos) + "/statuses/"
+                + job.getCommitId();
+
+        log.info(String.format("Sending commit status %s (context: %s) to GitHub for commit %s", commitStatus, customContext, job.getCommitId()));
+
+        String safeDescription = description != null && description.length() > 140 ? description.substring(0, 140) : (description != null ? description : "");
+        String body = "{\"state\":\"" + commitStatus.name()
+                + "\",\"description\":\"" + safeDescription + "\",\"target_url\":\""
+                + jobUrl + "\",\"context\":\"" + customContext + "\"}";
+
+        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, apiUrl,
+                HttpMethod.POST);
+
+        if (response == null) {
+            log.error("Failed to send commit status on workspace {} in organization {} to GitHub", workspace.getName(),
+                    workspace.getOrganization().getName());
+            return;
+        }
+
+        if (response.getStatusCode().value() == 201) {
+            log.info("Commit status sent successfully to GitHub");
+        } else {
+            log.error(String.format("Failed to send commit status to GitHub, message %s", response.getBody()));
+        }
+    }
+
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
+        Workspace workspace = job.getWorkspace();
         String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
                 + workspace.getName();
 
-        // Determine the commit status based on jobStatus
+        GithubCommitStatus commitStatus = GithubCommitStatus.pending;
         switch (jobStatus) {
             case completed:
                 commitStatus = GithubCommitStatus.success;
@@ -239,33 +266,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 break;
         }
         String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
-
-        // API URL for commit status
-        String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepos) + "/statuses/"
-                + job.getCommitId();
-
-        log.info(String.format("Sending job status %s to GitHub for commit %s", job.getStatus(), job.getCommitId()));
-
-        // Create the body for the commit status
-        String body = "{\"state\":\"" + commitStatus.name()
-                + "\",\"description\":\"" + commitStatusDescription + "\",\"target_url\":\""
-                + jobUrl + "\",\"context\":\"" + commitStatusContext + "\"}";
-
-        ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepos, body, apiUrl,
-                HttpMethod.POST);
-
-        // Handle the response
-        if (response == null) {
-            log.error("Failed to send job status on workspace {} in organization {} to GitHub", workspace.getName(),
-                    workspace.getOrganization().getName());
-            return;
-        }
-
-        if (response.getStatusCode().value() == 201) {
-            log.info("Job status sent successfully to GitHub");
-        } else {
-            log.error(String.format("Failed to send job status to GitHub, message %s", response.getBody()));
-        }
+        sendCommitStatus(job, commitStatusContext, commitStatus, commitStatusDescription);
     }
 
     // GitHub's commit-status description has a hard 140-character API limit.

@@ -1,24 +1,32 @@
 package io.terrakube.api.plugin.vcs;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
+import io.terrakube.api.plugin.vcs.provider.github.GithubCommitStatus;
+import io.terrakube.api.plugin.vcs.provider.gitlab.GitlabCommitStatus;
 import io.terrakube.api.repository.JobRepository;
+import io.terrakube.api.repository.PolicyEvaluationRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.policy.PolicyEvaluation;
+import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -51,13 +59,16 @@ public class PrCommentService {
     StorageTypeService storageTypeService;
     StepOutputReader stepOutputReader;
     ObjectMapper objectMapper;
+    PolicyEvaluationRepository policyEvaluationRepository;
 
     @Value("${io.terrakube.ui.url:}")
     String uiUrl;
 
+    @Autowired
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
             BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
-            StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper) {
+            StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper,
+            PolicyEvaluationRepository policyEvaluationRepository) {
         this.gitHubWebhookService = gitHubWebhookService;
         this.gitLabWebhookService = gitLabWebhookService;
         this.bitBucketWebhookService = bitBucketWebhookService;
@@ -66,6 +77,14 @@ public class PrCommentService {
         this.storageTypeService = storageTypeService;
         this.stepOutputReader = stepOutputReader;
         this.objectMapper = objectMapper;
+        this.policyEvaluationRepository = policyEvaluationRepository;
+    }
+
+    public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
+            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
+            StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper) {
+        this(gitHubWebhookService, gitLabWebhookService, bitBucketWebhookService, jobRepository, stepRepository,
+                storageTypeService, stepOutputReader, objectMapper, null);
     }
 
     public void postPlanResult(Job job) {
@@ -82,6 +101,7 @@ public class PrCommentService {
             job.setPrCommentId(commentId);
         }
         jobRepository.save(job);
+        sendPolicyCommitStatus(job);
     }
 
     /**
@@ -411,6 +431,7 @@ public class PrCommentService {
             }
 
             renderStructuredChangesTable(job, false).ifPresent(table -> sb.append(table).append("\n"));
+            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
 
             String content = planOutput;
             if (content.length() > MAX_COMMENT_LENGTH) {
@@ -423,8 +444,10 @@ public class PrCommentService {
             sb.append("\n```\n\n</details>\n\n");
         } else if (job.getStatus() == JobStatus.completed) {
             sb.append(icon).append(" No changes detected.\n\n");
+            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         } else {
             sb.append(icon).append(" Plan failed. Check the Terrakube UI for details.\n\n");
+            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         }
 
         sb.append("---\n");
@@ -437,6 +460,267 @@ public class PrCommentService {
         sb.append("To re-plan, comment: `terrakube plan`\n");
 
         return sb.toString();
+    }
+
+    public Optional<String> renderPolicyGuardrailsSummary(Job job) {
+        try {
+            JsonNode policyEvalNode = null;
+            try {
+                String contextJson = storageTypeService.getContext(job.getId());
+                if (contextJson != null && !contextJson.isBlank()) {
+                    JsonNode root = objectMapper.readTree(contextJson);
+                    if (root.has("policyEvaluation")) {
+                        policyEvalNode = root.get("policyEvaluation");
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("No storage context for job {}: {}", job.getId(), e.getMessage());
+            }
+
+            List<PolicyEvaluation> dbEvals = (policyEvaluationRepository != null && job != null) ?
+                    policyEvaluationRepository.findByJob(job) : List.of();
+
+            if (policyEvalNode == null && dbEvals.isEmpty()) {
+                return Optional.empty();
+            }
+
+            int hardCount = 0;
+            int softCount = 0;
+            int warningCount = 0;
+            int exemptedCount = 0;
+            boolean isOverridden = false;
+
+            if (!dbEvals.isEmpty()) {
+                PolicyEvaluation pe = dbEvals.get(0);
+                hardCount = pe.getHardMandatoryViolations();
+                softCount = pe.getSoftMandatoryViolations();
+                warningCount = pe.getWarningRules();
+                isOverridden = pe.getOverride() != null;
+            } else if (policyEvalNode != null) {
+                if (policyEvalNode.has("hardMandatoryViolations")) {
+                    hardCount = policyEvalNode.get("hardMandatoryViolations").asInt();
+                }
+                if (policyEvalNode.has("softMandatoryViolations")) {
+                    softCount = policyEvalNode.get("softMandatoryViolations").asInt();
+                }
+                if (policyEvalNode.has("warningRules")) {
+                    warningCount = policyEvalNode.get("warningRules").asInt();
+                }
+            }
+
+            List<String> tableRows = new ArrayList<>();
+
+            if (policyEvalNode != null && policyEvalNode.has("results")) {
+                JsonNode results = policyEvalNode.get("results");
+                if (results.isArray()) {
+                    for (JsonNode item : results) {
+                        String policySetName = item.has("policySetName") ? item.get("policySetName").asText()
+                                : (item.has("policySetId") ? item.get("policySetId").asText() : "default");
+                        String enforcementLevel = item.has("enforcementLevel") ? item.get("enforcementLevel").asText() : "hard-mandatory";
+
+                        // Exempted violations
+                        if (item.has("exemptedViolations") && item.get("exemptedViolations").isArray()) {
+                            for (JsonNode ev : item.get("exemptedViolations")) {
+                                exemptedCount++;
+                                String address = ev.has("address") ? ev.get("address").asText() : "-";
+                                StringBuilder details = new StringBuilder();
+                                if (ev.has("ruleId")) {
+                                    details.append("Rule: `").append(ev.get("ruleId").asText()).append("`");
+                                }
+                                if (ev.has("ticketReference")) {
+                                    details.append("<br/>Ticket: **").append(ev.get("ticketReference").asText()).append("**");
+                                }
+                                if (ev.has("expiresAt")) {
+                                    String exp = ev.get("expiresAt").asText();
+                                    if (exp.length() >= 10) exp = exp.substring(0, 10);
+                                    details.append(" (Expires: ").append(exp).append(")");
+                                }
+                                if (ev.has("justification")) {
+                                    details.append("<br/>_").append(ev.get("justification").asText()).append("_");
+                                } else if (ev.has("message")) {
+                                    details.append("<br/>").append(ev.get("message").asText());
+                                }
+                                tableRows.add(String.format("| `%s` | 🛡️ **EXEMPTED** | `%s` | %s |",
+                                        policySetName, address, details.toString()));
+                            }
+                        }
+
+                        // Violations
+                        if (item.has("violations") && item.get("violations").isArray()) {
+                            for (JsonNode v : item.get("violations")) {
+                                String address = v.has("address") ? v.get("address").asText() : "-";
+                                String sev;
+                                if ("advisory".equalsIgnoreCase(enforcementLevel)) {
+                                    sev = "ℹ️ Advisory";
+                                } else if ("soft-mandatory".equalsIgnoreCase(enforcementLevel)) {
+                                    sev = "⚠️ **FAILED** (Soft)";
+                                } else {
+                                    sev = "❌ **FAILED** (Hard)";
+                                }
+
+                                StringBuilder details = new StringBuilder();
+                                if (v.has("ruleId")) {
+                                    details.append("Rule: `").append(v.get("ruleId").asText()).append("`");
+                                }
+                                if (v.has("message")) {
+                                    details.append("<br/>").append(v.get("message").asText());
+                                }
+                                if (v.has("ticketReference")) {
+                                    details.append("<br/>Ticket: **").append(v.get("ticketReference").asText()).append("**");
+                                }
+                                if (v.has("expiresAt")) {
+                                    String exp = v.get("expiresAt").asText();
+                                    if (exp.length() >= 10) exp = exp.substring(0, 10);
+                                    details.append(" (Expires: ").append(exp).append(")");
+                                }
+                                if (v.has("justification")) {
+                                    details.append("<br/>_").append(v.get("justification").asText()).append("_");
+                                }
+
+                                tableRows.add(String.format("| `%s` | %s | `%s` | %s |",
+                                        policySetName, sev, address, details.toString()));
+                            }
+                        }
+                    }
+                }
+            }
+
+            String headerStatus;
+            if (hardCount > 0) {
+                headerStatus = "FAILED";
+            } else if (softCount > 0) {
+                headerStatus = isOverridden ? "PASSED (OVERRIDDEN)" : "FAILED (SOFT-MANDATORY)";
+            } else if (exemptedCount > 0) {
+                headerStatus = "PASSED (WITH EXEMPTION)";
+            } else if (warningCount > 0) {
+                headerStatus = "PASSED (WITH WARNINGS)";
+            } else {
+                headerStatus = "PASSED";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("### 🛡️ Terrakube Policy Guardrails: ").append(headerStatus).append("\n\n");
+            sb.append("| Policy Set | Status / Severity | Resource | Details / Justification |\n");
+            sb.append("| :--- | :--- | :--- | :--- |\n");
+
+            if (tableRows.isEmpty()) {
+                sb.append("| All Policy Sets | ✅ Passed | - | All rules satisfied |\n");
+            } else {
+                for (String row : tableRows) {
+                    sb.append(row).append("\n");
+                }
+            }
+
+            String fullUrl;
+            if (uiUrl != null && !uiUrl.isBlank() && job.getWorkspace() != null && job.getWorkspace().getOrganization() != null) {
+                fullUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
+                        job.getWorkspace().getOrganization().getId(), job.getWorkspace().getId(), job.getId());
+            } else {
+                fullUrl = "#" + job.getId();
+            }
+
+            sb.append("\n[View Full Policy Evaluation in Terrakube](").append(fullUrl).append(")\n");
+            return Optional.of(sb.toString());
+        } catch (Exception e) {
+            log.warn("Unable to render policy guardrails summary for job {}: {}", job.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public void sendPolicyCommitStatus(Job job) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getVcs() == null || job.getCommitId() == null) {
+            return;
+        }
+        VcsType vcsType = job.getWorkspace().getVcs().getVcsType();
+        if (vcsType != VcsType.GITHUB && vcsType != VcsType.GITLAB) {
+            return;
+        }
+
+        Optional<PolicyEvaluation> evalOpt = (policyEvaluationRepository != null) ?
+                policyEvaluationRepository.findByJob(job).stream().findFirst() : Optional.empty();
+
+        boolean hasEvaluation = evalOpt.isPresent();
+        PolicyEvaluationStatus evalStatus = evalOpt.map(PolicyEvaluation::getStatus).orElse(null);
+
+        int hardCount = 0;
+        int softCount = 0;
+        boolean isOverridden = false;
+        boolean hasExemptions = false;
+
+        if (hasEvaluation) {
+            PolicyEvaluation pe = evalOpt.get();
+            hardCount = pe.getHardMandatoryViolations();
+            softCount = pe.getSoftMandatoryViolations();
+            isOverridden = pe.getOverride() != null;
+            if (pe.getStatus() == PolicyEvaluationStatus.EXEMPTED) {
+                hasExemptions = true;
+            }
+        } else {
+            try {
+                String contextJson = storageTypeService.getContext(job.getId());
+                if (contextJson != null && !contextJson.isBlank()) {
+                    JsonNode root = objectMapper.readTree(contextJson);
+                    if (root.has("policyEvaluation")) {
+                        hasEvaluation = true;
+                        JsonNode pe = root.get("policyEvaluation");
+                        if (pe.has("hardMandatoryViolations")) hardCount = pe.get("hardMandatoryViolations").asInt();
+                        if (pe.has("softMandatoryViolations")) softCount = pe.get("softMandatoryViolations").asInt();
+                        if (pe.has("status")) {
+                            try {
+                                evalStatus = PolicyEvaluationStatus.valueOf(pe.get("status").asText().toUpperCase());
+                            } catch (Exception ignored) {}
+                        }
+                        if (pe.has("results") && pe.get("results").isArray()) {
+                            for (JsonNode res : pe.get("results")) {
+                                if (res.has("exemptedViolations") && res.get("exemptedViolations").isArray() && res.get("exemptedViolations").size() > 0) {
+                                    hasExemptions = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Error checking policy evaluation context for job {}: {}", job.getId(), e.getMessage());
+            }
+        }
+
+        if (!hasEvaluation) {
+            return;
+        }
+
+        String context = "terrakube/policy-check";
+        boolean passed = (hardCount == 0 && (softCount == 0 || isOverridden));
+        if (evalStatus == PolicyEvaluationStatus.PASSED || evalStatus == PolicyEvaluationStatus.EXEMPTED) {
+            passed = true;
+        } else if (evalStatus == PolicyEvaluationStatus.FAILED) {
+            passed = false;
+        }
+
+        String description;
+        if (passed) {
+            if (evalStatus == PolicyEvaluationStatus.EXEMPTED || hasExemptions) {
+                description = "Policy check passed (with active exemptions)";
+            } else if (isOverridden) {
+                description = "Policy check passed (soft-mandatory overridden)";
+            } else {
+                description = "Policy check passed (all rules satisfied)";
+            }
+        } else {
+            description = String.format("Policy check failed (%d hard, %d soft violations)", hardCount, softCount);
+        }
+
+        try {
+            if (vcsType == VcsType.GITHUB) {
+                GithubCommitStatus status = passed ? GithubCommitStatus.success : GithubCommitStatus.failure;
+                gitHubWebhookService.sendCommitStatus(job, context, status, description);
+            } else if (vcsType == VcsType.GITLAB) {
+                GitlabCommitStatus status = passed ? GitlabCommitStatus.success : GitlabCommitStatus.failed;
+                gitLabWebhookService.sendCommitStatus(job, context, status, description);
+            }
+        } catch (Exception e) {
+            log.error("Failed to send policy commit status for job {}: {}", job.getId(), e.getMessage());
+        }
     }
 
     private String formatApplyComment(Job job, String output) {
