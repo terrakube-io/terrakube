@@ -120,9 +120,7 @@ public class StorageAutoConfiguration {
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
                             .serviceConfiguration(serviceConfiguration)
                             .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-                            .responseChecksumValidation(awsStorageServiceProperties.isChecksumValidationEnabled()
-                                    ? ResponseChecksumValidation.WHEN_SUPPORTED
-                                    : ResponseChecksumValidation.WHEN_REQUIRED);
+                            .responseChecksumValidation(responseChecksumValidation(awsStorageServiceProperties.isChecksumValidationEnabled()));
                     s3PresignerBuilder
                             .region(Region.of(awsStorageServiceProperties.getEndpointRegion()))
                             .endpointOverride(URI.create(awsStorageServiceProperties.getEndpoint()))
@@ -186,6 +184,12 @@ public class StorageAutoConfiguration {
                 storageService = null;
         }
         return storageService;
+    }
+
+    static ResponseChecksumValidation responseChecksumValidation(boolean checksumValidationEnabled) {
+        return checksumValidationEnabled
+                ? ResponseChecksumValidation.WHEN_SUPPORTED
+                : ResponseChecksumValidation.WHEN_REQUIRED;
     }
 
     private static AwsBasicCredentials getAwsBasicCredentials(AwsStorageServiceProperties

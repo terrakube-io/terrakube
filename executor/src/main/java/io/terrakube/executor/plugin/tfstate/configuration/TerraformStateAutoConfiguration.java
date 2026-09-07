@@ -99,9 +99,7 @@ public class TerraformStateAutoConfiguration {
                                 .endpointOverride(URI.create(awsTerraformStateProperties.getEndpoint()))
                                 .serviceConfiguration(serviceConfiguration)
                                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-                                .responseChecksumValidation(awsTerraformStateProperties.isChecksumValidationEnabled()
-                                        ? ResponseChecksumValidation.WHEN_SUPPORTED
-                                        : ResponseChecksumValidation.WHEN_REQUIRED)
+                                .responseChecksumValidation(responseChecksumValidation(awsTerraformStateProperties.isChecksumValidationEnabled()))
                                 .build();
                     } else {
                         log.info("Creating AWS SDK with custom credentials");
@@ -165,6 +163,12 @@ public class TerraformStateAutoConfiguration {
                     .terraformStatePathService(terraformStatePathService)
                     .build();
         return terraformState;
+    }
+
+    static ResponseChecksumValidation responseChecksumValidation(boolean checksumValidationEnabled) {
+        return checksumValidationEnabled
+                ? ResponseChecksumValidation.WHEN_SUPPORTED
+                : ResponseChecksumValidation.WHEN_REQUIRED;
     }
 
     private AwsBasicCredentials getAwsBasicCredentials(AwsTerraformStateProperties awsTerraformStateProperties) {

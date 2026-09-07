@@ -120,6 +120,7 @@ class StorageClientResilienceTest {
         props.setEndpoint("http://localhost:9000");
         props.setAccessKey("minio");
         props.setSecretKey("minio123");
+        props.setChecksumValidationEnabled(true);
         return props;
     }
 }
