@@ -13,7 +13,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,27 +51,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class ExecutorService {
 
-    private static final String[] EPHEMERAL_API_FALLBACK_KEYS = new String[] {
-            "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP",
-            "EPHEMERAL_CONFIG_SERVICE_ACCOUNT",
-            "EPHEMERAL_CONFIG_MAP_NAME",
-            "EPHEMERAL_CONFIG_MAP_MOUNT_PATH",
-            "EPHEMERAL_CONFIG_NODE_SELECTOR_TAGS",
-            "EPHEMERAL_CONFIG_TOLERATIONS",
-            "EPHEMERAL_CONFIG_ANNOTATIONS",
-            "EPHEMERAL_CONFIG_POD_ANNOTATIONS",
-            "EPHEMERAL_CONFIG_LABELS",
-            "EPHEMERAL_CONFIG_POD_SECURITY_CONTEXT",
-            "EPHEMERAL_CONFIG_SECURITY_CONTEXT",
-            "EPHEMERAL_CPU_REQUEST",
-            "EPHEMERAL_CPU_LIMIT",
-            "EPHEMERAL_MEMORY_REQUEST",
-            "EPHEMERAL_MEMORY_LIMIT",
-            "EPHEMERAL_STORAGE_REQUEST",
-            "EPHEMERAL_STORAGE_LIMIT",
-            "EPHEMERAL_JOB_ENV_VARS"
-    };
-
     @Value("${io.terrakube.hostname}")
     String hostname;
 
@@ -93,9 +71,6 @@ public class ExecutorService {
 
     @Autowired
     EphemeralExecutorService ephemeralExecutorService;
-
-    @Autowired
-    Environment environment;
 
     @Autowired
     PersistentExecutorService persistentExecutorService;
@@ -162,10 +137,6 @@ public class ExecutorService {
 
         environmentVariables = loadOtherEnvironmentVariables(job, flow, environmentVariables);
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
-
-        if (environmentVariables.containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
-            environmentVariables = mergeApiEphemeralDefaults(environmentVariables);
-        }
 
         executorContext.setVariables(terraformVariables);
         executorContext.setEnvironmentVariables(environmentVariables);
@@ -237,26 +208,6 @@ public class ExecutorService {
         } else {
             persistentExecutorService.send(job, executorContext);
         }
-    }
-
-    HashMap<String, String> mergeApiEphemeralDefaults(HashMap<String, String> environmentVariables) {
-        if (environmentVariables == null) {
-            environmentVariables = new HashMap<>();
-        }
-
-        for (String key : EPHEMERAL_API_FALLBACK_KEYS) {
-            String value = readNonBlankEnv(key);
-            if (value != null) {
-                environmentVariables.putIfAbsent(key, value);
-            }
-        }
-
-        return environmentVariables;
-    }
-
-    private String readNonBlankEnv(String key) {
-        String value = environment.getProperty(key);
-        return value == null || value.isBlank() ? null : value;
     }
 
     void splitWorkspaceVariablesByCategory(Job job, HashMap<String, String> terraformVariables,

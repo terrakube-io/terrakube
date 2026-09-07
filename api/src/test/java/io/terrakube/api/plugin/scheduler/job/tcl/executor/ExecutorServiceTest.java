@@ -29,7 +29,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.env.Environment;
 
 @ExtendWith(MockitoExtension.class)
 class ExecutorServiceTest {
@@ -45,9 +44,6 @@ class ExecutorServiceTest {
 
     @Mock
     private JobRepository jobRepository;
-
-    @Mock
-    private Environment environment;
 
     @InjectMocks
     private ExecutorService executorService;
@@ -118,81 +114,6 @@ class ExecutorServiceTest {
         executorService.splitWorkspaceVariablesByCategory(job, terraformVariables, environmentVariables);
 
         assertThat(terraformVariables).isEmpty();
-        assertThat(environmentVariables).isEmpty();
-    }
-
-    @Test
-    void appliesApiEphemeralDefaultsWithoutOverwritingExistingVariables() {
-        when(environment.getProperty("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP"))
-                .thenReturn("terrakube-executor-config");
-        when(environment.getProperty("EPHEMERAL_CONFIG_MAP_NAME"))
-                .thenReturn("terrakube-ephemeral-ca-certs");
-        when(environment.getProperty("EPHEMERAL_CONFIG_MAP_MOUNT_PATH"))
-                .thenReturn("/mnt/platform/bindings/ca-certificates");
-        when(environment.getProperty("EPHEMERAL_CONFIG_NODE_SELECTOR_TAGS"))
-                .thenReturn("caas/poolname=linux");
-        when(environment.getProperty("EPHEMERAL_CONFIG_SERVICE_ACCOUNT"))
-                .thenReturn("terrakube-api-sa");
-        when(environment.getProperty("EPHEMERAL_CONFIG_TOLERATIONS"))
-                .thenReturn("caas=true:NoSchedule");
-        when(environment.getProperty("EPHEMERAL_CONFIG_ANNOTATIONS"))
-                .thenReturn("team=platform");
-        when(environment.getProperty("EPHEMERAL_CONFIG_POD_ANNOTATIONS"))
-                .thenReturn("vault.hashicorp.com/agent-inject=true");
-        when(environment.getProperty("EPHEMERAL_CONFIG_LABELS"))
-                .thenReturn("environment=production");
-        when(environment.getProperty("EPHEMERAL_CONFIG_POD_SECURITY_CONTEXT"))
-                .thenReturn("runAsNonRoot=true");
-        when(environment.getProperty("EPHEMERAL_CONFIG_SECURITY_CONTEXT"))
-                .thenReturn("allowPrivilegeEscalation=false");
-        when(environment.getProperty("EPHEMERAL_CPU_REQUEST"))
-                .thenReturn("100m");
-        when(environment.getProperty("EPHEMERAL_CPU_LIMIT"))
-                .thenReturn("500m");
-        when(environment.getProperty("EPHEMERAL_MEMORY_REQUEST"))
-                .thenReturn("128Mi");
-        when(environment.getProperty("EPHEMERAL_MEMORY_LIMIT"))
-                .thenReturn("512Mi");
-        when(environment.getProperty("EPHEMERAL_STORAGE_REQUEST"))
-                .thenReturn("1Gi");
-        when(environment.getProperty("EPHEMERAL_STORAGE_LIMIT"))
-                .thenReturn("2Gi");
-        when(environment.getProperty("EPHEMERAL_JOB_ENV_VARS"))
-                .thenReturn("TERRAKUBE_REDIS_SSL=true");
-
-        HashMap<String, String> environmentVariables = new HashMap<>();
-        environmentVariables.put("EPHEMERAL_CONFIG_SERVICE_ACCOUNT", "workspace-service-account");
-
-        executorService.mergeApiEphemeralDefaults(environmentVariables);
-
-        assertThat(environmentVariables)
-                .containsEntry("EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP", "terrakube-executor-config")
-                .containsEntry("EPHEMERAL_CONFIG_MAP_NAME", "terrakube-ephemeral-ca-certs")
-                .containsEntry("EPHEMERAL_CONFIG_MAP_MOUNT_PATH", "/mnt/platform/bindings/ca-certificates")
-                .containsEntry("EPHEMERAL_CONFIG_NODE_SELECTOR_TAGS", "caas/poolname=linux")
-                .containsEntry("EPHEMERAL_CONFIG_SERVICE_ACCOUNT", "workspace-service-account")
-                .containsEntry("EPHEMERAL_CONFIG_TOLERATIONS", "caas=true:NoSchedule")
-                .containsEntry("EPHEMERAL_CONFIG_ANNOTATIONS", "team=platform")
-                .containsEntry("EPHEMERAL_CONFIG_POD_ANNOTATIONS", "vault.hashicorp.com/agent-inject=true")
-                .containsEntry("EPHEMERAL_CONFIG_LABELS", "environment=production")
-                .containsEntry("EPHEMERAL_CONFIG_POD_SECURITY_CONTEXT", "runAsNonRoot=true")
-                .containsEntry("EPHEMERAL_CONFIG_SECURITY_CONTEXT", "allowPrivilegeEscalation=false")
-                .containsEntry("EPHEMERAL_CPU_REQUEST", "100m")
-                .containsEntry("EPHEMERAL_CPU_LIMIT", "500m")
-                .containsEntry("EPHEMERAL_MEMORY_REQUEST", "128Mi")
-                .containsEntry("EPHEMERAL_MEMORY_LIMIT", "512Mi")
-                .containsEntry("EPHEMERAL_STORAGE_REQUEST", "1Gi")
-                .containsEntry("EPHEMERAL_STORAGE_LIMIT", "2Gi")
-                .containsEntry("EPHEMERAL_JOB_ENV_VARS", "TERRAKUBE_REDIS_SSL=true");
-    }
-
-    @Test
-    void ignoresEmptyApiEphemeralDefaults() {
-        when(environment.getProperty("EPHEMERAL_CONFIG_MAP_NAME")).thenReturn(" ");
-
-        HashMap<String, String> environmentVariables = new HashMap<>();
-        executorService.mergeApiEphemeralDefaults(environmentVariables);
-
         assertThat(environmentVariables).isEmpty();
     }
 

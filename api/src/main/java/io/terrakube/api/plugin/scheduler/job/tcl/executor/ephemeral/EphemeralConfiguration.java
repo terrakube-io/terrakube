@@ -23,5 +23,40 @@ public class EphemeralConfiguration {
     private String namespace;
     private String image;
     private List<String> secret;
+
+    // Pod scheduling defaults. Job-level node selector overrides remain supported separately.
     private Map<String, String> nodeSelector;
+    private String serviceAccount;
+    private String tolerations;
+
+    // Shared ConfigMap configuration.
+    private ConfigMap configMap = new ConfigMap();
+
+    // Resource requests and limits for ephemeral pods.
+    private Resources resources = new Resources();
+
+    // Optional advanced pod configuration.
+    private String podAnnotations;
+    private String podSecurityContext;
+    private String securityContext;
+    private String jobEnvVars;
+
+    @Getter
+    @Setter
+    public static class ConfigMap {
+        private String envFrom;
+        private String name;
+        private String mountPath;
+    }
+
+    @Getter
+    @Setter
+    public static class Resources {
+        private String cpuRequest;
+        private String cpuLimit;
+        private String memoryRequest;
+        private String memoryLimit;
+        private String ephemeralStorageRequest;
+        private String ephemeralStorageLimit;
+    }
 }

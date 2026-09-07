@@ -282,6 +282,28 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
+    public void appliesDeploymentDefaultsWithoutMutatingExecutorContext() throws ExecutionException {
+        config.getConfigMap().setEnvFrom("terrakube-executor-config");
+        config.setServiceAccount("terrakube-api-sa");
+        config.getConfigMap().setName("terrakube-ephemeral-ca-certs");
+        config.getConfigMap().setMountPath("/mnt/platform/bindings/ca-certificates");
+        config.setJobEnvVars("FOO=bar");
+
+        ExecutorContext context = context();
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podspec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podspec.getContainers().getFirst();
+        assertEquals("terrakube-api-sa", podspec.getServiceAccountName());
+        assertEquals("terrakube-executor-config", container.getEnvFrom().getFirst().getConfigMapRef().getName());
+        assertEquals("terrakube-ephemeral-ca-certs", podspec.getVolumes().getFirst().getConfigMap().getName());
+        assertEquals("/mnt/platform/bindings/ca-certificates", container.getVolumeMounts().getFirst().getMountPath());
+        assertEquals("bar", envVarsToMap(container.getEnv()).get("FOO"));
+        assertTrue(context.getEnvironmentVariables().isEmpty());
+    }
+
+    @Test
     public void overridesNodeSelectorsFromEnvVars() throws ExecutionException {
         ExecutorContext context = context();
         context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_NODE_SELECTOR_TAGS", "another=node");
