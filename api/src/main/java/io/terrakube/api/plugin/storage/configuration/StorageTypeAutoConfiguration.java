@@ -25,6 +25,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.core.retry.RetryPolicy;
@@ -58,10 +59,25 @@ public class StorageTypeAutoConfiguration {
     }
 
     static S3Configuration s3ServiceConfiguration(AwsStorageTypeProperties props) {
+        // Checksum behavior is configured on the client below; setting it here as well makes the
+        // SDK throw "Checksum behavior has been configured on both S3Configuration and the client".
         return S3Configuration.builder()
                 .pathStyleAccessEnabled(props.isPathStyleAccessEnabled())
                 .chunkedEncodingEnabled(props.isChunkedEncodingEnabled())
-                .checksumValidationEnabled(props.isChecksumValidationEnabled())
+                .build();
+    }
+
+    static S3Client s3CompatibleClient(AwsStorageTypeProperties props, ClientOverrideConfiguration override) {
+        return S3Client.builder()
+                .region(Region.of(props.getEndpointRegion()))
+                .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(props)))
+                .endpointOverride(URI.create(props.getEndpoint()))
+                .serviceConfiguration(s3ServiceConfiguration(props))
+                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                .responseChecksumValidation(props.isChecksumValidationEnabled()
+                        ? ResponseChecksumValidation.WHEN_SUPPORTED
+                        : ResponseChecksumValidation.WHEN_REQUIRED)
+                .overrideConfiguration(override)
                 .build();
     }
 
@@ -94,18 +110,7 @@ public class StorageTypeAutoConfiguration {
                             .build();
                 } else if (awsStorageTypeProperties.getEndpoint() != null && !awsStorageTypeProperties.getEndpoint().isEmpty()) {
                     log.info("Creating AWS SDK with custom endpoint and custom credentials");
-
-                    S3Configuration serviceConfiguration = s3ServiceConfiguration(awsStorageTypeProperties);
-
-                    s3client = S3Client.builder()
-                            .region(Region.of(awsStorageTypeProperties.getEndpointRegion()))
-                            .credentialsProvider(StaticCredentialsProvider.create(getAwsBasicCredentials(awsStorageTypeProperties)))
-                            .endpointOverride(URI.create(awsStorageTypeProperties.getEndpoint()))
-                            .serviceConfiguration(serviceConfiguration)
-                            .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-                            .overrideConfiguration(s3Override)
-                            .build();
-
+                    s3client = s3CompatibleClient(awsStorageTypeProperties, s3Override);
                 } else {
                     log.info("Creating AWS SDK with custom credentials");
                     s3client = S3Client.builder()
@@ -150,7 +155,7 @@ public class StorageTypeAutoConfiguration {
         return storageTypeService;
     }
 
-    private AwsBasicCredentials getAwsBasicCredentials(AwsStorageTypeProperties awsStorageTypeProperties) {
+    private static AwsBasicCredentials getAwsBasicCredentials(AwsStorageTypeProperties awsStorageTypeProperties) {
         AwsBasicCredentials awsCreds = AwsBasicCredentials.create(awsStorageTypeProperties.getAccessKey(), awsStorageTypeProperties.getSecretKey());
         return awsCreds;
     }
