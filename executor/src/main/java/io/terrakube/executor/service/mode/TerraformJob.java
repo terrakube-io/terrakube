@@ -41,5 +41,8 @@ public class TerraformJob {
     private HashMap<String, String> variables;
     private List<Map<String, Object>> liveChanges;
     private List<Map<String, Object>> jobDiagnostics;
+    private List<PolicyContext> policyList;
+    private List<PolicyExemptionContext> policyExemptionList;
 
 }
+

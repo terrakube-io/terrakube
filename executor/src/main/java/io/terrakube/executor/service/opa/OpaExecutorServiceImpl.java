@@ -1,0 +1,608 @@
+package io.terrakube.executor.service.opa;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.executor.ExecutorJobResult;
+import io.terrakube.executor.service.mode.PolicyContext;
+import io.terrakube.executor.service.mode.PolicyExemptionContext;
+import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
+import io.terrakube.executor.service.opa.model.PolicyViolation;
+import io.terrakube.executor.service.opa.model.ViolationStatus;
+import io.terrakube.executor.service.scripts.bash.ProcessLauncher;
+import io.terrakube.executor.service.terraform.JobContextService;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.text.TextStringBuilder;
+import org.eclipse.jgit.api.CloneCommand;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Service;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+public class OpaExecutorServiceImpl implements OpaExecutorService {
+
+    private static final String HARD_MANDATORY = "HARD_MANDATORY";
+    private static final String SOFT_MANDATORY = "SOFT_MANDATORY";
+    private static final String ADVISORY = "ADVISORY";
+
+    private static final String STATUS_PASSED = "PASSED";
+    private static final String STATUS_FAILED = "FAILED";
+    private static final String STATUS_WAITING_APPROVAL = "WAITING_APPROVAL";
+    private static final String STATUS_WARNING = "WARNING";
+
+    private final OpaBinaryService opaBinaryService;
+    private final ThreadPoolTaskExecutor opaEvaluationExecutor;
+    private final ObjectMapper objectMapper;
+    private final JobContextService jobContextService;
+    private final TerraformState terraformState;
+
+    @Autowired
+    public OpaExecutorServiceImpl(
+            OpaBinaryService opaBinaryService,
+            @Qualifier("opaEvaluationExecutor") ThreadPoolTaskExecutor opaEvaluationExecutor,
+            ObjectMapper objectMapper,
+            JobContextService jobContextService,
+            TerraformState terraformState) {
+        this.opaBinaryService = opaBinaryService;
+        this.opaEvaluationExecutor = opaEvaluationExecutor;
+        this.objectMapper = objectMapper;
+        this.jobContextService = jobContextService;
+        this.terraformState = terraformState;
+    }
+
+    @Override
+    public List<OpaEvaluationResult> evaluateAllPolicies(
+            TerraformJob job,
+            File workingDirectory,
+            File planJsonFile,
+            Consumer<String> planOutput) {
+
+        if (job.getPolicyList() == null || job.getPolicyList().isEmpty()) {
+            log.info("No policy sets configured for job {}", job.getJobId());
+            return Collections.emptyList();
+        }
+
+        log.info("Evaluating {} policy set(s) for job {}", job.getPolicyList().size(), job.getJobId());
+
+        List<PolicyExemptionContext> exemptions = job.getPolicyExemptionList() != null
+                ? job.getPolicyExemptionList()
+                : Collections.emptyList();
+
+        List<CompletableFuture<OpaEvaluationResult>> futures = new ArrayList<>();
+
+        for (PolicyContext policyContext : job.getPolicyList()) {
+            CompletableFuture<OpaEvaluationResult> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    File policyBundleDir = resolvePolicyBundleDirectory(workingDirectory, policyContext);
+                    File policyInputsFile = preparePolicyInputsFile(workingDirectory, policyContext);
+                    return evaluatePolicySet(
+                            policyContext,
+                            exemptions,
+                            workingDirectory,
+                            planJsonFile,
+                            policyBundleDir,
+                            policyInputsFile,
+                            null
+                    );
+                } catch (Exception e) {
+                    log.error("Error evaluating policy set {}: {}", policyContext.getPolicyName(), e.getMessage(), e);
+                    OpaEvaluationResult errorResult = OpaEvaluationResult.builder()
+                            .policySetId(policyContext.getPolicyId())
+                            .policySetName(policyContext.getPolicyName())
+                            .enforcementLevel(policyContext.getEnforcementLevel())
+                            .shadowEnforcementLevel(policyContext.getShadowEnforcementLevel())
+                            .status(STATUS_FAILED)
+                            .exitCode(1)
+                            .build();
+                    errorResult.getBufferedLogs().add(String.format(
+                            "\u001B[31m[ERROR]\u001B[0m Failed to execute policy set %s: %s",
+                            policyContext.getPolicyName(), e.getMessage()
+                    ));
+                    return errorResult;
+                }
+            }, opaEvaluationExecutor);
+            futures.add(future);
+        }
+
+        // Wait for all evaluations to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        List<OpaEvaluationResult> results = futures.stream()
+                .map(CompletableFuture::join)
+                .sorted(Comparator.comparing(r -> r.getPolicySetName() != null ? r.getPolicySetName() : ""))
+                .collect(Collectors.toList());
+
+        // Sequential Log Flushing to avoid terminal interleaving
+        planOutput.accept("\n\u001B[1;36m============================================================\u001B[0m");
+        planOutput.accept("\u001B[1;36m       TERRAKUBE OPEN POLICY AGENT (OPA) GOVERNANCE        \u001B[0m");
+        planOutput.accept("\u001B[1;36m============================================================\u001B[0m\n");
+
+        int totalHardViolations = 0;
+        int totalSoftViolations = 0;
+        int totalShadowHardViolations = 0;
+        int totalShadowSoftViolations = 0;
+        int totalExempted = 0;
+
+        for (OpaEvaluationResult result : results) {
+            totalHardViolations += result.getHardMandatoryViolations();
+            totalSoftViolations += result.getSoftMandatoryViolations();
+            totalShadowHardViolations += result.getShadowHardViolations();
+            totalShadowSoftViolations += result.getShadowSoftViolations();
+            totalExempted += result.getExemptedViolations().size();
+
+            for (String logLine : result.getBufferedLogs()) {
+                planOutput.accept(logLine);
+            }
+            planOutput.accept(""); // Blank separator between policy sets
+        }
+
+        // Summary Banner
+        planOutput.accept("\u001B[1;36m------------------------------------------------------------\u001B[0m");
+        if (totalHardViolations > 0) {
+            planOutput.accept(String.format(
+                    "\u001B[1;31m⛔ [OPA POLICY FAILURE] %d hard-mandatory violation(s) detected. Plan blocked.\u001B[0m",
+                    totalHardViolations
+            ));
+        } else if (totalSoftViolations > 0) {
+            planOutput.accept(String.format(
+                    "\u001B[1;33m⚠️ [OPA POLICY OVERRIDE REQUIRED] %d soft-mandatory violation(s) detected. SecOps approval required.\u001B[0m",
+                    totalSoftViolations
+            ));
+        } else {
+            planOutput.accept("\u001B[1;32m✅ [OPA POLICY SUCCESS] All policy guardrails passed successfully.\u001B[0m");
+        }
+
+        if (totalShadowHardViolations > 0 || totalShadowSoftViolations > 0) {
+            planOutput.accept(String.format(
+                    "\u001B[35m👻 [SHADOW MODE] Informational telemetry: %d hard and %d soft violations would trigger.\u001B[0m",
+                    totalShadowHardViolations, totalShadowSoftViolations
+            ));
+        }
+
+        if (totalExempted > 0) {
+            planOutput.accept(String.format(
+                    "\u001B[35m🛡️ [EXEMPTIONS ACTIVE] %d rule violation(s) bypassed via approved active exemptions.\u001B[0m",
+                    totalExempted
+            ));
+        }
+        planOutput.accept("\u001B[1;36m============================================================\u001B[0m\n");
+
+        // Save structured results to JobContextService for UI inspection
+        saveStructuredContext(job, results);
+
+        return results;
+    }
+
+    @Override
+    public OpaEvaluationResult evaluatePolicySet(
+            PolicyContext policyContext,
+            List<PolicyExemptionContext> exemptions,
+            File workingDirectory,
+            File planJsonFile,
+            File policyBundleDir,
+            File policyInputsFile,
+            Consumer<String> consoleOutput) {
+
+        List<String> logs = new ArrayList<>();
+        Consumer<String> logConsumer = consoleOutput != null ? consoleOutput : logs::add;
+
+        String policyName = policyContext.getPolicyName() != null ? policyContext.getPolicyName() : policyContext.getPolicyId();
+        String enforcementLevel = policyContext.getEnforcementLevel() != null ? policyContext.getEnforcementLevel() : HARD_MANDATORY;
+
+        logConsumer.accept(String.format("\u001B[1;34m🔍 Checking Policy Set: %s\u001B[0m (Level: %s)", policyName, enforcementLevel));
+
+        File opaBinary = opaBinaryService.getOpaBinary(policyContext.getOpaVersion());
+
+        List<String> commandList = new ArrayList<>();
+        commandList.add(opaBinary.getAbsolutePath());
+        commandList.add("eval");
+        commandList.add("--data");
+        commandList.add(policyBundleDir.getAbsolutePath());
+        if (policyInputsFile != null && policyInputsFile.exists()) {
+            commandList.add("--data");
+            commandList.add(policyInputsFile.getAbsolutePath());
+        }
+        commandList.add("--input");
+        commandList.add(planJsonFile.getAbsolutePath());
+        commandList.add("--format");
+        commandList.add("json");
+        commandList.add("data.terraform.analysis");
+
+        TextStringBuilder rawJsonOutput = new TextStringBuilder();
+        TextStringBuilder stderrOutput = new TextStringBuilder();
+
+        ProcessLauncher launcher = new ProcessLauncher(
+                opaEvaluationExecutor.getThreadPoolExecutor(),
+                commandList.toArray(new String[0])
+        );
+        launcher.setDirectory(workingDirectory);
+        launcher.setOutputListener(rawJsonOutput::appendln);
+        launcher.setErrorListener(stderrOutput::appendln);
+
+        int exitCode;
+        try {
+            exitCode = launcher.launch().get();
+        } catch (Exception e) {
+            log.error("Failed to execute opa process: {}", e.getMessage(), e);
+            OpaEvaluationResult errorResult = OpaEvaluationResult.builder()
+                    .policySetId(policyContext.getPolicyId())
+                    .policySetName(policyName)
+                    .enforcementLevel(enforcementLevel)
+                    .status(STATUS_FAILED)
+                    .exitCode(1)
+                    .build();
+            errorResult.getBufferedLogs().add("\u001B[31m[ERROR] Failed to run OPA binary: " + e.getMessage() + "\u001B[0m");
+            return errorResult;
+        }
+
+        OpaEvaluationResult result = parseOpaJsonOutput(policyContext, rawJsonOutput.toString(), exitCode, logConsumer);
+
+        // Apply Runner-Level Exemption Filtering
+        applyExemptions(result, policyContext.getPolicyId(), exemptions, logConsumer);
+
+        // Finalize status and exit code
+        finalizeResultStatus(result, enforcementLevel, policyContext.getShadowEnforcementLevel(), logConsumer);
+
+        result.setBufferedLogs(logs);
+        return result;
+    }
+
+    @Override
+    public ExecutorJobResult evaluateJob(TerraformJob job, File workingDirectory) {
+        log.info("Starting headless policy evaluation for Organization {} Workspace {} Job {}",
+                job.getOrganizationId(), job.getWorkspaceId(), job.getJobId());
+
+        ExecutorJobResult result = new ExecutorJobResult();
+        TextStringBuilder outputLog = new TextStringBuilder();
+        Consumer<String> planOutput = outputLog::appendln;
+
+        // Step 1: Resolve plan.json without full terraform init
+        File planJsonFile = new File(workingDirectory, "plan.json");
+        if (!planJsonFile.exists()) {
+            // Attempt to restore plan from storage
+            boolean downloaded = terraformState.downloadTerraformPlan(
+                    job.getOrganizationId(), job.getWorkspaceId(), job.getJobId(), job.getStepId(), workingDirectory
+            );
+            if (!downloaded) {
+                log.warn("Could not find plan.json or download terraform plan file from storage");
+                result.setSuccessfulExecution(false);
+                result.setOutputLog("No plan.json or state found for compliance evaluation.");
+                result.setOutputErrorLog("Failed to download plan for headless policyEvaluation.");
+                result.setExitCode(1);
+                return result;
+            }
+        }
+
+        // Step 2: Evaluate all policies
+        List<OpaEvaluationResult> evalResults = evaluateAllPolicies(job, workingDirectory, planJsonFile, planOutput);
+
+        boolean hasHardViolations = evalResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
+        result.setOutputLog(outputLog.toString());
+        result.setSuccessfulExecution(!hasHardViolations);
+        result.setExitCode(hasHardViolations ? 1 : 0);
+        result.setPlan(false);
+
+        return result;
+    }
+
+    private File resolvePolicyBundleDirectory(File workingDirectory, PolicyContext policyContext) throws Exception {
+        if (policyContext.getRepository() == null || policyContext.getRepository().isBlank()) {
+            // If no VCS repository specified, default to working directory folder
+            return new File(workingDirectory, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+        }
+
+        File policyCloneFolder = new File(workingDirectory, ".terrakube-policies/" + policyContext.getPolicyId());
+        if (policyCloneFolder.exists()) {
+            return new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+        }
+
+        FileUtils.forceMkdirParent(policyCloneFolder);
+
+        CredentialsProvider credentialsProvider = resolveCredentialsProvider(policyContext);
+
+        CloneCommand cloneCommand = Git.cloneRepository()
+                .setURI(policyContext.getRepository())
+                .setDirectory(policyCloneFolder)
+                .setBranch(policyContext.getBranch() != null ? policyContext.getBranch() : "main")
+                .setCredentialsProvider(credentialsProvider)
+                .setDepth(1);
+
+        cloneCommand.call().close();
+
+        return new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+    }
+
+    private CredentialsProvider resolveCredentialsProvider(PolicyContext policyContext) {
+        String token = policyContext.getAccessToken();
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+
+        String vcsType = policyContext.getVcsType() != null ? policyContext.getVcsType().toUpperCase() : "";
+        switch (vcsType) {
+            case "GITLAB":
+                return new UsernamePasswordCredentialsProvider("oauth2", token);
+            case "BITBUCKET":
+                return new UsernamePasswordCredentialsProvider("x-token-auth", token);
+            case "AZURE_DEVOPS":
+                return new UsernamePasswordCredentialsProvider("dummy", token);
+            case "GITHUB":
+            default:
+                return new UsernamePasswordCredentialsProvider("x-access-token", token);
+        }
+    }
+
+    private File preparePolicyInputsFile(File workingDirectory, PolicyContext policyContext) {
+        Map<String, String> inputs = policyContext.getInputs();
+        if (inputs == null || inputs.isEmpty()) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> root = new HashMap<>();
+            Map<String, Object> terrakube = new HashMap<>();
+            terrakube.put("inputs", inputs);
+            root.put("terrakube", terrakube);
+
+            File inputsFile = new File(workingDirectory, ".terrakube-policies/inputs-" + policyContext.getPolicyId() + ".json");
+            FileUtils.forceMkdirParent(inputsFile);
+            objectMapper.writeValue(inputsFile, root);
+            return inputsFile;
+        } catch (IOException e) {
+            log.warn("Failed to write policy inputs JSON file: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    OpaEvaluationResult parseOpaJsonOutput(
+            PolicyContext policyContext,
+            String rawJson,
+            int exitCode,
+            Consumer<String> logConsumer) {
+
+        OpaEvaluationResult result = OpaEvaluationResult.builder()
+                .policySetId(policyContext.getPolicyId())
+                .policySetName(policyContext.getPolicyName())
+                .enforcementLevel(policyContext.getEnforcementLevel())
+                .shadowEnforcementLevel(policyContext.getShadowEnforcementLevel())
+                .build();
+
+        if (rawJson == null || rawJson.isBlank()) {
+            logConsumer.accept("  \u001B[33mNo output returned from OPA evaluation.\u001B[0m");
+            return result;
+        }
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(rawJson);
+            JsonNode resultNode = rootNode.path("result");
+
+            if (resultNode.isMissingNode() || resultNode.isNull() || (resultNode.isArray() && resultNode.isEmpty())) {
+                logConsumer.accept("  \u001B[32m✔ No rule violations reported (All rules passed).\u001B[0m");
+                result.setPassedRules(1);
+                return result;
+            }
+
+            JsonNode valueNode = null;
+            if (resultNode.isArray() && !resultNode.isEmpty()) {
+                JsonNode firstElem = resultNode.get(0);
+                JsonNode expressions = firstElem.path("expressions");
+                if (expressions.isArray() && !expressions.isEmpty()) {
+                    valueNode = expressions.get(0).path("value");
+                }
+            } else if (resultNode.isObject()) {
+                valueNode = resultNode;
+            }
+
+            if (valueNode == null || valueNode.isMissingNode()) {
+                logConsumer.accept("  \u001B[32m✔ All policy rules passed.\u001B[0m");
+                result.setPassedRules(1);
+                return result;
+            }
+
+            // Extract deny violations
+            List<PolicyViolation> denyList = extractViolationsFromNode(valueNode.path("deny"));
+            // Extract soft_mandatory violations
+            List<PolicyViolation> softList = extractViolationsFromNode(valueNode.path("soft_mandatory"));
+            // Extract warning violations
+            List<PolicyViolation> warnList = extractViolationsFromNode(valueNode.path("warn"));
+
+            result.getViolations().addAll(denyList);
+            result.getViolations().addAll(softList);
+            result.setWarningRules(warnList.size());
+
+            // Render violation notices to log
+            for (PolicyViolation v : denyList) {
+                logConsumer.accept(String.format(
+                        "  \u001B[31m[DENY]\u001B[0m Rule '%s' failed on '%s': %s",
+                        v.getRuleId(), v.getAddress(), v.getMessage()
+                ));
+            }
+
+            for (PolicyViolation v : softList) {
+                logConsumer.accept(String.format(
+                        "  \u001B[33m[SOFT_MANDATORY]\u001B[0m Rule '%s' flagged on '%s': %s",
+                        v.getRuleId(), v.getAddress(), v.getMessage()
+                ));
+            }
+
+            for (PolicyViolation v : warnList) {
+                logConsumer.accept(String.format(
+                        "  \u001B[36m[WARN]\u001B[0m Rule '%s' on '%s': %s",
+                        v.getRuleId(), v.getAddress(), v.getMessage()
+                ));
+            }
+
+            if (denyList.isEmpty() && softList.isEmpty() && warnList.isEmpty()) {
+                logConsumer.accept("  \u001B[32m✔ All policy rules passed.\u001B[0m");
+                result.setPassedRules(1);
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to parse OPA JSON output: {}", e.getMessage());
+            logConsumer.accept("  \u001B[33m[WARN] Output could not be parsed as structured OPA result: " + e.getMessage() + "\u001B[0m");
+        }
+
+        return result;
+    }
+
+    private List<PolicyViolation> extractViolationsFromNode(JsonNode node) {
+        List<PolicyViolation> violations = new ArrayList<>();
+        if (node.isMissingNode() || node.isNull()) {
+            return violations;
+        }
+
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                violations.add(parseViolationItem(item));
+            }
+        } else if (node.isObject()) {
+            violations.add(parseViolationItem(node));
+        }
+        return violations;
+    }
+
+    private PolicyViolation parseViolationItem(JsonNode item) {
+        if (item.isTextual()) {
+            return PolicyViolation.builder()
+                    .ruleId("policy_rule")
+                    .address("global")
+                    .message(item.asText())
+                    .status(ViolationStatus.FAILED)
+                    .build();
+        }
+
+        String msg = item.has("msg") ? item.path("msg").asText() : (item.has("message") ? item.path("message").asText() : item.toString());
+        String ruleId = item.has("rule_id") ? item.path("rule_id").asText() : (item.has("ruleId") ? item.path("ruleId").asText() : "policy_rule");
+        String address = item.has("resource") ? item.path("resource").asText() : (item.has("address") ? item.path("address").asText() : "resource");
+
+        return PolicyViolation.builder()
+                .ruleId(ruleId)
+                .address(address)
+                .message(msg)
+                .status(ViolationStatus.FAILED)
+                .build();
+    }
+
+    void applyExemptions(
+            OpaEvaluationResult result,
+            String policySetId,
+            List<PolicyExemptionContext> exemptions,
+            Consumer<String> logConsumer) {
+
+        Date now = new Date();
+        Iterator<PolicyViolation> iterator = result.getViolations().iterator();
+
+        while (iterator.hasNext()) {
+            PolicyViolation violation = iterator.next();
+            Optional<PolicyExemptionContext> matchingExemption = exemptions.stream()
+                    .filter(e -> e.getPolicySetId() != null && e.getPolicySetId().equals(policySetId))
+                    .filter(e -> e.getRuleId() != null && e.getRuleId().equals(violation.getRuleId()))
+                    .filter(e -> e.getExpiresAt() == null || e.getExpiresAt().after(now))
+                    .findFirst();
+
+            if (matchingExemption.isPresent()) {
+                PolicyExemptionContext ex = matchingExemption.get();
+                iterator.remove(); // Remove from blocking violations
+
+                violation.setStatus(ViolationStatus.EXEMPTED);
+                violation.setTicketReference(ex.getTicketReference());
+                violation.setJustification(ex.getJustification());
+                violation.setExpiresAt(ex.getExpiresAt());
+                result.getExemptedViolations().add(violation);
+
+                logConsumer.accept(String.format(
+                        "  \u001B[35m[EXEMPTED]\u001B[0m Rule '%s' bypassed on '%s' (Ticket: %s, Expires: %s)",
+                        violation.getRuleId(), violation.getAddress(), ex.getTicketReference(),
+                        ex.getExpiresAt() != null ? ex.getExpiresAt() : "Indefinite"
+                ));
+            }
+        }
+    }
+
+    private void finalizeResultStatus(
+            OpaEvaluationResult result,
+            String enforcementLevel,
+            String shadowEnforcementLevel,
+            Consumer<String> logConsumer) {
+
+        int hardCount = 0;
+        int softCount = 0;
+
+        // Partition remaining violations according to active enforcement level
+        if (HARD_MANDATORY.equalsIgnoreCase(enforcementLevel)) {
+            hardCount = result.getViolations().size();
+        } else if (SOFT_MANDATORY.equalsIgnoreCase(enforcementLevel)) {
+            softCount = result.getViolations().size();
+        }
+
+        result.setHardMandatoryViolations(hardCount);
+        result.setSoftMandatoryViolations(softCount);
+
+        // Shadow mode telemetry calculation (Gap 11.8)
+        if (shadowEnforcementLevel != null && !shadowEnforcementLevel.isBlank()) {
+            if (HARD_MANDATORY.equalsIgnoreCase(shadowEnforcementLevel)) {
+                result.setShadowHardViolations(result.getViolations().size());
+            } else if (SOFT_MANDATORY.equalsIgnoreCase(shadowEnforcementLevel)) {
+                result.setShadowSoftViolations(result.getViolations().size());
+            }
+        }
+
+        // Set status and exitCode based on active enforcement level
+        if (hardCount > 0) {
+            result.setStatus(STATUS_FAILED);
+            result.setExitCode(1);
+        } else if (softCount > 0) {
+            result.setStatus(STATUS_WAITING_APPROVAL);
+            result.setExitCode(0); // Soft mandatory waits for approval, doesn't hard-crash plan
+        } else if (result.getWarningRules() > 0) {
+            result.setStatus(STATUS_WARNING);
+            result.setExitCode(0);
+        } else {
+            result.setStatus(STATUS_PASSED);
+            result.setExitCode(0);
+        }
+    }
+
+    private void saveStructuredContext(TerraformJob job, List<OpaEvaluationResult> results) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("jobId", job.getJobId());
+            payload.put("stepId", job.getStepId());
+            payload.put("totalPolicies", results.size());
+            payload.put("results", results);
+
+            jobContextService.saveContext(
+                    job.getOrganizationId(),
+                    job.getJobId(),
+                    Map.of("policyEvaluation", payload)
+            );
+            log.info("Successfully persisted structured policyEvaluation context for job {}", job.getJobId());
+        } catch (Exception e) {
+            log.warn("Failed to save policyEvaluation context for job {}: {}", job.getJobId(), e.getMessage());
+        }
+    }
+}

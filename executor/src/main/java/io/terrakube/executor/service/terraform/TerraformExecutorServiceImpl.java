@@ -17,11 +17,16 @@ import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.executor.service.opa.OpaExecutorService;
+import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -73,8 +78,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     ExecutorFlagsProperties executorFlagsProperties;
     StructuredOutputProperties structuredOutputProperties;
     MeterRegistry meterRegistry;
+    OpaExecutorService opaExecutorService;
 
     public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry) {
+        this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, null);
+    }
+
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -90,7 +100,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.executorFlagsProperties = executorFlagsProperties;
         this.structuredOutputProperties = structuredOutputProperties;
         this.meterRegistry = meterRegistry;
+        this.opaExecutorService = opaExecutorService;
     }
+
 
     public File getTerraformWorkingDir(TerraformJob terraformJob, File workingDirectory) throws IOException {
         File terraformWorkingDir = workingDirectory;
@@ -268,7 +280,26 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         planOutput.accept(line);
                     }
                 }
+
+                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
+                    File planJsonFile = new File(terraformWorkingDir, "plan.json");
+                    if (!planJsonFile.exists()) {
+                        String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
+                        if (planJson != null && !planJson.isBlank()) {
+                            FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
+                        }
+                    }
+                    if (planJsonFile.exists()) {
+                        List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
+                        boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
+                        if (hasHardViolations) {
+                            executionPlan = false;
+                            exitCode = 1;
+                        }
+                    }
+                }
             }
+
 
             log.warn("Terraform plan Executed: {} Exit Code: {}", executionPlan, exitCode);
 

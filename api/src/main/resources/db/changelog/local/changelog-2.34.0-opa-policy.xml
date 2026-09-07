@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Add manage_policies column to Team table -->
+    <changeSet id="add-manage-policies-to-team" author="terrakube">
+        <addColumn tableName="team">
+            <column name="manage_policies" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <!-- Explicitly update all existing team records to false to prevent Hibernate primitive boolean null mapping errors -->
+        <update tableName="team">
+            <column name="manage_policies" valueBoolean="false"/>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>

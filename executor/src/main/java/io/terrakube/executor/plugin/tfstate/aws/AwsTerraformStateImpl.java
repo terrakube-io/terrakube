@@ -372,5 +372,65 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
     }
 
+    @Override
+    public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Saving OPA binary to S3: {}", blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(sourceFile));
+            log.info("Successfully cached OPA binary version {} ({}_{}) in S3", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache OPA binary version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Attempting to restore OPA binary from S3: {}", blobKey);
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+            s3client.headObject(headRequest);
+
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
+                    ResponseTransformer.toBytes());
+            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored OPA binary");
+            }
+
+            log.info("Successfully restored OPA binary version {} ({}_{}) from S3", version, os, arch);
+            return true;
+        } catch (NoSuchKeyException e) {
+            log.info("OPA binary version {} ({}_{}) not found in S3 cache", version, os, arch);
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to restore OPA binary version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
 }
+
 

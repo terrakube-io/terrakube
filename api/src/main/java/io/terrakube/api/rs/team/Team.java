@@ -62,6 +62,10 @@ public class Team {
     @Column(name = "manage_template")
     private boolean manageTemplate;
 
+    @Column(name = "manage_policies")
+    private boolean managePolicies;
+
+
     @Column(name = "plan_job")
     private boolean planJob;
 

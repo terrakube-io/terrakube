@@ -39,6 +39,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
+    private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
 
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
@@ -245,4 +246,52 @@ public class LocalTerraformStateImpl implements TerraformState {
             return false;
         }
     }
+
+    @Override
+    public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        String binaryPath = String.format(LOCAL_OPA_BINARY_DIRECTORY, version, os, arch);
+        log.info("Saving OPA binary to local storage: {}", binaryPath);
+        try {
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            FileUtils.copyFile(sourceFile, targetFile);
+            log.info("Successfully cached OPA binary version {} ({}_{}) in local storage", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache OPA binary version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String binaryPath = String.format(LOCAL_OPA_BINARY_DIRECTORY, version, os, arch);
+        log.info("Attempting to restore OPA binary from local storage: {}", binaryPath);
+        try {
+            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            if (!sourceFile.exists()) {
+                log.info("OPA binary version {} ({}_{}) not found in local storage cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            FileUtils.copyFile(sourceFile, targetFile);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored OPA binary");
+            }
+
+            log.info("Successfully restored OPA binary version {} ({}_{}) from local storage", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore OPA binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
 }
+

@@ -25,7 +25,9 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.function.Consumer;
 
-@AllArgsConstructor
+import io.terrakube.executor.service.opa.OpaExecutorService;
+import org.springframework.beans.factory.annotation.Autowired;
+
 @Slf4j
 @Service
 public class ExecutorJobImpl implements ExecutorJob {
@@ -40,9 +42,53 @@ public class ExecutorJobImpl implements ExecutorJob {
     JobExecutionWatchdog jobExecutionWatchdog;
     ExecutorCapacityGate executorCapacityGate;
     RedisTemplate<String, Object> redisTemplate;
+    OpaExecutorService opaExecutorService;
+
+    public ExecutorJobImpl(
+            SetupWorkspace setupWorkspace,
+            TerraformExecutor terraformExecutor,
+            UpdateJobStatus updateJobStatus,
+            ExecutorFlagsProperties executorFlagsProperties,
+            ShutdownServiceImpl shutdownService,
+            ScriptEngineService scriptEngineService,
+            ApplicationEventPublisher eventPublisher,
+            JobExecutionWatchdog jobExecutionWatchdog,
+            ExecutorCapacityGate executorCapacityGate,
+            RedisTemplate<String, Object> redisTemplate) {
+        this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, null);
+    }
+
+    @Autowired
+    public ExecutorJobImpl(
+            SetupWorkspace setupWorkspace,
+            TerraformExecutor terraformExecutor,
+            UpdateJobStatus updateJobStatus,
+            ExecutorFlagsProperties executorFlagsProperties,
+            ShutdownServiceImpl shutdownService,
+            ScriptEngineService scriptEngineService,
+            ApplicationEventPublisher eventPublisher,
+            JobExecutionWatchdog jobExecutionWatchdog,
+            ExecutorCapacityGate executorCapacityGate,
+            RedisTemplate<String, Object> redisTemplate,
+            @Autowired(required = false) OpaExecutorService opaExecutorService) {
+        this.setupWorkspace = setupWorkspace;
+        this.terraformExecutor = terraformExecutor;
+        this.updateJobStatus = updateJobStatus;
+        this.executorFlagsProperties = executorFlagsProperties;
+        this.shutdownService = shutdownService;
+        this.scriptEngineService = scriptEngineService;
+        this.eventPublisher = eventPublisher;
+        this.jobExecutionWatchdog = jobExecutionWatchdog;
+        this.executorCapacityGate = executorCapacityGate;
+        this.redisTemplate = redisTemplate;
+        this.opaExecutorService = opaExecutorService;
+    }
 
     @Async
     @Override
+
     public void createJob(TerraformJob terraformJob) {
         log.info("Create Job for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
         jobExecutionWatchdog.markBusy(terraformJob);
@@ -132,6 +178,18 @@ public class ExecutorJobImpl implements ExecutorJob {
             case "terraformDestroy":
                 log.info("Execute Destroy for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
                 terraformResult = terraformExecutor.destroy(terraformJob, terraformWorkingDir);
+                break;
+            case "policyEvaluation":
+                log.info("Execute Policy Evaluation for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+                if (opaExecutorService != null) {
+                    terraformResult = opaExecutorService.evaluateJob(terraformJob, terraformWorkingDir);
+                } else {
+                    terraformResult = new ExecutorJobResult();
+                    terraformResult.setOutputLog("OPA Executor Service is not available.");
+                    terraformResult.setOutputErrorLog("OpaExecutorService is null.");
+                    terraformResult.setSuccessfulExecution(false);
+                    terraformResult.setExitCode(1);
+                }
                 break;
             case "customScripts":
             case "approval":

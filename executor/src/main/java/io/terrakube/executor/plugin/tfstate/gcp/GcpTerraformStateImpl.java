@@ -246,4 +246,53 @@ public class GcpTerraformStateImpl implements TerraformState {
             return false;
         }
     }
+
+    @Override
+    public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        String blobKey = String.format("opa/%s/%s_%s/opa", version, os, arch);
+        log.info("Saving OPA binary to GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            storage.create(blobInfo, FileUtils.readFileToByteArray(sourceFile));
+            log.info("Successfully cached OPA binary version {} ({}_{}) in GCS", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache OPA binary version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String blobKey = String.format("opa/%s/%s_%s/opa", version, os, arch);
+        log.info("Attempting to restore OPA binary from GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            com.google.cloud.storage.Blob blob = storage.get(blobId);
+            if (blob == null || !blob.exists()) {
+                log.info("OPA binary version {} ({}_{}) not found in GCS cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            byte[] content = storage.readAllBytes(blobId);
+            FileUtils.writeByteArrayToFile(targetFile, content);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored OPA binary");
+            }
+
+            log.info("Successfully restored OPA binary version {} ({}_{}) from GCS", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore OPA binary version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
 }
+
