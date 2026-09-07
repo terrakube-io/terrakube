@@ -19,7 +19,7 @@ import java.util.Optional;
 @SecurityCheck(TeamViewPolicySet.RULE)
 public class TeamViewPolicySet extends OperationCheck<PolicySet> {
 
-    public static final String RULE = "team view policy_set";
+    public static final String RULE = "team view policy set";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -32,7 +32,7 @@ public class TeamViewPolicySet extends OperationCheck<PolicySet> {
 
     @Override
     public boolean ok(PolicySet policySet, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team view policy_set {}", policySet.getId());
+        log.debug("team view policy set {}", policySet.getId());
         if (authenticatedUser.isSuperUser(requestScope.getUser())) {
             return true;
         }

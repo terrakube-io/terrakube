@@ -19,7 +19,7 @@ import java.util.Optional;
 @SecurityCheck(TeamViewPolicyExemption.RULE)
 public class TeamViewPolicyExemption extends OperationCheck<PolicyExemption> {
 
-    public static final String RULE = "team view policy_exemption";
+    public static final String RULE = "team view policy exemption";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -32,7 +32,7 @@ public class TeamViewPolicyExemption extends OperationCheck<PolicyExemption> {
 
     @Override
     public boolean ok(PolicyExemption exemption, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team view policy_exemption {}", exemption.getId());
+        log.debug("team view policy exemption {}", exemption.getId());
         if (authenticatedUser.isSuperUser(requestScope.getUser())) {
             return true;
         }

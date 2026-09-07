@@ -19,7 +19,7 @@ import java.util.Optional;
 @SecurityCheck(TeamManagePolicyAttachment.RULE)
 public class TeamManagePolicyAttachment extends OperationCheck<PolicyAttachment> {
 
-    public static final String RULE = "team manage policy_attachment";
+    public static final String RULE = "team manage policy attachment";
 
     @Autowired
     AuthenticatedUser authenticatedUser;
@@ -32,7 +32,7 @@ public class TeamManagePolicyAttachment extends OperationCheck<PolicyAttachment>
 
     @Override
     public boolean ok(PolicyAttachment attachment, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team manage policy_attachment {}", attachment.getId());
+        log.debug("team manage policy attachment {}", attachment.getId());
         if (authenticatedUser.isSuperUser(requestScope.getUser())) {
             return true;
         }

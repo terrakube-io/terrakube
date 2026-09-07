@@ -26,10 +26,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @Entity(name = "policy_attachment")
-@ReadPermission(expression = "team view policy_attachment")
-@CreatePermission(expression = "team manage policy_attachment")
-@UpdatePermission(expression = "team manage policy_attachment")
-@DeletePermission(expression = "team manage policy_attachment")
+@ReadPermission(expression = "team view policy attachment")
+@CreatePermission(expression = "team manage policy attachment")
+@UpdatePermission(expression = "team manage policy attachment")
+@DeletePermission(expression = "team manage policy attachment")
 public class PolicyAttachment extends GenericAuditFields {
 
     @Id

@@ -32,10 +32,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @Entity(name = "policy_set")
-@ReadPermission(expression = "team view policy_set")
-@CreatePermission(expression = "team manage policy_set")
-@UpdatePermission(expression = "team manage policy_set")
-@DeletePermission(expression = "team manage policy_set")
+@ReadPermission(expression = "team view policy set")
+@CreatePermission(expression = "team manage policy set")
+@UpdatePermission(expression = "team manage policy set")
+@DeletePermission(expression = "team manage policy set")
 public class PolicySet extends GenericAuditFields {
 
     @Id
