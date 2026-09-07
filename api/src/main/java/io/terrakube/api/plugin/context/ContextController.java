@@ -52,6 +52,8 @@ public class ContextController {
 
     private final ContextProperties contextProperties;
 
+    private final io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService;
+
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) {
         String context;
@@ -118,6 +120,9 @@ public class ContextController {
         }
         // Refresh the read cache so a Job Details page open right after the write sees this snapshot.
         contextReadService.invalidate(jobId, savedContext);
+        if (policyEvaluationService != null) {
+            policyEvaluationService.processPolicyEvaluationContext(jobId, sanitizedContext);
+        }
         return new ResponseEntity<>(savedContext, HttpStatus.OK);
     }
 

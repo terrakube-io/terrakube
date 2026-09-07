@@ -104,6 +104,10 @@ public class Workspace extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     private ExecutionMode executionMode;
 
+    @Column(name = "policy_compliance_status")
+    @Enumerated(EnumType.STRING)
+    private io.terrakube.api.rs.policy.PolicyComplianceStatus policyComplianceStatus = io.terrakube.api.rs.policy.PolicyComplianceStatus.UNKNOWN;
+
     @ManyToOne
     private Organization organization;
 
