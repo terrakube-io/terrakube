@@ -1,7 +1,7 @@
 import { List, Avatar, Tag, Pagination, Tooltip, Button } from "antd";
 import { UserOutlined, WarningOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
-import { FlatJob } from "../../../domain/types";
+import { FlatJob, formatJobVia } from "../../../domain/types";
 import { useState, useEffect, useCallback } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
@@ -159,7 +159,7 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
               description={
                 <span>
                   #job-{item.id} &nbsp;&nbsp;|&nbsp;&nbsp; <b>{item.createdBy}</b> triggered via{" "}
-                  <b>{item.via || "UI"}</b> using template <b>{getTemplateName(item)}</b> &nbsp;&nbsp;|&nbsp;&nbsp;{" "}
+                  <b>{formatJobVia(item.via)}</b> using template <b>{getTemplateName(item)}</b> &nbsp;&nbsp;|&nbsp;&nbsp;{" "}
                   <Button type="link" style={{ padding: 0 }}>
                     #{item.commitId?.substring(0, 6)}
                   </Button>

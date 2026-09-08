@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.vcs.provider.bitbucket;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.webhook.Webhook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -45,7 +46,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token) {
-        return handleWebhook(jsonPayload, headers, token, "x-hub-signature", "Bitbucket", this::handleEvent);
+        return handleWebhook(jsonPayload, headers, token, "x-hub-signature", JobVia.BITBUCKET.getValue(), this::handleEvent);
     }
 
     public WebhookResult handleEvent(String jsonPayload, WebhookResult result, Map<String, String> headers) {
