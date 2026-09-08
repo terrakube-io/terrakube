@@ -99,6 +99,7 @@ public class Vcs extends GenericAuditFields {
     @ManyToOne
     private Organization organization;
 
+    @UpdatePermission(expression = "team manage vcs OR team view vcs")
     @OneToMany(mappedBy = "vcs")
     private List<Workspace> workspace;
 }
