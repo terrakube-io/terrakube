@@ -155,17 +155,25 @@ public class Workspace extends GenericAuditFields {
     /**
      * Triggers that fire runs on THIS workspace when their source applies.
      *
-     * Read-only through the workspace: edges are created and removed through the runTrigger
-     * resource, which carries the checks that validate both ends. Allowing them to be
-     * rewritten as a side effect of a workspace PATCH would bypass those.
+     * The permission mirrors the one on {@link #job}: edges are created and removed through
+     * the runTrigger resource, whose own Create/Update/Delete checks validate both ends, so
+     * the inverse side only has to be as guarded as seeing the workspace. Requiring more
+     * here does not add protection - Elide maintains the bidirectional relationship when a
+     * trigger is created, so a stricter rule on this field is evaluated on the ordinary
+     * create path and would lock out every non-superuser regardless of manage rights.
+     *
+     * No cascade or orphanRemoval: workspaces are soft deleted (see the SQLRestriction on
+     * this class), so a cascade would never fire for the case it appears to cover, while
+     * orphanRemoval would turn dropping an element from this collection into a row delete
+     * that never passes through the trigger's own DeletePermission.
      */
-    @UpdatePermission(expression = "user is a superuser")
-    @OneToMany(mappedBy = "destinationWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @UpdatePermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
+    @OneToMany(mappedBy = "destinationWorkspace", fetch = FetchType.LAZY)
     private List<WorkspaceRunTrigger> runTriggers;
 
     /** Triggers where THIS workspace is the source, i.e. the runs it sets off. */
-    @UpdatePermission(expression = "user is a superuser")
-    @OneToMany(mappedBy = "sourceWorkspace", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @UpdatePermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
+    @OneToMany(mappedBy = "sourceWorkspace", fetch = FetchType.LAZY)
     private List<WorkspaceRunTrigger> sourceRunTriggers;
 
     @OneToMany(mappedBy = "workspace")
