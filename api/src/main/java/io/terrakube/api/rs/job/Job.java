@@ -95,7 +95,7 @@ public class Job extends GenericAuditFields {
     private String templateReference;
 
     @Column(name = "via")
-    private String via = "UI";
+    private String via = JobVia.UI.getValue();
 
     @Column(name = "refresh")
     private boolean refresh = true;

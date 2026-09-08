@@ -44,6 +44,7 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
@@ -1107,7 +1108,7 @@ class RepoWebhookServiceTest {
             pushResult.setValid(true);
             pushResult.setBranch("main");
             pushResult.setCreatedBy("user@test.com");
-            pushResult.setVia("Github");
+            pushResult.setVia(JobVia.GITHUB.getValue());
             pushResult.setCommit("abc123");
             pushResult.setFileChanges(List.of("main.tf"));
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pushResult);
@@ -1147,7 +1148,9 @@ class RepoWebhookServiceTest {
 
             subject.processClaimedDelivery(rw, payload, headers);
 
-            verify(jobRepository, times(2)).save(any(Job.class));
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository, times(2)).save(jobCaptor.capture());
+            assertThat(jobCaptor.getAllValues()).allMatch(job -> JobVia.GITHUB.getValue().equals(job.getVia()));
         }
 
         @Test
@@ -1162,7 +1165,7 @@ class RepoWebhookServiceTest {
             pushResult.setValid(true);
             pushResult.setBranch("main");
             pushResult.setCreatedBy("user@test.com");
-            pushResult.setVia("Github");
+            pushResult.setVia(JobVia.GITHUB.getValue());
             pushResult.setCommit("abc123");
             pushResult.setFileChanges(List.of("main.tf"));
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pushResult);
@@ -1726,7 +1729,7 @@ class RepoWebhookServiceTest {
             pushResult.setBranch("main");
             pushResult.setCommit("abc123");
             pushResult.setCreatedBy("user@test.com");
-            pushResult.setVia("Azure DevOps");
+            pushResult.setVia(JobVia.AZURE_DEVOPS.getValue());
             pushResult.setFileChanges(new java.util.ArrayList<>());
             pushResult.setRawPayload(payload);
             when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(pushResult);

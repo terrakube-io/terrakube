@@ -43,6 +43,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.job.step.Step;
@@ -1205,7 +1206,7 @@ public class RemoteTfeService {
         job.setStatus(JobStatus.pending);
         job.setAutoApply(autoApply);
         job.setComments("terraform-cli");
-        job.setVia("CLI");
+        job.setVia(JobVia.CLI.getValue());
         job.setTemplateReference(template.getId().toString());
         // if the vcs connection is not null, we need to override the value inside the
         // job
