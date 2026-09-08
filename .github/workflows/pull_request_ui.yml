@@ -5,7 +5,7 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'ui/**'
 
@@ -15,6 +15,7 @@ permissions:
 jobs:
   buildui:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || !github.event.pull_request.draft }}
     defaults:
       run:
         working-directory: ./ui
