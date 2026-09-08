@@ -158,17 +158,18 @@ async function listWorkspacePage(
   request: WorkspacePageRequest,
   includeStatusCounts = true
 ): Promise<ApiResponse<WorkspacePageResponse>> {
+  const filter = workspaceFilter(request);
   const baseFilter = workspaceFilter(request, "All");
   const body = {
     query: `query WorkspacePage(
       $organizationIds: [String]
       $first: StringOrInt
       $after: StringOrInt
-      $filter: String
+      ${filter ? "$filter: String" : ""}
       $sort: String
       ${
         includeStatusCounts
-          ? `$allFilter: String
+          ? `${baseFilter ? "$allFilter: String" : ""}
       $waitingApprovalFilter: String
       $failedFilter: String
       $pendingFilter: String
@@ -183,7 +184,7 @@ async function listWorkspacePage(
         edges {
           node {
             name
-            workspace(first: $first, after: $after, filter: $filter, sort: $sort) {
+            workspace(first: $first, after: $after, ${filter ? "filter: $filter," : ""} sort: $sort) {
               edges {
                 node {
                   id
@@ -204,7 +205,7 @@ async function listWorkspacePage(
             }
             ${
               includeStatusCounts
-                ? `all: workspace(first: "1", filter: $allFilter) { pageInfo { totalRecords } }
+                ? `all: workspace(first: "1"${baseFilter ? ", filter: $allFilter" : ""}) { pageInfo { totalRecords } }
             waitingApproval: workspace(first: "1", filter: $waitingApprovalFilter) { pageInfo { totalRecords } }
             failed: workspace(first: "1", filter: $failedFilter) { pageInfo { totalRecords } }
             pending: workspace(first: "1", filter: $pendingFilter) { pageInfo { totalRecords } }
@@ -222,7 +223,7 @@ async function listWorkspacePage(
       organizationIds: [request.organizationId],
       first: String(request.first),
       after: String(request.after),
-      filter: workspaceFilter(request),
+      filter,
       sort: workspaceSortMap[request.sort],
       allFilter: baseFilter,
       waitingApprovalFilter: workspaceFilter(request, "waitingApproval"),

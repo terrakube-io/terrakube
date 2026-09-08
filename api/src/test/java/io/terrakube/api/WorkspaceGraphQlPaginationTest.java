@@ -69,6 +69,25 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
     }
 
     @Test
+    void loadsWorkspacesWithoutOptionalFilters() {
+        String unfilteredQuery = QUERY
+                .replace("$filter: String", "")
+                .replace("$allFilter: String", "")
+                .replace(", filter: $filter", "")
+                .replace(", filter: $allFilter", "");
+        Response response = execute(unfilteredQuery, Map.of(
+                "organizationIds", List.of(ORGANIZATION_ID.toString()),
+                "first", "20",
+                "after", "0",
+                "sort", "name,id",
+                "completedFilter", "lastJobStatus==\"completed\""), token);
+        response.then().statusCode(200);
+        assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
+        assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .contains("native-page-alpha", "native-page-bravo", "native-page-charlie");
+    }
+
+    @Test
     void usesElidePaginationFilteringSortingTotalsAndSecurity() {
         String baseFilter = "(name=ini=\"*NATIVE-PAGE*\",description=ini=\"*NATIVE-PAGE*\")";
         Map<String, Object> variables = Map.of(
@@ -121,11 +140,15 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
     }
 
     private Response execute(Map<String, Object> variables, String bearerToken) {
+        return execute(QUERY, variables, bearerToken);
+    }
+
+    private Response execute(String query, Map<String, Object> variables, String bearerToken) {
         return given()
                 .headers(
                         "Authorization", "Bearer " + bearerToken,
                         "Content-Type", "application/json")
-                .body(Map.of("query", QUERY, "variables", variables))
+                .body(Map.of("query", query, "variables", variables))
                 .when()
                 .post("/graphql/api/v1");
     }

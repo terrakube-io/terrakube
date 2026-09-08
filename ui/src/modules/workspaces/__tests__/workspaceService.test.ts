@@ -76,6 +76,20 @@ describe("workspaceService.listWorkspaces", () => {
 describe("workspaceService.listWorkspacePage", () => {
   beforeEach(() => mockApiPost.mockReset());
 
+  it.each([true, false])("omits absent filter arguments with status counts %s", async (includeStatusCounts) => {
+    mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
+    await workspaceService.listWorkspacePage(
+      { organizationId: "org-1", first: 20, after: 0, sort: "name_asc", status: "All" },
+      includeStatusCounts
+    );
+    const { query, variables } = JSON.parse(JSON.stringify(mockApiPost.mock.calls[0][1]));
+    expect(() => parse(query)).not.toThrow();
+    expect(query).not.toContain("$filter");
+    expect(query).not.toContain("$allFilter");
+    expect(variables.filter).toBeUndefined();
+    expect(variables.allFilter).toBeUndefined();
+  });
+
   it("omits status count queries during polling but keeps the page total", async () => {
     mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
     await workspaceService.listWorkspacePage({ organizationId: "org-1", first: 20, after: 0, sort: "status" }, false);
@@ -159,6 +173,8 @@ describe("workspaceService.listWorkspacePage", () => {
       { dataWrapped: true, contentType: "application/json" }
     );
     expect(result.data?.organizationName).toBe("Acme");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $filter");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $allFilter");
     expect(result.data?.pageInfo).toEqual({ endCursor: "40", hasNextPage: true, totalRecords: 42 });
     expect(result.data?.statusCounts.running).toBe(5);
     expect(result.data?.workspaces[0]).toEqual(
