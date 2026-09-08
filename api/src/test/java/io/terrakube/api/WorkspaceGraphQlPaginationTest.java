@@ -66,6 +66,44 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
     void removeWorkspaces() {
         workspaceRepository.deleteAll(created);
         workspaceRepository.flush();
+        created.clear();
+    }
+
+    @Test
+    void loadsTheFullUiRequest() throws Exception {
+        removeWorkspaces();
+        String body = new String(getClass().getResourceAsStream("/workspace-page-request.json").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        for (String group : List.of("TERRAKUBE_DEVELOPERS", "TERRAKUBE_ADMIN")) {
+            Response response = given().headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/json")
+                    .body(body).post("/graphql/api/v1");
+            assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
+            assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                    .as(response.asPrettyString()).containsExactly("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
+            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isEqualTo(4);
+        }
+    }
+
+    @Test
+    void demoProjectOnlyListsAssignedWorkspaces() {
+        UUID projectId = UUID.fromString("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+        String filter = "project.id==\"" + projectId + "\"";
+        Map<String, Object> variables = Map.of(
+                "organizationIds", List.of(ORGANIZATION_ID.toString()), "first", "20", "after", "0",
+                "sort", "name,id", "filter", filter, "allFilter", filter,
+                "completedFilter", filter + ";lastJobStatus==completed");
+        Response empty = execute(variables, token);
+        assertThat(empty.jsonPath().getList("errors")).as(empty.asPrettyString()).isNull();
+        assertThat(empty.jsonPath().getList("data.organization.edges[0].node.workspace.edges")).isEmpty();
+        assertThat(empty.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isZero();
+
+        Workspace assigned = created.getFirst();
+        assigned.setProject(projectRepository.findById(projectId).orElseThrow());
+        workspaceRepository.saveAndFlush(assigned);
+        Response populated = execute(variables, token);
+        assertThat(populated.jsonPath().getList("errors")).as(populated.asPrettyString()).isNull();
+        assertThat(populated.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .containsExactly(assigned.getName());
     }
 
     @Test

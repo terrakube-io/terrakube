@@ -1,6 +1,8 @@
 import { apiPost } from "@/modules/api/apiWrapper";
 import workspaceService from "../workspaceService";
 import { Kind, parse } from "graphql";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 jest.mock("@/modules/api/apiWrapper", () => ({
   __esModule: true,
@@ -75,6 +77,21 @@ describe("workspaceService.listWorkspaces", () => {
 
 describe("workspaceService.listWorkspacePage", () => {
   beforeEach(() => mockApiPost.mockReset());
+
+  it("matches the full request exercised by the API integration test", async () => {
+    mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
+    await workspaceService.listWorkspacePage({
+      organizationId: "d9b58bd3-f3fc-4056-a026-1163297e80a8",
+      first: 20,
+      after: 0,
+      sort: "name_asc",
+      status: "All",
+    });
+    const fixture = JSON.parse(
+      readFileSync(resolve(__dirname, "../../../../../api/src/test/resources/workspace-page-request.json"), "utf8")
+    );
+    expect(JSON.parse(JSON.stringify(mockApiPost.mock.calls[0][1]))).toEqual(fixture);
+  });
 
   it.each([true, false])("omits absent filter arguments with status counts %s", async (includeStatusCounts) => {
     mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });

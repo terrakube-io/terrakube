@@ -1,0 +1,18 @@
+{
+  "query": "query WorkspacePage(\n      $organizationIds: [String]\n      $first: StringOrInt\n      $after: StringOrInt\n      \n      $sort: String\n      \n      $waitingApprovalFilter: String\n      $failedFilter: String\n      $pendingFilter: String\n      $queueFilter: String\n      $runningFilter: String\n      $completedFilter: String\n      $neverExecutedFilter: String\n    ) {\n      organization(ids: $organizationIds) {\n        edges {\n          node {\n            name\n            workspace(first: $first, after: $after,  sort: $sort) {\n              edges {\n                node {\n                  id\n                  name\n                  description\n                  source\n                  branch\n                  terraformVersion\n                  iacType\n                  lastJobStatus\n                  lastJobDate\n                  locked\n                  workspaceTag { edges { node { tagId } } }\n                  project { edges { node { id name } } }\n                }\n              }\n              pageInfo { endCursor hasNextPage totalRecords }\n            }\n            all: workspace(first: \"1\") { pageInfo { totalRecords } }\n            waitingApproval: workspace(first: \"1\", filter: $waitingApprovalFilter) { pageInfo { totalRecords } }\n            failed: workspace(first: \"1\", filter: $failedFilter) { pageInfo { totalRecords } }\n            pending: workspace(first: \"1\", filter: $pendingFilter) { pageInfo { totalRecords } }\n            queue: workspace(first: \"1\", filter: $queueFilter) { pageInfo { totalRecords } }\n            running: workspace(first: \"1\", filter: $runningFilter) { pageInfo { totalRecords } }\n            completed: workspace(first: \"1\", filter: $completedFilter) { pageInfo { totalRecords } }\n            neverExecuted: workspace(first: \"1\", filter: $neverExecutedFilter) { pageInfo { totalRecords } }\n          }\n        }\n      }\n    }",
+  "variables": {
+    "organizationIds": [
+      "d9b58bd3-f3fc-4056-a026-1163297e80a8"
+    ],
+    "first": "20",
+    "after": "0",
+    "sort": "name,id",
+    "waitingApprovalFilter": "lastJobStatus==\"waitingApproval\"",
+    "failedFilter": "lastJobStatus==\"failed\"",
+    "pendingFilter": "lastJobStatus==\"pending\"",
+    "queueFilter": "lastJobStatus==\"queue\"",
+    "runningFilter": "lastJobStatus==\"running\"",
+    "completedFilter": "lastJobStatus==\"completed\"",
+    "neverExecutedFilter": "(lastJobStatus=isnull=true,lastJobStatus==NeverExecuted)"
+  }
+}
