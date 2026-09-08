@@ -126,8 +126,42 @@ export enum JobVia {
   Github = "Github",
   Gitlab = "Gitlab",
   Bitbucket = "Bitbucket",
+  AzureDevops = "AzureDevops",
   Schedule = "Schedule",
 }
+
+export const formatJobVia = (via?: JobVia | string): string => {
+  if (!via) {
+    return "UI";
+  }
+  switch (via) {
+    case JobVia.Github:
+    case "Github":
+      return "GitHub";
+    case JobVia.Gitlab:
+    case "Gitlab":
+    case "GitLab":
+      return "GitLab";
+    case JobVia.Bitbucket:
+    case "Bitbucket":
+      return "Bitbucket";
+    case JobVia.AzureDevops:
+    case "AzureDevops":
+    case "Azure DevOps":
+      return "Azure DevOps";
+    case JobVia.Cli:
+    case "CLI":
+      return "CLI";
+    case JobVia.Schedule:
+    case "Schedule":
+      return "Schedule";
+    case JobVia.Ui:
+    case "UI":
+      return "UI";
+    default:
+      return via;
+  }
+};
 
 export type JobAttributes = {
   status: JobStatus;

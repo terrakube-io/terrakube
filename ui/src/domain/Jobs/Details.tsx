@@ -22,7 +22,7 @@ import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
-import { IncludedItem, Job, JobStep, Workspace } from "../types";
+import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
 import {
   ContextAvailability,
   parseContextAvailability,
@@ -683,7 +683,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             : null}
           <div>
             <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
-            <h2 style={{ display: "inline" }}>Triggered via UI</h2>
+            <h2 style={{ display: "inline" }}>Triggered via {formatJobVia(job.data.attributes.via)}</h2>
           </div>
 
           <Collapse
@@ -693,7 +693,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                 label: (
                   <span>
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
-                    <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
+                    <b>{job.data.attributes.createdBy}</b> triggered a run from {formatJobVia(job.data.attributes.via)}{" "}
                     {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
                   </span>
                 ),

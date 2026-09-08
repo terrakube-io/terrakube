@@ -29,6 +29,7 @@ import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WebhookRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.Webhook;
@@ -282,5 +283,37 @@ public class WebhookServiceTest {
 
         verify(jobRepository, never()).save(any());
         verify(scheduleJobService, never()).createJobContext(any());
+    }
+
+    @Test
+    public void planCommentSetsViaOntoJob() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        WebhookResult result = createCommentResult("plan", 5);
+        result.setVia(JobVia.GITHUB.getValue());
+
+        org.mockito.ArgumentCaptor<Job> captor = org.mockito.ArgumentCaptor.forClass(Job.class);
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(captor.capture());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertEquals(JobVia.GITHUB.getValue(), captor.getAllValues().get(0).getVia());
+    }
+
+    @Test
+    public void jobCreationFallsBackToUiWhenViaIsNull() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        WebhookResult result = createCommentResult("plan", 5);
+        result.setVia(null);
+
+        org.mockito.ArgumentCaptor<Job> captor = org.mockito.ArgumentCaptor.forClass(Job.class);
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(captor.capture());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertEquals(JobVia.UI.getValue(), captor.getAllValues().get(0).getVia());
     }
 }

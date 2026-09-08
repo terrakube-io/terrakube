@@ -1,4 +1,4 @@
-import { buildResourceOptions, getResourceAddress, parseState, parseOldState } from "../workspaceDataUtils";
+import { buildResourceOptions, getResourceAddress, parseState, parseOldState, setupWorkspaceIncludes } from "../workspaceDataUtils";
 import { Resource } from "../../types";
 
 const baseResource: Resource = {
@@ -141,6 +141,87 @@ describe("parseState", () => {
       type: "terraform_data",
       index: "name.surname",
     });
+  });
+});
+
+describe("setupWorkspaceIncludes job and history titles", () => {
+  const createPayload = (jobVia?: string, historyVia?: string) => ({
+    data: {
+      attributes: {
+        iacType: "terraform",
+      },
+    },
+    included: [
+      {
+        id: "job-1",
+        type: "job",
+        attributes: {
+          via: jobVia,
+          commitId: "abcdef123456",
+          createdDate: "2026-09-08T12:00:00Z",
+          updatedDate: "2026-09-08T12:05:00Z",
+        },
+      },
+      {
+        id: "hist-1",
+        type: "history",
+        attributes: {
+          via: historyVia,
+          createdDate: "2026-09-08T11:00:00Z",
+        },
+      },
+    ],
+  });
+
+  const runSetup = async (payload: any) => {
+    let capturedJobs: any[] = [];
+    let capturedHistory: any[] = [];
+    await setupWorkspaceIncludes(
+      payload,
+      () => {},
+      (jobs) => {
+        capturedJobs = jobs;
+      },
+      () => {},
+      (history) => {
+        capturedHistory = history;
+      },
+      () => {},
+      [],
+      () => {},
+      () => {},
+      () => {},
+      "",
+      { get: () => Promise.resolve({ data: {} }) },
+      () => {},
+      () => {},
+      () => {},
+      false,
+      () => {},
+      () => {},
+      () => {},
+      () => {},
+      () => {}
+    );
+    return { jobs: capturedJobs, history: capturedHistory };
+  };
+
+  it("generates dynamic Triggered via <Source> titles for non-UI webhook runs", async () => {
+    const { jobs, history } = await runSetup(createPayload("Github", "Gitlab"));
+    expect(jobs[0].title).toBe("Triggered via GitHub");
+    expect(history[0].title).toBe("Triggered via GitLab");
+  });
+
+  it("formats Azure DevOps and CLI titles properly", async () => {
+    const { jobs, history } = await runSetup(createPayload("AzureDevops", "CLI"));
+    expect(jobs[0].title).toBe("Triggered via Azure DevOps");
+    expect(history[0].title).toBe("Triggered via CLI");
+  });
+
+  it("keeps 'Queue manually using Terraform' for UI runs or undefined via", async () => {
+    const { jobs, history } = await runSetup(createPayload("UI", undefined));
+    expect(jobs[0].title).toBe("Queue manually using Terraform");
+    expect(history[0].title).toBe("Queue manually using Terraform");
   });
 });
 
