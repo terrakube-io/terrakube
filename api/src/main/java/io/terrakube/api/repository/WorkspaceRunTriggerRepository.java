@@ -14,11 +14,15 @@ public interface WorkspaceRunTriggerRepository extends JpaRepository<WorkspaceRu
     /**
      * Enabled triggers fired by a source workspace. Workspaces are soft-deleted, so the
      * database FK cascade never fires and rows survive their endpoints; the explicit
-     * deleted = false guard is what keeps a removed destination out of the dispatch path. This runs on the dispatch path after
-     * every completed apply, so it is backed by the (source_workspace_id, enabled) index and
-     * fetches the destination eagerly to avoid a query per edge.
+     * deleted = false guard is what keeps a removed destination out of the dispatch path.
+     *
+     * This runs after every completed apply, so it is backed by the
+     * (source_workspace_id, enabled) index and fetches the destination eagerly to avoid a
+     * query per edge. The destination's organization comes along for a stronger reason than
+     * cost: dispatch happens on a Quartz worker thread with no open session, where reaching
+     * it lazily would throw LazyInitializationException.
      */
-    @EntityGraph(attributePaths = {"destinationWorkspace", "template"})
+    @EntityGraph(attributePaths = {"destinationWorkspace", "destinationWorkspace.organization", "template"})
     @Query("SELECT t FROM workspace_run_trigger t WHERE t.sourceWorkspace.id = :sourceId AND t.enabled = true AND t.destinationWorkspace.deleted = false")
     List<WorkspaceRunTrigger> findEnabledBySourceWorkspaceId(@Param("sourceId") UUID sourceId);
 
