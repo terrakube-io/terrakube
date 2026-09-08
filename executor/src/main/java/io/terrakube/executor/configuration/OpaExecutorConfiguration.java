@@ -10,8 +10,8 @@ public class OpaExecutorConfiguration {
 
     @Bean(name = "opaEvaluationExecutor")
     public ThreadPoolTaskExecutor opaEvaluationExecutor(
-            @Value("${io.terrakube.executor.opa.concurrency.core:4}") int corePoolSize,
-            @Value("${io.terrakube.executor.opa.concurrency.max:8}") int maxPoolSize) {
+            @Value("${io.terrakube.executor.opa.concurrency.core:8}") int corePoolSize,
+            @Value("${io.terrakube.executor.opa.concurrency.max:16}") int maxPoolSize) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
         executor.setMaxPoolSize(maxPoolSize);

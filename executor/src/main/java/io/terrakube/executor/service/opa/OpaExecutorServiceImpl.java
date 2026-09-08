@@ -11,7 +11,6 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
 import io.terrakube.executor.service.opa.model.PolicyViolation;
 import io.terrakube.executor.service.opa.model.ViolationStatus;
-import io.terrakube.executor.service.scripts.bash.ProcessLauncher;
 import io.terrakube.executor.service.terraform.JobContextService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -25,8 +24,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,6 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -235,17 +238,48 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         TextStringBuilder rawJsonOutput = new TextStringBuilder();
         TextStringBuilder stderrOutput = new TextStringBuilder();
 
-        ProcessLauncher launcher = new ProcessLauncher(
-                opaEvaluationExecutor.getThreadPoolExecutor(),
-                commandList.toArray(new String[0])
-        );
-        launcher.setDirectory(workingDirectory);
-        launcher.setOutputListener(rawJsonOutput::appendln);
-        launcher.setErrorListener(stderrOutput::appendln);
-
         int exitCode;
         try {
-            exitCode = launcher.launch().get();
+            ProcessBuilder processBuilder = new ProcessBuilder(commandList);
+            if (workingDirectory != null) {
+                processBuilder.directory(workingDirectory);
+            }
+            Process process = processBuilder.start();
+
+            Thread stdoutThread = Thread.ofVirtual()
+                    .name("opa-stdout-" + policyContext.getPolicyId())
+                    .start(() -> {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                rawJsonOutput.appendln(line);
+                            }
+                        } catch (IOException e) {
+                            log.debug("Error reading OPA stdout for {}: {}", policyName, e.getMessage());
+                        }
+                    });
+
+            Thread stderrThread = Thread.ofVirtual()
+                    .name("opa-stderr-" + policyContext.getPolicyId())
+                    .start(() -> {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                stderrOutput.appendln(line);
+                            }
+                        } catch (IOException e) {
+                            log.debug("Error reading OPA stderr for {}: {}", policyName, e.getMessage());
+                        }
+                    });
+
+            boolean completed = process.waitFor(120, TimeUnit.SECONDS);
+            if (!completed) {
+                process.destroyForcibly();
+                throw new TimeoutException("OPA evaluation timed out after 120 seconds");
+            }
+            stdoutThread.join(TimeUnit.SECONDS.toMillis(5));
+            stderrThread.join(TimeUnit.SECONDS.toMillis(5));
+            exitCode = process.exitValue();
         } catch (Exception e) {
             log.error("Failed to execute opa process: {}", e.getMessage(), e);
             OpaEvaluationResult errorResult = OpaEvaluationResult.builder()
@@ -257,6 +291,11 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                     .build();
             errorResult.getBufferedLogs().add("\u001B[31m[ERROR] Failed to run OPA binary: " + e.getMessage() + "\u001B[0m");
             return errorResult;
+        }
+
+        if (exitCode != 0 && stderrOutput.length() > 0) {
+            log.warn("OPA evaluation stderr for {}: {}", policyName, stderrOutput);
+            logConsumer.accept(String.format("  \u001B[31m[ERROR]\u001B[0m %s", stderrOutput.toString().trim()));
         }
 
         OpaEvaluationResult result = parseOpaJsonOutput(policyContext, rawJsonOutput.toString(), exitCode, logConsumer);
