@@ -295,6 +295,49 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
+    public void defaultsOptionalJobControlsToKubernetesOwnDefaults() throws ExecutionException {
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        assertNull(job.getValue().getSpec().getActiveDeadlineSeconds());
+        assertNull(job.getValue().getSpec().getBackoffLimit());
+        assertEquals(30, job.getValue().getSpec().getTtlSecondsAfterFinished());
+        // Unlike the other three, this one does NOT inherit Kubernetes' own default (30s):
+        // it defaults to 60 in EphemeralConfiguration itself.
+        assertEquals(60L, job.getValue().getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds());
+    }
+
+    @Test
+    public void appliesJobControlsWhenConfigured() throws ExecutionException {
+        config.setActiveDeadlineSeconds(3600L);
+        config.setBackoffLimit(2);
+        config.setTtlSecondsAfterFinished(60);
+        config.setTerminationGracePeriodSeconds(90L);
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        assertEquals(3600L, job.getValue().getSpec().getActiveDeadlineSeconds());
+        assertEquals(2, job.getValue().getSpec().getBackoffLimit());
+        assertEquals(60, job.getValue().getSpec().getTtlSecondsAfterFinished());
+        assertEquals(90L, job.getValue().getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds());
+    }
+
+    @Test
+    public void appliesOnlyTheJobControlThatIsConfigured() throws ExecutionException {
+        // terminationGracePeriodSeconds lives on the pod template spec, the other three on the job
+        // spec, so this also guards against a value being written to the wrong node.
+        config.setTerminationGracePeriodSeconds(90L);
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        assertEquals(90L, job.getValue().getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds());
+        assertNull(job.getValue().getSpec().getActiveDeadlineSeconds());
+        assertNull(job.getValue().getSpec().getBackoffLimit());
+    }
+
+    @Test
     public void setResources() throws ExecutionException {
         ExecutorContext context = context();
         context.getEnvironmentVariables().put("EPHEMERAL_CPU_REQUEST", "100m");
