@@ -505,6 +505,7 @@ export type Workspace = {
     agent?: RelationshipItem;
     project?: RelationshipItem;
     history?: RelationshipArray;
+    vcs?: RelationshipItem;
   };
 };
 export type WorkspaceAttributes = {
