@@ -9,18 +9,14 @@ import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
-import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
@@ -34,9 +30,16 @@ import java.util.Set;
  * short-circuits, so only the caller that actually moved the job reaches this service, even
  * with several API replicas racing on the same job.
  *
- * <p>Runs in its own transaction after the commit rather than inside it. A trigger that
- * cannot be dispatched must never roll back the completion of the run that fired it, and the
- * Quartz context created for each downstream job is not transactional to begin with.
+ * <p>Deliberately not transactional. Each dependent is committed on its own by
+ * {@link RunTriggerJobWriter}, and the Quartz trigger for it is created only afterwards: while
+ * an insert is still open its row is invisible to the Quartz worker, which reads on another
+ * connection and treats a job it cannot find as deleted. Holding one transaction across the
+ * fan-out would also let a single failed insert roll back every job created beside it, since
+ * catching the exception does not clear the rollback-only mark.
+ *
+ * <p>The reads it does need no outer transaction: the completed job materialises its workspace
+ * and organization eagerly, and the dispatch query fetches destination, organization and
+ * template through its entity graph.
  */
 @Slf4j
 @Service
@@ -57,6 +60,7 @@ public class RunTriggerDispatchService {
     private final StepRepository stepRepository;
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
     private final TclService tclService;
+    private final RunTriggerJobWriter jobWriter;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
     private final RunTriggerProperties properties;
@@ -71,7 +75,6 @@ public class RunTriggerDispatchService {
      * is an operational event to be logged, not a reason to surface an error on a run that
      * succeeded.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void dispatchFor(int completedJobId) {
         try {
             dispatchInternal(completedJobId);
@@ -167,6 +170,8 @@ public class RunTriggerDispatchService {
     private void enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
         Workspace destination = trigger.getDestinationWorkspace();
 
+        // Resolved here rather than in the writer: it reads fields already loaded by the
+        // dispatch query, so it costs nothing and keeps the writer to a single concern.
         String templateReference = resolveTemplate(trigger, destination);
         if (templateReference == null || templateReference.isBlank()) {
             log.warn("Run trigger {} has no template and workspace {} has no default template, skipping",
@@ -174,28 +179,12 @@ public class RunTriggerDispatchService {
             return;
         }
 
-        Date now = new Date(System.currentTimeMillis());
-        Job job = new Job();
-        job.setWorkspace(destination);
-        job.setOrganization(destination.getOrganization());
-        job.setTemplateReference(templateReference);
-        job.setStatus(JobStatus.pending);
-        job.setRefresh(true);
-        job.setPlanChanges(true);
-        job.setRefreshOnly(false);
-        job.setVia(JobVia.RUN_TRIGGER.getValue());
-        job.setTriggeredByJobId(completedJob.getId());
-        job.setCascadeDepth(depth);
-        job.setCreatedBy("serviceAccount");
-        job.setUpdatedBy("serviceAccount");
-        job.setCreatedDate(now);
-        job.setUpdatedDate(now);
+        Job savedJob = jobWriter.persist(destination, templateReference, completedJob, depth);
 
-        Job savedJob = jobRepository.save(job);
-
-        // A plain repository save bypasses Elide, so neither JobNotificationHook nor
-        // JobManageHook fires for this job: the status event and the Quartz context both have
-        // to be raised here, exactly as ScheduleJobTrigger does for scheduled runs.
+        // Only now that the row is committed and visible to other connections. A plain
+        // repository save also bypasses Elide, so neither JobNotificationHook nor JobManageHook
+        // fires for this job and both side effects have to be raised by hand, exactly as
+        // ScheduleJobTrigger does for scheduled runs.
         jobNotificationTrigger.notifyStatusChanged(savedJob);
         scheduleJobService.createJobContext(savedJob);
 
