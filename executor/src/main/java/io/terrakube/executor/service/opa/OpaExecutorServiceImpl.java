@@ -119,6 +119,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                             .enforcementLevel(policyContext.getEnforcementLevel())
                             .shadowEnforcementLevel(policyContext.getShadowEnforcementLevel())
                             .status(STATUS_FAILED)
+                            .hardMandatoryViolations(1)
                             .exitCode(1)
                             .build();
                     errorResult.getBufferedLogs().add(String.format(
@@ -220,11 +221,17 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
 
         File opaBinary = opaBinaryService.getOpaBinary(policyContext.getOpaVersion());
 
+        File libDir = resolveLibDirectory(workingDirectory, policyBundleDir, policyContext);
+
         List<String> commandList = new ArrayList<>();
         commandList.add(opaBinary.getAbsolutePath());
         commandList.add("eval");
         commandList.add("--data");
         commandList.add(policyBundleDir.getAbsolutePath());
+        if (libDir != null && libDir.exists() && !libDir.equals(policyBundleDir)) {
+            commandList.add("--data");
+            commandList.add(libDir.getAbsolutePath());
+        }
         if (policyInputsFile != null && policyInputsFile.exists()) {
             commandList.add("--data");
             commandList.add(policyInputsFile.getAbsolutePath());
@@ -375,6 +382,39 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         return new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "");
     }
 
+    File resolveLibDirectory(File workingDirectory, File policyBundleDir, PolicyContext policyContext) {
+        if (policyContext != null && policyContext.getRepository() != null && !policyContext.getRepository().isBlank() && workingDirectory != null) {
+            File policyCloneFolder = new File(workingDirectory, ".terrakube-policies/" + policyContext.getPolicyId());
+            File repoLib = new File(policyCloneFolder, "lib");
+            if (repoLib.exists() && repoLib.isDirectory()) {
+                return repoLib;
+            }
+        }
+
+        if (policyBundleDir != null) {
+            File current = policyBundleDir.getParentFile();
+            while (current != null) {
+                File candidate = new File(current, "lib");
+                if (candidate.exists() && candidate.isDirectory() && !candidate.equals(policyBundleDir)) {
+                    return candidate;
+                }
+                if (workingDirectory != null && current.equals(workingDirectory)) {
+                    break;
+                }
+                current = current.getParentFile();
+            }
+        }
+
+        if (workingDirectory != null) {
+            File workLib = new File(workingDirectory, "lib");
+            if (workLib.exists() && workLib.isDirectory() && !workLib.equals(policyBundleDir)) {
+                return workLib;
+            }
+        }
+
+        return null;
+    }
+
     private CredentialsProvider resolveCredentialsProvider(PolicyContext policyContext) {
         String token = policyContext.getAccessToken();
         if (token == null || token.isBlank()) {
@@ -431,12 +471,58 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                 .build();
 
         if (rawJson == null || rawJson.isBlank()) {
+            if (exitCode != 0) {
+                logConsumer.accept(String.format("  \u001B[31m[ERROR]\u001B[0m OPA process exited with code %d and no output.", exitCode));
+                result.setStatus(STATUS_FAILED);
+                result.setExitCode(exitCode);
+                result.getViolations().add(PolicyViolation.builder()
+                        .ruleId("opa_process_error")
+                        .address(policyContext.getPolicyName() != null ? policyContext.getPolicyName() : policyContext.getPolicyId())
+                        .message("OPA process exited with code " + exitCode)
+                        .status(ViolationStatus.FAILED)
+                        .build());
+                return result;
+            }
             logConsumer.accept("  \u001B[33mNo output returned from OPA evaluation.\u001B[0m");
             return result;
         }
 
         try {
             JsonNode rootNode = objectMapper.readTree(rawJson);
+
+            // Check for OPA compilation/evaluation errors in output
+            if (rootNode.has("errors") && rootNode.get("errors").isArray() && !rootNode.get("errors").isEmpty()) {
+                for (JsonNode err : rootNode.get("errors")) {
+                    String msg = err.path("message").asText();
+                    String file = err.path("location").path("file").asText("");
+                    int row = err.path("location").path("row").asInt(0);
+                    String location = (!file.isEmpty() && row > 0) ? String.format(" (%s:%d)", file, row) : "";
+                    logConsumer.accept(String.format("  \u001B[31m[ERROR]\u001B[0m OPA error: %s%s", msg, location));
+                }
+                result.setStatus(STATUS_FAILED);
+                result.setExitCode(exitCode != 0 ? exitCode : 1);
+                result.getViolations().add(PolicyViolation.builder()
+                        .ruleId("opa_compilation_error")
+                        .address(policyContext.getPolicyName() != null ? policyContext.getPolicyName() : policyContext.getPolicyId())
+                        .message("OPA evaluation failed with compilation/evaluation errors")
+                        .status(ViolationStatus.FAILED)
+                        .build());
+                return result;
+            }
+
+            if (exitCode != 0) {
+                logConsumer.accept(String.format("  \u001B[31m[ERROR]\u001B[0m OPA process exited with code %d", exitCode));
+                result.setStatus(STATUS_FAILED);
+                result.setExitCode(exitCode);
+                result.getViolations().add(PolicyViolation.builder()
+                        .ruleId("opa_process_error")
+                        .address(policyContext.getPolicyName() != null ? policyContext.getPolicyName() : policyContext.getPolicyId())
+                        .message("OPA process exited with code " + exitCode)
+                        .status(ViolationStatus.FAILED)
+                        .build());
+                return result;
+            }
+
             JsonNode resultNode = rootNode.path("result");
 
             if (resultNode.isMissingNode() || resultNode.isNull() || (resultNode.isArray() && resultNode.isEmpty())) {
@@ -502,7 +588,17 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
 
         } catch (Exception e) {
             log.warn("Failed to parse OPA JSON output: {}", e.getMessage());
-            logConsumer.accept("  \u001B[33m[WARN] Output could not be parsed as structured OPA result: " + e.getMessage() + "\u001B[0m");
+            logConsumer.accept("  \u001B[31m[ERROR]\u001B[0m Output could not be parsed as structured OPA result: " + e.getMessage());
+            if (exitCode != 0) {
+                result.setStatus(STATUS_FAILED);
+                result.setExitCode(exitCode);
+                result.getViolations().add(PolicyViolation.builder()
+                        .ruleId("opa_parse_error")
+                        .address(policyContext.getPolicyName() != null ? policyContext.getPolicyName() : policyContext.getPolicyId())
+                        .message("Failed to parse OPA output: " + e.getMessage())
+                        .status(ViolationStatus.FAILED)
+                        .build());
+            }
         }
 
         return result;
@@ -582,11 +678,18 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         }
     }
 
-    private void finalizeResultStatus(
+    void finalizeResultStatus(
             OpaEvaluationResult result,
             String enforcementLevel,
             String shadowEnforcementLevel,
             Consumer<String> logConsumer) {
+
+        if (STATUS_FAILED.equals(result.getStatus())) {
+            int hardCount = Math.max(1, result.getViolations().size());
+            result.setHardMandatoryViolations(hardCount);
+            result.setExitCode(1);
+            return;
+        }
 
         int hardCount = 0;
         int softCount = 0;

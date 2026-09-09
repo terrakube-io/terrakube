@@ -13,11 +13,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -239,4 +242,95 @@ class OpaExecutorServiceTest {
         assertEquals(1, result.getViolations().size());
         assertTrue(result.getExemptedViolations().isEmpty());
     }
+
+    @Test
+    void testParseOpaJsonOutput_WithCompilationErrorsFails() {
+        PolicyContext policyContext = PolicyContext.builder()
+                .policyId("pol-aws")
+                .policyName("aws-security-baseline")
+                .enforcementLevel("HARD_MANDATORY")
+                .build();
+
+        String rawJson = "{\n" +
+                "  \"errors\": [\n" +
+                "    {\n" +
+                "      \"message\": \"undefined function data.lib.tfplan.resources_by_type\",\n" +
+                "      \"code\": \"rego_type_error\",\n" +
+                "      \"location\": {\n" +
+                "        \"file\": \"bundles/aws/baseline/rules.rego\",\n" +
+                "        \"row\": 8,\n" +
+                "        \"col\": 14\n" +
+                "      }\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+
+        List<String> logs = new ArrayList<>();
+        OpaEvaluationResult result = opaExecutorService.parseOpaJsonOutput(policyContext, rawJson, 2, logs::add);
+
+        assertEquals("FAILED", result.getStatus());
+        assertEquals(2, result.getExitCode());
+        assertFalse(result.getViolations().isEmpty());
+        assertTrue(logs.stream().anyMatch(l -> l.contains("undefined function data.lib.tfplan.resources_by_type")));
+
+        // Finalize status should retain FAILED and set hard violations >= 1
+        opaExecutorService.finalizeResultStatus(result, "HARD_MANDATORY", null, logs::add);
+        assertEquals("FAILED", result.getStatus());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getHardMandatoryViolations() >= 1);
+    }
+
+    @Test
+    void testParseOpaJsonOutput_WithNonZeroExitCodeAndEmptyOutput() {
+        PolicyContext policyContext = PolicyContext.builder()
+                .policyId("pol-aws")
+                .policyName("aws-security-baseline")
+                .enforcementLevel("HARD_MANDATORY")
+                .build();
+
+        List<String> logs = new ArrayList<>();
+        OpaEvaluationResult result = opaExecutorService.parseOpaJsonOutput(policyContext, "", 1, logs::add);
+
+        assertEquals("FAILED", result.getStatus());
+        assertEquals(1, result.getExitCode());
+        assertFalse(result.getViolations().isEmpty());
+
+        opaExecutorService.finalizeResultStatus(result, "HARD_MANDATORY", null, logs::add);
+        assertEquals("FAILED", result.getStatus());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getHardMandatoryViolations() >= 1);
+    }
+
+    @Test
+    void testResolveLibDirectory_ClonedRepoAndParentHierarchy(@TempDir Path tempDir) {
+        File workDir = tempDir.toFile();
+
+        // 1. Cloned repo with lib directory
+        PolicyContext policyContext = PolicyContext.builder()
+                .policyId("pol-repo-test")
+                .repository("https://github.com/example/policies")
+                .folder("bundles/aws/baseline")
+                .build();
+
+        File cloneFolder = new File(workDir, ".terrakube-policies/pol-repo-test");
+        File libFolder = new File(cloneFolder, "lib");
+        assertTrue(libFolder.mkdirs());
+
+        File bundleDir = new File(cloneFolder, "bundles/aws/baseline");
+        assertTrue(bundleDir.mkdirs());
+
+        File resolvedLib = opaExecutorService.resolveLibDirectory(workDir, bundleDir, policyContext);
+        assertNotNull(resolvedLib);
+        assertEquals(libFolder.getAbsolutePath(), resolvedLib.getAbsolutePath());
+
+        // 2. Parent hierarchy without cloned repo structure
+        PolicyContext localContext = PolicyContext.builder()
+                .policyId("pol-local")
+                .build();
+
+        File localResolved = opaExecutorService.resolveLibDirectory(workDir, bundleDir, localContext);
+        assertNotNull(localResolved);
+        assertEquals(libFolder.getAbsolutePath(), localResolved.getAbsolutePath());
+    }
 }
+
