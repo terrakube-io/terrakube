@@ -395,6 +395,7 @@ public class ScheduleJob implements org.quartz.Job {
                 case terraformApply:
                 case terraformDestroy:
                 case customScripts:
+                case policyEvaluation:
                     if (!isNextInDispatchOrder(job, stepId)) {
                         return false;
                     }

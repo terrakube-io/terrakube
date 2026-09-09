@@ -262,9 +262,37 @@ public class ScheduleJobTest {
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
         verify(redisTemplate, times(1)).delete(anyString());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
-        // Regression check: the scheduler updates job.status via a plain jobRepository.save(),
-        // never through Elide, so JobNotificationHook (an Elide LifeCycleHook) never sees this
-        // transition - notifyStatusChanged() must be called explicitly at every such call site.
+        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
+    }
+
+    @Test
+    public void pendingJobWithPolicyEvaluation() throws Exception {
+        Job job = job(JobStatus.pending);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.policyEvaluation.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        verify(jobRepository, times(1)).save(job);
+        verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
+        verify(redisTemplate, times(1)).delete(anyString());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
         verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
 

@@ -169,7 +169,8 @@ public class ExecutorService {
         // CLI/API workspace is created with) and would NPE later inside the executor when
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
-        if ("remote-content".equals(executorContext.getBranch())
+        if (!FlowType.policyEvaluation.name().equals(flow.getType())
+                && "remote-content".equals(executorContext.getBranch())
                 && (executorContext.getSource() == null || executorContext.getSource().isBlank()
                         || "empty".equals(executorContext.getSource()))) {
             throw new ExecutionException(
@@ -310,7 +311,7 @@ public class ExecutorService {
         if (workspace.getVcs() != null || workspace.getSsh() != null) {
             return;
         }
-        if (resolvedSource == null || resolvedSource.isBlank()) {
+        if (resolvedSource == null || resolvedSource.isBlank() || "empty".equals(resolvedSource)) {
             return;
         }
         log.info("Persisting resolved configuration source onto job {} for remote-content workspace",

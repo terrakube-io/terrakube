@@ -63,7 +63,7 @@ public class PolicyEvaluationRetentionScheduler {
                 .forJob(jobDetail)
                 .withIdentity(PREFIX_POLICY_EVALUATION_RETENTION)
                 .withDescription("PolicyEvaluationRetentionV1")
-                .withSchedule(CronScheduleBuilder.cronSchedule(new CronExpression(quartzSchedule)))
+                .withSchedule(CronScheduleBuilder.cronSchedule(new CronExpression(quartzSchedule)).withMisfireHandlingInstructionDoNothing())
                 .build();
 
         log.info("Created schedule job trigger for policy evaluation retention {}", jobDetail.getKey());

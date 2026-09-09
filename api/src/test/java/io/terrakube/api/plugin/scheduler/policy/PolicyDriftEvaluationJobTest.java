@@ -19,8 +19,10 @@ import org.quartz.JobExecutionException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -73,6 +75,12 @@ class PolicyDriftEvaluationJobTest {
         wsNeverExecuted.setOrganization(org);
         wsNeverExecuted.setLastJobStatus(JobStatus.NeverExecuted); // Skip
 
+        Job completedJob = new Job();
+        completedJob.setId(500);
+        completedJob.setTerraformPlan("http://storage/tfstate/sample/plan");
+        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsWithPolicies, List.of(JobStatus.completed)))
+                .thenReturn(Optional.of(completedJob));
+
         when(workspaceRepository.findAll()).thenReturn(List.of(wsWithPolicies, wsNeverExecuted));
 
         PolicyContext pc = PolicyContext.builder().policyId(UUID.randomUUID().toString()).build();
@@ -90,10 +98,37 @@ class PolicyDriftEvaluationJobTest {
         Job dispatched = jobCaptor.getValue();
         assertNotNull(dispatched);
         assertNotNull(dispatched.getTcl());
+        assertTrue(dispatched.isPlanChanges());
+        assertEquals("http://storage/tfstate/sample/plan", dispatched.getTerraformPlan());
 
         String decodedTcl = new String(Base64.getDecoder().decode(dispatched.getTcl()), StandardCharsets.UTF_8);
         assertTrue(decodedTcl.contains("type: policyEvaluation"));
-        verify(scheduleJobService).createJobContextNow(savedJob);
+        verify(scheduleJobService).createJobContext(savedJob);
+    }
+
+    @Test
+    void testExecuteSkipsWorkspacesWithoutCompletedPlan() throws JobExecutionException {
+        JobExecutionContext context = Mockito.mock(JobExecutionContext.class);
+
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+
+        Workspace wsNoPlan = new Workspace();
+        wsNoPlan.setId(UUID.randomUUID());
+        wsNoPlan.setName("ws-no-plan");
+        wsNoPlan.setOrganization(org);
+        wsNoPlan.setLastJobStatus(JobStatus.completed);
+        wsNoPlan.setLocked(false);
+        wsNoPlan.setDeleted(false);
+
+        when(workspaceRepository.findAll()).thenReturn(List.of(wsNoPlan));
+        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsNoPlan, List.of(JobStatus.completed)))
+                .thenReturn(Optional.empty());
+
+        driftJob.execute(context);
+
+        verify(policyResolutionService, never()).resolvePoliciesForJob(any(Job.class));
+        verify(jobRepository, never()).save(any(Job.class));
     }
 
     @Test
@@ -109,6 +144,11 @@ class PolicyDriftEvaluationJobTest {
         wsNoPolicies.setLastJobStatus(JobStatus.completed);
         wsNoPolicies.setLocked(false);
         wsNoPolicies.setDeleted(false);
+
+        Job completedJob = new Job();
+        completedJob.setTerraformPlan("http://storage/plan");
+        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsNoPolicies, List.of(JobStatus.completed)))
+                .thenReturn(Optional.of(completedJob));
 
         when(workspaceRepository.findAll()).thenReturn(List.of(wsNoPolicies));
         when(policyResolutionService.resolvePoliciesForJob(any(Job.class))).thenReturn(List.of()); // No policies

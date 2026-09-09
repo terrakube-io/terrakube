@@ -63,7 +63,7 @@ public class PolicyDriftEvaluationScheduler {
                 .forJob(jobDetail)
                 .withIdentity(PREFIX_POLICY_DRIFT_EVALUATION)
                 .withDescription("PolicyDriftEvaluationV1")
-                .withSchedule(CronScheduleBuilder.cronSchedule(new CronExpression(quartzSchedule)))
+                .withSchedule(CronScheduleBuilder.cronSchedule(new CronExpression(quartzSchedule)).withMisfireHandlingInstructionDoNothing())
                 .build();
 
         log.info("Created schedule job trigger for policy drift evaluation {}", jobDetail.getKey());

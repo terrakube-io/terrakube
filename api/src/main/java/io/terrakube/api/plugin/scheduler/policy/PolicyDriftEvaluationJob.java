@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -60,6 +61,14 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
                     continue;
                 }
 
+                Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
+                        workspace, List.of(JobStatus.completed)
+                );
+                if (lastCompletedJob.isEmpty() || lastCompletedJob.get().getTerraformPlan() == null || lastCompletedJob.get().getTerraformPlan().isBlank()) {
+                    log.info("Skipping drift evaluation for workspace {} as it has no completed run with a terraform plan", workspace.getName());
+                    continue;
+                }
+
                 // Check if any policy applies to this workspace
                 Job mockJob = new Job();
                 mockJob.setWorkspace(workspace);
@@ -70,7 +79,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
                     continue;
                 }
 
-                dispatchDriftEvaluationJob(workspace);
+                dispatchDriftEvaluationJob(workspace, lastCompletedJob.get().getTerraformPlan());
                 dispatchedJobs++;
             }
 
@@ -83,6 +92,15 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
 
     @Transactional
     public void dispatchDriftEvaluationJob(Workspace workspace) {
+        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
+                workspace, List.of(JobStatus.completed)
+        );
+        String planUrl = lastCompletedJob.map(Job::getTerraformPlan).orElse(null);
+        dispatchDriftEvaluationJob(workspace, planUrl);
+    }
+
+    @Transactional
+    public void dispatchDriftEvaluationJob(Workspace workspace, String terraformPlan) {
         try {
             Job job = new Job();
             String encodedTcl = Base64.getEncoder().encodeToString(POLICY_EVAL_TCL.getBytes(StandardCharsets.UTF_8));
@@ -90,6 +108,8 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
             job.setWorkspace(workspace);
             job.setOrganization(workspace.getOrganization());
             job.setStatus(JobStatus.pending);
+            job.setPlanChanges(true);
+            job.setTerraformPlan(terraformPlan);
             job.setCreatedBy("serviceAccount");
             job.setUpdatedBy("serviceAccount");
             job.setVia(JobVia.SCHEDULE.getValue());
@@ -100,7 +120,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
             job = jobRepository.save(job);
             log.info("Dispatched policyEvaluation job {} for Workspace {}", job.getId(), workspace.getName());
 
-            scheduleJobService.createJobContextNow(job);
+            scheduleJobService.createJobContext(job);
         } catch (Exception e) {
             log.error("Failed to dispatch drift evaluation job for Workspace {}: {}", workspace.getName(), e.getMessage());
         }
