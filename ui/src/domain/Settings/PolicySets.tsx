@@ -1,24 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Avatar,
   Button,
   Card,
+  Empty,
   List,
-  Modal,
-  Space,
-  Tag,
   Typography,
   message,
   theme,
 } from "antd";
 import {
-  BranchesOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  GlobalOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
-  TeamOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -26,9 +18,16 @@ import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Loading } from "@/components/feedback/Loading";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { CreateEditPolicySet } from "./CreateEditPolicySet";
+import {
+  PolicySetCard,
+  PolicySetFilter,
+  PolicySetTable,
+  PolicySetsViewMode,
+  getStoredPolicySetsViewMode,
+} from "./components";
 import "./Settings.css";
 
-const { Text, Paragraph } = Typography;
+const { Paragraph } = Typography;
 
 type Props = {
   editorMode?: "new" | "edit";
@@ -49,6 +48,16 @@ export const PolicySetsSettings: React.FC<Props> = ({
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState<any | null>(null);
+
+  // Filter & Search states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [scopeFilter, setScopeFilter] = useState("ALL");
+  const [viewMode, setViewMode] = useState<PolicySetsViewMode>(getStoredPolicySetsViewMode);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadPolicySets = async () => {
     setLoading(true);
@@ -93,6 +102,68 @@ export const PolicySetsSettings: React.FC<Props> = ({
     }
   };
 
+  const filteredPolicySets = useMemo(() => {
+    return policySets.filter((item: any) => {
+      const attrs = item.attributes || {};
+      const name = (attrs.name || "").toLowerCase();
+      const desc = (attrs.description || "").toLowerCase();
+      const repo = (attrs.repository || "").toLowerCase();
+      const q = searchQuery.trim().toLowerCase();
+
+      // 1. Search by name, description, or repository
+      if (q && !name.includes(q) && !desc.includes(q) && !repo.includes(q)) {
+        return false;
+      }
+
+      // 2. Filter by policy category / enforcement level
+      if (categoryFilter !== "ALL") {
+        if ((attrs.enforcementLevel || "").toUpperCase() !== categoryFilter) {
+          return false;
+        }
+      }
+
+      // 3. Filter by scope (Global vs Attached)
+      if (scopeFilter === "GLOBAL" && !attrs.global) {
+        return false;
+      }
+      if (scopeFilter === "ATTACHED" && attrs.global) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [policySets, searchQuery, categoryFilter, scopeFilter]);
+
+  const hasActiveFilters =
+    searchQuery.trim() !== "" || categoryFilter !== "ALL" || scopeFilter !== "ALL";
+
+  const handleResetFilters = () => {
+    setSearchQuery("");
+    setCategoryFilter("ALL");
+    setScopeFilter("ALL");
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+  };
+
+  const handleCategoryChange = (val: string) => {
+    setCategoryFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handleScopeChange = (val: string) => {
+    setScopeFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handlePageChange = (page: number, size: number) => {
+    setCurrentPage(page);
+    setPageSize(size);
+  };
+
   if (editorMode === "new") {
     return <CreateEditPolicySet mode="create" managePermission={managePermission} />;
   }
@@ -106,19 +177,6 @@ export const PolicySetsSettings: React.FC<Props> = ({
       />
     );
   }
-
-  const renderEnforcementTag = (level: string) => {
-    switch (level?.toUpperCase()) {
-      case "HARD_MANDATORY":
-        return <Tag color="error">Hard Mandatory</Tag>;
-      case "SOFT_MANDATORY":
-        return <Tag color="warning">Soft Mandatory</Tag>;
-      case "ADVISORY":
-        return <Tag color="processing">Advisory</Tag>;
-      default:
-        return <Tag color="default">{level}</Tag>;
-    }
-  };
 
   return (
     <div>
@@ -140,127 +198,95 @@ export const PolicySetsSettings: React.FC<Props> = ({
 
       {loading ? (
         <Loading />
-      ) : (
+      ) : policySets.length === 0 ? (
         <Card styles={{ body: { padding: 0 } }}>
-          <List
-            itemLayout="horizontal"
-            dataSource={policySets}
-            locale={{
-              emptyText: (
-                <div style={{ padding: "40px 0", textAlign: "center" }}>
-                  <SafetyCertificateOutlined
-                    style={{ fontSize: 48, color: token.colorTextTertiary, marginBottom: 16 }}
-                  />
-                  <Typography.Title level={4}>No Policy Sets Configured</Typography.Title>
-                  <Paragraph type="secondary" style={{ maxWidth: 450, margin: "0 auto 16px" }}>
-                    Create your first policy set to validate Terraform and OpenTofu plans automatically with Rego rules.
-                  </Paragraph>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => navigate(`/organizations/${orgid}/settings/policies/new`)}
-                    disabled={!managePermission}
-                  >
-                    Create Policy Set
-                  </Button>
-                </div>
-              ),
-            }}
-            renderItem={(item) => {
-              const attrs = item.attributes;
-              const attachmentsCount = attachmentCounts[item.id] ?? 0;
-
-              return (
-                <List.Item
-                  key={item.id}
-                  style={{ padding: "16px 24px" }}
-                  actions={[
-                    <Button
-                      key="edit"
-                      type="text"
-                      icon={<EditOutlined />}
-                      onClick={() =>
-                        navigate(`/organizations/${orgid}/settings/policies/edit/${item.id}`)
-                      }
-                      disabled={!managePermission}
-                    >
-                      Edit
-                    </Button>,
-                    <Button
-                      key="delete"
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setPendingDelete(item)}
-                      disabled={!managePermission}
-                    >
-                      Delete
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={
-                      <Avatar
-                        style={{ backgroundColor: token.colorPrimaryBg, color: token.colorPrimary }}
-                        icon={<SafetyCertificateOutlined />}
-                        size={42}
-                      />
-                    }
-                    title={
-                      <Space wrap align="center">
-                        <Text strong style={{ fontSize: 16 }}>
-                          {attrs.name}
-                        </Text>
-                        {renderEnforcementTag(attrs.enforcementLevel)}
-                        {attrs.shadowEnforcementLevel && (
-                          <Tag color="default">
-                            Shadow: {attrs.shadowEnforcementLevel}
-                          </Tag>
-                        )}
-                        {attrs.global ? (
-                          <Tag color="gold" icon={<GlobalOutlined />}>
-                            Global
-                          </Tag>
-                        ) : (
-                          <Tag color="cyan">
-                            {attachmentsCount} {attachmentsCount === 1 ? "Attachment" : "Attachments"}
-                          </Tag>
-                        )}
-                        {attrs.overrideTeam && (
-                          <Tag color="geekblue" icon={<TeamOutlined />}>
-                            Override Team: {attrs.overrideTeam}
-                          </Tag>
-                        )}
-                      </Space>
-                    }
-                    description={
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%", marginTop: 4 }}>
-                        {attrs.description && <Text type="secondary">{attrs.description}</Text>}
-                        <Space size={16} wrap style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                          {attrs.repository && (
-                            <span>
-                              <b>Repo:</b> {attrs.repository}
-                            </span>
-                          )}
-                          {attrs.branch && (
-                            <span>
-                              <BranchesOutlined /> {attrs.branch}
-                            </span>
-                          )}
-                          {attrs.folder && (
-                            <span>
-                              <b>Path:</b> {attrs.folder}
-                            </span>
-                          )}
-                        </Space>
-                      </div>
-                    }
-                  />
-                </List.Item>
-              );
-            }}
-          />
+          <div style={{ padding: "40px 0", textAlign: "center" }}>
+            <SafetyCertificateOutlined
+              style={{ fontSize: 48, color: token.colorTextTertiary, marginBottom: 16 }}
+            />
+            <Typography.Title level={4}>No Policy Sets Configured</Typography.Title>
+            <Paragraph type="secondary" style={{ maxWidth: 450, margin: "0 auto 16px" }}>
+              Create your first policy set to validate Terraform and OpenTofu plans automatically with Rego rules.
+            </Paragraph>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate(`/organizations/${orgid}/settings/policies/new`)}
+              disabled={!managePermission}
+            >
+              Create Policy Set
+            </Button>
+          </div>
         </Card>
+      ) : (
+        <div>
+          <PolicySetFilter
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+            categoryFilter={categoryFilter}
+            onCategoryChange={handleCategoryChange}
+            scopeFilter={scopeFilter}
+            onScopeChange={handleScopeChange}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onResetFilters={handleResetFilters}
+            hasActiveFilters={hasActiveFilters}
+          />
+
+          {filteredPolicySets.length === 0 ? (
+            <Card style={{ textAlign: "center", padding: "40px 0" }}>
+              <Empty
+                description="No policy sets match your search and filter criteria."
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              >
+                <Button onClick={handleResetFilters} data-testid="empty-clear-filters-btn">
+                  Clear Filters
+                </Button>
+              </Empty>
+            </Card>
+          ) : viewMode === "compact" ? (
+            <PolicySetTable
+              policySets={filteredPolicySets}
+              attachmentCounts={attachmentCounts}
+              managePermission={managePermission}
+              onEdit={(id) =>
+                navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
+              }
+              onDelete={(item) => setPendingDelete(item)}
+              orgid={orgid!}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+            />
+          ) : (
+            <List
+              dataSource={filteredPolicySets}
+              pagination={{
+                current: currentPage,
+                pageSize: pageSize,
+                total: filteredPolicySets.length,
+                showSizeChanger: true,
+                pageSizeOptions: ["10", "20", "50"],
+                onChange: handlePageChange,
+                showTotal: (total, range) =>
+                  `${range[0]}-${range[1]} of ${total} policy sets`,
+              }}
+              renderItem={(item) => (
+                <PolicySetCard
+                  key={item.id}
+                  item={item}
+                  attachmentsCount={attachmentCounts[item.id] ?? 0}
+                  managePermission={managePermission}
+                  onEdit={(id) =>
+                    navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
+                  }
+                  onDelete={(item) => setPendingDelete(item)}
+                  orgid={orgid!}
+                />
+              )}
+            />
+          )}
+        </div>
       )}
 
       {pendingDelete && (
