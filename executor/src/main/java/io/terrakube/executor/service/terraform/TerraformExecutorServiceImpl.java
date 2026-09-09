@@ -19,6 +19,7 @@ import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
+import io.terrakube.executor.service.mode.PolicyContext;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -179,6 +180,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             boolean executionPlan = false;
             boolean planCommandExecuted = false;
             int exitCode = 0;
+            boolean hasSoftViolations = false;
+            String overrideTeam = null;
             boolean scriptAfterSuccessPlan;
 
             Consumer<String> planOutput = LogsConsumer.builder()
@@ -293,6 +296,22 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     if (planJsonFile.exists()) {
                         List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
+                        hasSoftViolations = opaResults.stream().anyMatch(r -> r.getSoftMandatoryViolations() > 0);
+                        if (hasSoftViolations && terraformJob.getPolicyList() != null) {
+                            for (OpaEvaluationResult opaRes : opaResults) {
+                                if (opaRes.getSoftMandatoryViolations() > 0) {
+                                    for (PolicyContext pc : terraformJob.getPolicyList()) {
+                                        if (pc.getPolicyId() != null && pc.getPolicyId().equals(opaRes.getPolicySetId())) {
+                                            if (pc.getOverrideTeam() != null && !pc.getOverrideTeam().isBlank()) {
+                                                overrideTeam = pc.getOverrideTeam();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (overrideTeam != null) break;
+                            }
+                        }
                         if (hasHardViolations) {
                             executionPlan = false;
                             exitCode = 1;
@@ -318,6 +337,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
             result.setPlan(true);
             result.setExitCode(exitCode);
+            result.setHasSoftMandatoryViolations(executionPlan && hasSoftViolations);
+            result.setApprovalTeam(overrideTeam);
         } catch (IOException | ExecutionException | InterruptedException exception) {
             // A stream-drain failure or late exception must not swallow the plan diagnostics the
             // UI needs - publish what was parsed before it broke, then let it drain.

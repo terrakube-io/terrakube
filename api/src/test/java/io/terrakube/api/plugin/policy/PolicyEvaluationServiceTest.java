@@ -150,4 +150,89 @@ class PolicyEvaluationServiceTest {
 
         verify(policyNotificationService).sendPolicyViolationNotification(eq(job), any(), any());
     }
+
+    @Test
+    void processesEvaluationWithStepIdInPayload() {
+        Job job = new Job();
+        job.setId(300);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        job.setWorkspace(workspace);
+
+        UUID explicitStepId = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(explicitStepId);
+        step.setName("customStep");
+
+        when(jobRepository.findById(300)).thenReturn(Optional.of(job));
+        when(stepRepository.findById(explicitStepId)).thenReturn(Optional.of(step));
+        when(policyEvaluationRepository.findByJobAndStep(job, step)).thenReturn(Optional.empty());
+
+        String json = "{\n" +
+                "  \"policyEvaluation\": {\n" +
+                "    \"stepId\": \"" + explicitStepId + "\",\n" +
+                "    \"status\": \"WAITING_APPROVAL\",\n" +
+                "    \"passedRules\": 1,\n" +
+                "    \"warningRules\": 0,\n" +
+                "    \"softMandatoryViolations\": 1,\n" +
+                "    \"hardMandatoryViolations\": 0\n" +
+                "  }\n" +
+                "}";
+
+        policyEvaluationService.processPolicyEvaluationContext(300, json);
+
+        ArgumentCaptor<PolicyEvaluation> evalCaptor = ArgumentCaptor.forClass(PolicyEvaluation.class);
+        verify(policyEvaluationRepository).save(evalCaptor.capture());
+        PolicyEvaluation saved = evalCaptor.getValue();
+        assertEquals(PolicyEvaluationStatus.FAILED, saved.getStatus());
+        assertEquals(explicitStepId, saved.getStep().getId());
+        assertEquals(1, saved.getSoftMandatoryViolations());
+    }
+
+    @Test
+    void aggregatesCountsFromResultsArrayWhenTopLevelCountsOmitted() {
+        Job job = new Job();
+        job.setId(400);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        job.setWorkspace(workspace);
+
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setName("terraformPlan");
+
+        when(jobRepository.findById(400)).thenReturn(Optional.of(job));
+        when(stepRepository.findByJobId(400)).thenReturn(List.of(step));
+        when(policyEvaluationRepository.findByJobAndStep(job, step)).thenReturn(Optional.empty());
+
+        String json = "{\n" +
+                "  \"policyEvaluation\": {\n" +
+                "    \"status\": \"WAITING_APPROVAL\",\n" +
+                "    \"results\": [\n" +
+                "      {\n" +
+                "        \"passedRules\": 3,\n" +
+                "        \"warningRules\": 1,\n" +
+                "        \"softMandatoryViolations\": 2,\n" +
+                "        \"hardMandatoryViolations\": 0\n" +
+                "      },\n" +
+                "      {\n" +
+                "        \"passedRules\": 2,\n" +
+                "        \"warningRules\": 0,\n" +
+                "        \"softMandatoryViolations\": 1,\n" +
+                "        \"hardMandatoryViolations\": 0\n" +
+                "      }\n" +
+                "    ]\n" +
+                "  }\n" +
+                "}";
+
+        policyEvaluationService.processPolicyEvaluationContext(400, json);
+
+        ArgumentCaptor<PolicyEvaluation> evalCaptor = ArgumentCaptor.forClass(PolicyEvaluation.class);
+        verify(policyEvaluationRepository).save(evalCaptor.capture());
+        PolicyEvaluation saved = evalCaptor.getValue();
+        assertEquals(5, saved.getPassedRules());
+        assertEquals(1, saved.getWarningRules());
+        assertEquals(3, saved.getSoftMandatoryViolations());
+        assertEquals(0, saved.getHardMandatoryViolations());
+    }
 }

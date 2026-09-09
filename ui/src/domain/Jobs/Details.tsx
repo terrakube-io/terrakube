@@ -21,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import { AxiosResponse } from "axios";
-import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosAuxiliary } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
@@ -130,6 +130,11 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
+  const hasPolicySoftViolations = useMemo(() => {
+    if (!policyEvaluation) return false;
+    if ((policyEvaluation.softMandatoryViolations ?? 0) > 0) return true;
+    return Boolean(policyEvaluation.results?.some((r) => (r.softMandatoryViolations ?? 0) > 0));
+  }, [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
   const [contextEverPersisted, setContextEverPersisted] = useState(false);
@@ -794,6 +799,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                     <PolicyChecksOutput
                       policyEvaluation={policyEvaluation}
                       jobId={jobId}
+                      organizationId={organizationId || job?.data?.relationships?.organization?.data?.id}
                       status={job.data.attributes.status}
                       approvalTeam={job.data.attributes.approvalTeam}
                       onOverrideSuccess={() => {
@@ -843,7 +849,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             <span />
           )}
 
-          {job.data.attributes.status === "waitingApproval" ? (
+          {job.data.attributes.status === "waitingApproval" && !hasPolicySoftViolations ? (
             <div style={{ margin: "auto", width: "50%", marginTop: "20px" }}>
               <Card
                 title={

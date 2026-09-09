@@ -60,7 +60,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     @Override
-    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
+    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             String currentJobStatus = getCurrentJobStatus(terraformJob);
             // A rejected run keeps showing its approval step as failed: onReject command
@@ -70,7 +70,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
-                updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId);
+                updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
         }
     }
 
@@ -79,7 +79,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 .getData().getAttributes().getStatus();
     }
 
-    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId) {
+    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
         Job job = terrakubeClient.getJobById(organizationId, jobId).getData();
         String status = "";
         boolean planChanges = true;
@@ -103,6 +103,12 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                         // misreports a finished job as still in progress.
                         status = job.getRelationships().getStep().getData().size() > 1 ? "pending" : "completed";
                         break;
+                }
+                if (hasSoftMandatoryViolations && exitCode != 1) {
+                    status = "waitingApproval";
+                    if (approvalTeam != null && !approvalTeam.isBlank()) {
+                        job.getAttributes().setApprovalTeam(approvalTeam);
+                    }
                 }
             }
         } else {

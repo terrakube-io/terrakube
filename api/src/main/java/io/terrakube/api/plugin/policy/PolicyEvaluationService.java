@@ -59,18 +59,33 @@ public class PolicyEvaluationService {
             }
             Job job = jobOpt.get();
 
-            List<Step> steps = stepRepository.findByJobId(jobId);
-            if (steps.isEmpty()) {
-                log.warn("No steps found for Job {}", jobId);
-                return;
+            Step step = null;
+            if (evalNode.has("stepId") && !evalNode.get("stepId").asText().isBlank()) {
+                String stepIdStr = evalNode.get("stepId").asText();
+                try {
+                    Optional<Step> stepOpt = stepRepository.findById(UUID.fromString(stepIdStr));
+                    if (stepOpt.isPresent()) {
+                        step = stepOpt.get();
+                    }
+                } catch (Exception e) {
+                    log.warn("Invalid stepId format: {}", stepIdStr);
+                }
             }
 
-            // Find current or relevant step
-            Step step = steps.get(0);
-            for (Step s : steps) {
-                if (s.getName() != null && s.getName().toLowerCase().contains("plan")) {
-                    step = s;
-                    break;
+            if (step == null) {
+                List<Step> steps = stepRepository.findByJobId(jobId);
+                if (steps.isEmpty()) {
+                    log.warn("No steps found for Job {}", jobId);
+                    return;
+                }
+
+                // Find current or relevant step
+                step = steps.get(0);
+                for (Step s : steps) {
+                    if (s.getName() != null && s.getName().toLowerCase().contains("plan")) {
+                        step = s;
+                        break;
+                    }
                 }
             }
 
@@ -89,6 +104,17 @@ public class PolicyEvaluationService {
             int shadowHard = evalNode.has("shadowHardViolations") ? evalNode.get("shadowHardViolations").asInt() : 0;
             int shadowSoft = evalNode.has("shadowSoftViolations") ? evalNode.get("shadowSoftViolations").asInt() : 0;
 
+            if (passedRules == 0 && warningRules == 0 && softViolations == 0 && hardViolations == 0 && evalNode.has("results") && evalNode.get("results").isArray()) {
+                for (JsonNode resNode : evalNode.get("results")) {
+                    passedRules += resNode.has("passedRules") ? resNode.get("passedRules").asInt() : 0;
+                    warningRules += resNode.has("warningRules") ? resNode.get("warningRules").asInt() : 0;
+                    softViolations += resNode.has("softMandatoryViolations") ? resNode.get("softMandatoryViolations").asInt() : 0;
+                    hardViolations += resNode.has("hardMandatoryViolations") ? resNode.get("hardMandatoryViolations").asInt() : 0;
+                    shadowHard += resNode.has("shadowHardViolations") ? resNode.get("shadowHardViolations").asInt() : 0;
+                    shadowSoft += resNode.has("shadowSoftViolations") ? resNode.get("shadowSoftViolations").asInt() : 0;
+                }
+            }
+
             String storageUri = String.format("policy-evaluations/%d/violations.json", jobId);
 
             // Offload full violations JSON to object storage on Day 1 (Gap 11.7)
@@ -106,7 +132,6 @@ public class PolicyEvaluationService {
             Optional<PolicyEvaluation> existingEval = policyEvaluationRepository.findByJobAndStep(job, finalStep);
             PolicyEvaluation policyEvaluation = existingEval.orElseGet(() -> {
                 PolicyEvaluation pe = new PolicyEvaluation();
-                pe.setId(UUID.randomUUID());
                 pe.setJob(job);
                 pe.setStep(finalStep);
                 return pe;

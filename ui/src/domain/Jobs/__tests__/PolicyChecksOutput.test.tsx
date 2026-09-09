@@ -14,12 +14,18 @@ window._env_ = {
 };
 
 const postMock = jest.fn();
+const patchMock = jest.fn();
 
 jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,
   default: {
     post: (...args: unknown[]) => postMock(...args),
+    patch: (...args: unknown[]) => patchMock(...args),
     get: jest.fn().mockResolvedValue({ data: { data: [] } }),
+  },
+  axiosRegistry: {
+    get: jest.fn().mockResolvedValue({ data: { data: [{ id: "polchk-1" }] } }),
+    post: (...args: unknown[]) => postMock(...args),
   },
   getErrorMessage: (err: any) => err?.message || "Error",
 }));
@@ -84,6 +90,7 @@ describe("PolicyChecksOutput", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     postMock.mockResolvedValue({ data: { success: true } });
+    patchMock.mockResolvedValue({ data: { success: true } });
   });
 
   it("renders summary badges correctly", () => {
@@ -147,6 +154,7 @@ describe("PolicyChecksOutput", () => {
       <PolicyChecksOutput
         policyEvaluation={sampleEvaluation}
         jobId="123"
+        organizationId="org-123"
         onOverrideSuccess={onOverrideSuccess}
       />
     );
@@ -163,8 +171,46 @@ describe("PolicyChecksOutput", () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(postMock).toHaveBeenCalled();
+      expect(postMock).toHaveBeenCalledWith(
+        "/remote/tfe/v2/policy-checks/polchk-1/actions/override",
+        { justification: "Approved hotfix exception" }
+      );
+      expect(patchMock).toHaveBeenCalledWith(
+        "organization/org-123/job/123",
+        { data: { type: "job", id: "123", attributes: { status: "approved" } } },
+        { headers: { "Content-Type": "application/vnd.api+json" } }
+      );
       expect(onOverrideSuccess).toHaveBeenCalled();
     });
+  });
+
+  it("correctly identifies SOFT_MANDATORY with underscore as soft mandatory violation card", () => {
+    const underscoreEvaluation: PolicyEvaluationContext = {
+      jobId: "124",
+      passedRules: 0,
+      warningRules: 0,
+      softMandatoryViolations: 1,
+      hardMandatoryViolations: 0,
+      results: [
+        {
+          policySetName: "password-policy",
+          enforcementLevel: "SOFT_MANDATORY",
+          violations: [
+            {
+              ruleId: "password_length_soft_mandatory",
+              address: "random_password.password",
+              message: "Password length less than 16",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={underscoreEvaluation} jobId="124" />);
+
+    const ruleCard = screen.getByTestId("rule-card");
+    expect(ruleCard).toHaveClass("policy-rule-card--soft");
+    expect(screen.getByText("Soft Mandatory")).toBeInTheDocument();
+    expect(screen.queryByText("Hard Mandatory")).not.toBeInTheDocument();
   });
 });

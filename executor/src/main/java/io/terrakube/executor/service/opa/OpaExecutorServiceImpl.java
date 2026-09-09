@@ -731,10 +731,45 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
 
     private void saveStructuredContext(TerraformJob job, List<OpaEvaluationResult> results) {
         try {
+            int totalPassed = 0;
+            int totalWarnings = 0;
+            int totalSoft = 0;
+            int totalHard = 0;
+            int totalShadowHard = 0;
+            int totalShadowSoft = 0;
+            if (results != null) {
+                for (OpaEvaluationResult r : results) {
+                    totalPassed += r.getPassedRules();
+                    totalWarnings += r.getWarningRules();
+                    totalSoft += r.getSoftMandatoryViolations();
+                    totalHard += r.getHardMandatoryViolations();
+                    totalShadowHard += r.getShadowHardViolations();
+                    totalShadowSoft += r.getShadowSoftViolations();
+                }
+            }
+
+            String overallStatus;
+            if (totalHard > 0) {
+                overallStatus = STATUS_FAILED;
+            } else if (totalSoft > 0) {
+                overallStatus = STATUS_WAITING_APPROVAL;
+            } else if (totalWarnings > 0) {
+                overallStatus = STATUS_WARNING;
+            } else {
+                overallStatus = STATUS_PASSED;
+            }
+
             Map<String, Object> payload = new HashMap<>();
             payload.put("jobId", job.getJobId());
             payload.put("stepId", job.getStepId());
-            payload.put("totalPolicies", results.size());
+            payload.put("totalPolicies", results != null ? results.size() : 0);
+            payload.put("status", overallStatus);
+            payload.put("passedRules", totalPassed);
+            payload.put("warningRules", totalWarnings);
+            payload.put("softMandatoryViolations", totalSoft);
+            payload.put("hardMandatoryViolations", totalHard);
+            payload.put("shadowHardViolations", totalShadowHard);
+            payload.put("shadowSoftViolations", totalShadowSoft);
             payload.put("results", results);
 
             jobContextService.saveContext(
