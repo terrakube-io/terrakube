@@ -1,7 +1,9 @@
-import { AutoComplete, Button, Col, Flex, Form, Input, Row, Select, Spin, message } from "antd";
+import { AutoComplete, Button, Col, Flex, Form, Input, Row, Select, Space, Spin, message } from "antd";
+import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
-import { Agent, Template, TofuRelease, Workspace } from "../../types";
+import { Agent, Template, TofuRelease, VcsModel, Workspace } from "../../types";
 import {
   atomicHeader,
   compareVersions,
@@ -16,6 +18,7 @@ import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import VcsLogo from "@/components/display/VcsLogo";
 
 type Props = {
   workspaceData: Workspace;
@@ -35,17 +38,19 @@ type UpdateWorkspaceForm = {
   defaultTemplate?: string;
   executorAgent?: string;
   project?: string;
+  vcs?: string;
 };
 
 export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const organizationId = workspaceData.relationships.organization.data.id;
   const id = workspaceData.id;
-  const Option = Select;
+  const { Option } = Select;
   const [selectedIac, setSelectedIac] = useState("");
   const { permissions: orgPermissions } = useOrgPermissions();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
+  const [vcsList, setVcsList] = useState<VcsModel[]>([]);
   const [waiting, setWaiting] = useState(false);
 
   const loadVersions = (iacType: string) => {
@@ -70,34 +75,42 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
     const iacType = workspaceData.attributes?.iacType;
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
 
-    // Parallel load: versions, agent list, and projects
+    // Parallel load: versions, agent list, projects, and VCS providers
     Promise.all([
       axiosInstance.get(versionsApi),
       axiosInstance.get(`organization/${organizationId}/agent`),
       projectService.listProjects(organizationId),
-    ]).then(([versionsRes, agentsRes, projectsRes]) => {
-      const tfVersions: string[] = [];
-      if (iacType === "tofu") {
-        versionsRes.data.forEach((release: TofuRelease) => {
-          if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
-        });
-      } else {
-        for (const version in versionsRes.data.versions) {
-          if (!version.includes("-")) tfVersions.push(version);
+      axiosInstance.get(`organization/${organizationId}/vcs`),
+    ])
+      .then(([versionsRes, agentsRes, projectsRes, vcsRes]) => {
+        const tfVersions: string[] = [];
+        if (iacType === "tofu") {
+          versionsRes.data.forEach((release: TofuRelease) => {
+            if (!release.tag_name.includes("-")) tfVersions.push(release.tag_name.replace("v", ""));
+          });
+        } else {
+          for (const version in versionsRes.data.versions) {
+            if (!version.includes("-")) tfVersions.push(version);
+          }
         }
-      }
-      setTerraformVersions(tfVersions.sort(compareVersions).reverse());
-      setAgentList(agentsRes.data.data);
-      if (!projectsRes.isError) setProjectList(projectsRes.data);
-      setWaiting(false);
-    });
+        setTerraformVersions(tfVersions.sort(compareVersions).reverse());
+        setAgentList(agentsRes.data.data);
+        if (!projectsRes.isError) setProjectList(projectsRes.data);
+        setVcsList(vcsRes.data?.data ?? []);
+        setWaiting(false);
+      })
+      .catch((error) => {
+        console.error("Failed to load workspace configuration data:", error);
+        message.error(getErrorMessage(error));
+        setWaiting(false);
+      });
   }, [organizationId, workspaceData.attributes?.iacType]);
 
   const handleIacChange = (iac: string) => {
     setSelectedIac(iac);
     loadVersions(iac);
   };
-  const onFinish = (values: UpdateWorkspaceForm) => {
+  const onFinish = async (values: UpdateWorkspaceForm) => {
     setWaiting(true);
     const body = {
       "atomic:operations": [
@@ -122,23 +135,9 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       ],
     };
 
-    axiosInstance
-      .post("/operations", body, atomicHeader)
-      .then((response) => {
-        if (response.status === 200) {
-          message.success("workspace updated successfully");
-          onWorkspaceUpdate?.();
-        } else {
-          message.error("workspace update failed");
-        }
-      })
-      .catch((error) => {
-        console.error("error updating workspace:", error);
-        message.error(getErrorMessage(error));
-      })
-      .finally(() => {
-        setWaiting(false);
-      });
+    const requests: Promise<any>[] = [
+      axiosInstance.post("/operations", body, atomicHeader),
+    ];
 
     let bodyAgent;
 
@@ -155,28 +154,51 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       };
     }
 
-    axiosInstance
-      .patch(`/organization/${organizationId}/workspace/${id}/relationships/agent`, bodyAgent, genericHeader)
-      .then((response) => {
-        if (response.status === 204) {
-          console.log("Workspace agent updated successfully");
-        } else {
-          console.log("Workspace agent update failed");
-        }
-      });
+    requests.push(
+      axiosInstance.patch(`/organization/${organizationId}/workspace/${id}/relationships/agent`, bodyAgent, genericHeader)
+    );
 
     const bodyProject =
       values.project && values.project !== "none" ? { data: { type: "project", id: values.project } } : { data: null };
 
-    axiosInstance
-      .patch(`/organization/${organizationId}/workspace/${id}/relationships/project`, bodyProject, genericHeader)
-      .then((response) => {
-        if (response.status === 204) {
-          console.log("Workspace project updated successfully");
-        } else {
-          console.log("Workspace project update failed");
-        }
-      });
+    requests.push(
+      axiosInstance.patch(`/organization/${organizationId}/workspace/${id}/relationships/project`, bodyProject, genericHeader)
+    );
+
+    const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
+    if (values.vcs !== undefined && values.vcs !== initialVcsId) {
+      const bodyVcs =
+        values.vcs && values.vcs !== "public"
+          ? {
+              data: {
+                type: "vcs",
+                id: values.vcs,
+              },
+            }
+          : {
+              data: null,
+            };
+
+      requests.push(
+        axiosInstance.patch(`/organization/${organizationId}/workspace/${id}/relationships/vcs`, bodyVcs, genericHeader)
+      );
+    }
+
+    try {
+      const responses = await Promise.all(requests);
+      const operationsRes = responses[0];
+      if (operationsRes.status === 200) {
+        message.success("Workspace updated successfully");
+        onWorkspaceUpdate?.();
+      } else {
+        message.error("Workspace update failed");
+      }
+    } catch (error) {
+      console.error("Error updating workspace:", error);
+      message.error(getErrorMessage(error));
+    } finally {
+      setWaiting(false);
+    }
   };
 
   return (
@@ -204,6 +226,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 ? "default"
                 : workspaceData.relationships.agent.data?.id,
             project: workspaceData.relationships.project?.data?.id ?? "none",
+            vcs: workspaceData.relationships?.vcs?.data?.id ?? "public",
           }}
           layout="vertical"
           name="form-settings"
@@ -351,6 +374,58 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                   extra="Don't update the value when using CLI Driven workflows. This is only used in VCS driven workflow."
                 >
                   <Input disabled={!manageWorkspace} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Version Control System"
+            description="Select the Version Control System provider connected to this workspace repository. Choose Public if this workspace clones a public Git repository without credentials."
+            maxWidth={960}
+          >
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="vcs"
+                  label="VCS Provider"
+                  extra={
+                    vcsList.length === 0 ? (
+                      <>
+                        No VCS providers configured.{" "}
+                        {orgPermissions.manageVcs && (
+                          <Link to={`/organizations/${organizationId}/settings/vcs`}>
+                            Configure a VCS provider
+                          </Link>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {orgPermissions.manageVcs && (
+                          <Link to={`/organizations/${organizationId}/settings/vcs`}>
+                            Manage organization VCS providers
+                          </Link>
+                        )}
+                      </>
+                    )
+                  }
+                >
+                  <Select placeholder="Select VCS Provider" disabled={!manageWorkspace}>
+                    <Option key="public" value="public">
+                      <Space>
+                        <GlobalOutlined />
+                        <span>Public (No VCS connection)</span>
+                      </Space>
+                    </Option>
+                    {vcsList.map((vcsItem) => (
+                      <Option key={vcsItem.id} value={vcsItem.id}>
+                        <Space>
+                          <VcsLogo type={vcsItem.attributes.vcsType} size={16} />
+                          <span>{vcsItem.attributes.name}</span>
+                        </Space>
+                      </Option>
+                    ))}
+                  </Select>
                 </Form.Item>
               </Col>
             </Row>
