@@ -1508,4 +1508,22 @@ public class ScheduleJobTest {
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
     }
+
+    @Test
+    public void orphanedJobWithNullWorkspaceIsCancelledAndDescheduled() {
+        Job job = job(JobStatus.pending);
+        job.setWorkspace(null);
+        Step step = new Step();
+        step.setStatus(JobStatus.pending);
+        doReturn(job).when(jobRepository).save(job);
+        doReturn(List.of(step)).when(stepRepository).findByJobId(job.getId());
+        doReturn(step).when(stepRepository).save(any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.cancelled, job.getStatus());
+        Assertions.assertEquals(JobStatus.cancelled, step.getStatus());
+        verify(jobRepository, times(1)).save(job);
+        verify(stepRepository, times(1)).save(step);
+    }
 }

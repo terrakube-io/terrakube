@@ -139,6 +139,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // to the shared reconciliation routine (dry-run when auto-remediate is off). Jobs with no steps yet keep
     // today's trigger-only reconciliation - they're just uninitialised, not stuck.
     private ReconciliationResult reconcileZeroPendingJob(Job job) {
+        if (job.getWorkspace() == null) {
+            return null;
+        }
         List<Step> steps = stepRepository.findByJobId(job.getId());
         boolean hasActiveWork = steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending
                 || s.getStatus() == JobStatus.running
@@ -206,6 +209,22 @@ public class JobReconciliationSweep implements org.quartz.Job {
 
     private void reconcileTrigger(Job job) {
         if (!ACTIVE_STATUSES.contains(job.getStatus())) {
+            return;
+        }
+        if (job.getWorkspace() == null) {
+            log.warn("Job {} has no active workspace, cancelling orphaned job", job.getId());
+            try {
+                job.setStatus(JobStatus.cancelled);
+                jobRepository.save(job);
+                for (Step step : stepRepository.findByJobId(job.getId())) {
+                    if (step.getStatus() == JobStatus.pending || step.getStatus() == JobStatus.running || step.getStatus() == JobStatus.queue) {
+                        step.setStatus(JobStatus.cancelled);
+                        stepRepository.save(step);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to cancel orphaned job {} during sweep: {}", job.getId(), e.getMessage(), e);
+            }
             return;
         }
         try {
