@@ -32,6 +32,7 @@ import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamOffset;
@@ -235,7 +236,7 @@ class RemoteTfeServiceTest {
 
         StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
-        when(streamOperations.read(any(StreamOffset.class), any(StreamOffset.class)))
+        when(streamOperations.read(any(StreamOffset.class)))
                 .thenReturn(List.of(MapRecord.create("123", Map.of("output", executorConsole))));
 
         String logs = new String(service.getPlanLogs("encrypted-plan-id", 0, 500_000), StandardCharsets.UTF_8);
@@ -244,6 +245,71 @@ class RemoteTfeServiceTest {
         assertTrue(logs.contains("12:   subnet = aws_subnet.main.identifier"), logs);
         assertTrue(logs.contains(
                 "This object has no argument, nested block, or exported attribute named \"identifier\"."), logs);
+    }
+
+    // getPlanLogs/getApplyLogs must pass exactly one StreamOffset for the job id. The second
+    // offset they used to pass was StreamOffset.latest(), i.e. "$", which contributes nothing to
+    // a historical read and only duplicates the stream key in the XREAD. Redis and Valkey tolerate
+    // the repeated key; other Redis-protocol servers reject it outright, and the resulting
+    // exception left the caller with empty logs. Regression coverage: a test only asserting the
+    // returned log text would still pass against the old two-offset call under a lenient mock,
+    // so this pins the call shape instead.
+    @Test
+    @SuppressWarnings("unchecked")
+    void getPlanLogsReadsWithExactlyOneStreamOffsetForTheJobId() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(456);
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        when(encryptionService.decrypt("encrypted-plan-id")).thenReturn("456");
+        when(jobRepository.findById(456)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        ArgumentCaptor<StreamOffset[]> offsetsCaptor = ArgumentCaptor.forClass(StreamOffset[].class);
+        when(streamOperations.read(offsetsCaptor.capture()))
+                .thenReturn(List.of(MapRecord.create("456", Map.of("output", "line 1"))));
+
+        service.getPlanLogs("encrypted-plan-id", 0, 500);
+
+        StreamOffset[] offsets = offsetsCaptor.getValue();
+        assertEquals(1, offsets.length);
+        assertEquals("456", offsets[0].getKey());
+    }
+
+    // Same bug, same fix, in the sibling method: getApplyLogs must also pass exactly one
+    // StreamOffset for the job id.
+    @Test
+    @SuppressWarnings("unchecked")
+    void getApplyLogsReadsWithExactlyOneStreamOffsetForTheJobId() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(789);
+        Step applyStep = new Step();
+        applyStep.setId(UUID.randomUUID());
+        applyStep.setStepNumber(100);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-id")).thenReturn("789");
+        when(jobRepository.findById(789)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        ArgumentCaptor<StreamOffset[]> offsetsCaptor = ArgumentCaptor.forClass(StreamOffset[].class);
+        when(streamOperations.read(offsetsCaptor.capture()))
+                .thenReturn(List.of(MapRecord.create("789", Map.of("output", "line 1"))));
+
+        service.getApplyLogs("encrypted-apply-id", 0, 500);
+
+        StreamOffset[] offsets = offsetsCaptor.getValue();
+        assertEquals(1, offsets.length);
+        assertEquals("789", offsets[0].getKey());
     }
 
     private RemoteTfeService remoteTfeService() {
