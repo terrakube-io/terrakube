@@ -114,7 +114,7 @@ class ScheduleVcsTest {
     }
 
     private ScheduleVcs subject() {
-        return new ScheduleVcs(tokenService, vcsRepository, null, null);
+        return new ScheduleVcs(tokenService, vcsRepository, null);
     }
 
     private Vcs vcs(UUID id, VcsStatus status) {

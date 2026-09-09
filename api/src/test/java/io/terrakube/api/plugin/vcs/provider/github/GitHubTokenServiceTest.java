@@ -17,22 +17,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.quartz.SchedulerException;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
-import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
-import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -46,10 +42,13 @@ public class GitHubTokenServiceTest {
     private static final String REPO = "testrepo";
     private static final String INSTALLATION_ID = "98765";
     private static final String APP_ID = "app-client-id";
+    // An installation id GitHub no longer accepts, e.g. the app was reinstalled after
+    // the row was written.
+    private static final String STALE_INSTALLATION_ID = "11111";
+    // An owner no installation serves: nothing is registered for it, so its lookup 404s.
+    private static final String UNSERVED_OWNER = "ghostowner";
 
     private GitHubAppTokenRepository gitHubAppTokenRepository;
-    private VcsRepository vcsRepository;
-    private ScheduleGitHubAppTokenService scheduleGitHubAppTokenService;
     private GitHubTokenService subject;
 
     private HttpServer httpServer;
@@ -63,14 +62,10 @@ public class GitHubTokenServiceTest {
     @BeforeEach
     public void setup() throws Exception {
         gitHubAppTokenRepository = mock(GitHubAppTokenRepository.class);
-        vcsRepository = mock(VcsRepository.class);
-        scheduleGitHubAppTokenService = mock(ScheduleGitHubAppTokenService.class);
 
         subject = new GitHubTokenService();
         subject.objectMapper = new ObjectMapper();
         subject.gitHubAppTokenRepository = gitHubAppTokenRepository;
-        subject.vcsRepository = vcsRepository;
-        subject.scheduleGitHubAppTokenService = scheduleGitHubAppTokenService;
 
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
         keyPairGenerator.initialize(2048);
@@ -81,7 +76,7 @@ public class GitHubTokenServiceTest {
 
         accessTokenHits = new AtomicInteger(0);
         installationHits = new AtomicInteger(0);
-        tokenToReturn = "ghs_refreshed-token";
+        tokenToReturn = "ghs_minted-token";
         expiresAtToReturn = Instant.now().plus(1, ChronoUnit.HOURS).toString();
         includeExpiresAt = true;
 
@@ -130,15 +125,30 @@ public class GitHubTokenServiceTest {
         token.setAppId(APP_ID);
         token.setOwner(OWNER);
         token.setInstallationId(INSTALLATION_ID);
-        token.setToken("ghs_stale-token");
+        token.setToken("ghs_cached-token");
         token.setExpiresAt(expiresAt);
         return token;
     }
 
-    // Issue 1: cached token past expiry must be treated as a miss and refreshed in place,
-    // not served as-is.
+    // A token that is still valid must be served without touching GitHub: minting is
+    // what replaced the timer, so it has to stay confined to the moment one is needed.
     @Test
-    public void getGitHubAppToken_expiredCachedToken_refetchesAndUpdatesInPlace() throws Exception {
+    public void getGitHubAppToken_validCachedToken_isServedWithoutAnyHttpCall() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+
+        GitHubAppToken result = subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO });
+
+        assertEquals("ghs_cached-token", result.getToken());
+        assertEquals(0, accessTokenHits.get());
+        assertEquals(0, installationHits.get());
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
+    }
+
+    @Test
+    public void getGitHubAppToken_expiredCachedToken_mintsAndUpdatesInPlace() throws Exception {
         Vcs vcs = createVcs();
         GitHubAppToken cached = createCachedToken(Instant.now().minus(5, ChronoUnit.MINUTES));
 
@@ -150,13 +160,13 @@ public class GitHubTokenServiceTest {
 
         assertEquals(tokenToReturn, result.getToken());
         assertEquals(cached.getId(), result.getId(), "must update the existing row, not create a new one");
-        assertEquals(0, installationHits.get(), "should not re-discover the installation, it is already known");
         assertEquals(1, accessTokenHits.get());
         verify(gitHubAppTokenRepository, times(1)).save(any(GitHubAppToken.class));
     }
 
-    // A token with no expiry recorded (e.g. rows created before this fix shipped) must be
-    // treated the same as expired, so it self-heals on the next read instead of being served forever.
+    // Rows written before an expiry was recorded must be treated as expired, so they
+    // self-heal on the next read instead of being served forever. This is the failure
+    // that made a missed refresh indistinguishable from a healthy cache.
     @Test
     public void getGitHubAppToken_missingExpiry_treatedAsExpired() throws Exception {
         Vcs vcs = createVcs();
@@ -173,53 +183,123 @@ public class GitHubTokenServiceTest {
     }
 
     @Test
-    public void getGitHubAppToken_validCachedToken_isServedWithoutAnyHttpCall() throws Exception {
+    public void getGitHubAppToken_noCachedRow_mintsAndCachesOne() throws Exception {
         Vcs vcs = createVcs();
-        GitHubAppToken cached = createCachedToken(Instant.now().plus(30, ChronoUnit.MINUTES));
-
-        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(null);
+        when(gitHubAppTokenRepository.save(any(GitHubAppToken.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         GitHubAppToken result = subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO });
 
-        assertEquals("ghs_stale-token", result.getToken());
+        assertEquals(tokenToReturn, result.getToken());
+        assertEquals(OWNER, result.getOwner());
+        assertEquals(APP_ID, result.getAppId());
+        assertEquals(INSTALLATION_ID, result.getInstallationId());
+        assertEquals(1, installationHits.get());
+        assertEquals(1, accessTokenHits.get());
+    }
+
+    // The installation is resolved on every mint, so an id GitHub no longer accepts is
+    // simply replaced. Trusting the cached id is what left an owner permanently broken
+    // with nothing in the flow willing to reconsider it.
+    @Test
+    public void getGitHubAppToken_staleInstallationId_isReplacedOnMint() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().minus(5, ChronoUnit.MINUTES));
+        cached.setInstallationId(STALE_INSTALLATION_ID);
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+        when(gitHubAppTokenRepository.save(any(GitHubAppToken.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        GitHubAppToken result = subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO });
+
+        assertEquals(tokenToReturn, result.getToken());
+        assertEquals(INSTALLATION_ID, result.getInstallationId(), "the corrected installation id must be stored");
+        assertEquals(1, installationHits.get(), "the stale id is never used to mint");
+        assertEquals(1, accessTokenHits.get());
+    }
+
+    // A failure must surface rather than degrade into a null or expired token: that is
+    // what reaches the user as an unexplained "not authorized" from the git client. The
+    // cached row must also survive, so a later attempt can still use it.
+    @Test
+    public void getGitHubAppToken_noInstallationServesRepository_failsAndKeepsRow() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().minus(5, ChronoUnit.MINUTES));
+        cached.setOwner(UNSERVED_OWNER);
+
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(cached);
+
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
+
+        assertEquals("ghs_cached-token", cached.getToken(), "the row must not be blanked by a failed mint");
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
+    }
+
+    // A first mint that cannot resolve an installation must not cache anything: a row
+    // with no token poisons the cache, since every later read finds it and hands back a
+    // null token.
+    @Test
+    public void getGitHubAppToken_firstMintWithNoInstallation_cachesNothing() throws Exception {
+        Vcs vcs = createVcs();
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(null);
+
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
+
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
         assertEquals(0, accessTokenHits.get());
+    }
+
+    @Test
+    public void getGitHubAppToken_repositoryMissing_isRejected() throws Exception {
+        Vcs vcs = createVcs();
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(null);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER }));
+
         assertEquals(0, installationHits.get());
         verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
     }
 
-    // Issue 2: if the Vcs backing a cached token has been deleted (or recreated with a
-    // different row), refreshAccessToken must not NPE - it should clean up the orphaned
-    // row and its refresh schedule instead of leaving a stale token behind forever.
+    // A caller that GitHub has just refused needs a new token even though the cached one
+    // still looks valid by its expiry: revocation and narrowed access are invisible to an
+    // expiry check.
     @Test
-    public void refreshAccessToken_noMatchingVcs_deletesOrphanedTokenAndSchedule() throws Exception {
-        GitHubAppToken orphaned = createCachedToken(Instant.now().minus(1, ChronoUnit.HOURS));
-        when(vcsRepository.findFirstByClientId(APP_ID)).thenReturn(null);
+    public void refreshGitHubAppToken_mintsEvenWhenTheCachedTokenLooksValid() throws Exception {
+        Vcs vcs = createVcs();
+        GitHubAppToken cached = createCachedToken(Instant.now().plus(30, ChronoUnit.MINUTES));
 
-        String result = subject.refreshAccessToken(orphaned);
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, OWNER)).thenReturn(cached);
+        when(gitHubAppTokenRepository.save(any(GitHubAppToken.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertNull(result);
-        verify(scheduleGitHubAppTokenService, times(1)).deleteTask(orphaned.getId().toString());
-        verify(gitHubAppTokenRepository, times(1)).delete(orphaned);
-        assertEquals(0, accessTokenHits.get());
+        GitHubAppToken result = subject.refreshGitHubAppToken(vcs, new String[] { OWNER, REPO });
+
+        assertEquals(tokenToReturn, result.getToken());
+        assertEquals(cached.getId(), result.getId(), "must update the existing row, not create a new one");
+        assertEquals(1, installationHits.get(), "the installation is resolved again, not taken from the row");
+        assertEquals(1, accessTokenHits.get());
+        verify(gitHubAppTokenRepository, times(1)).save(any(GitHubAppToken.class));
     }
 
     @Test
-    public void refreshAccessToken_schedulerFailureDuringCleanup_stillDeletesOrphanedRow() throws Exception {
-        GitHubAppToken orphaned = createCachedToken(Instant.now().minus(1, ChronoUnit.HOURS));
-        when(vcsRepository.findFirstByClientId(APP_ID)).thenReturn(null);
-        doAnswer(invocation -> {
-            throw new SchedulerException("boom");
-        }).when(scheduleGitHubAppTokenService).deleteTask(orphaned.getId().toString());
+    public void refreshGitHubAppToken_noInstallation_failsWithoutCachingAnything() throws Exception {
+        Vcs vcs = createVcs();
+        when(gitHubAppTokenRepository.findByAppIdAndOwner(APP_ID, UNSERVED_OWNER)).thenReturn(null);
 
-        String result = subject.refreshAccessToken(orphaned);
+        assertThrows(HttpStatusCodeException.class,
+                () -> subject.refreshGitHubAppToken(vcs, new String[] { UNSERVED_OWNER, REPO }));
 
-        assertNull(result);
-        verify(gitHubAppTokenRepository, times(1)).delete(orphaned);
+        verify(gitHubAppTokenRepository, never()).save(any(GitHubAppToken.class));
     }
 
-    // Repository discovery calls getInstallationToken directly, without ever caching or
-    // checking expiry - a response with no expires_at (or a caller/mock that omits it) must
-    // not blow up the whole call with a DateTimeParseException.
+    // Repository discovery mints with an installation id it already picked from
+    // /app/installations, and never caches or checks expiry - a response with no
+    // expires_at must not blow up that call.
     @Test
     public void getInstallationToken_missingExpiresAt_doesNotThrow() throws Exception {
         Vcs vcs = createVcs();
@@ -229,19 +309,6 @@ public class GitHubTokenServiceTest {
         String result = subject.getInstallationToken(INSTALLATION_ID, vcs.getApiUrl(), jws, OWNER);
 
         assertEquals(tokenToReturn, result);
-        assertEquals(1, accessTokenHits.get());
-    }
-
-    @Test
-    public void refreshAccessToken_matchingVcs_returnsRefreshedTokenAndSetsExpiry() throws Exception {
-        Vcs vcs = createVcs();
-        GitHubAppToken existing = createCachedToken(Instant.now().minus(1, ChronoUnit.HOURS));
-        when(vcsRepository.findFirstByClientId(APP_ID)).thenReturn(vcs);
-
-        String result = subject.refreshAccessToken(existing);
-
-        assertEquals(tokenToReturn, result);
-        assertNotNull(existing.getExpiresAt());
         assertEquals(1, accessTokenHits.get());
     }
 }

@@ -26,7 +26,9 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.eclipse.jgit.api.CloneCommand;
+import org.eclipse.jgit.api.errors.TransportException;
 import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.TransportCommand;
@@ -164,7 +166,72 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         return executorFolder;
     }
 
+    // A token is minted at dispatch and travels here inside the job payload, so it can
+    // still be refused while the run is under way: revoked, narrowed, or simply older
+    // than the hour a GitHub App token lives for. Only the caller that was refused can
+    // know that, so one retry with a freshly minted token is attempted before failing.
     private void downloadWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
+            throws GitAPIException, IOException {
+        try {
+            cloneWorkspaceGit(gitCloneFolder, terraformJob);
+        } catch (TransportException e) {
+            if (!isAuthenticationFailure(e)) {
+                throw e;
+            }
+            log.warn("Git authentication was refused for {}; requesting a new token and retrying once",
+                    terraformJob.getSource());
+            String refreshedToken = requestRefreshedAccessToken(terraformJob);
+            if (refreshedToken == null) {
+                throw e;
+            }
+            terraformJob.setAccessToken(refreshedToken);
+            // The first attempt may have left a partial checkout behind.
+            FileUtils.cleanDirectory(gitCloneFolder);
+            cloneWorkspaceGit(gitCloneFolder, terraformJob);
+        }
+    }
+
+    private boolean isAuthenticationFailure(TransportException e) {
+        // jgit reports a refused credential as a message, not a status: "not authorized"
+        // for a rejected token and "Authentication is required" when none was accepted.
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        return normalized.contains("not authorized") || normalized.contains("authentication is required")
+                || normalized.contains("401");
+    }
+
+    // Asks the API to mint a new token for this job. Returns null when the API declines,
+    // which is the normal answer for a connection that cannot mint on demand (OAuth, SSH,
+    // managed identity) and means the original failure should stand.
+    private String requestRefreshedAccessToken(TerraformJob terraformJob) {
+        try {
+            URL url = new URI(apiUrl + "/vcs-token/v1/" + terraformJob.getJobId() + "/refresh").toURL();
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            connection.getOutputStream().close();
+
+            if (connection.getResponseCode() != 200) {
+                log.warn("The API declined to refresh the token for job {} with status {}", terraformJob.getJobId(),
+                        connection.getResponseCode());
+                return null;
+            }
+            try (InputStream response = connection.getInputStream()) {
+                String token = new ObjectMapper().readTree(response).path("token").asText();
+                return token.isBlank() ? null : token;
+            }
+        } catch (Exception e) {
+            log.error("Could not obtain a new token for job {}", terraformJob.getJobId(), e);
+            return null;
+        }
+    }
+
+    private void cloneWorkspaceGit(File gitCloneFolder, TerraformJob terraformJob)
             throws GitAPIException, IOException {
         // Resolved once and shared with the ref probe: for AZURE_SP_MI this acquires a token
         // over the network, and nothing caches it between calls.
