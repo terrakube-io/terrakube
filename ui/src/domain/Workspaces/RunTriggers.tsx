@@ -152,8 +152,11 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
   };
 
   const onDelete = (id: string) => {
+    // No content type on purpose: the request has no body, and Elide answers 400 when one is
+    // declared anyway. Other pages set it here, which is safe only as long as axios drops the
+    // header on a bodyless request.
     axiosInstance
-      .delete(`runTrigger/${id}`, { headers: { "Content-Type": "application/vnd.api+json" } })
+      .delete(`runTrigger/${id}`)
       .then(() => {
         message.success("Run trigger deleted successfully");
         loadTriggers();

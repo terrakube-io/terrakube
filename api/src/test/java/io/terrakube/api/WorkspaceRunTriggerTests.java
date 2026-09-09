@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.mockito.Mockito.when;
 
 /**
@@ -373,6 +374,73 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    /**
+     * The exact query the Run Triggers page issues: one request for both directions, with the
+     * ends resolved through an include block.
+     *
+     * A comma is OR in Elide's filter syntax, so this returns the edges where the workspace is
+     * the source together with the ones where it is the destination. The unrelated edge is in
+     * the same organization and is what proves the filter discriminates rather than the caller
+     * simply seeing everything.
+     */
+    @Test
+    void filteringByEitherEndReturnsBothDirections() {
+        createTriggerAsAdmin(WORKSPACE_SOURCE, WORKSPACE_DESTINATION);
+        createTriggerAsAdmin(WORKSPACE_DESTINATION, WORKSPACE_TAG3);
+        createTriggerAsAdmin(WORKSPACE_TAG2, WORKSPACE_TAG3);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .queryParam("include", "sourceWorkspace,destinationWorkspace,template")
+                .queryParam(
+                        "filter[runTrigger]",
+                        "sourceWorkspace.id==" + WORKSPACE_DESTINATION
+                                + ",destinationWorkspace.id==" + WORKSPACE_DESTINATION)
+                .when()
+                .get("/api/v1/runTrigger")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", equalTo(2))
+                // Without the names the page would show raw ids, so the include block matters
+                // as much as the filter.
+                .body("included.findAll { it.type == 'workspace' }.size()", greaterThan(0));
+    }
+
+    /**
+     * A DELETE that declares a JSON:API content type is refused, because it carries no body.
+     *
+     * This is asserted rather than merely known: the Run Triggers page deliberately omits the
+     * header on delete, and this is the test that explains why to whoever is tempted to add it
+     * back for symmetry with the other verbs.
+     */
+    @Test
+    void deleteDeclaringAContentTypeIsRejected() {
+        String triggerId = createTriggerAsAdmin(WORKSPACE_SOURCE, WORKSPACE_TAG2);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .contentType("application/vnd.api+json")
+                .when()
+                .delete("/api/v1/runTrigger/" + triggerId)
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.BAD_REQUEST.value());
+
+        // And the edge is still there, so the page's own delete has something to remove.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when()
+                .get("/api/v1/runTrigger/" + triggerId)
+                .then()
+                .assertThat()
                 .statusCode(HttpStatus.OK.value());
     }
 
