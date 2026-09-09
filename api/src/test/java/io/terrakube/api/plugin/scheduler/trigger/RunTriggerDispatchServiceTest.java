@@ -18,6 +18,8 @@ import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,12 +30,14 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -46,6 +50,7 @@ class RunTriggerDispatchServiceTest {
     StepRepository stepRepository;
     WorkspaceRunTriggerRepository triggerRepository;
     TclService tclService;
+    RunTriggerJobWriter jobWriter;
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
     RunTriggerProperties properties;
@@ -64,16 +69,19 @@ class RunTriggerDispatchServiceTest {
         properties = new RunTriggerProperties();
         nextJobId = 1000;
 
-        // Assigning an id on save mirrors the database and lets the assertions distinguish
-        // the jobs created for each dependent.
+        // The writer owns the shape of the job and its transaction boundary, both covered by
+        // RunTriggerJobWriterTest. Here it stands in for a committed row, so the assertions can
+        // stay on what the dispatcher decides: who gets one, with which template, at what depth.
+        jobWriter = mock(RunTriggerJobWriter.class);
         lenient().doAnswer(i -> {
-            Job saved = i.getArgument(0);
+            Job saved = new Job();
             saved.setId(nextJobId++);
+            saved.setWorkspace(i.getArgument(0));
             return saved;
-        }).when(jobRepository).save(any(Job.class));
+        }).when(jobWriter).persist(any(), any(), any(), anyInt());
 
         subject = new RunTriggerDispatchService(jobRepository, stepRepository, triggerRepository,
-                tclService, jobNotificationTrigger, scheduleJobService, properties);
+                tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties);
     }
 
     // ---------------------------------------------------------------- fixtures
@@ -140,23 +148,18 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository).save(captor.capture());
+        verify(jobWriter).persist(eq(destination), eq("template-default"), eq(completed), eq(1));
+        verify(jobNotificationTrigger).notifyStatusChanged(captor.capture());
         Job created = captor.getValue();
 
-        assertThat(created.getWorkspace()).isSameAs(destination);
-        assertThat(created.getOrganization()).isSameAs(destination.getOrganization());
-        assertThat(created.getTemplateReference()).isEqualTo("template-default");
-        assertThat(created.getStatus()).isEqualTo(JobStatus.pending);
-        assertThat(created.getVia()).isEqualTo(JobVia.RUN_TRIGGER.getValue());
-        assertThat(created.getTriggeredByJobId()).isEqualTo(COMPLETED_JOB_ID);
-        assertThat(created.getCascadeDepth()).isEqualTo(1);
-        assertThat(created.isPlanChanges()).isTrue();
-        assertThat(created.isRefresh()).isTrue();
-        assertThat(created.isRefreshOnly()).isFalse();
-
-        // Neither hook fires for a repository save, so both have to happen explicitly.
-        verify(jobNotificationTrigger).notifyStatusChanged(created);
+        // Neither Elide hook fires for a repository save, so both side effects are explicit.
         verify(scheduleJobService).createJobContext(created);
+
+        // The order is the fix for the Quartz race: createJobContext fires the trigger at once,
+        // and the worker reads on another connection, so the row has to be committed first.
+        InOrder ordered = inOrder(jobWriter, scheduleJobService);
+        ordered.verify(jobWriter).persist(any(), any(), any(), anyInt());
+        ordered.verify(scheduleJobService).createJobContext(created);
     }
 
     @Test
@@ -167,7 +170,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository).save(any(Job.class));
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -178,7 +181,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository).save(any(Job.class));
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
     }
 
     /** A run that only planned leaves nothing downstream to react to. */
@@ -190,7 +193,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     /**
@@ -205,7 +208,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -220,7 +223,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     // ---------------------------------------------------------------- bounds
@@ -234,7 +237,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -246,9 +249,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository).save(captor.capture());
-        assertThat(captor.getValue().getCascadeDepth()).isEqualTo(3);
+        verify(jobWriter).persist(any(), any(), any(), eq(3));
     }
 
     @Test
@@ -263,9 +264,9 @@ class RunTriggerDispatchServiceTest {
         triggersFromSource(triggers);
 
         subject.dispatchFor(COMPLETED_JOB_ID);
-        ArgumentCaptor<Job> first = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository, times(3)).save(first.capture());
-        List<String> firstRun = first.getAllValues().stream().map(j -> j.getWorkspace().getName()).toList();
+        ArgumentCaptor<Workspace> first = ArgumentCaptor.forClass(Workspace.class);
+        verify(jobWriter, times(3)).persist(first.capture(), any(), any(), anyInt());
+        List<String> firstRun = first.getAllValues().stream().map(Workspace::getName).toList();
 
         // Same graph, same apply: the cap must not pick a different arbitrary subset.
         List<WorkspaceRunTrigger> shuffled = new ArrayList<>(List.of(triggers));
@@ -273,10 +274,10 @@ class RunTriggerDispatchServiceTest {
         doReturn(shuffled).when(triggerRepository).findEnabledBySourceWorkspaceId(SOURCE_ID);
 
         subject.dispatchFor(COMPLETED_JOB_ID);
-        ArgumentCaptor<Job> second = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository, times(6)).save(second.capture());
+        ArgumentCaptor<Workspace> second = ArgumentCaptor.forClass(Workspace.class);
+        verify(jobWriter, times(6)).persist(second.capture(), any(), any(), anyInt());
         List<String> secondRun = second.getAllValues().subList(3, 6).stream()
-                .map(j -> j.getWorkspace().getName()).toList();
+                .map(Workspace::getName).toList();
 
         assertThat(secondRun).containsExactlyInAnyOrderElementsOf(firstRun);
     }
@@ -288,7 +289,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
         verify(stepRepository, never()).findByJobId(anyInt());
     }
 
@@ -305,9 +306,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository).save(captor.capture());
-        assertThat(captor.getValue().getTemplateReference()).isEqualTo(template.getId().toString());
+        verify(jobWriter).persist(any(), eq(template.getId().toString()), any(), anyInt());
     }
 
     @Test
@@ -318,7 +317,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     // ---------------------------------------------------------------- fault isolation
@@ -327,16 +326,38 @@ class RunTriggerDispatchServiceTest {
      * The reason each dependent is wrapped: without it, the first workspace that cannot be
      * scheduled would cost every dependent listed after it.
      */
+    /**
+     * The case the per-dependent transaction exists for. A failed insert marks its transaction
+     * rollback-only and catching the exception does not clear that, so a shared transaction
+     * would take every job created beside it down at commit - through the try/catch meant to
+     * prevent exactly that. Only a boundary per dependent makes this assertion true.
+     */
     @Test
-    void oneFailingDependentDoesNotStopTheOthers() throws Exception {
+    void oneFailingInsertDoesNotStopTheOthers() throws Exception {
         Job completed = completedJob(0);
         stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
 
-        Workspace broken = workspace("broken", "template-default");
-        Workspace healthy = workspace("healthy", "template-default");
-        // Ordered so the failure is not the last one processed.
-        broken.setId(UUID.fromString("00000000-0000-0000-0000-00000000000a"));
-        healthy.setId(UUID.fromString("00000000-0000-0000-0000-00000000000b"));
+        Workspace broken = brokenFirst();
+        Workspace healthy = healthySecond();
+        triggersFromSource(trigger(broken, null), trigger(healthy, null));
+
+        doThrow(new DataIntegrityViolationException("constraint violation"))
+                .when(jobWriter).persist(eq(broken), any(), any(), anyInt());
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(eq(healthy), any(), any(), anyInt());
+        verify(scheduleJobService).createJobContext(argThatTargets(healthy));
+    }
+
+    /** The same guarantee for a failure on the scheduling side rather than the insert. */
+    @Test
+    void oneFailingScheduleDoesNotStopTheOthers() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+
+        Workspace broken = brokenFirst();
+        Workspace healthy = healthySecond();
         triggersFromSource(trigger(broken, null), trigger(healthy, null));
 
         doThrow(new IllegalStateException("scheduler down"))
@@ -345,6 +366,19 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         verify(scheduleJobService).createJobContext(argThatTargets(healthy));
+    }
+
+    /** Ids fix the processing order, so the failure is never the last one handled. */
+    private Workspace brokenFirst() {
+        Workspace broken = workspace("broken", "template-default");
+        broken.setId(UUID.fromString("00000000-0000-0000-0000-00000000000a"));
+        return broken;
+    }
+
+    private Workspace healthySecond() {
+        Workspace healthy = workspace("healthy", "template-default");
+        healthy.setId(UUID.fromString("00000000-0000-0000-0000-00000000000b"));
+        return healthy;
     }
 
     /** Dispatch must never surface an error on a run that already succeeded. */
@@ -362,7 +396,7 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobRepository, never()).save(any(Job.class));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
     }
 
     private static Job argThatTargets(Workspace workspace) {
