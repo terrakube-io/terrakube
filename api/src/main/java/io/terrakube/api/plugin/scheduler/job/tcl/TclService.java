@@ -66,7 +66,7 @@ public class TclService {
             } else {
                 flowConfig = getFlowConfig(job.getTcl());
             }
-            log.info("Custom Job Setup: \n {}", flowConfig.toString());
+            log.debug("Custom Job Setup: \n {}", flowConfig.toString());
 
             // Sequential on purpose: these save() calls must participate in this method's
             // transaction. parallelStream() would run them on ForkJoinPool worker threads that
@@ -97,9 +97,11 @@ public class TclService {
         Yaml yaml = new Yaml(new Constructor(FlowConfig.class, new LoaderOptions()));
         FlowConfig flowConfig = null;
         try {
-            FlowConfig temp = yaml.load(new String(Base64.getDecoder().decode(tcl)));
-            log.info("FlowConfig: \n {}", temp);
             flowConfig = yaml.load(new String(Base64.getDecoder().decode(tcl)));
+            // Log at DEBUG to avoid keyword-based monitors (e.g. Datadog, CloudWatch, Loki)
+            // flagging the FlowConfig toString() output (which contains "error=null" field text)
+            // as ERROR-level events in healthy runs. See: https://github.com/terrakube-io/terrakube/issues/3544
+            log.debug("FlowConfig: \n {}", flowConfig);
 
             if (flowConfig.getFlow().isEmpty()) {
                 log.error("Exception parsing yaml: template with no flows");
