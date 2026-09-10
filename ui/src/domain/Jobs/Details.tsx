@@ -800,6 +800,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                       policyEvaluation={policyEvaluation}
                       jobId={jobId}
                       organizationId={organizationId || job?.data?.relationships?.organization?.data?.id}
+                      workspaceId={job?.data?.relationships?.workspace?.data?.id}
                       status={job.data.attributes.status}
                       approvalTeam={job.data.attributes.approvalTeam}
                       onOverrideSuccess={() => {

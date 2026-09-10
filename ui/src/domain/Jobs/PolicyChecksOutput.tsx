@@ -10,8 +10,10 @@ import {
   Radio,
   Space,
   Tag,
+  Tooltip,
   Typography,
   message,
+  notification,
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -19,6 +21,7 @@ import {
   CloseOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
+  PlayCircleOutlined,
   SafetyCertificateOutlined,
   WarningOutlined,
   UnlockOutlined,
@@ -27,6 +30,8 @@ import {
 import axiosInstance, { axiosRegistry, getErrorMessage } from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import { PolicyEvaluationContext, PolicyViolationItem } from "../types";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { PolicyExemptionModal } from "../Settings/components";
 import "./PolicyChecksOutput.css";
 
 const { Text, Paragraph } = Typography;
@@ -34,6 +39,7 @@ const { TextArea } = Input;
 
 type FlattenedRule = {
   key: string;
+  policySetId?: string;
   policySetName: string;
   enforcementLevel: string;
   ruleId: string;
@@ -50,6 +56,7 @@ type Props = {
   policyEvaluation?: PolicyEvaluationContext;
   jobId?: string;
   organizationId?: string;
+  workspaceId?: string;
   status?: string;
   approvalTeam?: string;
   onOverrideSuccess?: () => void;
@@ -60,6 +67,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   policyEvaluation,
   jobId,
   organizationId,
+  workspaceId,
   status,
   approvalTeam,
   onOverrideSuccess,
@@ -71,6 +79,62 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [form] = Form.useForm();
+
+  const effectiveOrgId = organizationId || sessionStorage.getItem(ORGANIZATION_ARCHIVE) || "";
+  const { permissions: orgPermissions } = useOrgPermissions(effectiveOrgId || undefined);
+  const canManagePolicies = orgPermissions.managePolicies;
+
+  const [exemptionModalVisible, setExemptionModalVisible] = useState(false);
+  const [selectedExemptionRule, setSelectedExemptionRule] = useState<FlattenedRule | null>(null);
+
+  const handleOpenExemptionModal = (rule: FlattenedRule) => {
+    setSelectedExemptionRule(rule);
+    setExemptionModalVisible(true);
+  };
+
+  const handleTriggerEvaluationNow = () => {
+    if (!effectiveOrgId || !workspaceId) return;
+    const origin = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+    axiosInstance
+      .post(`${origin}/policy/v1/organization/${effectiveOrgId}/workspace/${workspaceId}/evaluation`)
+      .then(() => {
+        message.success("Policy evaluation dispatched successfully");
+        if (onOverrideSuccess) onOverrideSuccess();
+      })
+      .catch((err) => {
+        message.error("Failed to trigger evaluation: " + (getErrorMessage(err) || "Unknown error"));
+      });
+  };
+
+  const handleExemptionSuccess = () => {
+    setExemptionModalVisible(false);
+    notification.success({
+      message: "Exemption Created",
+      description: (
+        <div>
+          <div>
+            Policy exemption for rule <Text code>{selectedExemptionRule?.ruleId}</Text> was created successfully.
+          </div>
+          {workspaceId && (
+            <div style={{ marginTop: 8 }}>
+              <Button
+                type="primary"
+                size="small"
+                icon={<PlayCircleOutlined />}
+                onClick={handleTriggerEvaluationNow}
+              >
+                Evaluate Policies Now
+              </Button>
+            </div>
+          )}
+        </div>
+      ),
+      duration: 8,
+    });
+    if (onOverrideSuccess) {
+      onOverrideSuccess();
+    }
+  };
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -120,6 +184,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
         res.exemptedViolations.forEach((ev, vIdx) => {
           rules.push({
             key: `exempt-${pIdx}-${vIdx}-${ev.ruleId}`,
+            policySetId: res.policySetId,
             policySetName: setName,
             enforcementLevel: enf,
             ruleId: ev.ruleId,
@@ -147,6 +212,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
 
           rules.push({
             key: `violation-${pIdx}-${vIdx}-${v.ruleId}`,
+            policySetId: res.policySetId,
             policySetName: setName,
             enforcementLevel: enf,
             ruleId: v.ruleId,
@@ -476,20 +542,50 @@ export const PolicyChecksOutput: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {rule.address && rule.address !== "-" && (
+                {(rule.address && rule.address !== "-") || rule.severityType === "hard" || rule.severityType === "soft" ? (
                   <div className="policy-resource-row">
-                    <span className="policy-resource-address">{rule.address}</span>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EyeOutlined />}
-                      onClick={() => handleDeepLinkToResource(rule.address)}
-                      data-testid={`deep-link-${rule.ruleId}`}
-                    >
-                      View in Plan Diff
-                    </Button>
+                    {rule.address && rule.address !== "-" ? (
+                      <span className="policy-resource-address">{rule.address}</span>
+                    ) : (
+                      <span />
+                    )}
+                    <Space size={8}>
+                      {rule.address && rule.address !== "-" && (
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => handleDeepLinkToResource(rule.address)}
+                          data-testid={`deep-link-${rule.ruleId}`}
+                        >
+                          View in Plan Diff
+                        </Button>
+                      )}
+                      {(rule.severityType === "hard" || rule.severityType === "soft") && (
+                        <Tooltip
+                          title={
+                            !canManagePolicies
+                              ? "Requires Policy Management permission to add exemptions"
+                              : undefined
+                          }
+                        >
+                          <span>
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<SafetyCertificateOutlined />}
+                              onClick={() => handleOpenExemptionModal(rule)}
+                              disabled={!canManagePolicies}
+                              data-testid={`add-exemption-${rule.ruleId}`}
+                            >
+                              Add Exemption
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      )}
+                    </Space>
                   </div>
-                )}
+                ) : null}
 
                 {rule.severityType === "exempted" && (
                   <div className="policy-exemption-box" data-testid="exemption-card">
@@ -583,6 +679,38 @@ export const PolicyChecksOutput: React.FC<Props> = ({
           </Form.Item>
         </Form>
       </Drawer>
+
+      {effectiveOrgId && (
+        <PolicyExemptionModal
+          visible={exemptionModalVisible}
+          mode="create"
+          organizationId={effectiveOrgId}
+          lockedScope={
+            workspaceId
+              ? {
+                  scopeType: "WORKSPACE",
+                  workspaceId: workspaceId,
+                }
+              : undefined
+          }
+          initialData={
+            selectedExemptionRule
+              ? {
+                  policySetId: selectedExemptionRule.policySetId,
+                  ruleId: selectedExemptionRule.ruleId,
+                  scopeType: workspaceId ? "WORKSPACE" : "ORGANIZATION",
+                  workspaceId: workspaceId,
+                  justification:
+                    selectedExemptionRule.address && selectedExemptionRule.address !== "-"
+                      ? `Exemption approved for resource ${selectedExemptionRule.address}`
+                      : "",
+                }
+              : undefined
+          }
+          onCancel={() => setExemptionModalVisible(false)}
+          onSuccess={handleExemptionSuccess}
+        />
+      )}
     </div>
   );
 };

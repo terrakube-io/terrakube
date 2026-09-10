@@ -1,17 +1,24 @@
 import {
   InfoCircleOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { Alert, Button, Card, Space, Tooltip, Typography, message } from "antd";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import { Workspace } from "../../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import {
+  ExemptionRecord,
+  PolicyExemptionModal,
+  PolicyExemptionTable,
+} from "../../Settings/components";
 
 const { Text, Paragraph } = Typography;
 
@@ -26,11 +33,114 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
   const navigate = useNavigate();
   const organizationId = workspace?.relationships?.organization?.data?.id || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const workspaceId = workspace?.id;
+  const workspaceProjectId = workspace?.relationships?.project?.data?.id;
   const isLocked = workspace?.attributes?.locked;
   const lastJobStatus = workspace?.attributes?.lastJobStatus;
   const complianceStatus = workspace?.attributes?.policyComplianceStatus || "UNKNOWN";
 
+  const { permissions: orgPermissions } = useOrgPermissions(organizationId || undefined);
+  const canManagePolicies = orgPermissions.managePolicies;
+
   const [loading, setLoading] = useState(false);
+  const [rawExemptions, setRawExemptions] = useState<any[]>([]);
+  const [includedMap, setIncludedMap] = useState<Record<string, Record<string, any>>>({});
+  const [exemptionsLoading, setExemptionsLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingExemption, setEditingExemption] = useState<any | null>(null);
+
+  const loadExemptions = () => {
+    if (!organizationId) return;
+    setExemptionsLoading(true);
+    axiosInstance
+      .get(`organization/${organizationId}/policyExemption?include=policySet,workspace,project`)
+      .then((res) => {
+        const items = res.data?.data || [];
+        const included = res.data?.included || [];
+
+        const incMap: Record<string, Record<string, any>> = {};
+        included.forEach((inc: any) => {
+          if (!incMap[inc.type]) {
+            incMap[inc.type] = {};
+          }
+          incMap[inc.type][inc.id] = inc.attributes;
+        });
+
+        setIncludedMap(incMap);
+        setRawExemptions(items);
+      })
+      .catch(() => {})
+      .finally(() => setExemptionsLoading(false));
+  };
+
+  useEffect(() => {
+    loadExemptions();
+  }, [organizationId, workspaceId]);
+
+  const workspaceExemptions = useMemo<ExemptionRecord[]>(() => {
+    return rawExemptions
+      .filter((item: any) => {
+        const wsId = item.relationships?.workspace?.data?.id;
+        const projId = item.relationships?.project?.data?.id;
+
+        if (wsId && wsId === workspaceId) return true;
+        if (projId && projId === workspaceProjectId) return true;
+        if (!wsId && !projId) return true;
+        return false;
+      })
+      .map((item: any) => {
+        const attrs = item.attributes || {};
+        const rels = item.relationships || {};
+        const psId = rels.policySet?.data?.id;
+        const wsId = rels.workspace?.data?.id;
+        const projId = rels.project?.data?.id;
+
+        let scopeType: "ORGANIZATION" | "PROJECT" | "WORKSPACE" = "ORGANIZATION";
+        if (wsId) scopeType = "WORKSPACE";
+        else if (projId) scopeType = "PROJECT";
+
+        return {
+          id: item.id,
+          ruleId: attrs.ruleId || "",
+          policySetId: psId,
+          policySetName: includedMap["policy_set"]?.[psId]?.name || psId || "Policy Set",
+          ticketReference: attrs.ticketReference || "",
+          justification: attrs.justification || "",
+          expiresAt: attrs.expiresAt || null,
+          scopeType,
+          workspaceId: wsId,
+          workspaceName: includedMap["workspace"]?.[wsId]?.name,
+          projectId: projId,
+          projectName: includedMap["project"]?.[projId]?.name,
+          createdDate: attrs.createdDate,
+          createdBy: attrs.createdBy,
+          isInherited: wsId !== workspaceId,
+        };
+      });
+  }, [rawExemptions, includedMap, workspaceId, workspaceProjectId]);
+
+  const handleCreateExemption = () => {
+    setModalMode("create");
+    setEditingExemption(null);
+    setModalVisible(true);
+  };
+
+  const handleEditExemption = (rec: ExemptionRecord) => {
+    setModalMode("edit");
+    setEditingExemption(rec);
+    setModalVisible(true);
+  };
+
+  const handleDeleteExemption = async (rec: ExemptionRecord) => {
+    try {
+      await axiosInstance.delete(`policy_exemption/${rec.id}`);
+      message.success(`Policy exemption for ${rec.ruleId} revoked successfully`);
+      loadExemptions();
+      onWorkspaceUpdate?.();
+    } catch (err: any) {
+      message.error(getErrorMessage(err) || "Failed to revoke exemption");
+    }
+  };
 
   const canEvaluate = manageWorkspace || planJob;
   const hasCompletedRun = Boolean(lastJobStatus && lastJobStatus !== "NeverExecuted");
@@ -123,6 +233,51 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
         <Card
           title={
             <Space orientation="horizontal">
+              <SafetyCertificateOutlined />
+              <span>Active Policy Exemptions</span>
+            </Space>
+          }
+          extra={
+            <Tooltip
+              title={
+                !canManagePolicies
+                  ? "Requires Policy Management permission to add exemptions"
+                  : undefined
+              }
+            >
+              <span>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreateExemption}
+                  disabled={!canManagePolicies}
+                  data-testid="add-workspace-exemption-btn"
+                >
+                  Add Exemption
+                </Button>
+              </span>
+            </Tooltip>
+          }
+          style={{ marginBottom: 24 }}
+        >
+          <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            Rules waived for this workspace via active policy exemptions (including inherited organization and project waivers).
+          </Paragraph>
+
+          <PolicyExemptionTable
+            items={workspaceExemptions}
+            loading={exemptionsLoading}
+            managePermission={canManagePolicies}
+            currentWorkspaceId={workspaceId}
+            onEdit={handleEditExemption}
+            onDelete={handleDeleteExemption}
+            pageSize={5}
+          />
+        </Card>
+
+        <Card
+          title={
+            <Space orientation="horizontal">
               <PlayCircleOutlined />
               <span>Trigger Policy Evaluation</span>
             </Space>
@@ -176,6 +331,40 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
           </Tooltip>
         </Card>
       </SettingsSection>
+
+      {organizationId && (
+        <PolicyExemptionModal
+          visible={modalVisible}
+          mode={modalMode}
+          lockedScope={{
+            scopeType: "WORKSPACE",
+            workspaceId: workspaceId,
+            workspaceName: workspace?.attributes?.name,
+          }}
+          initialData={
+            editingExemption
+              ? {
+                  id: editingExemption.id,
+                  policySetId: editingExemption.policySetId,
+                  ruleId: editingExemption.ruleId,
+                  scopeType: editingExemption.scopeType,
+                  workspaceId: editingExemption.workspaceId,
+                  projectId: editingExemption.projectId,
+                  ticketReference: editingExemption.ticketReference,
+                  justification: editingExemption.justification,
+                  expiresAt: editingExemption.expiresAt,
+                }
+              : undefined
+          }
+          organizationId={organizationId}
+          onCancel={() => setModalVisible(false)}
+          onSuccess={() => {
+            setModalVisible(false);
+            loadExemptions();
+            onWorkspaceUpdate?.();
+          }}
+        />
+      )}
     </div>
   );
 };

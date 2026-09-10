@@ -18,6 +18,7 @@ export interface OrgPermissionSet {
   planJob: boolean;
   approveJob: boolean;
   managePermission: boolean;
+  managePolicies: boolean;
 }
 
 const defaultPermissions: OrgPermissionSet = {
@@ -32,6 +33,7 @@ const defaultPermissions: OrgPermissionSet = {
   planJob: false,
   approveJob: false,
   managePermission: false,
+  managePolicies: false,
 };
 
 /**
@@ -78,6 +80,7 @@ export function useOrgPermissions(orgIdOverride?: string) {
           planJob: response.data.planJob ?? false,
           approveJob: response.data.approveJob ?? false,
           managePermission: response.data.managePermission ?? false,
+          managePolicies: response.data.managePolicies ?? response.data.managePermission ?? false,
         });
       })
       .catch(() => {

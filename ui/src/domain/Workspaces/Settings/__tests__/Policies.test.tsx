@@ -9,7 +9,14 @@ jest.mock("react-router-dom", () => ({
 }));
 
 jest.mock("../../../../config/axiosConfig", () => ({
-  post: jest.fn(),
+  __esModule: true,
+  default: {
+    get: jest.fn().mockResolvedValue({ data: { data: [] } }),
+    post: jest.fn(),
+    delete: jest.fn(),
+    patch: jest.fn(),
+  },
+  getErrorMessage: (err: any) => err?.message || "Error",
 }));
 
 describe("WorkspacePolicies", () => {

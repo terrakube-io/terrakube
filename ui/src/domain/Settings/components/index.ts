@@ -8,3 +8,21 @@ export {
   setStoredPolicySetsViewMode,
   type PolicySetsViewMode,
 } from "./policySetsViewPreference";
+export { PolicyExemptionModal } from "./PolicyExemptionModal";
+export type {
+  PolicyExemptionModalProps,
+  ExemptionFormData,
+  ExemptionScopeType,
+} from "./PolicyExemptionModal";
+export { PolicyExemptionTable } from "./PolicyExemptionTable";
+export type {
+  PolicyExemptionTableProps,
+  ExemptionRecord,
+} from "./PolicyExemptionTable";
+export { PolicyExemptionFilter } from "./PolicyExemptionFilter";
+export type {
+  PolicyExemptionFilterProps,
+  ExemptionStatusFilter,
+  ExemptionScopeFilter,
+} from "./PolicyExemptionFilter";
+
