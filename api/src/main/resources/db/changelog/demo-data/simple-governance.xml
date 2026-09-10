@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet author="demo-data" id="demo-simple-governance">
+
+        <!--
+        ********************
+        *** ORGANIZATION ***
+        ********************
+        -->
+        <insert tableName="organization">
+            <column name="id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="name"        value="simple-governance" />
+            <column name="description" value="Demo organization showcasing end-to-end OPA policy governance, multi-tier scoping, and exemptions" />
+        </insert>
+
+        <!--
+        *************
+        *** TEAMS ***
+        *************
+        -->
+        <insert tableName="team">
+            <column name="id"                value="70000000-0000-0000-0000-000000000030" />
+            <column name="name"              value="TERRAKUBE_ADMIN" />
+            <column name="role"              value="admin" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="true" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"                value="70000000-0000-0000-0000-000000000031" />
+            <column name="name"              value="TERRAKUBE_DEVELOPERS" />
+            <column name="role"              value="write" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="false" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        ****************
+        *** PROJECTS ***
+        ****************
+        -->
+        <insert tableName="project">
+            <column name="id"              value="70000000-0000-0000-0000-000000000010" />
+            <column name="name"            value="governance-terraform" />
+            <column name="description"     value="Project hosting governance test workspaces powered by Terraform" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="project">
+            <column name="id"              value="70000000-0000-0000-0000-000000000020" />
+            <column name="name"            value="governance-tofu" />
+            <column name="description"     value="Project hosting governance test workspaces powered by OpenTofu" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *****************
+        *** TEMPLATES ***
+        *****************
+        -->
+        <insert tableName="template">
+            <column name="id"              value="70000000-0000-0000-0000-000000000035" />
+            <column name="name"            value="Plan" />
+            <column name="description"     value="Running terraform plan" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="70000000-0000-0000-0000-000000000036" />
+            <column name="name"            value="Plan and Apply" />
+            <column name="description"     value="Running terraform plan and apply" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="70000000-0000-0000-0000-000000000037" />
+            <column name="name"            value="Terraform-Destroy" />
+            <column name="description"     value="Running terraform destroy" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1EZXN0cm95IgogICAgc3RlcDogMTAwCg==" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="70000000-0000-0000-0000-000000000038" />
+            <column name="name"            value="Terraform-Plan/Apply-Cli" />
+            <column name="description"     value="Running terraform plan and apply using remote backend" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKLSB0eXBlOiAidGVycmFmb3JtUGxhbiIKICBuYW1lOiAiVGVycmFmb3JtIFBsYW4gZnJvbSBUZXJyYWZvcm0gQ0xJIgogIHN0ZXA6IDEwMAotIHR5cGU6ICJhcHByb3ZhbCIKICBuYW1lOiAiQXBwcm92ZSBQbGFuIGZyb20gVGVycmFmb3JtIENMSSIKICBzdGVwOiAxNTAKICB0ZWFtOiAiVEVSUkFGT1JNX0NMSSIKLSB0eXBlOiAidGVycmFmb3JtQXBwbHkiCiAgbmFtZTogIlRlcnJhZm9ybSBBcHBseSBmcm9tIFRlcnJhZm9ybSBDTEkiCiAgc3RlcDogMjAwCg==" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="70000000-0000-0000-0000-000000000039" />
+            <column name="name"            value="Terraform-Plan/Destroy-Cli" />
+            <column name="description"     value="Running terraform plan and destroy using remote backend" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKLSB0eXBlOiAidGVycmFmb3JtUGxhbkRlc3Ryb3kiCiAgbmFtZTogIlRlcnJhZm9ybSBQbGFuIERlc3Ryb3kgZnJvbSBUZXJyYWZvcm0gQ0xJIgogIHN0ZXA6IDEwMAotIHR5cGU6ICJhcHByb3ZhbCIKICBuYW1lOiAiQXBwcm92ZSBQbGFuIGZyb20gVGVycmFmb3JtIENMSSIKICBzdGVwOiAxNTAKICB0ZWFtOiAiVEVSUkFGT1JNX0NMSSIKLSB0eXBlOiAidGVycmFmb3JtQXBwbHkiCiAgbmFtZTogIlRlcnJhZm9ybSBBcHBseSBmcm9tIFRlcnJhZm9ybSBDTEkiCiAgc3RlcDogMjAwCg==" />
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        ***********************************************
+        *** WORKSPACES - TERRAFORM (version 1.15.9) ***
+        ***********************************************
+        -->
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000060" />
+            <column name="name"                     value="tf-pwd-compliant" />
+            <column name="description"              value="Terraform compliant password test workspace (length 16 or greater)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-compliant" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000061" />
+            <column name="name"                     value="tf-pwd-advisory" />
+            <column name="description"              value="Terraform advisory warning password test workspace (length 12..15)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-advisory" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000062" />
+            <column name="name"                     value="tf-pwd-soft-fail" />
+            <column name="description"              value="Terraform soft mandatory override password test workspace (length 8..11)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-soft-fail" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000063" />
+            <column name="name"                     value="tf-pwd-hard-fail" />
+            <column name="description"              value="Terraform hard mandatory failure password test workspace (length less than 8)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-hard-fail" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000064" />
+            <column name="name"                     value="tf-pwd-exempted" />
+            <column name="description"              value="Terraform exempted password test workspace (waived via PolicyExemption SEC-101)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-exempted" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000072" />
+            <column name="name"                     value="tf-pwd-advisory-soft-fail" />
+            <column name="description"              value="Terraform combined advisory warning and soft mandatory override password test workspace" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-advisory-soft-fail" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <!--
+        ***********************************************
+        *** WORKSPACES - OPENTOFU (version 1.11.14) ***
+        ***********************************************
+        -->
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000065" />
+            <column name="name"                     value="tofu-pwd-compliant" />
+            <column name="description"              value="OpenTofu compliant password test workspace (length 16 or greater)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-compliant" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000066" />
+            <column name="name"                     value="tofu-pwd-advisory" />
+            <column name="description"              value="OpenTofu advisory warning password test workspace (length 12..15)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-advisory" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000067" />
+            <column name="name"                     value="tofu-pwd-soft-fail" />
+            <column name="description"              value="OpenTofu soft mandatory override password test workspace (length 8..11)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-soft-fail" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000068" />
+            <column name="name"                     value="tofu-pwd-hard-fail" />
+            <column name="description"              value="OpenTofu hard mandatory failure password test workspace (length less than 8)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-hard-fail" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000069" />
+            <column name="name"                     value="tofu-pwd-exempted" />
+            <column name="description"              value="OpenTofu exempted password test workspace (waived via PolicyExemption SEC-101)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-exempted" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000073" />
+            <column name="name"                     value="tofu-pwd-advisory-soft-fail" />
+            <column name="description"              value="OpenTofu combined advisory warning and soft mandatory override password test workspace" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-advisory-soft-fail" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <!--
+        *******************
+        *** POLICY SETS ***
+        *******************
+        -->
+        <!-- 1. Advisory: Fleet-wide Global Policy Set -->
+        <insert tableName="policy_set">
+            <column name="id"                value="70000000-0000-0000-0000-000000000040" />
+            <column name="name"              value="password-length-advisory" />
+            <column name="description"       value="Advisory guardrail recommending password length 16 or more characters" />
+            <column name="enforcement_level" value="ADVISORY" />
+            <column name="global"            valueBoolean="true" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/password/advisory" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!-- 2. Soft Mandatory: Requires TERRAKUBE_ADMIN SecOps Override -->
+        <insert tableName="policy_set">
+            <column name="id"                value="70000000-0000-0000-0000-000000000041" />
+            <column name="name"              value="password-length-soft-mandatory" />
+            <column name="description"       value="Soft mandatory guardrail requiring TERRAKUBE_ADMIN override if password length is between 8 and 11 characters" />
+            <column name="enforcement_level" value="SOFT_MANDATORY" />
+            <column name="override_team"     value="TERRAKUBE_ADMIN" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/password/soft_mandatory" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!-- 3. Hard Mandatory: Strictly Blocks Apply if Length < 8 -->
+        <insert tableName="policy_set">
+            <column name="id"                value="70000000-0000-0000-0000-000000000042" />
+            <column name="name"              value="password-length-hard-mandatory" />
+            <column name="description"       value="Hard mandatory guardrail blocking apply if password length is less than 8 characters" />
+            <column name="enforcement_level" value="HARD_MANDATORY" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/password/hard_mandatory" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!-- 4. Shadow Evaluation: Advisory with Shadow Hard Mandatory -->
+        <insert tableName="policy_set">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000043" />
+            <column name="name"                     value="password-length-shadow" />
+            <column name="description"              value="Shadow guardrail demonstrating passive hard-mandatory violation detection without blocking runs" />
+            <column name="enforcement_level"        value="ADVISORY" />
+            <column name="shadow_enforcement_level" value="HARD_MANDATORY" />
+            <column name="global"                   valueBoolean="false" />
+            <column name="repository"               value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="bundles/password/hard_mandatory" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        **************************
+        *** POLICY ATTACHMENTS ***
+        **************************
+        -->
+        <!-- Soft Mandatory Attachments -->
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000050" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000041" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000062" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000051" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000041" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000067" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000058" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000041" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000072" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000059" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000041" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000073" />
+        </insert>
+
+        <!-- Hard Mandatory Attachments -->
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000052" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000063" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000053" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000068" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000054" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000064" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000055" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000069" />
+        </insert>
+
+        <!-- Shadow Attachments -->
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000056" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000043" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000060" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000057" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000043" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000065" />
+        </insert>
+
+        <!--
+        *************************
+        *** POLICY EXEMPTIONS ***
+        *************************
+        -->
+        <!-- Exemption on Terraform Workspace tf-pwd-exempted -->
+        <insert tableName="policy_exemption">
+            <column name="id"               value="70000000-0000-0000-0000-000000000070" />
+            <column name="policy_set_id"    value="70000000-0000-0000-0000-000000000042" />
+            <column name="rule_id"          value="password_length_hard_mandatory" />
+            <column name="workspace_id"     value="70000000-0000-0000-0000-000000000064" />
+            <column name="ticket_reference" value="SEC-101" />
+            <column name="justification"    value="Legacy database password generator requires shorter password until Q4 refactor" />
+            <column name="expires_at"       valueDate="2030-12-31T23:59:59" />
+            <column name="organization_id"  value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!-- Exemption on OpenTofu Workspace tofu-pwd-exempted -->
+        <insert tableName="policy_exemption">
+            <column name="id"               value="70000000-0000-0000-0000-000000000071" />
+            <column name="policy_set_id"    value="70000000-0000-0000-0000-000000000042" />
+            <column name="rule_id"          value="password_length_hard_mandatory" />
+            <column name="workspace_id"     value="70000000-0000-0000-0000-000000000069" />
+            <column name="ticket_reference" value="SEC-101" />
+            <column name="justification"    value="Legacy database password generator requires shorter password until Q4 refactor" />
+            <column name="expires_at"       valueDate="2030-12-31T23:59:59" />
+            <column name="organization_id"  value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+    </changeSet>
+</databaseChangeLog>

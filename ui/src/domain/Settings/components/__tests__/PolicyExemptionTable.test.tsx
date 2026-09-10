@@ -111,4 +111,64 @@ describe("PolicyExemptionTable", () => {
     const readOnlyLabels = screen.getAllByText("Read-only");
     expect(readOnlyLabels.length).toBe(3);
   });
+
+  it("applies white-space nowrap on Rule ID and renders fallback dashes when fields are empty", () => {
+    const emptyExemption: ExemptionRecord[] = [
+      {
+        id: "ex-4",
+        ruleId: "long_rule_name_preventing_vertical_character_wrap",
+        policySetId: "ps-3",
+        policySetName: "",
+        ticketReference: "",
+        justification: "",
+        expiresAt: null,
+        scopeType: "ORGANIZATION",
+      },
+    ];
+
+    render(
+      <PolicyExemptionTable
+        items={emptyExemption}
+        managePermission={true}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    const ruleCode = screen.getByText("long_rule_name_preventing_vertical_character_wrap");
+    expect(ruleCode).toBeInTheDocument();
+    const typographyElem = ruleCode.closest(".ant-typography") || ruleCode;
+    expect(typographyElem).toHaveStyle({ whiteSpace: "nowrap" });
+
+    // Fallback dashes for ticket and justification
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("handles numeric timestamp expiresAt without throwing expiresAt.slice is not a function", () => {
+    const timestampExemption: ExemptionRecord[] = [
+      {
+        id: "ex-5",
+        ruleId: "password_length_hard_mandatory",
+        policySetId: "ps-4",
+        policySetName: "Security Standards",
+        ticketReference: "SEC-101",
+        justification: "Legacy waiver",
+        expiresAt: 1924905600000, // Year 2031 timestamp (number)
+        scopeType: "WORKSPACE",
+      },
+    ];
+
+    render(
+      <PolicyExemptionTable
+        items={timestampExemption}
+        managePermission={true}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText("password_length_hard_mandatory")).toBeInTheDocument();
+    expect(screen.getByText(/2030-12-31/)).toBeInTheDocument();
+  });
 });

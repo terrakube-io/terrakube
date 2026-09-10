@@ -65,10 +65,10 @@ describe("WorkspaceTable", () => {
 
   it("renders policy compliance badges in the policy column with links", () => {
     renderTable();
-    expect(screen.getByText("COMPLIANT")).toBeInTheDocument();
-    expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
+    expect(screen.getByText("Compliant")).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
 
-    const compliantLink = screen.getByRole("link", { name: /Policy compliance: COMPLIANT/i });
+    const compliantLink = screen.getByRole("link", { name: /Policy compliance: Compliant/i });
     expect(compliantLink).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/settings/policies");
   });
 

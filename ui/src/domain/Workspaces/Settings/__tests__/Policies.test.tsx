@@ -44,7 +44,7 @@ describe("WorkspacePolicies", () => {
 
     render(<WorkspacePolicies workspace={baseWorkspace} manageWorkspace={true} />);
 
-    expect(screen.getByText("COMPLIANT")).toBeInTheDocument();
+    expect(screen.getByText("Compliant")).toBeInTheDocument();
     expect(screen.getByText("Evaluate Policies Now")).toBeEnabled();
 
     fireEvent.click(screen.getByText("Evaluate Policies Now"));
@@ -69,7 +69,7 @@ describe("WorkspacePolicies", () => {
     };
 
     render(<WorkspacePolicies workspace={ws} manageWorkspace={true} />);
-    expect(screen.getByText("NON-COMPLIANT")).toBeInTheDocument();
+    expect(screen.getByText("Non-Compliant")).toBeInTheDocument();
   });
 
   it("disables button and displays warning alert when workspace is locked", () => {

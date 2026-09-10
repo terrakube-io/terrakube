@@ -19,6 +19,13 @@ export type PolicyStatusTagProps = {
   style?: React.CSSProperties;
 };
 
+export const policyStatusColors: Record<string, string> = {
+  COMPLIANT: "#2eb039",
+  NON_COMPLIANT: "#FB0136",
+  EXEMPTED: "#108ee9",
+  UNKNOWN: "#8c8c8c",
+};
+
 export default function PolicyStatusTag({
   status,
   organizationId,
@@ -27,33 +34,38 @@ export default function PolicyStatusTag({
   className,
   style,
 }: PolicyStatusTagProps) {
-  const normalizedStatus = status ? status.toUpperCase() : "UNKNOWN";
+  const normalizedStatus = status ? status.toUpperCase().replace("-", "_") : "UNKNOWN";
 
-  let color = "default";
+  let color = "#8c8c8c";
   let icon = <QuestionCircleOutlined />;
-  let label = "UNKNOWN";
+  let label = "Unknown";
+  let testIdKey = "unknown";
 
   switch (normalizedStatus) {
     case "COMPLIANT":
-      color = "success";
+      color = "#2eb039";
       icon = <CheckCircleOutlined />;
-      label = "COMPLIANT";
+      label = "Compliant";
+      testIdKey = "compliant";
       break;
     case "NON_COMPLIANT":
-      color = "error";
+      color = "#FB0136";
       icon = <CloseCircleOutlined />;
-      label = "NON-COMPLIANT";
+      label = "Non-Compliant";
+      testIdKey = "non-compliant";
       break;
     case "EXEMPTED":
-      color = "processing";
+      color = "#108ee9";
       icon = <ExclamationCircleOutlined />;
-      label = "EXEMPTED";
+      label = "Exempted";
+      testIdKey = "exempted";
       break;
     case "UNKNOWN":
     default:
-      color = "default";
+      color = "#8c8c8c";
       icon = <QuestionCircleOutlined />;
-      label = "UNKNOWN";
+      label = "Unknown";
+      testIdKey = "unknown";
       break;
   }
 
@@ -69,7 +81,7 @@ export default function PolicyStatusTag({
         marginInlineEnd: 0,
         ...style,
       }}
-      data-testid={`policy-status-tag-${label.toLowerCase()}`}
+      data-testid={`policy-status-tag-${testIdKey}`}
     >
       {label}
     </Tag>

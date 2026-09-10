@@ -30,7 +30,7 @@ export type ExemptionRecord = {
   policySetName: string;
   ticketReference: string;
   justification: string;
-  expiresAt: string | null;
+  expiresAt: string | number | null;
   scopeType: "ORGANIZATION" | "PROJECT" | "WORKSPACE";
   workspaceId?: string;
   workspaceName?: string;
@@ -60,7 +60,7 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
   onDelete,
   pageSize = 10,
 }) => {
-  const renderExpirationBadge = (expiresAt: string | null) => {
+  const renderExpirationBadge = (expiresAt: string | number | null) => {
     if (!expiresAt) {
       return <Tag color="default">Permanent</Tag>;
     }
@@ -69,9 +69,12 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
       const now = new Date();
       const diffMs = expDate.getTime() - now.getTime();
       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      const formattedDate = !isNaN(expDate.getTime())
+        ? expDate.toISOString().slice(0, 10)
+        : String(expiresAt).slice(0, 10);
 
       if (diffDays < 0) {
-        return <Tag color="error">Expired ({expiresAt.slice(0, 10)})</Tag>;
+        return <Tag color="error">Expired ({formattedDate})</Tag>;
       }
       if (diffDays === 0) {
         return <Tag color="volcano">Expires today</Tag>;
@@ -85,27 +88,52 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
       }
       return (
         <Tag color="purple">
-          {diffDays} days remaining ({expiresAt.slice(0, 10)})
+          {diffDays} days remaining ({formattedDate})
         </Tag>
       );
     } catch {
-      return <Tag color="purple">Expires: {expiresAt.slice(0, 10)}</Tag>;
+      const fallbackStr = String(expiresAt || "").slice(0, 10);
+      return <Tag color="purple">Expires: {fallbackStr}</Tag>;
     }
   };
 
   const renderScopeTag = (record: ExemptionRecord) => {
     let scopeBadge;
     if (record.scopeType === "WORKSPACE") {
+      const label = `Workspace: ${record.workspaceName || record.workspaceId}`;
       scopeBadge = (
-        <Tag color="geekblue" icon={<AppstoreOutlined />}>
-          Workspace: {record.workspaceName || record.workspaceId}
-        </Tag>
+        <Tooltip title={label}>
+          <Tag
+            color="geekblue"
+            icon={<AppstoreOutlined />}
+            style={{
+              maxWidth: 175,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              verticalAlign: "bottom",
+            }}
+          >
+            {label}
+          </Tag>
+        </Tooltip>
       );
     } else if (record.scopeType === "PROJECT") {
+      const label = `Project: ${record.projectName || record.projectId}`;
       scopeBadge = (
-        <Tag color="cyan" icon={<FolderOutlined />}>
-          Project: {record.projectName || record.projectId}
-        </Tag>
+        <Tooltip title={label}>
+          <Tag
+            color="cyan"
+            icon={<FolderOutlined />}
+            style={{
+              maxWidth: 175,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              verticalAlign: "bottom",
+            }}
+          >
+            {label}
+          </Tag>
+        </Tooltip>
       );
     } else {
       scopeBadge = (
@@ -134,9 +162,17 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
       title: "Rule ID",
       dataIndex: "ruleId",
       key: "ruleId",
+      width: 250,
       render: (ruleId: string) => (
-        <Space>
-          <Text code strong>
+        <Space size={4} wrap={false}>
+          <Text
+            code
+            strong
+            style={{
+              whiteSpace: "nowrap",
+              wordBreak: "keep-all",
+            }}
+          >
             {ruleId}
           </Text>
           <Tooltip title="Copy Rule ID">
@@ -154,48 +190,71 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
       title: "Policy Set",
       dataIndex: "policySetName",
       key: "policySetName",
+      width: 170,
       render: (name: string) => (
-        <Tag color="blue" icon={<SafetyCertificateOutlined />}>
-          {name || "Policy Set"}
-        </Tag>
+        <Tooltip title={name || "Policy Set"}>
+          <Tag
+            color="blue"
+            icon={<SafetyCertificateOutlined />}
+            style={{
+              maxWidth: 155,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              verticalAlign: "bottom",
+            }}
+          >
+            {name || "Policy Set"}
+          </Tag>
+        </Tooltip>
       ),
     },
     {
       title: "Scope",
       key: "scope",
+      width: 190,
       render: (_, record) => renderScopeTag(record),
     },
     {
       title: "Ticket",
       dataIndex: "ticketReference",
       key: "ticketReference",
-      render: (ticket: string) => (
-        <Tag color="cyan" icon={<LinkOutlined />}>
-          {ticket}
-        </Tag>
-      ),
+      width: 120,
+      render: (ticket: string) =>
+        ticket ? (
+          <Tag color="cyan" icon={<LinkOutlined />}>
+            {ticket}
+          </Tag>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
     {
       title: "Justification",
       dataIndex: "justification",
       key: "justification",
+      width: 190,
       ellipsis: true,
-      render: (justification: string) => (
-        <Tooltip title={justification} placement="topLeft">
-          <span style={{ fontStyle: "italic" }}>"{justification}"</span>
-        </Tooltip>
-      ),
+      render: (justification: string) =>
+        justification ? (
+          <Tooltip title={justification} placement="topLeft">
+            <span style={{ fontStyle: "italic" }}>"{justification}"</span>
+          </Tooltip>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
     {
       title: "Expiration",
       dataIndex: "expiresAt",
       key: "expiresAt",
+      width: 200,
       render: (expiresAt: string | null) => renderExpirationBadge(expiresAt),
     },
     {
       title: "Actions",
       key: "actions",
-      width: 130,
+      width: 100,
+      align: "center",
       render: (_, record) => {
         const isInherited =
           record.isInherited ||
@@ -261,6 +320,7 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
       rowKey="id"
       loading={loading}
       pagination={{ pageSize, showSizeChanger: true }}
+      scroll={{ x: 1050 }}
       locale={{
         emptyText: (
           <Empty

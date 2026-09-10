@@ -207,7 +207,7 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
         description="Manage and evaluate OPA policy governance compliance for this workspace."
       />
 
-      <SettingsSection>
+      <SettingsSection maxWidth="100%">
         <Card
           title={
             <Space orientation="horizontal">

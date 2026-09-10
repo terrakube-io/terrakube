@@ -48,7 +48,7 @@ type FlattenedRule = {
   message?: string;
   ticketReference?: string;
   justification?: string;
-  expiresAt?: string;
+  expiresAt?: string | number;
   suggestedFix?: string;
 };
 
@@ -373,13 +373,16 @@ export const PolicyChecksOutput: React.FC<Props> = ({
     }
   };
 
-  const renderExpirationBadge = (expiresAt?: string) => {
+  const renderExpirationBadge = (expiresAt?: string | number) => {
     if (!expiresAt) return null;
     try {
       const expDate = new Date(expiresAt);
       const now = new Date();
       const diffMs = expDate.getTime() - now.getTime();
       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      const formattedDate = !isNaN(expDate.getTime())
+        ? expDate.toISOString().slice(0, 10)
+        : String(expiresAt).slice(0, 10);
 
       let countdownText = "";
       if (diffDays < 0) {
@@ -392,11 +395,12 @@ export const PolicyChecksOutput: React.FC<Props> = ({
 
       return (
         <Tag color={diffDays < 7 ? "volcano" : "purple"}>
-          Expires: {expiresAt.slice(0, 10)} ({countdownText})
+          Expires: {formattedDate} ({countdownText})
         </Tag>
       );
     } catch {
-      return <Tag color="purple">Expires: {expiresAt.slice(0, 10)}</Tag>;
+      const fallbackStr = String(expiresAt || "").slice(0, 10);
+      return <Tag color="purple">Expires: {fallbackStr}</Tag>;
     }
   };
 

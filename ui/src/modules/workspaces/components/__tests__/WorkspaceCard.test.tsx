@@ -26,9 +26,9 @@ describe("WorkspaceCard", () => {
     );
 
     expect(screen.getByText("test-workspace")).toBeInTheDocument();
-    expect(screen.getByText("COMPLIANT")).toBeInTheDocument();
+    expect(screen.getByText("Compliant")).toBeInTheDocument();
 
-    const policyLink = screen.getByRole("link", { name: /Policy compliance: COMPLIANT/i });
+    const policyLink = screen.getByRole("link", { name: /Policy compliance: Compliant/i });
     expect(policyLink).toHaveAttribute(
       "href",
       "/organizations/org-123/workspaces/ws-1/settings/policies"
@@ -47,6 +47,6 @@ describe("WorkspaceCard", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
   });
 });

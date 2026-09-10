@@ -310,6 +310,39 @@ describe("PolicyChecksOutput", () => {
     expect(screen.queryByTestId("cancel-override-btn")).not.toBeInTheDocument();
     expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
   });
+
+  it("handles numeric timestamp expiresAt without throwing expiresAt.slice is not a function", () => {
+    const timestampEvaluation: any = {
+      status: "passed",
+      results: [
+        {
+          policySetName: "password-policy",
+          enforcementLevel: "hard-mandatory",
+          exemptedViolations: [
+            {
+              ruleId: "password_length_hard_mandatory",
+              address: "module.password",
+              ticketReference: "SEC-101",
+              justification: "Legacy waiver",
+              expiresAt: 1924905600000, // Year 2031 timestamp (number)
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <PolicyChecksOutput
+        policyEvaluation={timestampEvaluation}
+        jobId="123"
+        organizationId="org-123"
+      />
+    );
+
+    expect(screen.getByText(/Active Policy Exemption/)).toBeInTheDocument();
+    expect(screen.getByText(/Expires:/)).toBeInTheDocument();
+    expect(screen.getByText(/2030-12-31/)).toBeInTheDocument();
+  });
 });
 
 

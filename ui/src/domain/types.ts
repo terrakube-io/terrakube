@@ -640,7 +640,7 @@ export type PolicyViolationItem = {
   status?: string;
   ticketReference?: string;
   justification?: string;
-  expiresAt?: string;
+  expiresAt?: string | number;
   suggestedFix?: string;
 };
 

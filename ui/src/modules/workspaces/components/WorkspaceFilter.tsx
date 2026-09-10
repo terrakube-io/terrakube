@@ -206,7 +206,7 @@ export default function WorkspaceFilter({
       value: PolicyComplianceFilter.Compliant,
       label: (
         <Space size={6}>
-          <CheckCircleOutlined style={{ color: "#52c41a" }} />
+          <CheckCircleOutlined style={{ color: "#2eb039" }} />
           <span>Compliant ({policyCounts?.COMPLIANT ?? 0})</span>
         </Space>
       ),
@@ -215,7 +215,7 @@ export default function WorkspaceFilter({
       value: PolicyComplianceFilter.NonCompliant,
       label: (
         <Space size={6}>
-          <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
+          <CloseCircleOutlined style={{ color: "#FB0136" }} />
           <span>Non-compliant ({policyCounts?.NON_COMPLIANT ?? 0})</span>
         </Space>
       ),
@@ -224,7 +224,7 @@ export default function WorkspaceFilter({
       value: PolicyComplianceFilter.Exempted,
       label: (
         <Space size={6}>
-          <ExclamationCircleOutlined style={{ color: "#1677ff" }} />
+          <ExclamationCircleOutlined style={{ color: "#108ee9" }} />
           <span>Exempted ({policyCounts?.EXEMPTED ?? 0})</span>
         </Space>
       ),
