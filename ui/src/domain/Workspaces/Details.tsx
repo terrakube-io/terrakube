@@ -41,6 +41,7 @@ const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import {
   Action,
   ActionWithSettings,
@@ -876,6 +877,12 @@ export const WorkspaceDetails = ({
                   </>
                 )}
               </Typography.Text>
+              <PolicyStatusTag
+                status={workspace.attributes?.policyComplianceStatus}
+                organizationId={organizationId}
+                workspaceId={id}
+                clickable
+              />
               <Typography.Text>
                 <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
               </Typography.Text>

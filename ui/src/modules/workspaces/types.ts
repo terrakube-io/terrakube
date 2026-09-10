@@ -15,6 +15,7 @@ export type WorkspaceListItem = {
   projectId?: string;
   projectName?: string;
   locked?: boolean;
+  policyComplianceStatus?: string;
 };
 
 export type ListWorkspacesResponse = {

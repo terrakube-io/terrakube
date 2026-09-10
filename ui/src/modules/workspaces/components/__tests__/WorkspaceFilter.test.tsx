@@ -168,4 +168,43 @@ describe("WorkspaceFilter", () => {
     expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
     expect(baseProps.onProjectIdChange).toHaveBeenCalledWith(null);
   });
+
+  it("renders policy status select with count options and calls onPolicyStatusChange", () => {
+    const onPolicyStatusChange = jest.fn();
+    render(
+      <WorkspaceFilter
+        {...baseProps}
+        policyStatus="All"
+        onPolicyStatusChange={onPolicyStatusChange}
+        policyCounts={{ All: 10, COMPLIANT: 6, NON_COMPLIANT: 2, EXEMPTED: 1, UNKNOWN: 1 }}
+      />
+    );
+
+    expect(screen.getByText(/All policies \(10\)/)).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText(/All policies \(10\)/));
+    expect(screen.getByText(/Compliant \(6\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Non-compliant \(2\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Exempted \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown \(1\)/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/Non-compliant \(2\)/));
+    expect(onPolicyStatusChange).toHaveBeenCalledWith("NON_COMPLIANT");
+  });
+
+  it("resets policyStatus to All when Clear all is clicked", () => {
+    const onPolicyStatusChange = jest.fn();
+    render(
+      <WorkspaceFilter
+        {...baseProps}
+        compact
+        policyStatus="NON_COMPLIANT"
+        onPolicyStatusChange={onPolicyStatusChange}
+      />
+    );
+
+    expect(screen.getByText("Clear all")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Clear all"));
+    expect(onPolicyStatusChange).toHaveBeenCalledWith("All");
+  });
 });

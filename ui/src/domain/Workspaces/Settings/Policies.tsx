@@ -1,19 +1,17 @@
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ExclamationCircleOutlined,
   InfoCircleOutlined,
   PlayCircleOutlined,
-  QuestionCircleOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Space, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Card, Space, Tooltip, Typography, message } from "antd";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../../../config/axiosConfig";
+import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import { Workspace } from "../../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 
 const { Text, Paragraph } = Typography;
 
@@ -26,7 +24,7 @@ type Props = {
 
 export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false, onWorkspaceUpdate }: Props) => {
   const navigate = useNavigate();
-  const organizationId = workspace?.relationships?.organization?.data?.id;
+  const organizationId = workspace?.relationships?.organization?.data?.id || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const workspaceId = workspace?.id;
   const isLocked = workspace?.attributes?.locked;
   const lastJobStatus = workspace?.attributes?.lastJobStatus;
@@ -78,36 +76,6 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
       });
   };
 
-  const renderComplianceBadge = () => {
-    switch (complianceStatus) {
-      case "COMPLIANT":
-        return (
-          <Tag color="success" icon={<CheckCircleOutlined />}>
-            COMPLIANT
-          </Tag>
-        );
-      case "NON_COMPLIANT":
-        return (
-          <Tag color="error" icon={<CloseCircleOutlined />}>
-            NON-COMPLIANT
-          </Tag>
-        );
-      case "EXEMPTED":
-        return (
-          <Tag color="processing" icon={<ExclamationCircleOutlined />}>
-            EXEMPTED
-          </Tag>
-        );
-      case "UNKNOWN":
-      default:
-        return (
-          <Tag color="default" icon={<QuestionCircleOutlined />}>
-            UNKNOWN
-          </Tag>
-        );
-    }
-  };
-
   const renderComplianceDescription = () => {
     switch (complianceStatus) {
       case "COMPLIANT":
@@ -144,7 +112,7 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
               <Text strong style={{ marginRight: 8 }}>
                 Current Status:
               </Text>
-              {renderComplianceBadge()}
+              <PolicyStatusTag status={complianceStatus} />
             </div>
             <Paragraph type="secondary" style={{ margin: 0 }}>
               {renderComplianceDescription()}
