@@ -187,7 +187,7 @@ export const PolicySetsSettings: React.FC<Props> = ({
       <SettingsPageHeader
         title="Policy Sets"
         description="Enforce organizational guardrails, configure policy sets, and manage compliance exemptions using Open Policy Agent (OPA)."
-        action={
+        actions={
           activeTab === "sets" ? (
             <Button
               type="primary"

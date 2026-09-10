@@ -158,7 +158,7 @@ export const OrganizationSettings = ({
           <PolicySetsSettings
             editorMode={editorMode}
             editorId={editorId}
-            managePermission={permissions.managePermission}
+            managePermission={permissions.managePolicies || permissions.managePermission}
           />
         );
       default:

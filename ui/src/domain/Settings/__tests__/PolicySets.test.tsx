@@ -115,11 +115,13 @@ describe("PolicySetsSettings", () => {
       expect(screen.getByText("Override Team: secops")).toBeInTheDocument();
     });
 
-    // Check filter elements are present
+    // Check filter elements and header action are present
     expect(screen.getByTestId("policy-set-search-input")).toBeInTheDocument();
     expect(screen.getByTestId("policy-set-category-select")).toBeInTheDocument();
     expect(screen.getByTestId("policy-set-scope-select")).toBeInTheDocument();
     expect(screen.getByTestId("policy-set-view-toggle")).toBeInTheDocument();
+    expect(screen.getByTestId("add-policy-set-btn")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New Policy Set/i })).toBeInTheDocument();
   });
 
   it("allows toggling between Card mode and Compact mode", async () => {

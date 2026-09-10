@@ -274,7 +274,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({
       <SettingsPageHeader
         title={mode === "create" ? "Create Policy Set" : "Edit Policy Set"}
         description="Configure Open Policy Agent (OPA) guardrails, enforcement levels, and repository source."
-        action={
+        actions={
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backUrl)}>
             Back to Policy Sets
           </Button>
