@@ -592,6 +592,9 @@ public class ScheduleJob implements org.quartz.Job {
             } catch (ExecutionException e) {
                 errorJobAtStep(job, stepId, e);
             }
+        } else {
+            completeJob(job);
+            deleteOldJobs(job);
         }
         return true;
     }

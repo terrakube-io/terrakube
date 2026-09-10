@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.access.Access;
 
 import java.util.List;
@@ -38,6 +39,9 @@ public class TeamLimitedApproveJob extends OperationCheck<Job> {
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team limited approve job {}", job.getId());
+        if (!isApprovalTransition(optional)) {
+            return false;
+        }
         List<Access> teamList = job.getWorkspace().getAccess();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         if (!teamList.isEmpty())
@@ -52,5 +56,14 @@ public class TeamLimitedApproveJob extends OperationCheck<Job> {
                 }
             }
         return false;
+    }
+
+    private boolean isApprovalTransition(Optional<ChangeSpec> optional) {
+        return optional
+                .filter(change -> "status".equals(change.getFieldName()))
+                .filter(change -> JobStatus.waitingApproval.equals(change.getOriginal()))
+                .filter(change -> change.getModified().equals(JobStatus.approved)
+                        || change.getModified().equals(JobStatus.rejected))
+                .isPresent();
     }
 }

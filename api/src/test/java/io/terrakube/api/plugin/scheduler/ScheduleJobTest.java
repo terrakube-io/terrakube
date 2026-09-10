@@ -753,6 +753,30 @@ public class ScheduleJobTest {
     }
 
     @Test
+    public void approvedJobWithNoMoreStepsCompletes() {
+        Job job = job(JobStatus.approved);
+
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(null).when(tclService).getNextFlow(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.completed, job.getStatus());
+        verify(jobRepository, times(1)).save(job);
+        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
+    }
+
+    @Test
     public void approvedJobFailsOnExecutionError() throws Exception {
         Job job = job(JobStatus.approved);
 
