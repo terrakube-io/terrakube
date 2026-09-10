@@ -6,6 +6,7 @@ import {
   Empty,
   Form,
   Input,
+  Popconfirm,
   Radio,
   Space,
   Tag,
@@ -15,6 +16,7 @@ import {
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CloseOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
   SafetyCertificateOutlined,
@@ -46,11 +48,12 @@ type FlattenedRule = {
 
 type Props = {
   policyEvaluation?: PolicyEvaluationContext;
-  jobId: string;
+  jobId?: string;
   organizationId?: string;
   status?: string;
   approvalTeam?: string;
   onOverrideSuccess?: () => void;
+  onRejectSuccess?: () => void;
 };
 
 export const PolicyChecksOutput: React.FC<Props> = ({
@@ -60,11 +63,13 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   status,
   approvalTeam,
   onOverrideSuccess,
+  onRejectSuccess,
 }) => {
   const [filter, setFilter] = useState<"all" | "violations" | "exempted" | "warnings">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [overrideDrawerOpen, setOverrideDrawerOpen] = useState(false);
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   // Aggregate stats
@@ -258,6 +263,50 @@ export const PolicyChecksOutput: React.FC<Props> = ({
     }
   };
 
+  const handleRejectSubmit = async () => {
+    setRejectSubmitting(true);
+    try {
+      const orgId = organizationId || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+      const justification = form.getFieldValue("justification");
+
+      if (orgId && jobId) {
+        const rejectBody: { data: { type: string; id: string; attributes: Record<string, any> } } = {
+          data: {
+            type: "job",
+            id: jobId,
+            attributes: {
+              status: "rejected",
+            },
+          },
+        };
+
+        if (justification) {
+          rejectBody.data.attributes.comments = justification;
+        }
+
+        await axiosInstance.patch(`organization/${orgId}/job/${jobId}`, rejectBody, {
+          headers: {
+            "Content-Type": "application/vnd.api+json",
+          },
+        });
+      }
+
+      message.success("Policy override rejected. Run marked as rejected.");
+      setOverrideDrawerOpen(false);
+      form.resetFields();
+      if (onOverrideSuccess) {
+        onOverrideSuccess();
+      }
+      if (onRejectSuccess) {
+        onRejectSuccess();
+      }
+    } catch (err: any) {
+      message.error(getErrorMessage(err) || "Failed to reject run");
+    } finally {
+      setRejectSubmitting(false);
+    }
+  };
+
   const renderExpirationBadge = (expiresAt?: string) => {
     if (!expiresAt) return null;
     try {
@@ -286,7 +335,16 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   };
 
   const hasSoftViolations = stats.soft > 0;
-  const isWaitingApproval = status === "waitingApproval";
+  const isWaitingApproval = status === "waitingApproval" || status === undefined;
+  const canOverride =
+    hasSoftViolations &&
+    isWaitingApproval &&
+    status !== "approved" &&
+    status !== "rejected" &&
+    status !== "completed" &&
+    status !== "running" &&
+    status !== "failed" &&
+    status !== "cancelled";
 
   return (
     <div className="policy-checks-container">
@@ -322,15 +380,34 @@ export const PolicyChecksOutput: React.FC<Props> = ({
           )}
         </div>
 
-        {hasSoftViolations && (
-          <Button
-            type="primary"
-            icon={<UnlockOutlined />}
-            onClick={() => setOverrideDrawerOpen(true)}
-            data-testid="override-button"
-          >
-            Override Policy Checks
-          </Button>
+        {canOverride && (
+          <Space>
+            <Popconfirm
+              title="Reject Run"
+              description="Are you sure you want to reject this run due to policy violations?"
+              onConfirm={handleRejectSubmit}
+              okText="Yes, Reject"
+              cancelText="No"
+              okButtonProps={{ danger: true }}
+            >
+              <Button
+                danger
+                icon={<CloseOutlined />}
+                loading={rejectSubmitting}
+                data-testid="reject-button"
+              >
+                Reject Run
+              </Button>
+            </Popconfirm>
+            <Button
+              type="primary"
+              icon={<UnlockOutlined />}
+              onClick={() => setOverrideDrawerOpen(true)}
+              data-testid="override-button"
+            >
+              Override Policy Checks
+            </Button>
+          </Space>
         )}
       </div>
 
@@ -463,7 +540,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
       <Drawer
         title="Override Soft-Mandatory Policy Checks"
         placement="right"
-        width={500}
+        width={580}
         onClose={() => setOverrideDrawerOpen(false)}
         open={overrideDrawerOpen}
       >
@@ -484,9 +561,16 @@ export const PolicyChecksOutput: React.FC<Props> = ({
             />
           </Form.Item>
 
-          <Form.Item>
-            <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-              <Button onClick={() => setOverrideDrawerOpen(false)}>Cancel</Button>
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space style={{ width: "100%", justifyContent: "flex-end" }} size="middle" wrap>
+              <Button
+                danger
+                loading={rejectSubmitting}
+                onClick={handleRejectSubmit}
+                data-testid="reject-override-btn"
+              >
+                Reject Policy Override
+              </Button>
               <Button
                 type="primary"
                 htmlType="submit"

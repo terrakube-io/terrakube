@@ -805,6 +805,9 @@ export const DetailsJob = ({ jobId }: Props) => {
                       onOverrideSuccess={() => {
                         void refreshJobDetails();
                       }}
+                      onRejectSuccess={() => {
+                        void refreshJobDetails();
+                      }}
                     />
                   ),
                 },

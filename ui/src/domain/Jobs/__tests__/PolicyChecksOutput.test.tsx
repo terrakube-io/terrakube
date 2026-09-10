@@ -213,4 +213,103 @@ describe("PolicyChecksOutput", () => {
     expect(screen.getByText("Soft Mandatory")).toBeInTheDocument();
     expect(screen.queryByText("Hard Mandatory")).not.toBeInTheDocument();
   });
+
+  it("hides override and reject buttons when status is approved, rejected, or completed", () => {
+    const { rerender } = render(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        status="waitingApproval"
+      />
+    );
+
+    expect(screen.getByTestId("override-button")).toBeInTheDocument();
+    expect(screen.getByTestId("reject-button")).toBeInTheDocument();
+
+    rerender(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        status="approved"
+      />
+    );
+    expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
+
+    rerender(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        status="rejected"
+      />
+    );
+    expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
+
+    rerender(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        status="completed"
+      />
+    );
+    expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
+  });
+
+  it("rejects policy override from drawer and marks job as rejected", async () => {
+    const onRejectSuccess = jest.fn();
+    render(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        organizationId="org-123"
+        status="waitingApproval"
+        onRejectSuccess={onRejectSuccess}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("override-button"));
+
+    const textarea = screen.getByPlaceholderText(/Approved by SecOps for emergency mitigation/i);
+    fireEvent.change(textarea, { target: { value: "Violates security policy - rejected" } });
+
+    const rejectBtn = screen.getByTestId("reject-override-btn");
+    fireEvent.click(rejectBtn);
+
+    await waitFor(() => {
+      expect(patchMock).toHaveBeenCalledWith(
+        "organization/org-123/job/123",
+        {
+          data: {
+            type: "job",
+            id: "123",
+            attributes: {
+              status: "rejected",
+              comments: "Violates security policy - rejected",
+            },
+          },
+        },
+        { headers: { "Content-Type": "application/vnd.api+json" } }
+      );
+      expect(onRejectSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it("does not render a cancel button in the override drawer", () => {
+    render(
+      <PolicyChecksOutput
+        policyEvaluation={sampleEvaluation}
+        jobId="123"
+        organizationId="org-123"
+        status="waitingApproval"
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("override-button"));
+    expect(screen.queryByTestId("cancel-override-btn")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
+  });
 });
+
+
