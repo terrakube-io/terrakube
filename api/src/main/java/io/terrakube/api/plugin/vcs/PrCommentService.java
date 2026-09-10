@@ -549,8 +549,9 @@ public class PrCommentService {
                         if (item.has("violations") && item.get("violations").isArray()) {
                             for (JsonNode v : item.get("violations")) {
                                 String address = v.has("address") ? v.get("address").asText() : "-";
+                                String status = v.has("status") ? v.get("status").asText() : "";
                                 String sev;
-                                if ("advisory".equalsIgnoreCase(enforcementLevel)) {
+                                if ("WARNING".equalsIgnoreCase(status) || "advisory".equalsIgnoreCase(enforcementLevel)) {
                                     sev = "ℹ️ Advisory";
                                 } else if ("soft-mandatory".equalsIgnoreCase(enforcementLevel)) {
                                     sev = "⚠️ **FAILED** (Soft)";

@@ -555,8 +555,13 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             // Extract warning violations
             List<PolicyViolation> warnList = extractViolationsFromNode(valueNode.path("warn"));
 
+            for (PolicyViolation v : warnList) {
+                v.setStatus(ViolationStatus.WARNING);
+            }
+
             result.getViolations().addAll(denyList);
             result.getViolations().addAll(softList);
+            result.getViolations().addAll(warnList);
             result.setWarningRules(warnList.size());
 
             // Render violation notices to log
@@ -693,23 +698,45 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
 
         int hardCount = 0;
         int softCount = 0;
+        int warningCount = 0;
 
         // Partition remaining violations according to active enforcement level
-        if (HARD_MANDATORY.equalsIgnoreCase(enforcementLevel)) {
-            hardCount = result.getViolations().size();
+        if (ADVISORY.equalsIgnoreCase(enforcementLevel)) {
+            for (PolicyViolation v : result.getViolations()) {
+                v.setStatus(ViolationStatus.WARNING);
+            }
+            warningCount = result.getViolations().size();
+        } else if (HARD_MANDATORY.equalsIgnoreCase(enforcementLevel)) {
+            hardCount = (int) result.getViolations().stream()
+                    .filter(v -> v.getStatus() != ViolationStatus.WARNING)
+                    .count();
+            warningCount = (int) result.getViolations().stream()
+                    .filter(v -> v.getStatus() == ViolationStatus.WARNING)
+                    .count();
         } else if (SOFT_MANDATORY.equalsIgnoreCase(enforcementLevel)) {
-            softCount = result.getViolations().size();
+            softCount = (int) result.getViolations().stream()
+                    .filter(v -> v.getStatus() != ViolationStatus.WARNING)
+                    .count();
+            warningCount = (int) result.getViolations().stream()
+                    .filter(v -> v.getStatus() == ViolationStatus.WARNING)
+                    .count();
+        } else {
+            warningCount = result.getWarningRules();
         }
 
         result.setHardMandatoryViolations(hardCount);
         result.setSoftMandatoryViolations(softCount);
+        result.setWarningRules(warningCount);
 
         // Shadow mode telemetry calculation (Gap 11.8)
         if (shadowEnforcementLevel != null && !shadowEnforcementLevel.isBlank()) {
+            int nonWarningCount = (int) result.getViolations().stream()
+                    .filter(v -> v.getStatus() != ViolationStatus.WARNING)
+                    .count();
             if (HARD_MANDATORY.equalsIgnoreCase(shadowEnforcementLevel)) {
-                result.setShadowHardViolations(result.getViolations().size());
+                result.setShadowHardViolations(nonWarningCount);
             } else if (SOFT_MANDATORY.equalsIgnoreCase(shadowEnforcementLevel)) {
-                result.setShadowSoftViolations(result.getViolations().size());
+                result.setShadowSoftViolations(nonWarningCount);
             }
         }
 

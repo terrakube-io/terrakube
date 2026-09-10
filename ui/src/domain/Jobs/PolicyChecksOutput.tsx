@@ -178,6 +178,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
     policyEvaluation.results.forEach((res, pIdx) => {
       const setName = res.policySetName || res.policySetId || "Default Policy Set";
       const enf = res.enforcementLevel || "hard-mandatory";
+      const normalizedEnf = enf.toLowerCase().replace(/_/g, "-");
 
       // Exempted violations
       if (res.exemptedViolations) {
@@ -199,13 +200,17 @@ export const PolicyChecksOutput: React.FC<Props> = ({
         });
       }
 
-      // Violations
-      if (res.violations) {
-        res.violations.forEach((v, vIdx) => {
-          const normalizedEnf = enf.toLowerCase().replace(/_/g, "-");
+      let warningRulesCountInViolations = 0;
+
+      // Violations and Warnings
+      const rawViolations = [...(res.violations || []), ...((res as any).warnings || [])];
+      if (rawViolations.length > 0) {
+        rawViolations.forEach((v, vIdx) => {
           let sevType: "hard" | "soft" | "warning" = "hard";
-          if (normalizedEnf === "advisory") {
+          const isWarningStatus = v.status?.toUpperCase() === "WARNING";
+          if (isWarningStatus || normalizedEnf === "advisory") {
             sevType = "warning";
+            warningRulesCountInViolations++;
           } else if (normalizedEnf === "soft-mandatory") {
             sevType = "soft";
           }
@@ -226,10 +231,73 @@ export const PolicyChecksOutput: React.FC<Props> = ({
           });
         });
       }
+
+      // Resilience / Fallback for already-evaluated jobs where warning details weren't saved in violations
+      const expectedWarnings = res.warningRules || 0;
+      if (expectedWarnings > warningRulesCountInViolations) {
+        let extractedFromLogs = 0;
+        if (res.bufferedLogs && Array.isArray(res.bufferedLogs)) {
+          res.bufferedLogs.forEach((logLine, lIdx) => {
+            const cleanLine = logLine.replace(/\u001B\[[0-9;]*m/g, "").trim();
+            const match = cleanLine.match(/\[WARN\]\s+Rule\s+'([^']+)'(?:\s+on\s+'([^']+)')?:\s*(.*)/i);
+            if (match) {
+              const ruleId = match[1];
+              const address = match[2] || "-";
+              const msg = match[3];
+              if (!rules.some((r) => r.ruleId === ruleId && r.policySetName === setName && r.severityType === "warning")) {
+                rules.push({
+                  key: `fallback-warn-${pIdx}-${lIdx}-${ruleId}`,
+                  policySetId: res.policySetId,
+                  policySetName: setName,
+                  enforcementLevel: enf,
+                  ruleId: ruleId,
+                  address: address,
+                  severityType: "warning",
+                  message: msg,
+                });
+                extractedFromLogs++;
+              }
+            }
+          });
+        }
+
+        if (warningRulesCountInViolations + extractedFromLogs < expectedWarnings) {
+          const remaining = expectedWarnings - (warningRulesCountInViolations + extractedFromLogs);
+          for (let i = 0; i < remaining; i++) {
+            rules.push({
+              key: `fallback-placeholder-${pIdx}-${i}`,
+              policySetId: res.policySetId,
+              policySetName: setName,
+              enforcementLevel: enf,
+              ruleId: `${setName}_advisory_warning`,
+              address: "-",
+              severityType: "warning",
+              message: "Advisory warning detected during evaluation. See execution logs for details.",
+            });
+          }
+        }
+      }
     });
 
+    // Ensure all reported warnings from stats are accounted for
+    const currentWarningCount = rules.filter((r) => r.severityType === "warning").length;
+    if (stats.warning > currentWarningCount) {
+      const missing = stats.warning - currentWarningCount;
+      for (let i = 0; i < missing; i++) {
+        rules.push({
+          key: `root-fallback-warning-${i}`,
+          policySetName: "Advisory Policies",
+          enforcementLevel: "advisory",
+          ruleId: `advisory_warning_${i + 1}`,
+          address: "-",
+          severityType: "warning",
+          message: "Advisory warning detected during evaluation.",
+        });
+      }
+    }
+
     return rules;
-  }, [policyEvaluation]);
+  }, [policyEvaluation, stats.warning]);
 
   // Filtered rules
   const filteredRules = useMemo(() => {

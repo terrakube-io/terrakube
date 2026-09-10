@@ -103,7 +103,7 @@ class OpaExecutorServiceTest {
         OpaEvaluationResult result = opaExecutorService.parseOpaJsonOutput(policyContext, rawJson, 0, logConsumer);
 
         assertNotNull(result);
-        assertEquals(2, result.getViolations().size()); // 1 deny + 1 soft_mandatory
+        assertEquals(3, result.getViolations().size()); // 1 deny + 1 soft_mandatory + 1 warn
         assertEquals(1, result.getWarningRules());
 
         PolicyViolation denyViolation = result.getViolations().get(0);
@@ -113,6 +113,10 @@ class OpaExecutorServiceTest {
 
         PolicyViolation softViolation = result.getViolations().get(1);
         assertEquals("azure_environment_name", softViolation.getRuleId());
+
+        PolicyViolation warnViolation = result.getViolations().get(2);
+        assertEquals("azure_cost_center_recommended", warnViolation.getRuleId());
+        assertEquals(ViolationStatus.WARNING, warnViolation.getStatus());
     }
 
     @Test
@@ -331,6 +335,52 @@ class OpaExecutorServiceTest {
         File localResolved = opaExecutorService.resolveLibDirectory(workDir, bundleDir, localContext);
         assertNotNull(localResolved);
         assertEquals(libFolder.getAbsolutePath(), localResolved.getAbsolutePath());
+    }
+
+    @Test
+    void testFinalizeResultStatus_AdvisoryAndWarningRulesHandling() {
+        List<String> logs = new ArrayList<>();
+
+        // Case 1: ADVISORY policy set converts all violations to WARNING
+        PolicyViolation denyV = PolicyViolation.builder().ruleId("r1").status(ViolationStatus.FAILED).build();
+        PolicyViolation warnV = PolicyViolation.builder().ruleId("r2").status(ViolationStatus.WARNING).build();
+        OpaEvaluationResult advisoryResult = OpaEvaluationResult.builder()
+                .violations(new ArrayList<>(List.of(denyV, warnV)))
+                .build();
+
+        opaExecutorService.finalizeResultStatus(advisoryResult, "ADVISORY", null, logs::add);
+        assertEquals("WARNING", advisoryResult.getStatus());
+        assertEquals(0, advisoryResult.getExitCode());
+        assertEquals(0, advisoryResult.getHardMandatoryViolations());
+        assertEquals(0, advisoryResult.getSoftMandatoryViolations());
+        assertEquals(2, advisoryResult.getWarningRules());
+        assertEquals(ViolationStatus.WARNING, advisoryResult.getViolations().get(0).getStatus());
+
+        // Case 2: HARD_MANDATORY policy set with only WARNING violation does not fail
+        PolicyViolation onlyWarn = PolicyViolation.builder().ruleId("r3").status(ViolationStatus.WARNING).build();
+        OpaEvaluationResult hardWithOnlyWarn = OpaEvaluationResult.builder()
+                .violations(new ArrayList<>(List.of(onlyWarn)))
+                .build();
+
+        opaExecutorService.finalizeResultStatus(hardWithOnlyWarn, "HARD_MANDATORY", null, logs::add);
+        assertEquals("WARNING", hardWithOnlyWarn.getStatus());
+        assertEquals(0, hardWithOnlyWarn.getExitCode());
+        assertEquals(0, hardWithOnlyWarn.getHardMandatoryViolations());
+        assertEquals(1, hardWithOnlyWarn.getWarningRules());
+
+        // Case 3: SOFT_MANDATORY policy set with 1 soft and 1 warning
+        PolicyViolation softV = PolicyViolation.builder().ruleId("r4").status(ViolationStatus.FAILED).build();
+        PolicyViolation warnV2 = PolicyViolation.builder().ruleId("r5").status(ViolationStatus.WARNING).build();
+        OpaEvaluationResult softResult = OpaEvaluationResult.builder()
+                .violations(new ArrayList<>(List.of(softV, warnV2)))
+                .build();
+
+        opaExecutorService.finalizeResultStatus(softResult, "SOFT_MANDATORY", null, logs::add);
+        assertEquals("WAITING_APPROVAL", softResult.getStatus());
+        assertEquals(0, softResult.getExitCode());
+        assertEquals(0, softResult.getHardMandatoryViolations());
+        assertEquals(1, softResult.getSoftMandatoryViolations());
+        assertEquals(1, softResult.getWarningRules());
     }
 }
 

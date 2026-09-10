@@ -129,6 +129,14 @@ describe("PolicyChecksOutput", () => {
     expect(screen.getByText("no_public_ssh")).toBeInTheDocument();
     expect(screen.getByText("require_owner_tag")).toBeInTheDocument();
     expect(screen.queryByText("azure_apim_no_public_network")).not.toBeInTheDocument();
+
+    // Click 'Warnings' filter
+    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
+    fireEvent.click(warningsTab);
+
+    expect(screen.getByText("expensive_vm_size")).toBeInTheDocument();
+    expect(screen.queryByText("no_public_ssh")).not.toBeInTheDocument();
+    expect(screen.queryByText("require_owner_tag")).not.toBeInTheDocument();
   });
 
   it("supports deep-link to resource in plan diff", () => {
@@ -342,6 +350,98 @@ describe("PolicyChecksOutput", () => {
     expect(screen.getByText(/Active Policy Exemption/)).toBeInTheDocument();
     expect(screen.getByText(/Expires:/)).toBeInTheDocument();
     expect(screen.getByText(/2030-12-31/)).toBeInTheDocument();
+  });
+
+  it("extracts warning details from bufferedLogs when violations array was not populated", () => {
+    const legacyWarningEvaluation: PolicyEvaluationContext = {
+      jobId: "125",
+      passedRules: 0,
+      warningRules: 1,
+      softMandatoryViolations: 1,
+      hardMandatoryViolations: 0,
+      results: [
+        {
+          policySetName: "password-length-advisory",
+          enforcementLevel: "ADVISORY",
+          warningRules: 1,
+          violations: [],
+          bufferedLogs: [
+            "\u001B[36m[WARN]\u001B[0m Rule 'password_length_advisory' on 'random_password.db_password_advisory': Password length is 14 characters. While acceptable, 16 or more characters is strongly recommended.",
+          ],
+        },
+        {
+          policySetName: "password-length-soft-mandatory",
+          enforcementLevel: "SOFT_MANDATORY",
+          softMandatoryViolations: 1,
+          violations: [
+            {
+              ruleId: "password_length_soft_mandatory",
+              address: "random_password.db_password_soft_fail",
+              message: "Password length of 10 characters is below organizational standard (min 12). Requires SecOps override approval.",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={legacyWarningEvaluation} jobId="125" />);
+
+    // Click 'Warnings' filter
+    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
+    fireEvent.click(warningsTab);
+
+    expect(screen.getByText("password_length_advisory")).toBeInTheDocument();
+    expect(screen.getByText("random_password.db_password_advisory")).toBeInTheDocument();
+    expect(screen.getByText(/Password length is 14 characters/)).toBeInTheDocument();
+    expect(screen.queryByText("No policy results match your filter.")).not.toBeInTheDocument();
+  });
+
+  it("identifies violation with status WARNING in HARD_MANDATORY policy set as warning card", () => {
+    const mixedEvaluation: PolicyEvaluationContext = {
+      jobId: "126",
+      passedRules: 0,
+      warningRules: 1,
+      softMandatoryViolations: 0,
+      hardMandatoryViolations: 1,
+      results: [
+        {
+          policySetName: "security-suite",
+          enforcementLevel: "HARD_MANDATORY",
+          hardMandatoryViolations: 1,
+          warningRules: 1,
+          violations: [
+            {
+              ruleId: "s3_bucket_deny",
+              address: "aws_s3_bucket.data",
+              message: "S3 bucket is public",
+              status: "FAILED",
+            },
+            {
+              ruleId: "s3_lifecycle_warn",
+              address: "aws_s3_bucket.data",
+              message: "Lifecycle rule recommended",
+              status: "WARNING",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={mixedEvaluation} jobId="126" />);
+
+    // Click 'Warnings' filter
+    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
+    fireEvent.click(warningsTab);
+
+    expect(screen.getByText("s3_lifecycle_warn")).toBeInTheDocument();
+    expect(screen.queryByText("s3_bucket_deny")).not.toBeInTheDocument();
+
+    // Click 'Violations' filter
+    const violationsTab = screen.getByRole("radio", { name: /violations/i });
+    fireEvent.click(violationsTab);
+
+    expect(screen.getByText("s3_bucket_deny")).toBeInTheDocument();
+    expect(screen.queryByText("s3_lifecycle_warn")).not.toBeInTheDocument();
   });
 });
 
