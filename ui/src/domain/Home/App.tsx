@@ -389,6 +389,14 @@ const router = createBrowserRouter(
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
         },
         {
+          path: "/workspaces/:id/settings/policies",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/policies",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
+        },
+        {
           path: "/workspaces/:id/settings/locking",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
         },

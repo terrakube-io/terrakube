@@ -489,6 +489,8 @@ export type WorkspaceAttributes = {
   terraformVersion: string;
   globalRemoteState?: boolean;
   sharedIds?: string;
+  policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
+  lastJobStatus?: string;
 } & AuditFieldBase;
 
 export type Webhook = {

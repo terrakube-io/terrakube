@@ -89,6 +89,7 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   general: "General",
+  policies: "Policies",
   locking: "Locking",
   sshkey: "SSH Key",
   webhook: "Webhook",
@@ -741,6 +742,7 @@ export const WorkspaceDetails = ({
               vcsProvider={vcsProvider}
               orgTemplates={orgTemplates}
               manageWorkspace={manageWorkspace}
+              planJob={planJob}
               onWorkspaceUpdate={() => loadWorkspace(false)}
               activeSection={settingsSection || "general"}
             />
