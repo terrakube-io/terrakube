@@ -1,12 +1,17 @@
 package io.terrakube.api;
 
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
+import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -43,10 +48,15 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
     @Autowired
     private WorkspaceRunTriggerRepository triggerRepository;
 
+    private Set<UUID> triggersBefore;
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        triggersBefore = triggerRepository.findAll().stream()
+                .map(WorkspaceRunTrigger::getId)
+                .collect(Collectors.toSet());
     }
 
     /**
@@ -54,10 +64,16 @@ public class WorkspaceRunTriggerTests extends ServerApplicationTests {
      * cycle check reads the whole organization graph - so a test could otherwise fail for
      * an edge it never created. Cleaning here keeps every case independent of ordering
      * without touching the shared XML fixtures.
+     *
+     * <p>Only what this test created: run-trigger-scenarios.xml seeds a graph in the
+     * simple-trigger organization, and a blanket deleteAll would quietly destroy the demo
+     * data the whole suite and the dev environment share.
      */
     @AfterEach
     public void cleanupTriggers() {
-        triggerRepository.deleteAll();
+        triggerRepository.findAll().stream()
+                .filter(trigger -> !triggersBefore.contains(trigger.getId()))
+                .forEach(triggerRepository::delete);
     }
 
     private String triggerPayload(String sourceWorkspaceId, String destinationWorkspaceId) {

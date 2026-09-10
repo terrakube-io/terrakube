@@ -53,12 +53,15 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
     private WorkspaceRunTriggerRepository triggerRepository;
 
     private Set<Integer> jobsBefore;
+    private Set<UUID> triggersBefore;
 
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         jobsBefore = jobRepository.findAll().stream().map(Job::getId).collect(Collectors.toSet());
+        triggersBefore = triggerRepository.findAll().stream()
+                .map(WorkspaceRunTrigger::getId).collect(Collectors.toSet());
     }
 
     /**
@@ -75,7 +78,11 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
      */
     @AfterEach
     public void cleanup() {
-        triggerRepository.deleteAll();
+        // Only this test's edges: run-trigger-scenarios.xml seeds a graph that the suite and
+        // the dev environment share, and deleteAll would take it with them.
+        triggerRepository.findAll().stream()
+                .filter(trigger -> !triggersBefore.contains(trigger.getId()))
+                .forEach(triggerRepository::delete);
         jobRepository.findAll().stream()
                 .filter(job -> !jobsBefore.contains(job.getId()))
                 .forEach(job -> {
@@ -176,6 +183,85 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
         jobReconciliationService.reconcile(upstream.getId(), false);
 
         assertThat(triggeredJobsOn(destination)).isEmpty();
+    }
+
+    // ---------------------------------------------------------------- the seeded graph
+    //
+    // run-trigger-scenarios.xml seeds the simple-trigger organization with named shapes. The
+    // cases below run the engine over that graph rather than over edges built inline, which
+    // is what the fixture is for: the topology is declared once and every test reads it.
+
+    private static final String WS = "b0f1c2d3-0001-4000-8000-%012d";
+    private static final String FANOUT_HUB = String.format(WS, 1);
+    private static final String CHAIN_01 = String.format(WS, 7);
+    private static final String CHAIN_02 = String.format(WS, 8);
+    private static final String CHAIN_03 = String.format(WS, 9);
+    private static final String DIAMOND_ROOT = String.format(WS, 15);
+    private static final String DIAMOND_LEFT = String.format(WS, 16);
+    private static final String DIAMOND_RIGHT = String.format(WS, 17);
+    private static final String DIAMOND_JOIN = String.format(WS, 18);
+    private static final String DISABLED_UPSTREAM = String.format(WS, 19);
+    private static final String DISABLED_DOWNSTREAM = String.format(WS, 20);
+
+    /** Completes an apply on the given seeded workspace and returns the upstream job. */
+    private Job applyOn(String workspaceId) {
+        Job upstream = runningJob(workspace(workspaceId), JobStatus.completed);
+        jobReconciliationService.reconcile(upstream.getId(), false);
+        return upstream;
+    }
+
+    @Test
+    void fanOutReachesEveryDependent() {
+        Job upstream = applyOn(FANOUT_HUB);
+
+        List<Job> triggered = jobRepository.findAll().stream()
+                .filter(j -> JobVia.RUN_TRIGGER.getValue().equals(j.getVia()))
+                .filter(j -> Integer.valueOf(upstream.getId()).equals(j.getTriggeredByJobId()))
+                .toList();
+
+        assertThat(triggered).hasSize(5);
+        assertThat(triggered).allSatisfy(job -> assertThat(job.getCascadeDepth()).isEqualTo(1));
+        assertThat(triggered.stream().map(j -> j.getWorkspace().getName()))
+                .containsExactlyInAnyOrder("fanout-app-1", "fanout-app-2", "fanout-app-3",
+                        "fanout-app-4", "fanout-app-5");
+    }
+
+    /**
+     * A chain advances one step per run, rather than the whole chain firing at once: the
+     * engine only ever looks at the edges leaving the workspace that just applied.
+     */
+    @Test
+    void chainAdvancesOneStepPerRun() {
+        applyOn(CHAIN_01);
+
+        assertThat(triggeredJobsOn(workspace(CHAIN_02))).hasSize(1);
+        assertThat(triggeredJobsOn(workspace(CHAIN_03))).isEmpty();
+    }
+
+    /**
+     * The diamond, which is where the decision not to coalesce becomes visible. The root
+     * reaches the join through two branches, and each branch's apply enqueues its own run -
+     * two runs, not one.
+     */
+    @Test
+    void bothSidesOfADiamondReachTheJoin() {
+        applyOn(DIAMOND_ROOT);
+        assertThat(triggeredJobsOn(workspace(DIAMOND_LEFT))).hasSize(1);
+        assertThat(triggeredJobsOn(workspace(DIAMOND_RIGHT))).hasSize(1);
+        assertThat(triggeredJobsOn(workspace(DIAMOND_JOIN))).isEmpty();
+
+        applyOn(DIAMOND_LEFT);
+        assertThat(triggeredJobsOn(workspace(DIAMOND_JOIN))).hasSize(1);
+
+        applyOn(DIAMOND_RIGHT);
+        assertThat(triggeredJobsOn(workspace(DIAMOND_JOIN))).hasSize(2);
+    }
+
+    @Test
+    void aDisabledEdgeDispatchesNothing() {
+        applyOn(DISABLED_UPSTREAM);
+
+        assertThat(triggeredJobsOn(workspace(DISABLED_DOWNSTREAM))).isEmpty();
     }
 
     /** A source nobody depends on must not produce anything. */
