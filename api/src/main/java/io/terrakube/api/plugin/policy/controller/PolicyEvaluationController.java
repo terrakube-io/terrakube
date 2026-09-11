@@ -77,7 +77,7 @@ public class PolicyEvaluationController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(createErrorResponse("Workspace is currently locked"));
         }
 
-        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
+        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(
                 workspace, List.of(JobStatus.completed)
         );
 

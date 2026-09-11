@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.policy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.PolicyEvaluationRepository;
@@ -23,8 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -39,6 +42,7 @@ public class PolicyEvaluationService {
     private final JobRepository jobRepository;
     private final StorageTypeService storageTypeService;
     private final PolicyNotificationService policyNotificationService;
+    private final PolicyResolutionService policyResolutionService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -163,16 +167,71 @@ public class PolicyEvaluationService {
                         workspace.getName(), workspace.getPolicyComplianceStatus());
             }
 
-            // Notification on violations (Gap 11.3)
+            // Notification on violations (Gap 11.3 & Issue 3.2)
             if ((softViolations > 0 || hardViolations > 0) && job.getOrganization() != null) {
-                List<PolicySet> orgPolicySets = policySetRepository.findByOrganization(job.getOrganization());
-                String reason = String.format("Job %d produced %d hard violations and %d soft violations requiring review.",
-                        jobId, hardViolations, softViolations);
-                policyNotificationService.sendPolicyViolationNotification(job, orgPolicySets, reason);
+                List<PolicySet> targetPolicySets = resolveViolatedPolicySets(job, evalNode);
+                if (!targetPolicySets.isEmpty()) {
+                    String reason = String.format("Job %d produced %d hard violations and %d soft violations requiring review.",
+                            jobId, hardViolations, softViolations);
+                    policyNotificationService.sendPolicyViolationNotification(job, targetPolicySets, reason);
+                } else {
+                    log.info("No target PolicySets found to notify for violations in Job {}", jobId);
+                }
             }
 
         } catch (Exception e) {
             log.error("Failed to process policy evaluation context for Job {}: {}", jobId, e.getMessage(), e);
         }
+    }
+
+    private List<PolicySet> resolveViolatedPolicySets(Job job, JsonNode evalNode) {
+        Set<UUID> violatedPolicySetIds = new LinkedHashSet<>();
+
+        if (evalNode.has("results") && evalNode.get("results").isArray()) {
+            for (JsonNode r : evalNode.get("results")) {
+                int itemHard = r.has("hardMandatoryViolations") ? r.get("hardMandatoryViolations").asInt() : 0;
+                int itemSoft = r.has("softMandatoryViolations") ? r.get("softMandatoryViolations").asInt() : 0;
+                if ((itemHard > 0 || itemSoft > 0) && r.has("policySetId") && !r.get("policySetId").asText().isBlank()) {
+                    try {
+                        violatedPolicySetIds.add(UUID.fromString(r.get("policySetId").asText()));
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid policySetId in results: {}", r.get("policySetId").asText());
+                    }
+                }
+            }
+        }
+
+        List<PolicySet> targetPolicySets = new ArrayList<>();
+        if (!violatedPolicySetIds.isEmpty()) {
+            for (UUID id : violatedPolicySetIds) {
+                policySetRepository.findById(id).ifPresent(ps -> {
+                    if (job.getOrganization() == null || (ps.getOrganization() != null && ps.getOrganization().getId().equals(job.getOrganization().getId()))) {
+                        targetPolicySets.add(ps);
+                    }
+                });
+            }
+        } else if (policyResolutionService != null) {
+            // Fallback: When explicit policySetIds are not present in results (e.g. legacy/summary payloads),
+            // scope strictly to PolicySets attached to the workspace rather than the entire organization.
+            List<PolicyContext> workspacePolicies = policyResolutionService.resolvePoliciesForJob(job);
+            if (workspacePolicies != null) {
+                for (PolicyContext pc : workspacePolicies) {
+                    if (pc.getPolicyId() != null && !pc.getPolicyId().isBlank()) {
+                        try {
+                            UUID id = UUID.fromString(pc.getPolicyId());
+                            policySetRepository.findById(id).ifPresent(ps -> {
+                                if (!targetPolicySets.contains(ps)) {
+                                    targetPolicySets.add(ps);
+                                }
+                            });
+                        } catch (IllegalArgumentException e) {
+                            log.warn("Invalid policyId in policyContext: {}", pc.getPolicyId());
+                        }
+                    }
+                }
+            }
+        }
+
+        return targetPolicySets;
     }
 }

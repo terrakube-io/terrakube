@@ -99,7 +99,7 @@ class PolicyDriftEvaluationJobTest {
         Job completedJob = new Job();
         completedJob.setId(500);
         completedJob.setTerraformPlan("http://storage/tfstate/sample/plan");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsWithPolicies, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(wsWithPolicies, List.of(JobStatus.completed)))
                 .thenReturn(Optional.of(completedJob));
 
         when(workspaceRepository.findAll(any(Pageable.class)))
@@ -146,7 +146,7 @@ class PolicyDriftEvaluationJobTest {
 
         when(workspaceRepository.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(wsNoPlan)));
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsNoPlan, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(wsNoPlan, List.of(JobStatus.completed)))
                 .thenReturn(Optional.empty());
 
         driftJob.execute(context);
@@ -171,7 +171,7 @@ class PolicyDriftEvaluationJobTest {
 
         Job completedJob = new Job();
         completedJob.setTerraformPlan("http://storage/plan");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(wsNoPolicies, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(wsNoPolicies, List.of(JobStatus.completed)))
                 .thenReturn(Optional.of(completedJob));
 
         when(workspaceRepository.findAll(any(Pageable.class)))
@@ -206,7 +206,7 @@ class PolicyDriftEvaluationJobTest {
         Job completedJob = new Job();
         completedJob.setId(101);
         completedJob.setTerraformPlan("http://storage/plan");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(any(Workspace.class), any()))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(any(Workspace.class), any()))
                 .thenReturn(Optional.of(completedJob));
 
         PolicyContext pc = PolicyContext.builder().policyId(UUID.randomUUID().toString()).build();
@@ -270,7 +270,7 @@ class PolicyDriftEvaluationJobTest {
         Job completedJob = new Job();
         completedJob.setId(201);
         completedJob.setTerraformPlan("http://storage/plan");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(any(Workspace.class), any()))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(any(Workspace.class), any()))
                 .thenReturn(Optional.of(completedJob));
 
         PolicyContext pc = PolicyContext.builder().policyId(UUID.randomUUID().toString()).build();
@@ -338,7 +338,7 @@ class PolicyDriftEvaluationJobTest {
         Job completedJob = new Job();
         completedJob.setId(301);
         completedJob.setTerraformPlan("http://storage/plan");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(any(Workspace.class), any()))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(any(Workspace.class), any()))
                 .thenReturn(Optional.of(completedJob));
 
         PolicyContext pc = PolicyContext.builder().policyId(UUID.randomUUID().toString()).build();

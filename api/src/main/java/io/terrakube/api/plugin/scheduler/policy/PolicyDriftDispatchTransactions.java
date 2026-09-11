@@ -41,7 +41,7 @@ public class PolicyDriftDispatchTransactions {
 
     @Transactional
     public Job dispatchDriftEvaluationJob(Workspace workspace) {
-        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
+        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(
                 workspace, List.of(JobStatus.completed)
         );
         String planUrl = lastCompletedJob.map(Job::getTerraformPlan).orElse(null);

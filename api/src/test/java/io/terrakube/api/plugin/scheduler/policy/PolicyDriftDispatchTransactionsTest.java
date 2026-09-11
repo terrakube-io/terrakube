@@ -47,7 +47,7 @@ class PolicyDriftDispatchTransactionsTest {
         Job completedJob = new Job();
         completedJob.setId(77);
         completedJob.setTerraformPlan("http://minio/plan.json");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(ws, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(ws, List.of(JobStatus.completed)))
                 .thenReturn(Optional.of(completedJob));
 
         Job saved = new Job();

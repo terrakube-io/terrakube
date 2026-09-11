@@ -77,7 +77,7 @@ class PolicyEvaluationControllerTest {
         Job completedJob = new Job();
         completedJob.setId(100);
         completedJob.setTerraformPlan("http://storage/plan.json");
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, List.of(JobStatus.completed)))
                 .thenReturn(Optional.of(completedJob));
 
         Job dispatchedJob = new Job();
@@ -156,7 +156,7 @@ class PolicyEvaluationControllerTest {
     @Test
     void testTriggerPolicyEvaluation_NoCompletedPlan() {
         when(workspaceRepository.findById(wsId)).thenReturn(Optional.of(workspace));
-        when(jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, List.of(JobStatus.completed)))
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, List.of(JobStatus.completed)))
                 .thenReturn(Optional.empty());
 
         ResponseEntity<?> response = controller.triggerPolicyEvaluation(orgId.toString(), wsId.toString(), authentication);

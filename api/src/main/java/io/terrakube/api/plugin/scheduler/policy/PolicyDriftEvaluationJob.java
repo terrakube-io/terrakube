@@ -179,7 +179,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
                         }
                     }
 
-                    Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
+                    Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(
                             workspace, List.of(JobStatus.completed)
                     );
                     if (lastCompletedJob.isEmpty() || lastCompletedJob.get().getTerraformPlan() == null || lastCompletedJob.get().getTerraformPlan().isBlank()) {

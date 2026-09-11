@@ -423,7 +423,7 @@ class TfcApiTests extends ServerApplicationTests {
 
         //check the job was created
         Workspace workspace = workspaceRepository.findById(UUID.fromString("24480d33-2649-4c34-aabd-cbc988eb6265")).get();
-        Optional<Job> firstJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        Optional<Job> firstJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(firstJob).isPresent();
         assertThat(firstJob.get().getStatus()).isEqualTo(JobStatus.completed);
 
@@ -460,7 +460,7 @@ class TfcApiTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value());
 
         //check the job was created
-        Optional<Job> secondJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        Optional<Job> secondJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(secondJob).isPresent();
         assertThat(secondJob.get().getStatus()).isEqualTo(JobStatus.completed);
 
@@ -512,7 +512,7 @@ class TfcApiTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value());
 
         //check the job was created
-        Optional<Job> thirdJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
+        Optional<Job> thirdJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(thirdJob).isPresent();
         assertThat(thirdJob.get().getStatus()).isEqualTo(JobStatus.completed);
 
