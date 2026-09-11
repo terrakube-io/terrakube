@@ -21,12 +21,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -36,18 +33,13 @@ import java.util.Optional;
 @DisallowConcurrentExecution
 public class PolicyDriftEvaluationJob implements org.quartz.Job {
 
-    private static final String POLICY_EVAL_TCL =
-            "flow:\n" +
-            "  - type: policyEvaluation\n" +
-            "    step: 100\n" +
-            "    name: OPA Policy Drift Evaluation\n";
-
     private static final String FOLLOW_UP_TRIGGER_PREFIX = "TerrakubeV2_PolicyDriftEvaluation_FollowUp";
 
     private final WorkspaceRepository workspaceRepository;
     private final JobRepository jobRepository;
     private final ScheduleJobService scheduleJobService;
     private final PolicyResolutionService policyResolutionService;
+    private final PolicyDriftDispatchTransactions policyDriftDispatchTransactions;
     private final int batchSize;
     private final int maxJobsPerRun;
     private final int maxActiveJobs;
@@ -59,7 +51,18 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
             JobRepository jobRepository,
             ScheduleJobService scheduleJobService,
             PolicyResolutionService policyResolutionService) {
-        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService, 50, 100, 5, 2, 12);
+        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService,
+                new PolicyDriftDispatchTransactions(jobRepository, scheduleJobService), 50, 100, 5, 2, 12);
+    }
+
+    public PolicyDriftEvaluationJob(
+            WorkspaceRepository workspaceRepository,
+            JobRepository jobRepository,
+            ScheduleJobService scheduleJobService,
+            PolicyResolutionService policyResolutionService,
+            PolicyDriftDispatchTransactions policyDriftDispatchTransactions) {
+        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService,
+                policyDriftDispatchTransactions, 50, 100, 5, 2, 12);
     }
 
     public PolicyDriftEvaluationJob(
@@ -69,7 +72,8 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
             PolicyResolutionService policyResolutionService,
             int batchSize,
             int maxJobsPerRun) {
-        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService, batchSize, maxJobsPerRun, 5, 2, 12);
+        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService,
+                new PolicyDriftDispatchTransactions(jobRepository, scheduleJobService), batchSize, maxJobsPerRun, 5, 2, 12);
     }
 
     public PolicyDriftEvaluationJob(
@@ -77,6 +81,22 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
             JobRepository jobRepository,
             ScheduleJobService scheduleJobService,
             PolicyResolutionService policyResolutionService,
+            int batchSize,
+            int maxJobsPerRun,
+            int maxActiveJobs,
+            int followUpDelayMinutes,
+            int cooldownHours) {
+        this(workspaceRepository, jobRepository, scheduleJobService, policyResolutionService,
+                new PolicyDriftDispatchTransactions(jobRepository, scheduleJobService),
+                batchSize, maxJobsPerRun, maxActiveJobs, followUpDelayMinutes, cooldownHours);
+    }
+
+    public PolicyDriftEvaluationJob(
+            WorkspaceRepository workspaceRepository,
+            JobRepository jobRepository,
+            ScheduleJobService scheduleJobService,
+            PolicyResolutionService policyResolutionService,
+            PolicyDriftDispatchTransactions policyDriftDispatchTransactions,
             @Value("${io.terrakube.policy.drift.batchSize:50}") int batchSize,
             @Value("${io.terrakube.policy.drift.maxJobsPerRun:100}") int maxJobsPerRun,
             @Value("${io.terrakube.policy.drift.maxActiveJobs:5}") int maxActiveJobs,
@@ -86,6 +106,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
         this.jobRepository = jobRepository;
         this.scheduleJobService = scheduleJobService;
         this.policyResolutionService = policyResolutionService;
+        this.policyDriftDispatchTransactions = policyDriftDispatchTransactions;
         this.batchSize = batchSize;
         this.maxJobsPerRun = maxJobsPerRun;
         this.maxActiveJobs = maxActiveJobs;
@@ -174,7 +195,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
                         continue;
                     }
 
-                    dispatchDriftEvaluationJob(workspace, lastCompletedJob.get().getTerraformPlan());
+                    policyDriftDispatchTransactions.dispatchDriftEvaluationJob(workspace, lastCompletedJob.get().getTerraformPlan());
                     dispatchedJobs++;
                     activeDriftJobs++;
                 }
@@ -223,46 +244,15 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
         }
     }
 
-    @Transactional
     public Job dispatchDriftEvaluationJob(Workspace workspace) {
-        Optional<Job> lastCompletedJob = jobRepository.findFirstByWorkspaceAndAndStatusInOrderByIdDesc(
-                workspace, List.of(JobStatus.completed)
-        );
-        String planUrl = lastCompletedJob.map(Job::getTerraformPlan).orElse(null);
-        return dispatchDriftEvaluationJob(workspace, planUrl);
+        return policyDriftDispatchTransactions.dispatchDriftEvaluationJob(workspace);
     }
 
-    @Transactional
     public Job dispatchDriftEvaluationJob(Workspace workspace, String terraformPlan) {
-        return dispatchPolicyEvaluationJob(workspace, terraformPlan, "serviceAccount", JobVia.DRIFT.getValue());
+        return policyDriftDispatchTransactions.dispatchDriftEvaluationJob(workspace, terraformPlan);
     }
 
-    @Transactional
     public Job dispatchPolicyEvaluationJob(Workspace workspace, String terraformPlan, String username, String via) {
-        try {
-            Job job = new Job();
-            String encodedTcl = Base64.getEncoder().encodeToString(POLICY_EVAL_TCL.getBytes(StandardCharsets.UTF_8));
-            job.setTcl(encodedTcl);
-            job.setWorkspace(workspace);
-            job.setOrganization(workspace.getOrganization());
-            job.setStatus(JobStatus.pending);
-            job.setPlanChanges(true);
-            job.setTerraformPlan(terraformPlan);
-            job.setCreatedBy(username != null ? username : "serviceAccount");
-            job.setUpdatedBy(username != null ? username : "serviceAccount");
-            job.setVia(via != null ? via : JobVia.DRIFT.getValue());
-            Date now = new Date();
-            job.setCreatedDate(now);
-            job.setUpdatedDate(now);
-
-            job = jobRepository.save(job);
-            log.info("Dispatched policyEvaluation job {} for Workspace {} via {}", job.getId(), workspace.getName(), job.getVia());
-
-            scheduleJobService.createJobContext(job);
-            return job;
-        } catch (Exception e) {
-            log.error("Failed to dispatch policy evaluation job for Workspace {}: {}", workspace.getName(), e.getMessage());
-            throw new RuntimeException("Failed to dispatch policy evaluation job: " + e.getMessage(), e);
-        }
+        return policyDriftDispatchTransactions.dispatchPolicyEvaluationJob(workspace, terraformPlan, username, via);
     }
 }
