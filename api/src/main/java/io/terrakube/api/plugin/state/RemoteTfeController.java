@@ -383,12 +383,17 @@ public class RemoteTfeController {
             @RequestBody(required = false) Map<String, Object> body,
             Principal principal) {
         log.info("Overriding policy check {}", id);
+        if (!(principal instanceof JwtAuthenticationToken jwtToken)) {
+            log.warn("overridePolicyCheck rejected: principal is not a JwtAuthenticationToken (type={})",
+                    principal == null ? "null" : principal.getClass().getName());
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
         UUID checkId = parsePolicyCheckId(id);
         String justification = null;
         if (body != null && body.containsKey("justification")) {
             justification = String.valueOf(body.get("justification"));
         }
-        return ResponseEntity.ok(remoteTfeService.overridePolicyCheck(checkId, justification, (JwtAuthenticationToken) principal));
+        return ResponseEntity.ok(remoteTfeService.overridePolicyCheck(checkId, justification, jwtToken));
     }
 
     private UUID parsePolicyCheckId(String id) {

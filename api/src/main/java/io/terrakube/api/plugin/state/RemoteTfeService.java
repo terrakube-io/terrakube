@@ -1919,11 +1919,6 @@ public class RemoteTfeService {
             return true;
         }
 
-        // Fallback: If user has approval permission on workspace, allow override
-        if (job.getWorkspace() != null && org.getTeam() != null && validateUserApproveJob(job.getWorkspace(), currentUser)) {
-            return true;
-        }
-
         return false;
     }
 

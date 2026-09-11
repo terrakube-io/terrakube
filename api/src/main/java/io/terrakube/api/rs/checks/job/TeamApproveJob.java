@@ -40,15 +40,20 @@ public class TeamApproveJob extends OperationCheck<Job> {
                 .isEmpty()) {
             return false;
         }
-        if (job.getApprovalTeam() == null || job.getApprovalTeam().isEmpty())
-            return true;
-        else {
-            boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
-            if (isServiceAccount)
-                return groupService.isServiceMember(requestScope.getUser(), job.getApprovalTeam());
-            else
-                return groupService.isMember(requestScope.getUser(), job.getApprovalTeam()) || groupService.isMember(requestScope.getUser(), instanceOwner);
 
+        if (job.getApprovalTeam() == null || job.getApprovalTeam().isEmpty()) {
+            // No designated approval team — the step is intentionally open.
+            // The caller is already an authenticated org member (enforced by Job's @ReadPermission),
+            // and the status transition guard above ensures we only reach here for
+            // waitingApproval → approved/rejected, so returning true is safe.
+            return true;
         }
+
+        boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
+        if (isServiceAccount)
+            return groupService.isServiceMember(requestScope.getUser(), job.getApprovalTeam());
+        else
+            return groupService.isMember(requestScope.getUser(), job.getApprovalTeam())
+                    || groupService.isMember(requestScope.getUser(), instanceOwner);
     }
 }

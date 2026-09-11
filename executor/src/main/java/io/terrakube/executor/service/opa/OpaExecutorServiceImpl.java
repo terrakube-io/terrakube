@@ -358,12 +358,16 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
     private File resolvePolicyBundleDirectory(File workingDirectory, PolicyContext policyContext) throws Exception {
         if (policyContext.getRepository() == null || policyContext.getRepository().isBlank()) {
             // If no VCS repository specified, default to working directory folder
-            return new File(workingDirectory, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+            File resolvedNoVcs = new File(workingDirectory, policyContext.getFolder() != null ? policyContext.getFolder() : "").getCanonicalFile();
+            validatePathBoundary(resolvedNoVcs, workingDirectory, policyContext.getFolder());
+            return resolvedNoVcs;
         }
 
         File policyCloneFolder = new File(workingDirectory, ".terrakube-policies/" + policyContext.getPolicyId());
         if (policyCloneFolder.exists()) {
-            return new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+            File resolvedExisting = new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "").getCanonicalFile();
+            validatePathBoundary(resolvedExisting, policyCloneFolder, policyContext.getFolder());
+            return resolvedExisting;
         }
 
         FileUtils.forceMkdirParent(policyCloneFolder);
@@ -379,7 +383,30 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
 
         cloneCommand.call().close();
 
-        return new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "");
+        File resolvedAfterClone = new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "").getCanonicalFile();
+        validatePathBoundary(resolvedAfterClone, policyCloneFolder, policyContext.getFolder());
+        return resolvedAfterClone;
+    }
+
+    /**
+     * Validates that a resolved path does not escape the expected parent boundary.
+     * Prevents path traversal attacks where a crafted policy 'folder' value (e.g. "../../..") could
+     * cause OPA to read arbitrary host filesystem directories via the --data argument.
+     *
+     * @param resolved   the canonical resolved path to validate
+     * @param boundary   the directory within which the resolved path must remain
+     * @param rawFolder  the original raw folder value from the PolicyContext (used in error messages)
+     * @throws SecurityException if the resolved path escapes the boundary directory
+     */
+    private void validatePathBoundary(File resolved, File boundary, String rawFolder) throws Exception {
+        java.nio.file.Path resolvedPath = resolved.toPath();
+        java.nio.file.Path boundaryPath = boundary.getCanonicalFile().toPath();
+        if (!resolvedPath.startsWith(boundaryPath)) {
+            log.error("Policy folder '{}' resolves to '{}' which is outside the allowed boundary '{}'",
+                    rawFolder, resolvedPath, boundaryPath);
+            throw new SecurityException(
+                    "Policy folder path traverses outside the allowed bundle directory. Folder value: " + rawFolder);
+        }
     }
 
     File resolveLibDirectory(File workingDirectory, File policyBundleDir, PolicyContext policyContext) {
