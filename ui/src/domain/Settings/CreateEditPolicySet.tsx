@@ -1,34 +1,19 @@
 import React, { useEffect, useState } from "react";
-import {
-  Button,
-  Card,
-  Col,
-  Divider,
-  Form,
-  Input,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Col, Divider, Form, Input, Row, Select, Space, Switch, Tag, Typography, message } from "antd";
 import {
   ArrowLeftOutlined,
   BellOutlined,
   BranchesOutlined,
   FolderOutlined,
-  SafetyCertificateOutlined,
   SaveOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
 
-const { Title, Text, Paragraph } = Typography;
+const { Paragraph } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -38,11 +23,7 @@ type Props = {
   managePermission?: boolean;
 };
 
-export const CreateEditPolicySet: React.FC<Props> = ({
-  mode,
-  policySetId,
-  managePermission = true,
-}) => {
+export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, managePermission = true }) => {
   const { orgid } = useParams();
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -54,6 +35,8 @@ export const CreateEditPolicySet: React.FC<Props> = ({
   const [projects, setProjects] = useState<any[]>([]);
   const [tags, setTags] = useState<any[]>([]);
   const [notificationConfigs, setNotificationConfigs] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
   const [isGlobal, setIsGlobal] = useState(false);
 
   const backUrl = `/organizations/${orgid}/settings/policies`;
@@ -62,12 +45,14 @@ export const CreateEditPolicySet: React.FC<Props> = ({
     // Load reference data
     const loadReferences = async () => {
       try {
-        const [vcsRes, wsRes, projRes, tagsRes, notifRes] = await Promise.all([
+        setLoadingTeams(true);
+        const [vcsRes, wsRes, projRes, tagsRes, notifRes, teamsRes] = await Promise.all([
           axiosInstance.get(`organization/${orgid}/vcs`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/workspace`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/project`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/tag`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/notificationConfiguration`).catch(() => ({ data: { data: [] } })),
+          axiosInstance.get(`organization/${orgid}/team`).catch(() => ({ data: { data: [] } })),
         ]);
 
         setVcsProviders(vcsRes.data?.data || []);
@@ -75,8 +60,16 @@ export const CreateEditPolicySet: React.FC<Props> = ({
         setProjects(projRes.data?.data || []);
         setTags(tagsRes.data?.data || []);
         setNotificationConfigs(notifRes.data?.data || []);
+        setTeams(
+          (teamsRes.data?.data || []).map((t: any) => ({
+            id: t.id,
+            name: t.attributes?.name || t.name || t.id,
+          }))
+        );
       } catch (e) {
         console.error("Failed to load reference data", e);
+      } finally {
+        setLoadingTeams(false);
       }
     };
 
@@ -90,9 +83,9 @@ export const CreateEditPolicySet: React.FC<Props> = ({
           const attrs = item.attributes;
           setIsGlobal(attrs.global || false);
 
-          let attachedWorkspaces: string[] = [];
-          let attachedProjects: string[] = [];
-          let attachedTags: string[] = [];
+          const attachedWorkspaces: string[] = [];
+          const attachedProjects: string[] = [];
+          const attachedTags: string[] = [];
 
           try {
             const attachRes = await axiosInstance.get(
@@ -283,6 +276,15 @@ export const CreateEditPolicySet: React.FC<Props> = ({
     }
   };
 
+  const currentOverrideTeam = Form.useWatch("overrideTeam", form);
+  const teamOptions = [...teams];
+  if (currentOverrideTeam && !teamOptions.some((t) => t.name === currentOverrideTeam)) {
+    teamOptions.push({
+      id: currentOverrideTeam,
+      name: currentOverrideTeam,
+    });
+  }
+
   if (loading) {
     return <LoadingFallback />;
   }
@@ -351,10 +353,30 @@ export const CreateEditPolicySet: React.FC<Props> = ({
             <Col span={24}>
               <Form.Item
                 name="overrideTeam"
-                label="Authorized Override Team"
+                label="Authorized Override Team (optional)"
                 tooltip="RBAC team authorized to approve soft-mandatory violations in the UI or API."
               >
-                <Input prefix={<TeamOutlined />} placeholder="e.g. security-admins" />
+                <Select
+                  showSearch
+                  allowClear
+                  placeholder="Select an override team (optional)"
+                  data-testid="policy-set-override-team-select"
+                  loading={loadingTeams}
+                  filterOption={(input, option) =>
+                    String(option?.value ?? "")
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                >
+                  {teamOptions.map((t) => (
+                    <Option key={t.id} value={t.name}>
+                      <Space>
+                        <TeamOutlined />
+                        <span>{t.name}</span>
+                      </Space>
+                    </Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>
@@ -378,9 +400,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({
                       <Space>
                         <BellOutlined />
                         <span>{nc.attributes?.name || nc.id}</span>
-                        {nc.attributes?.channelType && (
-                          <Tag color="purple">{nc.attributes.channelType}</Tag>
-                        )}
+                        {nc.attributes?.channelType && <Tag color="purple">{nc.attributes.channelType}</Tag>}
                       </Space>
                     </Option>
                   ))}

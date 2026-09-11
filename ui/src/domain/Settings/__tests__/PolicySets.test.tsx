@@ -231,9 +231,7 @@ describe("PolicySetsSettings", () => {
     fireEvent.change(searchInput, { target: { value: "non-existent-policy" } });
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No policy sets match your search and filter criteria.")
-      ).toBeInTheDocument();
+      expect(screen.getByText("No policy sets match your search and filter criteria.")).toBeInTheDocument();
     });
 
     const clearButton = screen.getByTestId("empty-clear-filters-btn");
@@ -259,10 +257,7 @@ describe("PolicySetsSettings", () => {
     await waitFor(() => {
       const titleLink = screen.getByTestId("policy-set-title-link-ps-1");
       expect(titleLink).toBeInTheDocument();
-      expect(titleLink).toHaveAttribute(
-        "href",
-        "/organizations/org-1/settings/policies/edit/ps-1"
-      );
+      expect(titleLink).toHaveAttribute("href", "/organizations/org-1/settings/policies/edit/ps-1");
     });
   });
 
@@ -302,6 +297,86 @@ describe("PolicySetsSettings", () => {
     expect(screen.getByLabelText(/Enforcement Level/i)).toBeInTheDocument();
     expect(screen.getByText("Notifications & Alerting")).toBeInTheDocument();
     expect(screen.getByLabelText(/Notification Channel/i)).toBeInTheDocument();
+    expect(screen.getByTestId("policy-set-override-team-select")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Authorized Override Team/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Create Policy Set/i })).toBeInTheDocument();
+  });
+
+  it("renders authorized override team select allowing user to pick teams", async () => {
+    const sampleTeams = [
+      { id: "team-1", attributes: { name: "security-admins" } },
+      { id: "team-2", attributes: { name: "platform-team" } },
+    ];
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/team")) {
+        return Promise.resolve({ data: { data: sampleTeams } });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/new"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/new"
+            element={<PolicySetsSettings editorMode="new" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("policy-set-override-team-select")).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText(/Authorized Override Team/i)).toBeInTheDocument();
+  });
+
+  it("renders edit form with pre-populated override team in select", async () => {
+    const editItem = {
+      id: "ps-2",
+      attributes: {
+        name: "tagging-rules",
+        description: "Requires tags",
+        enforcementLevel: "SOFT_MANDATORY",
+        overrideTeam: "secops",
+        repository: "https://github.com/org/tag-policies",
+        branch: "main",
+      },
+      relationships: {},
+    };
+
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith("policy_set/ps-2")) {
+        return Promise.resolve({ data: { data: editItem } });
+      }
+      if (url.includes("/team")) {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: "team-1", attributes: { name: "secops" } },
+              { id: "team-2", attributes: { name: "security-admins" } },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/edit/ps-2"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/edit/:id"
+            element={<PolicySetsSettings editorMode="edit" editorId="ps-2" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Edit Policy Set" })).toBeInTheDocument();
+      expect(screen.getByText("secops")).toBeInTheDocument();
+    });
   });
 });
