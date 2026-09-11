@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -20,14 +22,45 @@ public class OpaBinaryService {
     private static final String DEFAULT_OPA_VERSION = "1.20.2";
     private static final String REDIS_OPA_UPLOAD_LOCK_PREFIX = "opa-binary-uploading:";
     private static final Duration REDIS_OPA_UPLOAD_LOCK_TTL = Duration.ofSeconds(120);
+    private static final Pattern SEMVER_PATTERN = Pattern.compile("^[0-9]+(\\.[0-9]+)*(-[a-zA-Z0-9.]+)?$");
 
     private final TerraformState terraformState;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final String defaultOpaVersion;
 
     @Autowired
-    public OpaBinaryService(TerraformState terraformState, @Autowired(required = false) RedisTemplate<String, Object> redisTemplate) {
+    public OpaBinaryService(
+            TerraformState terraformState,
+            @Autowired(required = false) RedisTemplate<String, Object> redisTemplate,
+            @Value("${io.terrakube.executor.opa.default-version:1.20.2}") String defaultOpaVersion) {
         this.terraformState = terraformState;
         this.redisTemplate = redisTemplate;
+        this.defaultOpaVersion = (defaultOpaVersion != null && !defaultOpaVersion.isBlank())
+                ? defaultOpaVersion.trim()
+                : DEFAULT_OPA_VERSION;
+    }
+
+    public OpaBinaryService(TerraformState terraformState, RedisTemplate<String, Object> redisTemplate) {
+        this(terraformState, redisTemplate, DEFAULT_OPA_VERSION);
+    }
+
+    public String normalizeAndValidateVersion(String version) {
+        String effective = (version != null && !version.isBlank()) ? version.trim() : this.defaultOpaVersion;
+        if (effective == null || effective.isBlank()) {
+            effective = DEFAULT_OPA_VERSION;
+        }
+
+        // Strip leading 'v' or 'V' if present
+        if (effective.startsWith("v") || effective.startsWith("V")) {
+            effective = effective.substring(1).trim();
+        }
+
+        if (!SEMVER_PATTERN.matcher(effective).matches()) {
+            throw new IllegalArgumentException(String.format(
+                    "Invalid OPA version format: '%s'. Expected semantic version (e.g. 1.20.2, 0.68.0).", version));
+        }
+
+        return effective;
     }
 
     public static String resolveArchitecture() {
@@ -54,7 +87,7 @@ public class OpaBinaryService {
     }
 
     public File getOpaBinary(String version) {
-        String effectiveVersion = (version != null && !version.isBlank()) ? version : DEFAULT_OPA_VERSION;
+        String effectiveVersion = normalizeAndValidateVersion(version);
         String os = resolveOs();
         String arch = resolveArchitecture();
         String binaryFileName = "windows".equals(os) ? "opa.exe" : "opa";

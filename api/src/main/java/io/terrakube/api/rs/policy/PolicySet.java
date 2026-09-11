@@ -72,6 +72,9 @@ public class PolicySet extends GenericAuditFields {
     @Column(name = "folder")
     private String folder = "/";
 
+    @Column(name = "opa_version")
+    private String opaVersion;
+
     @ManyToOne
     @JoinColumn(name = "vcs_id")
     private Vcs vcs;

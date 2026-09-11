@@ -112,6 +112,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
             repository: attrs.repository,
             branch: attrs.branch || "main",
             folder: attrs.folder || "/",
+            opaVersion: attrs.opaVersion,
             vcsId: item.relationships?.vcs?.data?.id || undefined,
             notificationConfigurationId: item.relationships?.notificationConfiguration?.data?.id || undefined,
             workspaces: attachedWorkspaces,
@@ -151,6 +152,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
             repository: values.repository,
             branch: values.branch,
             folder: values.folder,
+            opaVersion: values.opaVersion ? values.opaVersion.trim() : null,
           },
           relationships: {
             organization: {
@@ -377,6 +379,28 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
                     </Option>
                   ))}
                 </Select>
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item
+                name="opaVersion"
+                label="OPA Version"
+                tooltip="Custom Open Policy Agent version used to evaluate this policy set."
+                extra={
+                  <span>
+                    Leave blank to inherit the system default. Check available releases on the{" "}
+                    <a
+                      href="https://github.com/open-policy-agent/opa/releases"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      OPA GitHub Releases
+                    </a>{" "}
+                    page (e.g. <code>1.20.2</code> or <code>0.68.0</code>).
+                  </span>
+                }
+              >
+                <Input placeholder="Inherit system default (e.g. 1.20.2)" data-testid="policy-set-opa-version-input" />
               </Form.Item>
             </Col>
           </Row>

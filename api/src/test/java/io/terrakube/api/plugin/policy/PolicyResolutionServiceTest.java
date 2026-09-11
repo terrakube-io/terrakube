@@ -36,6 +36,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -269,5 +270,48 @@ class PolicyResolutionServiceTest {
         assertEquals("azure_apim_no_public_network", ec.getRuleId());
         assertEquals("SEC-9988", ec.getTicketReference());
         assertEquals("Legacy billing integration migration in progress", ec.getJustification());
+    }
+
+    @Test
+    void testResolvePoliciesForJob_WithCustomOpaVersion() {
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+
+        Workspace ws = new Workspace();
+        ws.setId(UUID.randomUUID());
+
+        Job job = new Job();
+        job.setId(400);
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+
+        PolicySet customPolicy = new PolicySet();
+        customPolicy.setId(UUID.randomUUID());
+        customPolicy.setName("Custom-Opa-Policy");
+        customPolicy.setOpaVersion("0.68.0");
+        customPolicy.setEnforcementLevel(PolicyEnforcementLevel.HARD_MANDATORY);
+
+        PolicySet defaultPolicy = new PolicySet();
+        defaultPolicy.setId(UUID.randomUUID());
+        defaultPolicy.setName("Default-Opa-Policy");
+        defaultPolicy.setOpaVersion(null);
+        defaultPolicy.setEnforcementLevel(PolicyEnforcementLevel.ADVISORY);
+
+        PolicyAttachment pa1 = new PolicyAttachment();
+        pa1.setPolicySet(customPolicy);
+        PolicyAttachment pa2 = new PolicyAttachment();
+        pa2.setPolicySet(defaultPolicy);
+
+        when(policyAttachmentRepository.findByWorkspace(ws)).thenReturn(List.of(pa1, pa2));
+
+        List<PolicyContext> resolved = policyResolutionService.resolvePoliciesForJob(job);
+        assertNotNull(resolved);
+        assertEquals(2, resolved.size());
+
+        PolicyContext customCtx = resolved.stream().filter(p -> "Custom-Opa-Policy".equals(p.getPolicyName())).findFirst().orElseThrow();
+        assertEquals("0.68.0", customCtx.getOpaVersion());
+
+        PolicyContext defaultCtx = resolved.stream().filter(p -> "Default-Opa-Policy".equals(p.getPolicyName())).findFirst().orElseThrow();
+        assertNull(defaultCtx.getOpaVersion());
     }
 }

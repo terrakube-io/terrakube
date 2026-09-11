@@ -164,6 +164,7 @@ public class PolicyResolutionService {
                     .repository(ps.getRepository())
                     .branch(ps.getBranch() != null ? ps.getBranch() : "main")
                     .folder(ps.getFolder() != null ? ps.getFolder() : "/")
+                    .opaVersion(ps.getOpaVersion())
                     .inputs(new HashMap<>(policyInputs))
                     .build();
 

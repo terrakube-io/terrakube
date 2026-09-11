@@ -124,5 +124,6 @@
     <include file="/db/changelog/local/changelog-2.33.0-repo-webhook-delivery.xml" />
     <include file="/db/changelog/local/changelog-2.33.1-notification-outbox-job-status.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-opa-policy.xml" />
+    <include file="/db/changelog/local/changelog-2.34.0-policy-set-opa-version.xml" />
 </databaseChangeLog>
 

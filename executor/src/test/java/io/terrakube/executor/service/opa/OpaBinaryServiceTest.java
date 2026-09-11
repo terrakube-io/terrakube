@@ -66,8 +66,33 @@ class OpaBinaryServiceTest {
     }
 
     @Test
+    void testNormalizeAndValidateVersion() {
+        // Defaults
+        assertEquals("1.20.2", opaBinaryService.normalizeAndValidateVersion(null));
+        assertEquals("1.20.2", opaBinaryService.normalizeAndValidateVersion(""));
+        assertEquals("1.20.2", opaBinaryService.normalizeAndValidateVersion("   "));
+
+        // Leading 'v' / 'V' stripping and trimming
+        assertEquals("1.20.2", opaBinaryService.normalizeAndValidateVersion("v1.20.2"));
+        assertEquals("0.68.0", opaBinaryService.normalizeAndValidateVersion("V0.68.0"));
+        assertEquals("1.2.3", opaBinaryService.normalizeAndValidateVersion("  v1.2.3  "));
+        assertEquals("1.0.0-rc1", opaBinaryService.normalizeAndValidateVersion("1.0.0-rc1"));
+
+        // Custom default in constructor
+        OpaBinaryService customDefaultService = new OpaBinaryService(terraformState, redisTemplate, "0.68.0");
+        assertEquals("0.68.0", customDefaultService.normalizeAndValidateVersion(null));
+        assertEquals("0.68.0", customDefaultService.normalizeAndValidateVersion(""));
+
+        // Invalid versions and path traversal protection
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("../../bin"));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("../opa"));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("invalid version"));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("1.0.0; rm -rf /"));
+    }
+
+    @Test
     void testGetOpaBinary_FromLocalCache(@TempDir Path tempDir) throws IOException {
-        String version = "test-version";
+        String version = "9.9.9";
         String os = OpaBinaryService.resolveOs();
         String arch = OpaBinaryService.resolveArchitecture();
         String binaryFileName = "windows".equals(os) ? "opa.exe" : "opa";
@@ -80,18 +105,20 @@ class OpaBinaryServiceTest {
         FileUtils.writeStringToFile(localCacheFile, "cached-opa", StandardCharsets.UTF_8);
         localCacheFile.setExecutable(true, true);
 
-        File resolvedBinary = opaBinaryService.getOpaBinary(version);
+        File resolvedBinary = opaBinaryService.getOpaBinary("v" + version);
 
         assertNotNull(resolvedBinary);
         assertTrue(resolvedBinary.exists());
         assertEquals(localCacheFile.getAbsolutePath(), resolvedBinary.getAbsolutePath());
         // Cloud download should not have been invoked
         verify(terraformState, never()).downloadOpaBinary(anyString(), anyString(), anyString(), any(File.class));
+
+        FileUtils.deleteQuietly(localCacheFile.getParentFile().getParentFile());
     }
 
     @Test
     void testGetOpaBinary_FromCloudStorage() throws IOException {
-        String version = "test-version";
+        String version = "9.9.8";
         String os = OpaBinaryService.resolveOs();
         String arch = OpaBinaryService.resolveArchitecture();
 
@@ -102,11 +129,13 @@ class OpaBinaryServiceTest {
                     return true;
                 });
 
-        File resolvedBinary = opaBinaryService.getOpaBinary(version);
+        File resolvedBinary = opaBinaryService.getOpaBinary("v" + version);
 
         assertNotNull(resolvedBinary);
         assertTrue(resolvedBinary.exists());
         verify(terraformState, times(1)).downloadOpaBinary(eq(version), eq(os), eq(arch), any(File.class));
+
+        FileUtils.deleteQuietly(resolvedBinary.getParentFile().getParentFile());
     }
 
     @Test
@@ -117,15 +146,15 @@ class OpaBinaryServiceTest {
         when(terraformState.downloadOpaBinary(anyString(), anyString(), anyString(), any(File.class)))
                 .thenReturn(false);
 
-        // Binary will attempt upstream download, but with invalid version it tests lock behavior when cloud download returns true
-        when(terraformState.downloadOpaBinary(eq("test-cloud-lock"), anyString(), anyString(), any(File.class)))
+        when(terraformState.downloadOpaBinary(eq("9.9.7"), anyString(), anyString(), any(File.class)))
                 .thenAnswer(inv -> {
                     File f = inv.getArgument(3);
                     FileUtils.writeStringToFile(f, "data", StandardCharsets.UTF_8);
                     return true;
                 });
 
-        File resolved = opaBinaryService.getOpaBinary("test-cloud-lock");
+        File resolved = opaBinaryService.getOpaBinary("9.9.7");
         assertNotNull(resolved);
+        FileUtils.deleteQuietly(resolved.getParentFile().getParentFile());
     }
 }

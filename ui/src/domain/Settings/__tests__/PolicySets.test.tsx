@@ -379,4 +379,68 @@ describe("PolicySetsSettings", () => {
       expect(screen.getByText("secops")).toBeInTheDocument();
     });
   });
+
+  it("renders OPA version input field with placeholder in create form", async () => {
+    getMock.mockResolvedValue({ data: { data: [] } });
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/new"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/new"
+            element={<PolicySetsSettings editorMode="new" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Create Policy Set" })).toBeInTheDocument();
+    });
+
+    const opaVersionInput = screen.getByTestId("policy-set-opa-version-input");
+    expect(opaVersionInput).toBeInTheDocument();
+    expect(opaVersionInput).toHaveAttribute("placeholder", "Inherit system default (e.g. 1.20.2)");
+    expect(screen.getByText(/OPA GitHub Releases/i)).toBeInTheDocument();
+  });
+
+  it("renders edit form with pre-populated opaVersion", async () => {
+    const editItem = {
+      id: "ps-3",
+      attributes: {
+        name: "custom-opa-set",
+        description: "Custom OPA version test",
+        enforcementLevel: "HARD_MANDATORY",
+        opaVersion: "0.68.0",
+        repository: "https://github.com/org/policies",
+        branch: "main",
+      },
+      relationships: {},
+    };
+
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith("policy_set/ps-3")) {
+        return Promise.resolve({ data: { data: editItem } });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/edit/ps-3"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/edit/:id"
+            element={<PolicySetsSettings editorMode="edit" editorId="ps-3" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Edit Policy Set" })).toBeInTheDocument();
+    });
+
+    const opaVersionInput = screen.getByTestId("policy-set-opa-version-input") as HTMLInputElement;
+    expect(opaVersionInput.value).toBe("0.68.0");
+  });
 });
