@@ -18,6 +18,7 @@ import {
   KeyOutlined,
   LeftOutlined,
   LockOutlined,
+  NodeIndexOutlined,
   ProjectOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -371,6 +372,15 @@ export default function AppSidebar({
                   </Link>
                 ),
                 icon: <ScheduleOutlined />,
+              },
+              {
+                key: "run-triggers",
+                label: (
+                  <Link to={`${workspaceBasePath}/run-triggers`} onClick={() => handleOrgMenuClick("run-triggers")}>
+                    Run Triggers
+                  </Link>
+                ),
+                icon: <NodeIndexOutlined />,
               },
               {
                 key: "settings",

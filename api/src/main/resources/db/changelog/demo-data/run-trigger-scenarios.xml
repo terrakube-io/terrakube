@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      A dependency graph big enough to be worth looking at.
+
+      Every workspace points at terrakube-docker-compose, whose root module is a
+      null_resource and a 30 second sleep - so a run really completes, quickly, with no
+      cloud credentials, and a cascade can be watched end to end in a dev environment.
+
+      The scenarios are named after their shape so a page tells you which one you are
+      looking at: fanout, chain, fanin, diamond, disabled, override, standalone, cascade.
+    -->
+    <changeSet author="demo-data" id="demo-run-trigger">
+
+        <!--
+        ******************
+        ***ORGANIZATION***
+        ******************
+        -->
+        <insert tableName="organization">
+            <column name="id"                      value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="name"                    value="simple-trigger" />
+            <column name="description"             value="run trigger scenarios for testing workspace dependencies" />
+        </insert>
+
+        <!--
+        ***********
+        ***TEAMS***
+        ***********
+        -->
+        <insert tableName="team">
+            <column name="id"                      value="b0f1c2d3-0000-4000-8000-000000000002" />
+            <column name="name"                    value="TERRAKUBE_ADMIN" />
+            <column name="role"                    value="admin" />
+            <column name="manage_workspace"        value="true" />
+            <column name="manage_module"           value="true" />
+            <column name="manage_provider"         value="true" />
+            <column name="manage_vcs"              value="true" />
+            <column name="manage_template"         value="true" />
+            <column name="manage_job"              value="true" />
+            <column name="manage_state"            value="true" />
+            <column name="manage_collection"       value="true" />
+            <column name="plan_job"                value="true" />
+            <column name="approve_job"             value="true" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+
+        <!--
+        ***************
+        ***TEMPLATES***
+        ***************
+        -->
+        <insert tableName="template">
+            <column name="id"                      value="b0f1c2d3-0000-4000-8000-000000000011" />
+            <column name="name"                    value="Plan" />
+            <column name="description"             value="Running terraform plan" />
+            <column name="version"                 value="1.0.0" />
+            <column name="tcl"                     value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"                      value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="name"                    value="Plan and apply" />
+            <column name="description"             value="Running terraform plan and apply" />
+            <column name="version"                 value="1.0.0" />
+            <column name="tcl"                     value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+
+        <!--
+        ****************
+        ***WORKSPACES***
+        ****************
+
+        Every one defaults to "Plan and apply", so a triggered run has a template to
+        resolve even when the edge does not name one.
+        -->
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="name"                    value="fanout-hub" />
+            <column name="description"             value="fan-out source: one apply wakes five consumers" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000002" />
+            <column name="name"                    value="fanout-app-1" />
+            <column name="description"             value="fan-out consumer 1 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000003" />
+            <column name="name"                    value="fanout-app-2" />
+            <column name="description"             value="fan-out consumer 2 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000004" />
+            <column name="name"                    value="fanout-app-3" />
+            <column name="description"             value="fan-out consumer 3 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000005" />
+            <column name="name"                    value="fanout-app-4" />
+            <column name="description"             value="fan-out consumer 4 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000006" />
+            <column name="name"                    value="fanout-app-5" />
+            <column name="description"             value="fan-out consumer 5 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000007" />
+            <column name="name"                    value="chain-01" />
+            <column name="description"             value="chain step 1 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000008" />
+            <column name="name"                    value="chain-02" />
+            <column name="description"             value="chain step 2 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000009" />
+            <column name="name"                    value="chain-03" />
+            <column name="description"             value="chain step 3 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000010" />
+            <column name="name"                    value="chain-04" />
+            <column name="description"             value="chain step 4 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000011" />
+            <column name="name"                    value="chain-05" />
+            <column name="description"             value="chain step 5 of 5" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000012" />
+            <column name="name"                    value="fanin-net" />
+            <column name="description"             value="fan-in source: network layer" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000013" />
+            <column name="name"                    value="fanin-dns" />
+            <column name="description"             value="fan-in source: dns layer" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000014" />
+            <column name="name"                    value="fanin-app" />
+            <column name="description"             value="fan-in target: runs after either source" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000015" />
+            <column name="name"                    value="diamond-root" />
+            <column name="description"             value="diamond root: reaches the join by two paths" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000016" />
+            <column name="name"                    value="diamond-left" />
+            <column name="description"             value="diamond left branch" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000017" />
+            <column name="name"                    value="diamond-right" />
+            <column name="description"             value="diamond right branch" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000018" />
+            <column name="name"                    value="diamond-join" />
+            <column name="description"             value="diamond join: two paths, two runs, no coalescing" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000019" />
+            <column name="name"                    value="disabled-upstream" />
+            <column name="description"             value="disabled edge source" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000020" />
+            <column name="name"                    value="disabled-downstream" />
+            <column name="description"             value="disabled edge target: configured but not firing" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000021" />
+            <column name="name"                    value="override-upstream" />
+            <column name="description"             value="template override source" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000022" />
+            <column name="name"                    value="override-downstream" />
+            <column name="description"             value="triggered with Plan instead of its default" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000023" />
+            <column name="name"                    value="standalone-01" />
+            <column name="description"             value="no run triggers in either direction" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000024" />
+            <column name="name"                    value="standalone-02" />
+            <column name="description"             value="no run triggers in either direction" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000025" />
+            <column name="name"                    value="standalone-03" />
+            <column name="description"             value="no run triggers in either direction" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000026" />
+            <column name="name"                    value="standalone-04" />
+            <column name="description"             value="no run triggers in either direction" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000027" />
+            <column name="name"                    value="cascade-01" />
+            <column name="description"             value="deep cascade step 1 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000028" />
+            <column name="name"                    value="cascade-02" />
+            <column name="description"             value="deep cascade step 2 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000029" />
+            <column name="name"                    value="cascade-03" />
+            <column name="description"             value="deep cascade step 3 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000030" />
+            <column name="name"                    value="cascade-04" />
+            <column name="description"             value="deep cascade step 4 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000031" />
+            <column name="name"                    value="cascade-05" />
+            <column name="description"             value="deep cascade step 5 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000032" />
+            <column name="name"                    value="cascade-06" />
+            <column name="description"             value="deep cascade step 6 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000033" />
+            <column name="name"                    value="cascade-07" />
+            <column name="description"             value="deep cascade step 7 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000034" />
+            <column name="name"                    value="cascade-08" />
+            <column name="description"             value="deep cascade step 8 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000035" />
+            <column name="name"                    value="cascade-09" />
+            <column name="description"             value="deep cascade step 9 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000036" />
+            <column name="name"                    value="cascade-10" />
+            <column name="description"             value="deep cascade step 10 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000037" />
+            <column name="name"                    value="cascade-11" />
+            <column name="description"             value="deep cascade step 11 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                      value="b0f1c2d3-0001-4000-8000-000000000038" />
+            <column name="name"                    value="cascade-12" />
+            <column name="description"             value="deep cascade step 12 of 12" />
+            <column name="source"                  value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                  value="main" />
+            <column name="terraform_version"       value="1.5.7" />
+            <column name="default_template"        value="b0f1c2d3-0000-4000-8000-000000000012" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+        </insert>
+
+        <!--
+        ******************
+        ***RUN TRIGGERS***
+        ******************
+
+        The graph is acyclic by construction: every edge points at a higher numbered
+        step or at a leaf, so the phase 2 validation would accept each one.
+        -->
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000001" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000002" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000002" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000003" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000003" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000004" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000004" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000005" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000005" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000001" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000006" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000006" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000007" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000008" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000007" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000008" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000009" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000008" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000009" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000010" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000009" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000010" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000011" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000010" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000012" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000014" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000011" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000013" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000014" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000012" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000015" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000016" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000013" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000015" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000017" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000014" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000016" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000018" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000015" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000017" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000018" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000016" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000019" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000020" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000017" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000021" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000022" />
+            <column name="template_id"             value="b0f1c2d3-0000-4000-8000-000000000011" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000018" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000027" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000028" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000019" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000028" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000029" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000020" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000029" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000030" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000021" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000030" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000031" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000022" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000031" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000032" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000023" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000032" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000033" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000024" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000033" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000034" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000025" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000034" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000035" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000026" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000035" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000036" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000027" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000036" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000037" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                      value="b0f1c2d3-0002-4000-8000-000000000028" />
+            <column name="source_workspace_id"     value="b0f1c2d3-0001-4000-8000-000000000037" />
+            <column name="destination_workspace_id" value="b0f1c2d3-0001-4000-8000-000000000038" />
+            <column name="organization_id"         value="b0f1c2d3-0000-4000-8000-000000000001" />
+            <column name="enabled"                 valueBoolean="true" />
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>

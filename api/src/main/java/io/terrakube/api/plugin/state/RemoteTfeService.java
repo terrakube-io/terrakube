@@ -43,6 +43,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.job.step.Step;
@@ -1231,7 +1232,7 @@ public class RemoteTfeService {
         job.setStatus(JobStatus.pending);
         job.setAutoApply(autoApply);
         job.setComments("terraform-cli");
-        job.setVia("CLI");
+        job.setVia(JobVia.CLI.getValue());
         job.setTemplateReference(template.getId().toString());
         // if the vcs connection is not null, we need to override the value inside the
         // job
@@ -1661,8 +1662,7 @@ public class RemoteTfeService {
                         try {
                             @SuppressWarnings("unchecked")
                             List<MapRecord<String, String, String>> messagesPlan = redisTemplate.opsForStream()
-                                    .read(StreamOffset.fromStart(String.valueOf(job.get().getId())),
-                                            StreamOffset.latest(String.valueOf(job.get().getId())));
+                                    .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
 
                             for (MapRecord<String, String, String> mapRecord : messagesPlan) {
                                 Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
@@ -1676,7 +1676,7 @@ public class RemoteTfeService {
                             logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
                             log.debug("{}", logs);
                         } catch (Exception ex) {
-                            log.debug(ex.getMessage());
+                            log.error("Could not read plan logs for job {}: {}", job.get().getId(), ex.getMessage());
                         }
                     }
                 }
@@ -1701,8 +1701,7 @@ public class RemoteTfeService {
                         try {
                             @SuppressWarnings("unchecked")
                             List<MapRecord<String, String, String>> messagesApply = redisTemplate.opsForStream().read(
-                                    StreamOffset.fromStart(String.valueOf(job.get().getId())),
-                                    StreamOffset.latest(String.valueOf(job.get().getId())));
+                                    StreamOffset.fromStart(String.valueOf(job.get().getId())));
 
                             for (MapRecord<String, String, String> mapRecord : messagesApply) {
                                 Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
@@ -1716,7 +1715,7 @@ public class RemoteTfeService {
                             logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
                             log.debug("{}", logs);
                         } catch (Exception ex) {
-                            log.debug(ex.getMessage());
+                            log.error("Could not read apply logs for job {}: {}", job.get().getId(), ex.getMessage());
                         }
                     }
                 }

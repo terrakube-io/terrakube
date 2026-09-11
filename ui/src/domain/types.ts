@@ -126,8 +126,46 @@ export enum JobVia {
   Github = "Github",
   Gitlab = "Gitlab",
   Bitbucket = "Bitbucket",
+  AzureDevops = "AzureDevops",
   Schedule = "Schedule",
+  RunTrigger = "RunTrigger",
 }
+
+export const formatJobVia = (via?: JobVia | string): string => {
+  if (!via) {
+    return "UI";
+  }
+  switch (via) {
+    case JobVia.Github:
+    case "Github":
+      return "GitHub";
+    case JobVia.Gitlab:
+    case "Gitlab":
+    case "GitLab":
+      return "GitLab";
+    case JobVia.Bitbucket:
+    case "Bitbucket":
+      return "Bitbucket";
+    case JobVia.AzureDevops:
+    case "AzureDevops":
+    case "Azure DevOps":
+      return "Azure DevOps";
+    case JobVia.Cli:
+    case "CLI":
+      return "CLI";
+    case JobVia.Schedule:
+    case "Schedule":
+      return "Schedule";
+    case JobVia.Ui:
+    case "UI":
+      return "UI";
+    case JobVia.RunTrigger:
+    case "RunTrigger":
+      return "Run Trigger";
+    default:
+      return via;
+  }
+};
 
 export type JobAttributes = {
   status: JobStatus;
@@ -137,6 +175,10 @@ export type JobAttributes = {
   commitId: string;
   prNumber?: number;
   prCommentError?: string;
+  /** Set only on a run started by a run trigger: the upstream run that fired it. */
+  triggeredByJobId?: number;
+  /** How many triggered runs deep this one is. Zero for a run nobody triggered. */
+  cascadeDepth?: number;
 } & AuditFieldBase;
 
 export type JobStep = {
@@ -443,6 +485,31 @@ export type FlatSchedule = {
   id: string;
 } & ScheduleAttributes;
 
+// Run triggers
+export type RunTrigger = {
+  id: string;
+  attributes: RunTriggerAttributes;
+  relationships: {
+    sourceWorkspace: RelationshipItem;
+    destinationWorkspace: RelationshipItem;
+    template?: RelationshipItem;
+  };
+};
+
+export type RunTriggerAttributes = {
+  enabled: boolean;
+} & AuditFieldBase;
+
+/** One edge as the run trigger table renders it, with the other end already resolved. */
+export type RunTriggerRow = {
+  id: string;
+  enabled: boolean;
+  workspaceId: string;
+  workspaceName: string;
+  templateId?: string;
+  templateName?: string;
+};
+
 // Projects
 export type Project = {
   id: string;
@@ -471,6 +538,7 @@ export type Workspace = {
     agent?: RelationshipItem;
     project?: RelationshipItem;
     history?: RelationshipArray;
+    vcs?: RelationshipItem;
   };
 };
 export type WorkspaceAttributes = {

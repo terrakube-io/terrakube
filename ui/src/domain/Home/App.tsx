@@ -373,6 +373,14 @@ const router = createBrowserRouter(
           element: <WorkspaceDetailsRoute selectedTab="5" />,
         },
         {
+          path: "/workspaces/:id/run-triggers",
+          element: <WorkspaceDetailsRoute selectedTab="7" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/run-triggers",
+          element: <WorkspaceDetailsRoute selectedTab="7" />,
+        },
+        {
           path: "/workspaces/:id/settings",
           element: <WorkspaceDetailsRoute selectedTab="6" />,
         },

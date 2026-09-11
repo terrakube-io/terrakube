@@ -65,7 +65,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Workspace workspace) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
-        result.setVia("GitLab");
+        result.setVia(JobVia.GITLAB.getValue());
         try {
             // Verify the GitLab token
             String tokenHeader = headers.get("x-gitlab-token");

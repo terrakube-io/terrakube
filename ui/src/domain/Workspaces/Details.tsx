@@ -57,6 +57,7 @@ import {
 } from "../types.js";
 import { CLIDriven } from "../Workspaces/CLIDriven";
 import { ResourceDrawer } from "../Workspaces/ResourceDrawer";
+import { RunTriggers } from "../Workspaces/RunTriggers";
 import { Schedules } from "../Workspaces/Schedules";
 import { Tags } from "../Workspaces/Tags";
 import { Variables } from "../Workspaces/Variables";
@@ -86,6 +87,7 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "4": "Variables",
   "5": "Schedules",
   "6": "Settings",
+  "7": "Run Triggers",
 };
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
@@ -301,6 +303,9 @@ export const WorkspaceDetails = ({
         break;
       case "6":
         navigate(`/organizations/${organizationId}/workspaces/${id}/settings`);
+        break;
+      case "7":
+        navigate(`/organizations/${organizationId}/workspaces/${id}/run-triggers`);
         break;
       default:
         break;
@@ -734,6 +739,15 @@ export const WorkspaceDetails = ({
           <Schedules schedules={schedule} manageWorkspace={manageWorkspace} reload={() => loadWorkspace(false)} />
         ) : (
           <p>Loading...</p>
+        );
+      case "7":
+        return (
+          <RunTriggers
+            organizationId={organizationId!}
+            workspaceId={id!}
+            workspaceName={workspaceName}
+            manageWorkspace={manageWorkspace}
+          />
         );
       case "6":
         return (

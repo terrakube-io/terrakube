@@ -12,7 +12,8 @@ public enum JobVia {
    BITBUCKET("Bitbucket"),
    AZURE_DEVOPS("AzureDevops"),
    SCHEDULE("Schedule"),
-   DRIFT("Drift");
+   DRIFT("Drift"),
+   RUN_TRIGGER("RunTrigger");
 
    private final String value;
 

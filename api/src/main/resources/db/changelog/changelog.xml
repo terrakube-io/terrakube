@@ -125,5 +125,6 @@
     <include file="/db/changelog/local/changelog-2.33.1-notification-outbox-job-status.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-opa-policy.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-policy-set-opa-version.xml" />
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-run-trigger.xml" />
 </databaseChangeLog>
 

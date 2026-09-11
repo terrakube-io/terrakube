@@ -1425,4 +1425,227 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
     }
+
+    @Test
+    void createWorkspaceWithProjectWriteRole() {
+        String projectId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"createWorkspaceWithProjectWriteRole\",\n" +
+                        "      \"description\": \"Integration test project\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        String accessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_WRITE_MEMBER\",\n" +
+                        "      \"role\": \"write\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_WRITE_MEMBER"),
+                        "Content-Type", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\"",
+                        "Accept", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\"")
+                .body("{\n" +
+                        "  \"atomic:operations\": [\n" +
+                        "    {\n" +
+                        "      \"op\": \"add\",\n" +
+                        "      \"href\": \"/organization/" + ORG_ID + "/workspace\",\n" +
+                        "      \"data\": {\n" +
+                        "        \"type\": \"workspace\",\n" +
+                        "        \"lid\": \"" + UUID.randomUUID() + "\",\n" +
+                        "        \"attributes\": {\n" +
+                        "          \"name\": \"wsCreatedByProjectWrite\",\n" +
+                        "          \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "          \"branch\": \"main\",\n" +
+                        "          \"terraformVersion\": \"1.0.11\"\n" +
+                        "        },\n" +
+                        "        \"relationships\": {\n" +
+                        "          \"project\": {\n" +
+                        "            \"data\": {\n" +
+                        "              \"type\": \"project\",\n" +
+                        "              \"id\": \"" + projectId + "\"\n" +
+                        "            }\n" +
+                        "          }\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  ]\n" +
+                        "}")
+                .when()
+                .post("/api/v1/operations")
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value())
+                .extract().path("'atomic:results'[0].data.id");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + accessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void createWorkspaceWithVcsAndProjectWriteRole() {
+        io.terrakube.api.rs.vcs.Vcs vcs = new io.terrakube.api.rs.vcs.Vcs();
+        vcs.setAccessToken("1234567890");
+        vcs.setClientId("123");
+        vcs.setClientSecret("123");
+        vcs.setName("testVcsProjectWrite");
+        vcs.setDescription("test VCS");
+        vcs.setVcsType(io.terrakube.api.rs.vcs.VcsType.GITHUB);
+        vcs.setOrganization(organizationRepository.findById(UUID.fromString(ORG_ID)).get());
+        vcs = vcsRepository.save(vcs);
+
+        Team orgTeam = new Team();
+        orgTeam.setName("PROJECT_WRITE_ORG_READ_TEAM");
+        orgTeam.setRole("read");
+        orgTeam.setOrganization(organizationRepository.findById(UUID.fromString(ORG_ID)).get());
+        orgTeam = teamRepository.save(orgTeam);
+
+        String projectId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"createWorkspaceWithVcsAndProjectWriteRole\",\n" +
+                        "      \"description\": \"Integration test project\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        String accessId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"project_access\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"PROJECT_WRITE_ORG_READ_TEAM\",\n" +
+                        "      \"role\": \"write\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("PROJECT_WRITE_ORG_READ_TEAM"),
+                        "Content-Type", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\"",
+                        "Accept", "application/vnd.api+json;ext=\"https://jsonapi.org/ext/atomic\"")
+                .body("{\n" +
+                        "  \"atomic:operations\": [\n" +
+                        "    {\n" +
+                        "      \"op\": \"add\",\n" +
+                        "      \"href\": \"/organization/" + ORG_ID + "/workspace\",\n" +
+                        "      \"data\": {\n" +
+                        "        \"type\": \"workspace\",\n" +
+                        "        \"lid\": \"" + UUID.randomUUID() + "\",\n" +
+                        "        \"attributes\": {\n" +
+                        "          \"name\": \"wsVcsProjectWrite\",\n" +
+                        "          \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "          \"branch\": \"main\",\n" +
+                        "          \"terraformVersion\": \"1.0.11\"\n" +
+                        "        },\n" +
+                        "        \"relationships\": {\n" +
+                        "          \"project\": {\n" +
+                        "            \"data\": {\n" +
+                        "              \"type\": \"project\",\n" +
+                        "              \"id\": \"" + projectId + "\"\n" +
+                        "            }\n" +
+                        "          },\n" +
+                        "          \"vcs\": {\n" +
+                        "            \"data\": {\n" +
+                        "              \"type\": \"vcs\",\n" +
+                        "              \"id\": \"" + vcs.getId() + "\"\n" +
+                        "            }\n" +
+                        "          }\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  ]\n" +
+                        "}")
+                .when()
+                .post("/api/v1/operations")
+                .then()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value())
+                .extract().path("'atomic:results'[0].data.id");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/workspace/" + workspaceId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId + "/projectAccess/" + accessId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/" + ORG_ID + "/project/" + projectId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        teamRepository.delete(orgTeam);
+        vcsRepository.delete(vcs);
+    }
 }

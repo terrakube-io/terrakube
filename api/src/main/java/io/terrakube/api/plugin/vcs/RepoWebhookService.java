@@ -32,6 +32,7 @@ import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -433,7 +434,7 @@ public class RepoWebhookService {
         Date triggerDate = new Date(System.currentTimeMillis());
         job.setCreatedDate(triggerDate);
         job.setUpdatedDate(triggerDate);
-        job.setVia(webhookResult.getVia());
+        job.setVia(webhookResult.getVia() != null ? webhookResult.getVia() : JobVia.UI.getValue());
         job.setCommitId(webhookResult.getCommit());
         return job;
     }
