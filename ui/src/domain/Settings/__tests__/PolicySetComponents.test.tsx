@@ -80,6 +80,25 @@ describe("PolicySet Components", () => {
       expect(screen.getByText("Global")).toBeInTheDocument();
       expect(screen.queryByText(/Attachment/)).not.toBeInTheDocument();
     });
+
+    it("renders Notification tag when notificationConfig is provided", () => {
+      render(
+        <MemoryRouter>
+          <PolicySetCard
+            item={mockItem}
+            attachmentsCount={1}
+            managePermission={true}
+            onEdit={jest.fn()}
+            onDelete={jest.fn()}
+            orgid="org-1"
+            notificationConfig={{ name: "SecOps Slack", channelType: "SLACK" }}
+          />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId("policy-set-notification-ps-test-1")).toBeInTheDocument();
+      expect(screen.getByText("Notification: SecOps Slack")).toBeInTheDocument();
+    });
   });
 
   describe("PolicySetTable", () => {
@@ -88,10 +107,17 @@ describe("PolicySet Components", () => {
       const onDelete = jest.fn();
       const onPageChange = jest.fn();
 
+      const itemWithNotif = {
+        ...mockItem,
+        relationships: {
+          notificationConfiguration: { data: { id: "notif-1" } },
+        },
+      };
+
       render(
         <MemoryRouter>
           <PolicySetTable
-            policySets={[mockItem]}
+            policySets={[itemWithNotif]}
             attachmentCounts={{ "ps-test-1": 3 }}
             managePermission={true}
             onEdit={onEdit}
@@ -100,6 +126,7 @@ describe("PolicySet Components", () => {
             currentPage={1}
             pageSize={10}
             onPageChange={onPageChange}
+            notificationConfigs={{ "notif-1": { id: "notif-1", name: "SecOps Webhook", channelType: "WEBHOOK" } }}
           />
         </MemoryRouter>
       );
@@ -109,12 +136,14 @@ describe("PolicySet Components", () => {
       expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
       expect(screen.getByText("3 Attachments")).toBeInTheDocument();
       expect(screen.getByText("Override: devops-leads")).toBeInTheDocument();
+      expect(screen.getByTestId("policy-set-table-notif-ps-test-1")).toBeInTheDocument();
+      expect(screen.getByText("SecOps Webhook")).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("table-edit-policy-set-btn-ps-test-1"));
       expect(onEdit).toHaveBeenCalledWith("ps-test-1");
 
       fireEvent.click(screen.getByTestId("table-delete-policy-set-btn-ps-test-1"));
-      expect(onDelete).toHaveBeenCalledWith(mockItem);
+      expect(onDelete).toHaveBeenCalledWith(itemWithNotif);
     });
   });
 

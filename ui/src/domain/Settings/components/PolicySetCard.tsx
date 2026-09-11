@@ -1,6 +1,7 @@
 import React from "react";
 import { Card, Space, Tag, Typography, Button, theme } from "antd";
 import {
+  BellOutlined,
   BranchesOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -33,6 +34,7 @@ type Props = {
   onEdit: (id: string) => void;
   onDelete: (item: any) => void;
   orgid: string;
+  notificationConfig?: { name: string; channelType?: string };
 };
 
 export const PolicySetCard: React.FC<Props> = ({
@@ -42,6 +44,7 @@ export const PolicySetCard: React.FC<Props> = ({
   onEdit,
   onDelete,
   orgid,
+  notificationConfig,
 }) => {
   const { token } = theme.useToken();
   const attrs = item.attributes || {};
@@ -98,6 +101,11 @@ export const PolicySetCard: React.FC<Props> = ({
             {attrs.overrideTeam && (
               <Tag color="geekblue" icon={<TeamOutlined />}>
                 Override Team: {attrs.overrideTeam}
+              </Tag>
+            )}
+            {notificationConfig && (
+              <Tag color="purple" icon={<BellOutlined />} data-testid={`policy-set-notification-${item.id}`}>
+                Notification: {notificationConfig.name}
               </Tag>
             )}
           </Space>

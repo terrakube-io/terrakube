@@ -15,6 +15,7 @@ import {
 } from "antd";
 import {
   ArrowLeftOutlined,
+  BellOutlined,
   BranchesOutlined,
   FolderOutlined,
   SafetyCertificateOutlined,
@@ -52,6 +53,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [tags, setTags] = useState<any[]>([]);
+  const [notificationConfigs, setNotificationConfigs] = useState<any[]>([]);
   const [isGlobal, setIsGlobal] = useState(false);
 
   const backUrl = `/organizations/${orgid}/settings/policies`;
@@ -60,17 +62,19 @@ export const CreateEditPolicySet: React.FC<Props> = ({
     // Load reference data
     const loadReferences = async () => {
       try {
-        const [vcsRes, wsRes, projRes, tagsRes] = await Promise.all([
+        const [vcsRes, wsRes, projRes, tagsRes, notifRes] = await Promise.all([
           axiosInstance.get(`organization/${orgid}/vcs`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/workspace`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/project`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/tag`).catch(() => ({ data: { data: [] } })),
+          axiosInstance.get(`organization/${orgid}/notificationConfiguration`).catch(() => ({ data: { data: [] } })),
         ]);
 
         setVcsProviders(vcsRes.data?.data || []);
         setWorkspaces(wsRes.data?.data || []);
         setProjects(projRes.data?.data || []);
         setTags(tagsRes.data?.data || []);
+        setNotificationConfigs(notifRes.data?.data || []);
       } catch (e) {
         console.error("Failed to load reference data", e);
       }
@@ -80,7 +84,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({
 
     if (mode === "edit" && policySetId) {
       axiosInstance
-        .get(`policy_set/${policySetId}?include=vcs,attachments`)
+        .get(`policy_set/${policySetId}?include=vcs,attachments,notificationConfiguration`)
         .then(async (res) => {
           const item = res.data.data;
           const attrs = item.attributes;
@@ -116,6 +120,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({
             branch: attrs.branch || "main",
             folder: attrs.folder || "/",
             vcsId: item.relationships?.vcs?.data?.id || undefined,
+            notificationConfigurationId: item.relationships?.notificationConfiguration?.data?.id || undefined,
             workspaces: attachedWorkspaces,
             projects: attachedProjects,
             tags: attachedTags,
@@ -171,6 +176,19 @@ export const CreateEditPolicySet: React.FC<Props> = ({
             type: "vcs",
             id: values.vcsId,
           },
+        };
+      }
+
+      if (values.notificationConfigurationId) {
+        payload.data.relationships.notificationConfiguration = {
+          data: {
+            type: "notification_configuration",
+            id: values.notificationConfigurationId,
+          },
+        };
+      } else if (mode === "edit") {
+        payload.data.relationships.notificationConfiguration = {
+          data: null,
         };
       }
 
@@ -337,6 +355,36 @@ export const CreateEditPolicySet: React.FC<Props> = ({
                 tooltip="RBAC team authorized to approve soft-mandatory violations in the UI or API."
               >
                 <Input prefix={<TeamOutlined />} placeholder="e.g. security-admins" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        <Card title="Notifications & Alerting" style={{ marginBottom: 24 }}>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="notificationConfigurationId"
+                label="Notification Channel"
+                tooltip="Optional channel to receive immediate alerts whenever hard or soft violations are detected in this policy set."
+              >
+                <Select
+                  allowClear
+                  placeholder="Select Notification Channel (Optional)"
+                  data-testid="policy-set-notification-select"
+                >
+                  {notificationConfigs.map((nc) => (
+                    <Option key={nc.id} value={nc.id}>
+                      <Space>
+                        <BellOutlined />
+                        <span>{nc.attributes?.name || nc.id}</span>
+                        {nc.attributes?.channelType && (
+                          <Tag color="purple">{nc.attributes.channelType}</Tag>
+                        )}
+                      </Space>
+                    </Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>

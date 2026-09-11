@@ -2,6 +2,7 @@ import React from "react";
 import { Table, Tag, Space, Typography, Button } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
+  BellOutlined,
   BranchesOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -24,6 +25,7 @@ type Props = {
   currentPage: number;
   pageSize: number;
   onPageChange: (page: number, pageSize: number) => void;
+  notificationConfigs?: Record<string, { id: string; name: string; channelType?: string }>;
 };
 
 export const PolicySetTable: React.FC<Props> = ({
@@ -36,6 +38,7 @@ export const PolicySetTable: React.FC<Props> = ({
   currentPage,
   pageSize,
   onPageChange,
+  notificationConfigs,
 }) => {
   const columns: ColumnsType<any> = [
     {
@@ -92,6 +95,8 @@ export const PolicySetTable: React.FC<Props> = ({
       render: (_: any, record: any) => {
         const attrs = record.attributes || {};
         const count = attachmentCounts[record.id] ?? 0;
+        const notifId = record.relationships?.notificationConfiguration?.data?.id;
+        const notif = notifId && notificationConfigs ? notificationConfigs[notifId] : null;
         return (
           <Space direction="vertical" size={4}>
             {attrs.global ? (
@@ -106,6 +111,11 @@ export const PolicySetTable: React.FC<Props> = ({
             {attrs.overrideTeam && (
               <Tag color="geekblue" icon={<TeamOutlined />}>
                 Override: {attrs.overrideTeam}
+              </Tag>
+            )}
+            {notif && (
+              <Tag color="purple" icon={<BellOutlined />} data-testid={`policy-set-table-notif-${record.id}`}>
+                {notif.name}
               </Tag>
             )}
           </Space>

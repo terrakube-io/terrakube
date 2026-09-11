@@ -43,6 +43,7 @@ describe("PolicySetsSettings", () => {
       relationships: {
         organization: { data: { id: "org-1" } },
         attachments: { data: [] },
+        notificationConfiguration: { data: { id: "notif-ps-1" } },
       },
     },
     {
@@ -79,12 +80,23 @@ describe("PolicySetsSettings", () => {
     },
   ];
 
+  const sampleIncluded = [
+    {
+      type: "notification_configuration",
+      id: "notif-ps-1",
+      attributes: {
+        name: "SecOps Alerts",
+        channelType: "SLACK",
+      },
+    },
+  ];
+
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
     getMock.mockImplementation((url: string) => {
       if (url.includes("policy_set")) {
-        return Promise.resolve({ data: { data: samplePolicySets } });
+        return Promise.resolve({ data: { data: samplePolicySets, included: sampleIncluded } });
       }
       return Promise.resolve({ data: { data: [] } });
     });
@@ -113,6 +125,7 @@ describe("PolicySetsSettings", () => {
       expect(screen.getByText("2 Attachments")).toBeInTheDocument();
       expect(screen.getByText("1 Attachment")).toBeInTheDocument();
       expect(screen.getByText("Override Team: secops")).toBeInTheDocument();
+      expect(screen.getByText("Notification: SecOps Alerts")).toBeInTheDocument();
     });
 
     // Check filter elements and header action are present
@@ -287,6 +300,8 @@ describe("PolicySetsSettings", () => {
     expect(screen.getByRole("heading", { name: "Create Policy Set" })).toBeInTheDocument();
     expect(screen.getByLabelText(/Policy Set Name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Enforcement Level/i)).toBeInTheDocument();
+    expect(screen.getByText("Notifications & Alerting")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Notification Channel/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Create Policy Set/i })).toBeInTheDocument();
   });
 });

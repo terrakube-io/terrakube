@@ -62,11 +62,14 @@ export const PolicySetsSettings: React.FC<Props> = ({
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [notificationConfigs, setNotificationConfigs] = useState<
+    Record<string, { id: string; name: string; channelType: string }>
+  >({});
 
   const loadPolicySets = async () => {
     setLoading(true);
     try {
-      const res = await axiosInstance.get(`policy_set?include=attachments`);
+      const res = await axiosInstance.get(`policy_set?include=attachments,notificationConfiguration`);
       const items = res.data?.data || [];
       // Filter by organization if needed
       const orgItems = items.filter((item: any) => {
@@ -82,6 +85,20 @@ export const PolicySetsSettings: React.FC<Props> = ({
         counts[p.id] = Array.isArray(atts) ? atts.length : 0;
       });
       setAttachmentCounts(counts);
+
+      // Map included notification configurations
+      const included = res.data?.included || [];
+      const notifMap: Record<string, { id: string; name: string; channelType: string }> = {};
+      included.forEach((inc: any) => {
+        if (inc.type === "notification_configuration") {
+          notifMap[inc.id] = {
+            id: inc.id,
+            name: inc.attributes?.name || inc.id,
+            channelType: inc.attributes?.channelType || "",
+          };
+        }
+      });
+      setNotificationConfigs(notifMap);
     } catch (err: any) {
       message.error(getErrorMessage(err));
     } finally {
@@ -273,6 +290,7 @@ export const PolicySetsSettings: React.FC<Props> = ({
                         currentPage={currentPage}
                         pageSize={pageSize}
                         onPageChange={handlePageChange}
+                        notificationConfigs={notificationConfigs}
                       />
                     ) : (
                       <List
@@ -287,19 +305,23 @@ export const PolicySetsSettings: React.FC<Props> = ({
                           showTotal: (total, range) =>
                             `${range[0]}-${range[1]} of ${total} policy sets`,
                         }}
-                        renderItem={(item) => (
-                          <PolicySetCard
-                            key={item.id}
-                            item={item}
-                            attachmentsCount={attachmentCounts[item.id] ?? 0}
-                            managePermission={managePermission}
-                            onEdit={(id) =>
-                              navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
-                            }
-                            onDelete={(item) => setPendingDelete(item)}
-                            orgid={orgid!}
-                          />
-                        )}
+                        renderItem={(item) => {
+                          const notifId = item.relationships?.notificationConfiguration?.data?.id;
+                          return (
+                            <PolicySetCard
+                              key={item.id}
+                              item={item}
+                              attachmentsCount={attachmentCounts[item.id] ?? 0}
+                              managePermission={managePermission}
+                              onEdit={(id) =>
+                                navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
+                              }
+                              onDelete={(item) => setPendingDelete(item)}
+                              orgid={orgid!}
+                              notificationConfig={notifId ? notificationConfigs[notifId] : undefined}
+                            />
+                          );
+                        }}
                       />
                     )}
                   </div>
