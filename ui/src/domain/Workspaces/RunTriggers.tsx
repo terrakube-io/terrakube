@@ -164,6 +164,16 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
       .catch((err) => message.error(getErrorMessage(err)));
   };
 
+  /**
+   * Sources already wired to this workspace are left out: the unique constraint would refuse
+   * the duplicate, so offering it is an invitation to a 409. The workspace itself is excluded
+   * when the list loads, since it cannot trigger itself either.
+   */
+  const selectableSources = useMemo(
+    () => workspaces.filter((item) => !incoming.some((row) => row.workspaceId === item.id)),
+    [workspaces, incoming]
+  );
+
   const workspaceLink = (row: RunTriggerRow) => (
     <Link to={`/organizations/${organizationId}/workspaces/${row.workspaceId}`}>{row.workspaceName}</Link>
   );
@@ -329,7 +339,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
               showSearch
               placeholder="Select a workspace"
               optionFilterProp="label"
-              options={workspaces.map((item) => ({ label: item.attributes.name, value: item.id }))}
+              options={selectableSources.map((item) => ({ label: item.attributes.name, value: item.id }))}
             />
           </Form.Item>
           <Form.Item name="templateId" label="Template" extra="Leave empty to use this workspace's default template.">

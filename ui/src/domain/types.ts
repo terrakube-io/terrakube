@@ -159,6 +159,9 @@ export const formatJobVia = (via?: JobVia | string): string => {
     case JobVia.Ui:
     case "UI":
       return "UI";
+    case JobVia.RunTrigger:
+    case "RunTrigger":
+      return "Run Trigger";
     default:
       return via;
   }

@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { RunTriggers } from "../RunTriggers";
 
@@ -126,6 +127,33 @@ describe("RunTriggers", () => {
     await screen.findByRole("link", { name: "network" });
     expect(screen.getByRole("button", { name: /add source workspace/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /delete/i })).toBeDisabled();
+  });
+
+  /**
+   * The unique constraint refuses a duplicate edge, so a source already wired to this
+   * workspace must not be offered again - picking it could only end in a 409.
+   */
+  it("does not offer a source that is already wired", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === "runTrigger") return Promise.resolve(bothDirections);
+      if (url.includes("/template")) return Promise.resolve({ data: { data: [] } });
+      return Promise.resolve({
+        data: {
+          data: [
+            { id: SOURCE, attributes: { name: "network" } },
+            { id: "ws-free", attributes: { name: "free-to-pick" } },
+          ],
+        },
+      });
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "network" });
+
+    await userEvent.click(screen.getByRole("button", { name: /add source workspace/i }));
+    await userEvent.click(await screen.findByRole("combobox", { name: /source workspace/i }));
+
+    expect(await screen.findByTitle("free-to-pick")).toBeInTheDocument();
+    expect(screen.queryByTitle("network")).toBeNull();
   });
 
   it("says so when nothing depends on this workspace", async () => {
