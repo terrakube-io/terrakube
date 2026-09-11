@@ -17,7 +17,7 @@ describe("PolicyExemptionModal", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (axiosInstance.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "policy_set") {
+      if (url.includes("/policySet")) {
         return Promise.resolve({
           data: {
             data: [
@@ -71,6 +71,12 @@ describe("PolicyExemptionModal", () => {
     expect(
       screen.getByText("Permanent / Indefinite Exemption (No Expiration Date)")
     ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/policySet");
+      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/workspace");
+      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/project");
+    });
   });
 
   it("handles locked workspace scope properly", () => {

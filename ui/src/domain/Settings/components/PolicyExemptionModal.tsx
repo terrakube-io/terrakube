@@ -85,14 +85,8 @@ export const PolicyExemptionModal: React.FC<PolicyExemptionModalProps> = ({
       setLoadingRefs(true);
       Promise.all([
         axiosInstance
-          .get("policy_set")
-          .then((res) => {
-            const allSets = res.data?.data || [];
-            return allSets.filter((ps: any) => {
-              const orgRel = ps.relationships?.organization?.data;
-              return !orgRel || orgRel.id === organizationId;
-            });
-          })
+          .get(`organization/${organizationId}/policySet`)
+          .then((res) => res.data?.data || [])
           .catch(() => []),
         axiosInstance
           .get(`organization/${organizationId}/workspace`)
