@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Run triggers: the destination workspace subscribes to state-changing runs of the
+      source workspace. Both workspace FKs cascade on delete so removing either end does not
+      leave dangling edges; the organization FK does not, since deleting an organization
+      already removes its workspaces and the edges go with them.
+    -->
+    <changeSet id="2-34-0-workspace-run-trigger" author="kleber.rocha@cora.com.br">
+        <createTable tableName="workspace_run_trigger">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="source_workspace_id" type="varchar(36)">
+                <constraints nullable="false"
+                             foreignKeyName="fk_run_trigger_source_workspace"
+                             references="workspace(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="destination_workspace_id" type="varchar(36)">
+                <constraints nullable="false"
+                             foreignKeyName="fk_run_trigger_destination_workspace"
+                             references="workspace(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="template_id" type="varchar(36)">
+                <constraints foreignKeyName="fk_run_trigger_template"
+                             references="template(id)"/>
+            </column>
+            <column name="organization_id" type="varchar(36)">
+                <constraints nullable="false"
+                             foreignKeyName="fk_run_trigger_organization"
+                             references="organization(id)"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="datetime"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="updated_date" type="datetime"/>
+            <column name="updated_by" type="varchar(255)"/>
+        </createTable>
+
+        <!-- One edge per pair; a repeated declaration is a mistake, not a second trigger. -->
+        <addUniqueConstraint tableName="workspace_run_trigger"
+                             columnNames="source_workspace_id, destination_workspace_id"
+                             constraintName="uk_run_trigger_source_dest"/>
+
+        <!--
+          Dispatch path: looked up after every completed apply, filtered by enabled. The
+          composite index answers the query from the index alone.
+        -->
+        <createIndex tableName="workspace_run_trigger" indexName="idx_run_trigger_source_enabled">
+            <column name="source_workspace_id"/>
+            <column name="enabled"/>
+        </createIndex>
+
+        <!-- Inbound list in the UI, and cascade cleanup when a destination is removed. -->
+        <createIndex tableName="workspace_run_trigger" indexName="idx_run_trigger_destination">
+            <column name="destination_workspace_id"/>
+        </createIndex>
+
+        <!-- Cycle detection loads an organization's whole graph in one query. -->
+        <createIndex tableName="workspace_run_trigger" indexName="idx_run_trigger_organization">
+            <column name="organization_id"/>
+        </createIndex>
+    </changeSet>
+
+    <!--
+      A workspace triggering itself would re-run on every apply until the cascade limit is
+      hit. The API rejects it, and this makes the invariant hold even for rows written
+      outside the API.
+    -->
+    <changeSet id="2-34-0-workspace-run-trigger-no-self" author="kleber.rocha@cora.com.br">
+        <sql>
+            ALTER TABLE workspace_run_trigger
+            ADD CONSTRAINT chk_run_trigger_no_self
+            CHECK (source_workspace_id != destination_workspace_id)
+        </sql>
+        <rollback>
+            ALTER TABLE workspace_run_trigger DROP CONSTRAINT chk_run_trigger_no_self
+        </rollback>
+    </changeSet>
+
+    <!--
+      Run lineage on the job itself: which job caused this one, and how many hops in.
+      Both are nullable/defaulted so existing rows need no backfill.
+    -->
+    <changeSet id="2-34-0-job-run-trigger-lineage" author="kleber.rocha@cora.com.br">
+        <addColumn tableName="job">
+            <column name="triggered_by_job_id" type="int"/>
+        </addColumn>
+        <addColumn tableName="job">
+            <column name="cascade_depth" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerDispatchService;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.StepEvidence;
 import io.terrakube.api.repository.JobRepository;
@@ -55,6 +56,7 @@ public class JobReconciliationService {
     private final ScheduleJobService scheduleJobService;
     private final Scheduler scheduler;
     private final JobReconciliationMetrics metrics;
+    private final RunTriggerDispatchService runTriggerDispatchService;
 
     @Transactional
     public ReconciliationResult reconcile(int jobId, boolean dryRun) {
@@ -103,6 +105,9 @@ public class JobReconciliationService {
         log.info("Reconciled job {} from {} to {} (derived {})", jobId, from, target, outcome);
 
         deleteTriggerAfterCommit(jobId);
+        if (target == JobStatus.completed) {
+            dispatchRunTriggersAfterCommit(jobId);
+        }
         return result(jobId, job, outcome, target, ReconciliationDisposition.APPLIED, evidence);
     }
 
@@ -153,6 +158,20 @@ public class JobReconciliationService {
         workspaceRepository.save(workspace);
     }
 
+    /**
+     * Fans out to the workspaces that depend on this one. Deliberately anchored here rather
+     * than in ScheduleJob: this method is the only routine that performs the transition to a
+     * terminal status, it does so under a row lock, and an already-terminal job never reaches
+     * this point - so a completed run dispatches its triggers exactly once even with several
+     * API replicas competing for the same job.
+     *
+     * <p>After commit, like the Quartz cleanup above, so that a dispatch problem can never
+     * roll back the completion of the run that fired it.
+     */
+    private void dispatchRunTriggersAfterCommit(int jobId) {
+        afterCommit(() -> runTriggerDispatchService.dispatchFor(jobId));
+    }
+
     private void deleteTriggerAfterCommit(int jobId) {
         Runnable delete = () -> {
             try {
@@ -169,15 +188,23 @@ public class JobReconciliationService {
                 log.warn("Could not remove Quartz trigger for reconciled job {}: {}", jobId, e.getMessage());
             }
         };
+        afterCommit(delete);
+    }
+
+    /**
+     * Runs the action once this method's transaction has committed, or immediately when there
+     * is none to wait for (the admin endpoint calls in without one).
+     */
+    private void afterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    delete.run();
+                    action.run();
                 }
             });
         } else {
-            delete.run();
+            action.run();
         }
     }
 }

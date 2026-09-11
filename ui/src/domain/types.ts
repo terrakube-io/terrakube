@@ -128,6 +128,7 @@ export enum JobVia {
   Bitbucket = "Bitbucket",
   AzureDevops = "AzureDevops",
   Schedule = "Schedule",
+  RunTrigger = "RunTrigger",
 }
 
 export const formatJobVia = (via?: JobVia | string): string => {
@@ -158,6 +159,9 @@ export const formatJobVia = (via?: JobVia | string): string => {
     case JobVia.Ui:
     case "UI":
       return "UI";
+    case JobVia.RunTrigger:
+    case "RunTrigger":
+      return "Run Trigger";
     default:
       return via;
   }
@@ -171,6 +175,10 @@ export type JobAttributes = {
   commitId: string;
   prNumber?: number;
   prCommentError?: string;
+  /** Set only on a run started by a run trigger: the upstream run that fired it. */
+  triggeredByJobId?: number;
+  /** How many triggered runs deep this one is. Zero for a run nobody triggered. */
+  cascadeDepth?: number;
 } & AuditFieldBase;
 
 export type JobStep = {
@@ -476,6 +484,31 @@ export type ScheduleAttributes = {
 export type FlatSchedule = {
   id: string;
 } & ScheduleAttributes;
+
+// Run triggers
+export type RunTrigger = {
+  id: string;
+  attributes: RunTriggerAttributes;
+  relationships: {
+    sourceWorkspace: RelationshipItem;
+    destinationWorkspace: RelationshipItem;
+    template?: RelationshipItem;
+  };
+};
+
+export type RunTriggerAttributes = {
+  enabled: boolean;
+} & AuditFieldBase;
+
+/** One edge as the run trigger table renders it, with the other end already resolved. */
+export type RunTriggerRow = {
+  id: string;
+  enabled: boolean;
+  workspaceId: string;
+  workspaceName: string;
+  templateId?: string;
+  templateName?: string;
+};
 
 // Projects
 export type Project = {

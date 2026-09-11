@@ -128,6 +128,25 @@ public class Job extends GenericAuditFields {
     @Column(name = "pr_comment_error")
     private String prCommentError;
 
+    /**
+     * The job whose successful apply caused this one, when it was created by a run trigger.
+     * Null for every job started by a person, a webhook or a schedule.
+     */
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "triggered_by_job_id")
+    private Integer triggeredByJobId;
+
+    /**
+     * How many trigger hops produced this job: 0 when it was started directly, N when it is
+     * the Nth link of a chain. Bounds propagation if the graph ever contains a cycle that
+     * static validation did not catch.
+     */
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "cascade_depth", nullable = false)
+    private int cascadeDepth = 0;
+
     @ManyToOne
     private Organization organization;
 

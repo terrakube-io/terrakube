@@ -15,6 +15,7 @@ import {
 } from "antd";
 import { AxiosResponse } from "axios";
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosAuxiliary } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
@@ -79,6 +80,11 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [workspaceVcsId, setWorkspaceVcsId] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const [triggeredBy, setTriggeredBy] = useState<{
+    jobId: number;
+    workspaceId: string;
+    workspaceName: string;
+  } | null>(null);
   // Controlled per-step Collapse open/closed state, keyed by step id. Was previously driven by
   // Collapse's uncontrolled defaultActiveKey with `${item.id}-${item.status}` as the element key -
   // every status transition (pending -> running -> completed) therefore remounted the whole step
@@ -138,7 +144,6 @@ export const DetailsJob = ({ jobId }: Props) => {
   const isAbortError = (error: unknown) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
-
 
   const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
     if (jobOutput == null) {
@@ -405,6 +410,29 @@ export const DetailsJob = ({ jobId }: Props) => {
     if (a.stepNumber > b.stepNumber) return 1;
     return 0;
   };
+
+  // The upstream run of a job started by a run trigger. Resolved separately because the job
+  // only carries the id, and the link needs the workspace it belongs to. Run triggers never
+  // cross organizations, so the current one is always the right place to look.
+  const upstreamJobId = job?.data?.attributes?.triggeredByJobId;
+  useEffect(() => {
+    if (!upstreamJobId || !organizationId) {
+      setTriggeredBy(null);
+      return;
+    }
+    axiosInstance
+      .get(`organization/${organizationId}/job/${upstreamJobId}?include=workspace`)
+      .then((response) => {
+        const workspace = (response.data.included ?? []).find((item: any) => item.type === "workspace");
+        setTriggeredBy({
+          jobId: upstreamJobId,
+          workspaceId: workspace?.id ?? "",
+          workspaceName: workspace?.attributes?.name ?? "",
+        });
+      })
+      // The upstream run may have been pruned from history; the id alone is still worth showing.
+      .catch(() => setTriggeredBy({ jobId: upstreamJobId, workspaceId: "", workspaceName: "" }));
+  }, [upstreamJobId, organizationId]);
 
   const loadJob = useCallback(async () => {
     const requestId = ++jobRequestRef.current;
@@ -685,6 +713,30 @@ export const DetailsJob = ({ jobId }: Props) => {
             <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
             <h2 style={{ display: "inline" }}>Triggered via {formatJobVia(job.data.attributes.via)}</h2>
           </div>
+          {triggeredBy && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginTop: 8, marginBottom: 8 }}
+              description={
+                <>
+                  This run started because{" "}
+                  {triggeredBy.workspaceId ? (
+                    <Link
+                      to={`/organizations/${organizationId}/workspaces/${triggeredBy.workspaceId}/runs/${triggeredBy.jobId}`}
+                    >
+                      run #{triggeredBy.jobId} on {triggeredBy.workspaceName}
+                    </Link>
+                  ) : (
+                    <b>run #{triggeredBy.jobId}</b>
+                  )}{" "}
+                  changed state.
+                  {(job.data.attributes.cascadeDepth ?? 0) > 1 &&
+                    ` It is ${job.data.attributes.cascadeDepth} triggers deep in the chain.`}
+                </>
+              }
+            />
+          )}
 
           <Collapse
             items={[
