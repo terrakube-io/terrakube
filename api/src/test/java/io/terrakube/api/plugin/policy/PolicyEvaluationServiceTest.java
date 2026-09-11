@@ -25,8 +25,12 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -143,6 +147,13 @@ class PolicyEvaluationServiceTest {
         PolicyEvaluation saved = evalCaptor.getValue();
         assertEquals(PolicyEvaluationStatus.FAILED, saved.getStatus());
         assertEquals(1, saved.getHardMandatoryViolations());
+        assertEquals("policy-evaluations/200/violations.json", saved.getStorageUri());
+
+        ArgumentCaptor<String> uriCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> contentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storageTypeService).uploadPolicyEvaluation(uriCaptor.capture(), contentCaptor.capture());
+        assertEquals("policy-evaluations/200/violations.json", uriCaptor.getValue());
+        assertTrue(contentCaptor.getValue().contains("tag_check"));
 
         ArgumentCaptor<Workspace> wsCaptor = ArgumentCaptor.forClass(Workspace.class);
         verify(workspaceRepository).save(wsCaptor.capture());
@@ -234,5 +245,40 @@ class PolicyEvaluationServiceTest {
         assertEquals(1, saved.getWarningRules());
         assertEquals(3, saved.getSoftMandatoryViolations());
         assertEquals(0, saved.getHardMandatoryViolations());
+    }
+
+    @Test
+    void processesEvaluationWithoutResultsDoesNotUploadToStorage() {
+        Job job = new Job();
+        job.setId(500);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        job.setWorkspace(workspace);
+
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setName("terraformPlan");
+
+        when(jobRepository.findById(500)).thenReturn(Optional.of(job));
+        when(stepRepository.findByJobId(500)).thenReturn(List.of(step));
+        when(policyEvaluationRepository.findByJobAndStep(job, step)).thenReturn(Optional.empty());
+
+        String json = "{\n" +
+                "  \"policyEvaluation\": {\n" +
+                "    \"status\": \"PASSED\",\n" +
+                "    \"passedRules\": 3,\n" +
+                "    \"warningRules\": 0,\n" +
+                "    \"softMandatoryViolations\": 0,\n" +
+                "    \"hardMandatoryViolations\": 0\n" +
+                "  }\n" +
+                "}";
+
+        policyEvaluationService.processPolicyEvaluationContext(500, json);
+
+        ArgumentCaptor<PolicyEvaluation> evalCaptor = ArgumentCaptor.forClass(PolicyEvaluation.class);
+        verify(policyEvaluationRepository).save(evalCaptor.capture());
+        PolicyEvaluation saved = evalCaptor.getValue();
+        assertNull(saved.getStorageUri());
+        verify(storageTypeService, never()).uploadPolicyEvaluation(anyString(), anyString());
     }
 }

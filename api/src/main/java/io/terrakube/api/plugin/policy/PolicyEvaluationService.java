@@ -115,19 +115,6 @@ public class PolicyEvaluationService {
                 }
             }
 
-            String storageUri = String.format("policy-evaluations/%d/violations.json", jobId);
-
-            // Offload full violations JSON to object storage on Day 1 (Gap 11.7)
-            if (evalNode.has("results")) {
-                try {
-                    String resultsJson = objectMapper.writeValueAsString(evalNode.get("results"));
-                    // Save to storage using storageTypeService
-                    log.info("Offloading policy violations JSON to object storage: {}", storageUri);
-                } catch (Exception e) {
-                    log.error("Failed to serialize policy results JSON for Job {}: {}", jobId, e.getMessage());
-                }
-            }
-
             final Step finalStep = step;
             Optional<PolicyEvaluation> existingEval = policyEvaluationRepository.findByJobAndStep(job, finalStep);
             PolicyEvaluation policyEvaluation = existingEval.orElseGet(() -> {
@@ -137,6 +124,19 @@ public class PolicyEvaluationService {
                 return pe;
             });
 
+            // Offload full violations JSON to object storage on Day 1 (Gap 11.7)
+            if (evalNode.has("results")) {
+                String storageUri = String.format("policy-evaluations/%d/violations.json", jobId);
+                try {
+                    String resultsJson = objectMapper.writeValueAsString(evalNode.get("results"));
+                    storageTypeService.uploadPolicyEvaluation(storageUri, resultsJson);
+                    policyEvaluation.setStorageUri(storageUri);
+                    log.info("Offloading policy violations JSON to object storage: {}", storageUri);
+                } catch (Exception e) {
+                    log.error("Failed to serialize or upload policy results JSON for Job {}: {}", jobId, e.getMessage());
+                }
+            }
+
             policyEvaluation.setStatus(evalStatus);
             policyEvaluation.setPassedRules(passedRules);
             policyEvaluation.setWarningRules(warningRules);
@@ -144,7 +144,6 @@ public class PolicyEvaluationService {
             policyEvaluation.setHardMandatoryViolations(hardViolations);
             policyEvaluation.setShadowHardViolations(shadowHard);
             policyEvaluation.setShadowSoftViolations(shadowSoft);
-            policyEvaluation.setStorageUri(storageUri);
 
             policyEvaluationRepository.save(policyEvaluation);
             log.info("Saved PolicyEvaluation record {} for Job {}", policyEvaluation.getId(), jobId);

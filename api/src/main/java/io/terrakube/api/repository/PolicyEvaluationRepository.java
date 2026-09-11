@@ -19,6 +19,9 @@ public interface PolicyEvaluationRepository extends JpaRepository<PolicyEvaluati
 
     Optional<PolicyEvaluation> findByJobAndStep(Job job, Step step);
 
+    @Query("SELECT DISTINCT pe.storageUri FROM policy_evaluation pe WHERE pe.createdDate < :cutoff AND pe.storageUri IS NOT NULL AND pe.storageUri != ''")
+    List<String> findStorageUrisByCreatedDateBefore(@Param("cutoff") Date cutoff);
+
     @Modifying
     @Transactional
     @Query("DELETE FROM policy_evaluation pe WHERE pe.createdDate < :cutoff")

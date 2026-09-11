@@ -219,4 +219,25 @@ class AwsStorageTypeServiceImplTest {
                 request.key().equals("tfstate/org2/ws1/file1")
         ));
     }
+
+    @Test
+    void testPolicyEvaluationLifecycle() {
+        String uri = "policy-evaluations/123/violations.json";
+        String json = "{\"violations\":[]}";
+
+        awsStorageTypeService.uploadPolicyEvaluation(uri, json);
+        verify(s3Client).putObject(argThat((PutObjectRequest req) ->
+                req.bucket().equals(bucketName) && req.key().equals(uri)), any(RequestBody.class));
+
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn(json.getBytes(StandardCharsets.UTF_8));
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+
+        String retrieved = awsStorageTypeService.getPolicyEvaluation(uri);
+        assertEquals(json, retrieved);
+
+        awsStorageTypeService.deletePolicyEvaluation(uri);
+        verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) ->
+                req.bucket().equals(bucketName) && req.key().equals(uri)));
+    }
 }

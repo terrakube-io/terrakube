@@ -17,6 +17,7 @@ import org.quartz.Scheduler;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
 import org.quartz.TriggerKey;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -91,6 +92,7 @@ public class PolicyDriftEvaluationJob implements org.quartz.Job {
                 batchSize, maxJobsPerRun, maxActiveJobs, followUpDelayMinutes, cooldownHours);
     }
 
+    @Autowired
     public PolicyDriftEvaluationJob(
             WorkspaceRepository workspaceRepository,
             JobRepository jobRepository,

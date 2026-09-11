@@ -282,4 +282,47 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
                     containerClient.getBlobClient(item.getName()).delete();
                 });
     }
+
+    @Override
+    public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
+        try {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+            if (!containerClient.exists()) {
+                containerClient.create();
+            }
+            BlobClient blobClient = containerClient.getBlobClient(storageUri);
+            BinaryData binaryData = BinaryData.fromBytes(policyEvaluationJson.getBytes(StandardCharsets.UTF_8));
+            blobClient.upload(binaryData, true);
+            log.info("Uploaded policy evaluation to Azure blob: {}", storageUri);
+        } catch (Exception e) {
+            log.error("Failed to upload policy evaluation to Azure blob {}: {}", storageUri, e.getMessage());
+        }
+    }
+
+    @Override
+    public String getPolicyEvaluation(String storageUri) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+        BlobClient blobClient = containerClient.getBlobClient(storageUri);
+        if (blobClient.exists()) {
+            return blobClient.downloadContent().toString();
+        } else {
+            return "{}";
+        }
+    }
+
+    @Override
+    public void deletePolicyEvaluation(String storageUri) {
+        try {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+            if (containerClient.exists()) {
+                BlobClient blobClient = containerClient.getBlobClient(storageUri);
+                if (blobClient.exists()) {
+                    blobClient.delete();
+                    log.info("Deleted policy evaluation from Azure blob: {}", storageUri);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete policy evaluation {} from Azure: {}", storageUri, e.getMessage());
+        }
+    }
 }

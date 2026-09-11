@@ -333,4 +333,43 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
 
         }
     }
+
+    @Override
+    public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
+        log.info("Uploading policy evaluation to GCP bucket: {}, key: {}", bucketName, storageUri);
+        BlobId blobId = BlobId.of(bucketName, storageUri);
+        Blob blob = storage.get(blobId);
+        byte[] bytes = policyEvaluationJson.getBytes(StandardCharsets.UTF_8);
+        if (blob != null) {
+            try (WritableByteChannel channel = blob.writer()) {
+                channel.write(ByteBuffer.wrap(bytes));
+            } catch (IOException e) {
+                log.error("Failed to write policy evaluation to GCP storage {}: {}", storageUri, e.getMessage());
+            }
+        } else {
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType("application/json").build();
+            storage.create(blobInfo, bytes);
+        }
+    }
+
+    @Override
+    public String getPolicyEvaluation(String storageUri) {
+        Blob blob = storage.get(BlobId.of(bucketName, storageUri));
+        if (blob != null && blob.exists()) {
+            return new String(blob.getContent(), StandardCharsets.UTF_8);
+        } else {
+            return "{}";
+        }
+    }
+
+    @Override
+    public void deletePolicyEvaluation(String storageUri) {
+        try {
+            log.info("Deleting policy evaluation from GCP bucket: {}, key: {}", bucketName, storageUri);
+            BlobId blobId = BlobId.of(bucketName, storageUri);
+            storage.delete(blobId);
+        } catch (Exception e) {
+            log.warn("Failed to delete policy evaluation {} from GCP: {}", storageUri, e.getMessage());
+        }
+    }
 }
