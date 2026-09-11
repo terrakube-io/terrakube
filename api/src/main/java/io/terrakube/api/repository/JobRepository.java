@@ -24,6 +24,9 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     List<Job> findAllByStatusInOrderByIdAsc(List<JobStatus> status);
     List<Job> findAllByOrganizationNameAndStatusInOrderByIdAsc(String organizationName, List<JobStatus> status);
 
+    @Query("SELECT count(j) FROM job j WHERE j.via = :via AND j.status IN :statuses")
+    long countByViaAndStatusIn(@Param("via") String via, @Param("statuses") List<JobStatus> statuses);
+
 
     Optional<List<Job>> findAllByWorkspaceAndStatusNotInOrderByIdAsc(Workspace workspace, List<JobStatus> status);
     List<Job> findAllByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);

@@ -29,6 +29,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -370,18 +372,51 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             return resolvedExisting;
         }
 
-        FileUtils.forceMkdirParent(policyCloneFolder);
+        // Clone into a temp directory first; rename atomically once successful so that a
+        // failed/interrupted clone never leaves a stale partial directory that would be
+        // mistaken for a valid bundle on the next evaluation run (Issue 2.2).
+        File tempCloneFolder = new File(workingDirectory, ".terrakube-policies/tmp-" + policyContext.getPolicyId());
+        if (tempCloneFolder.exists()) {
+            log.warn("Removing stale temp clone directory before re-cloning: {}", tempCloneFolder.getAbsolutePath());
+            FileUtils.deleteDirectory(tempCloneFolder);
+        }
+        FileUtils.forceMkdirParent(tempCloneFolder);
 
         CredentialsProvider credentialsProvider = resolveCredentialsProvider(policyContext);
 
-        CloneCommand cloneCommand = Git.cloneRepository()
-                .setURI(policyContext.getRepository())
-                .setDirectory(policyCloneFolder)
-                .setBranch(policyContext.getBranch() != null ? policyContext.getBranch() : "main")
-                .setCredentialsProvider(credentialsProvider)
-                .setDepth(1);
+        try {
+            CloneCommand cloneCommand = Git.cloneRepository()
+                    .setURI(policyContext.getRepository())
+                    .setDirectory(tempCloneFolder)
+                    .setBranch(policyContext.getBranch() != null ? policyContext.getBranch() : "main")
+                    .setCredentialsProvider(credentialsProvider)
+                    .setDepth(1);
 
-        cloneCommand.call().close();
+            cloneCommand.call().close();
+        } catch (Exception e) {
+            // Clean up the partial clone so that a retry starts from scratch.
+            log.error("Clone of policy repository '{}' failed; removing temp directory '{}': {}",
+                    policyContext.getRepository(), tempCloneFolder.getAbsolutePath(), e.getMessage());
+            FileUtils.deleteQuietly(tempCloneFolder);
+            throw e;
+        }
+
+        // Atomic rename: temp → final directory.
+        try {
+            try {
+                Files.move(tempCloneFolder.toPath(), policyCloneFolder.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                Files.move(tempCloneFolder.toPath(), policyCloneFolder.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            log.error("Failed to promote temp policy clone directory '{}' to '{}': {}",
+                    tempCloneFolder.getAbsolutePath(), policyCloneFolder.getAbsolutePath(), e.getMessage());
+            FileUtils.deleteQuietly(tempCloneFolder);
+            FileUtils.deleteQuietly(policyCloneFolder);
+            throw e;
+        }
+        log.info("Policy bundle cloned and promoted to '{}' for policy set '{}'.",
+                policyCloneFolder.getAbsolutePath(), policyContext.getPolicyId());
 
         File resolvedAfterClone = new File(policyCloneFolder, policyContext.getFolder() != null ? policyContext.getFolder() : "").getCanonicalFile();
         validatePathBoundary(resolvedAfterClone, policyCloneFolder, policyContext.getFolder());
