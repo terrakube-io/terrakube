@@ -382,5 +382,46 @@ class OpaExecutorServiceTest {
         assertEquals(1, softResult.getSoftMandatoryViolations());
         assertEquals(1, softResult.getWarningRules());
     }
+
+    @Test
+    void testPreparePolicyInputsFile_JsonAwareParsing(@TempDir Path tempDir) throws Exception {
+        java.util.Map<String, String> inputs = new java.util.HashMap<>();
+        inputs.put("max_deletions", "5");
+        inputs.put("allowed_regions", "[\"us-east-1\", \"us-west-2\"]");
+        inputs.put("feature_flag", "true");
+        inputs.put("config", "{\"timeout\": 30, \"retries\": 3}");
+        inputs.put("simple_string", "production-env");
+
+        PolicyContext context = PolicyContext.builder()
+                .policyId("ps-123")
+                .policyName("test-policy")
+                .inputs(inputs)
+                .build();
+
+        File inputsFile = opaExecutorService.preparePolicyInputsFile(tempDir.toFile(), context);
+        assertNotNull(inputsFile);
+        assertTrue(inputsFile.exists());
+
+        com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(inputsFile);
+        com.fasterxml.jackson.databind.JsonNode inputsNode = rootNode.path("terrakube").path("inputs");
+
+        assertTrue(inputsNode.path("max_deletions").isNumber());
+        assertEquals(5, inputsNode.path("max_deletions").asInt());
+
+        assertTrue(inputsNode.path("allowed_regions").isArray());
+        assertEquals(2, inputsNode.path("allowed_regions").size());
+        assertEquals("us-east-1", inputsNode.path("allowed_regions").get(0).asText());
+        assertEquals("us-west-2", inputsNode.path("allowed_regions").get(1).asText());
+
+        assertTrue(inputsNode.path("feature_flag").isBoolean());
+        assertTrue(inputsNode.path("feature_flag").asBoolean());
+
+        assertTrue(inputsNode.path("config").isObject());
+        assertEquals(30, inputsNode.path("config").path("timeout").asInt());
+        assertEquals(3, inputsNode.path("config").path("retries").asInt());
+
+        assertTrue(inputsNode.path("simple_string").isTextual());
+        assertEquals("production-env", inputsNode.path("simple_string").asText());
+    }
 }
 

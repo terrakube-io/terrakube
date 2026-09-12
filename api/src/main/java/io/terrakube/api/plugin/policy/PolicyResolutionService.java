@@ -4,21 +4,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyExemptionContext;
 import io.terrakube.api.plugin.vcs.TokenService;
-import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.PolicyAttachmentRepository;
 import io.terrakube.api.repository.PolicyExemptionRepository;
+import io.terrakube.api.repository.PolicySetParameterRepository;
 import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.repository.TagRepository;
-import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceTagRepository;
-import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.policy.PolicyAttachment;
 import io.terrakube.api.rs.policy.PolicyExemption;
 import io.terrakube.api.rs.policy.PolicySet;
+import io.terrakube.api.rs.policy.PolicySetParameter;
 import io.terrakube.api.rs.tag.Tag;
-import io.terrakube.api.rs.workspace.parameters.Category;
-import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,8 +42,7 @@ public class PolicyResolutionService {
     private final PolicySetRepository policySetRepository;
     private final PolicyAttachmentRepository policyAttachmentRepository;
     private final PolicyExemptionRepository policyExemptionRepository;
-    private final GlobalVarRepository globalVarRepository;
-    private final VariableRepository variableRepository;
+    private final PolicySetParameterRepository policySetParameterRepository;
     private final TagRepository tagRepository;
     private final WorkspaceTagRepository workspaceTagRepository;
     private final TokenService tokenService;
@@ -58,7 +54,7 @@ public class PolicyResolutionService {
      * 3. Tag-scoped attachments
      * 4. Workspace-scoped attachments
      *
-     * Deduplicates by PolicySet ID and injects non-sensitive Category.POLICY variables.
+     * Deduplicates by PolicySet ID and injects policy-set-level parameters.
      */
     public List<PolicyContext> resolvePoliciesForJob(Job job) {
         if (job == null || job.getOrganization() == null || job.getWorkspace() == null) {
@@ -132,9 +128,6 @@ public class PolicyResolutionService {
             return new ArrayList<>();
         }
 
-        // Resolve non-sensitive POLICY variables (Workspace overrides Organization)
-        Map<String, String> policyInputs = resolvePolicyVariables(job);
-
         List<PolicySet> sortedPolicySets = cumulativePolicyMap.values().stream()
                 .sorted(Comparator.comparing(PolicySet::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -152,6 +145,16 @@ public class PolicyResolutionService {
                 }
             }
 
+            Map<String, String> inputs = new HashMap<>();
+            List<PolicySetParameter> params = policySetParameterRepository.findByPolicySet(ps);
+            if (params != null) {
+                for (PolicySetParameter param : params) {
+                    if (param.getKey() != null && param.getValue() != null) {
+                        inputs.put(param.getKey(), param.getValue());
+                    }
+                }
+            }
+
             PolicyContext context = PolicyContext.builder()
                     .policyId(ps.getId().toString())
                     .policyName(ps.getName())
@@ -165,7 +168,7 @@ public class PolicyResolutionService {
                     .branch(ps.getBranch() != null ? ps.getBranch() : "main")
                     .folder(ps.getFolder() != null ? ps.getFolder() : "/")
                     .opaVersion(ps.getOpaVersion())
-                    .inputs(new HashMap<>(policyInputs))
+                    .inputs(inputs)
                     .build();
 
             policyContextList.add(context);
@@ -209,33 +212,5 @@ public class PolicyResolutionService {
 
         log.info("Resolved {} active exemptions for Job {}", exemptionContexts.size(), job.getId());
         return exemptionContexts;
-    }
-
-    /**
-     * Merges Organization-level Globalvar (Category.POLICY) with Workspace-level Variable (Category.POLICY).
-     * Excludes any sensitive variables.
-     */
-    private Map<String, String> resolvePolicyVariables(Job job) {
-        Map<String, String> inputs = new HashMap<>();
-
-        // Org global variables
-        List<Globalvar> orgVars = globalVarRepository.findByOrganization(job.getOrganization());
-        if (orgVars != null) {
-            for (Globalvar gv : orgVars) {
-                if (Category.POLICY.equals(gv.getCategory()) && !gv.isSensitive() && gv.getValue() != null) {
-                    inputs.put(gv.getKey(), gv.getValue());
-                }
-            }
-        }
-
-        // Workspace variables override org variables
-        List<Variable> wsVars = variableRepository.findByWorkspace(job.getWorkspace()).orElse(new ArrayList<>());
-        for (Variable v : wsVars) {
-            if (Category.POLICY.equals(v.getCategory()) && !v.isSensitive() && v.getValue() != null) {
-                inputs.put(v.getKey(), v.getValue());
-            }
-        }
-
-        return inputs;
     }
 }

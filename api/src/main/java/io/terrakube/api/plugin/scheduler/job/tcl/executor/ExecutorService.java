@@ -233,8 +233,6 @@ public class ExecutorService {
             } else if (Category.ENV.equals(variable.getCategory())) {
                 log.info("Adding environment variable, Key: {}", variable.getKey());
                 environmentVariables.put(variable.getKey(), variable.getValue());
-            } else if (Category.POLICY.equals(variable.getCategory())) {
-                log.info("Skipping Category.POLICY variable for shell/terraform: {}", variable.getKey());
             }
         }
     }

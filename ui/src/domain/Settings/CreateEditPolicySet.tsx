@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Button, Card, Col, Divider, Form, Input, Row, Select, Space, Switch, Tag, Typography, message } from "antd";
+import { Button, Card, Col, Divider, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message } from "antd";
 import {
   ArrowLeftOutlined,
   BellOutlined,
@@ -12,6 +12,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { PolicySetParameters } from "./components";
 
 const { Paragraph } = Typography;
 const { Option } = Select;
@@ -38,6 +39,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
   const [teams, setTeams] = useState<any[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(false);
   const [isGlobal, setIsGlobal] = useState(false);
+  const [activeTab, setActiveTab] = useState("settings");
 
   const backUrl = `/organizations/${orgid}/settings/policies`;
 
@@ -291,20 +293,9 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
     return <LoadingFallback />;
   }
 
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      <SettingsPageHeader
-        title={mode === "create" ? "Create Policy Set" : "Edit Policy Set"}
-        description="Configure Open Policy Agent (OPA) guardrails, enforcement levels, and repository source."
-        actions={
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backUrl)}>
-            Back to Policy Sets
-          </Button>
-        }
-      />
-
-      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
-        <Card title="General Settings" style={{ marginBottom: 24 }}>
+  const settingsForm = (
+    <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
+      <Card title="General Settings" style={{ marginBottom: 24 }}>
           <Row gutter={16}>
             <Col span={24}>
               <Form.Item
@@ -539,6 +530,46 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
           </Space>
         </Form.Item>
       </Form>
+  );
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <SettingsPageHeader
+        title={mode === "create" ? "Create Policy Set" : "Edit Policy Set"}
+        description="Configure Open Policy Agent (OPA) guardrails, enforcement levels, and repository source."
+        actions={
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backUrl)}>
+            Back to Policy Sets
+          </Button>
+        }
+      />
+
+      {mode === "edit" && policySetId ? (
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          style={{ marginBottom: 24 }}
+          items={[
+            {
+              key: "settings",
+              label: "Settings",
+              children: settingsForm,
+            },
+            {
+              key: "parameters",
+              label: "Parameters",
+              children: (
+                <PolicySetParameters
+                  policySetId={policySetId}
+                  managePermission={managePermission}
+                />
+              ),
+            },
+          ]}
+        />
+      ) : (
+        settingsForm
+      )}
     </div>
   );
 };

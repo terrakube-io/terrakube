@@ -92,4 +92,7 @@ public class PolicySet extends GenericAuditFields {
 
     @OneToMany(mappedBy = "policySet", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PolicyExemption> exemptions;
+
+    @OneToMany(mappedBy = "policySet", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<PolicySetParameter> parameters;
 }

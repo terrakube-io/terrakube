@@ -3,25 +3,22 @@ package io.terrakube.api.plugin.policy;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyExemptionContext;
 import io.terrakube.api.plugin.vcs.TokenService;
-import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.PolicyAttachmentRepository;
 import io.terrakube.api.repository.PolicyExemptionRepository;
+import io.terrakube.api.repository.PolicySetParameterRepository;
 import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.repository.TagRepository;
-import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.Organization;
-import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.policy.PolicyAttachment;
 import io.terrakube.api.rs.policy.PolicyEnforcementLevel;
 import io.terrakube.api.rs.policy.PolicyExemption;
 import io.terrakube.api.rs.policy.PolicySet;
+import io.terrakube.api.rs.policy.PolicySetParameter;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.workspace.Workspace;
-import io.terrakube.api.rs.workspace.parameters.Category;
-import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,8 +44,7 @@ class PolicyResolutionServiceTest {
     private PolicySetRepository policySetRepository;
     private PolicyAttachmentRepository policyAttachmentRepository;
     private PolicyExemptionRepository policyExemptionRepository;
-    private GlobalVarRepository globalVarRepository;
-    private VariableRepository variableRepository;
+    private PolicySetParameterRepository policySetParameterRepository;
     private TagRepository tagRepository;
     private WorkspaceTagRepository workspaceTagRepository;
     private TokenService tokenService;
@@ -60,8 +56,7 @@ class PolicyResolutionServiceTest {
         policySetRepository = Mockito.mock(PolicySetRepository.class);
         policyAttachmentRepository = Mockito.mock(PolicyAttachmentRepository.class);
         policyExemptionRepository = Mockito.mock(PolicyExemptionRepository.class);
-        globalVarRepository = Mockito.mock(GlobalVarRepository.class);
-        variableRepository = Mockito.mock(VariableRepository.class);
+        policySetParameterRepository = Mockito.mock(PolicySetParameterRepository.class);
         tagRepository = Mockito.mock(TagRepository.class);
         workspaceTagRepository = Mockito.mock(WorkspaceTagRepository.class);
         tokenService = Mockito.mock(TokenService.class);
@@ -70,8 +65,7 @@ class PolicyResolutionServiceTest {
                 policySetRepository,
                 policyAttachmentRepository,
                 policyExemptionRepository,
-                globalVarRepository,
-                variableRepository,
+                policySetParameterRepository,
                 tagRepository,
                 workspaceTagRepository,
                 tokenService
@@ -177,58 +171,54 @@ class PolicyResolutionServiceTest {
         job.setOrganization(org);
         job.setWorkspace(ws);
 
-        PolicySet policy = new PolicySet();
-        policy.setId(UUID.randomUUID());
-        policy.setName("Security-Audit");
-        when(policySetRepository.findByOrganizationAndGlobalTrue(org)).thenReturn(List.of(policy));
+        PolicySet policy1 = new PolicySet();
+        policy1.setId(UUID.randomUUID());
+        policy1.setName("Security-Audit");
 
-        // Org globalvars
-        Globalvar gvPolicy = new Globalvar();
-        gvPolicy.setCategory(Category.POLICY);
-        gvPolicy.setKey("max_deletions");
-        gvPolicy.setValue("5");
-        gvPolicy.setSensitive(false);
+        PolicySet policy2 = new PolicySet();
+        policy2.setId(UUID.randomUUID());
+        policy2.setName("Tagging-Policy");
 
-        Globalvar gvSensitivePolicy = new Globalvar();
-        gvSensitivePolicy.setCategory(Category.POLICY);
-        gvSensitivePolicy.setKey("secops_token");
-        gvSensitivePolicy.setValue("secret123");
-        gvSensitivePolicy.setSensitive(true); // Must be omitted!
+        when(policySetRepository.findByOrganizationAndGlobalTrue(org)).thenReturn(List.of(policy1, policy2));
 
-        Globalvar gvTf = new Globalvar();
-        gvTf.setCategory(Category.TERRAFORM);
-        gvTf.setKey("region");
-        gvTf.setValue("us-east-1");
+        PolicySetParameter param1 = new PolicySetParameter();
+        param1.setId(UUID.randomUUID());
+        param1.setKey("max_deletions");
+        param1.setValue("5");
+        param1.setPolicySet(policy1);
 
-        when(globalVarRepository.findByOrganization(org)).thenReturn(List.of(gvPolicy, gvSensitivePolicy, gvTf));
+        PolicySetParameter param2 = new PolicySetParameter();
+        param2.setId(UUID.randomUUID());
+        param2.setKey("allowed_locations");
+        param2.setValue("eastus,westus");
+        param2.setPolicySet(policy1);
 
-        // Workspace vars: overrides max_deletions to 10
-        Variable wsPolicy = new Variable();
-        wsPolicy.setCategory(Category.POLICY);
-        wsPolicy.setKey("max_deletions");
-        wsPolicy.setValue("10");
-        wsPolicy.setSensitive(false);
+        when(policySetParameterRepository.findByPolicySet(policy1)).thenReturn(List.of(param1, param2));
 
-        Variable wsCustom = new Variable();
-        wsCustom.setCategory(Category.POLICY);
-        wsCustom.setKey("allowed_locations");
-        wsCustom.setValue("eastus,westus");
-        wsCustom.setSensitive(false);
+        PolicySetParameter tagParam = new PolicySetParameter();
+        tagParam.setId(UUID.randomUUID());
+        tagParam.setKey("required_tags");
+        tagParam.setValue("Environment,Owner");
+        tagParam.setPolicySet(policy2);
 
-        when(variableRepository.findByWorkspace(ws)).thenReturn(Optional.of(List.of(wsPolicy, wsCustom)));
+        when(policySetParameterRepository.findByPolicySet(policy2)).thenReturn(List.of(tagParam));
 
         List<PolicyContext> resolved = policyResolutionService.resolvePoliciesForJob(job);
-        assertEquals(1, resolved.size());
-        PolicyContext ctx = resolved.get(0);
+        assertEquals(2, resolved.size());
 
-        assertNotNull(ctx.getInputs());
-        // max_deletions was overridden by workspace to 10
-        assertEquals("10", ctx.getInputs().get("max_deletions"));
-        assertEquals("eastus,westus", ctx.getInputs().get("allowed_locations"));
-        // sensitive variable must NOT be present
-        assertFalse(ctx.getInputs().containsKey("secops_token"));
-        // terraform variable must NOT be present
-        assertFalse(ctx.getInputs().containsKey("region"));
+        // Sorted by name: Security-Audit, Tagging-Policy
+        PolicyContext ctx1 = resolved.get(0);
+        assertEquals("Security-Audit", ctx1.getPolicyName());
+        assertNotNull(ctx1.getInputs());
+        assertEquals("5", ctx1.getInputs().get("max_deletions"));
+        assertEquals("eastus,westus", ctx1.getInputs().get("allowed_locations"));
+        assertFalse(ctx1.getInputs().containsKey("required_tags"), "Policy 1 must NOT contain Policy 2 parameters");
+
+        PolicyContext ctx2 = resolved.get(1);
+        assertEquals("Tagging-Policy", ctx2.getPolicyName());
+        assertNotNull(ctx2.getInputs());
+        assertEquals("Environment,Owner", ctx2.getInputs().get("required_tags"));
+        assertFalse(ctx2.getInputs().containsKey("max_deletions"), "Policy 2 must NOT contain Policy 1 parameters");
     }
 
     @Test

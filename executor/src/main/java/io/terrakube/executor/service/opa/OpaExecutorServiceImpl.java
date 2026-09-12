@@ -497,7 +497,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         }
     }
 
-    private File preparePolicyInputsFile(File workingDirectory, PolicyContext policyContext) {
+    File preparePolicyInputsFile(File workingDirectory, PolicyContext policyContext) {
         Map<String, String> inputs = policyContext.getInputs();
         if (inputs == null || inputs.isEmpty()) {
             return null;
@@ -506,7 +506,26 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         try {
             Map<String, Object> root = new HashMap<>();
             Map<String, Object> terrakube = new HashMap<>();
-            terrakube.put("inputs", inputs);
+            Map<String, Object> parsedInputs = new HashMap<>();
+
+            for (Map.Entry<String, String> entry : inputs.entrySet()) {
+                String key = entry.getKey();
+                String rawVal = entry.getValue();
+                if (rawVal != null) {
+                    try {
+                        JsonNode jsonNode = objectMapper.readTree(rawVal);
+                        if (jsonNode.isArray() || jsonNode.isObject() || jsonNode.isNumber() || jsonNode.isBoolean()) {
+                            parsedInputs.put(key, objectMapper.treeToValue(jsonNode, Object.class));
+                        } else {
+                            parsedInputs.put(key, rawVal);
+                        }
+                    } catch (Exception parseEx) {
+                        parsedInputs.put(key, rawVal);
+                    }
+                }
+            }
+
+            terrakube.put("inputs", parsedInputs);
             root.put("terrakube", terrakube);
 
             File inputsFile = new File(workingDirectory, ".terrakube-policies/inputs-" + policyContext.getPolicyId() + ".json");

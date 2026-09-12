@@ -25,4 +25,6 @@ export type {
   ExemptionStatusFilter,
   ExemptionScopeFilter,
 } from "./PolicyExemptionFilter";
+export { PolicySetParameters } from "./PolicySetParameters";
+export type { PolicyParameterItem } from "./PolicySetParameters";
 
