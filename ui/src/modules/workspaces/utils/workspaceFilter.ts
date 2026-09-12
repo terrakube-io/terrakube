@@ -33,9 +33,7 @@ export function filterWorkspaces(workspaces: WorkspaceListItem[], filters: Works
               x.lastStatus.toLowerCase() === "neverexecuted"
           )
         : workspaces.filter(
-            (x) =>
-              x.lastStatus === filters.status ||
-              x.lastStatus?.toLowerCase() === filters.status?.toLowerCase()
+            (x) => x.lastStatus === filters.status || x.lastStatus?.toLowerCase() === filters.status?.toLowerCase()
           );
 
   if (filters.policyStatus && filters.policyStatus !== PolicyComplianceFilter.All) {

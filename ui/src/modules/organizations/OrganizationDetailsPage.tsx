@@ -47,7 +47,14 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         tagIds: filterState.tagIds,
         projectId: filterState.projectId,
       }),
-    [workspaces, filterState.status, filterState.policyStatus, filterState.search, filterState.tagIds, filterState.projectId]
+    [
+      workspaces,
+      filterState.status,
+      filterState.policyStatus,
+      filterState.search,
+      filterState.tagIds,
+      filterState.projectId,
+    ]
   );
 
   const sortedWorkspaces = useMemo(
@@ -76,9 +83,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       } else if (ws.lastStatus in counts) {
         counts[ws.lastStatus]++;
       } else {
-        const matchingKey = Object.keys(counts).find(
-          (k) => k.toLowerCase() === ws.lastStatus?.toLowerCase()
-        );
+        const matchingKey = Object.keys(counts).find((k) => k.toLowerCase() === ws.lastStatus?.toLowerCase());
         if (matchingKey) {
           counts[matchingKey]++;
         }

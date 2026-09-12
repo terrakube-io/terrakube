@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import WorkspaceCard from "../WorkspaceCard";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
@@ -29,10 +29,7 @@ describe("WorkspaceCard", () => {
     expect(screen.getByText("Compliant")).toBeInTheDocument();
 
     const policyLink = screen.getByRole("link", { name: /Policy compliance: Compliant/i });
-    expect(policyLink).toHaveAttribute(
-      "href",
-      "/organizations/org-123/workspaces/ws-1/settings/policies"
-    );
+    expect(policyLink).toHaveAttribute("href", "/organizations/org-123/workspaces/ws-1/settings/policies");
   });
 
   it("renders UNKNOWN policy badge when policyComplianceStatus is not set", () => {
