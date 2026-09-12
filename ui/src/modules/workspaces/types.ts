@@ -15,6 +15,7 @@ export type WorkspaceListItem = {
   projectId?: string;
   projectName?: string;
   locked?: boolean;
+  policyComplianceStatus?: string;
 };
 
 export type ListWorkspacesResponse = {
@@ -34,6 +35,7 @@ export type WorkspacePageResponse = {
   workspaces: WorkspaceListItem[];
   pageInfo: WorkspacePageInfo;
   statusCounts: Record<string, number>;
+  policyCounts: Record<string, number>;
 };
 
 export type WorkspacePageRequest = {
@@ -42,6 +44,7 @@ export type WorkspacePageRequest = {
   after: number;
   search?: string;
   status?: string;
+  policyStatus?: string;
   tagIds?: string[];
   projectId?: string | null;
   sort:

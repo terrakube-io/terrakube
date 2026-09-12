@@ -24,6 +24,9 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     List<Job> findAllByStatusInOrderByIdAsc(List<JobStatus> status);
     List<Job> findAllByOrganizationNameAndStatusInOrderByIdAsc(String organizationName, List<JobStatus> status);
 
+    @Query("SELECT count(j) FROM job j WHERE j.via = :via AND j.status IN :statuses")
+    long countByViaAndStatusIn(@Param("via") String via, @Param("statuses") List<JobStatus> statuses);
+
 
     Optional<List<Job>> findAllByWorkspaceAndStatusNotInOrderByIdAsc(Workspace workspace, List<JobStatus> status);
     List<Job> findAllByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
@@ -32,7 +35,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     Optional<List<Job>> findByWorkspaceAndStatusInAndIdLessThan(Workspace workspace, List<JobStatus> jobStatuses, int jobId);
 
-    Optional<Job> findFirstByWorkspaceAndAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
+    Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
 
@@ -48,8 +51,15 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.status = :status where j.id = :jobId")
     int updateStatusById(@Param("status") JobStatus status, @Param("jobId") int jobId);
 
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
+    int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
+
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
+
+    @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId AND status NOT IN (" + TERMINAL_JOB_STATUSES + ",'notExecuted')", nativeQuery = true)
+    List<Integer> findActiveJobIdsByWorkspace(@Param("workspaceId") String workspaceId);
 
     /**
      * Ids of jobs that reached a terminal status inside the trailing sweep window - used to reclaim
@@ -84,9 +94,11 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
      */
     @Query(value = "SELECT NOT EXISTS (" +
             "  SELECT 1 FROM job earlier" +
+            "  JOIN workspace ew ON ew.id = earlier.workspace_id" +
             "  WHERE earlier.id < :candidateJobId" +
             "    AND earlier.status IN ('pending', 'approved')" +
             "    AND earlier.deleted = false" +
+            "    AND ew.deleted = false" +
             "    AND NOT EXISTS (" +
             "      SELECT 1 FROM job blocker" +
             "      WHERE blocker.workspace_id = earlier.workspace_id" +
@@ -102,8 +114,10 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
      * pool, or null if none. Used to wake the next job immediately instead of waiting up to 30s.
      */
     @Query(value = "SELECT MIN(j.id) FROM job j" +
+            " JOIN workspace w ON w.id = j.workspace_id" +
             " WHERE j.status IN ('pending', 'approved')" +
             "   AND j.deleted = false" +
+            "   AND w.deleted = false" +
             "   AND NOT EXISTS (" +
             "     SELECT 1 FROM job earlier" +
             "     WHERE earlier.workspace_id = j.workspace_id" +
@@ -112,4 +126,63 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
             "   )", nativeQuery = true)
     Integer findNextDispatchableJobId();
+
+    // --- Guarded variants (design doc 2026-09-02 §3.6) --------------------------------------
+    // An earlier pending/approved job only blocks the FIFO queue when it still has an executable
+    // step: it has no steps yet (not initialised) OR at least one step is still pending. A job
+    // with steps but none pending has consumed all its work and must not block later jobs.
+    // queue/running/waitingApproval blockers are untouched - the executor or a user owns those,
+    // and a step can legitimately be 'running' with zero pending steps mid-apply.
+
+    /** Guarded variant of {@link #isJobNextInDispatchOrder}. */
+    @Query(value = "SELECT NOT EXISTS (" +
+            "  SELECT 1 FROM job earlier" +
+            "  JOIN workspace ew ON ew.id = earlier.workspace_id" +
+            "  WHERE earlier.id < :candidateJobId" +
+            "    AND earlier.status IN ('pending', 'approved')" +
+            "    AND earlier.deleted = false" +
+            "    AND ew.deleted = false" +
+            "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = earlier.id)" +
+            "          OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = earlier.id AND s.status = 'pending') )" +
+            "    AND NOT EXISTS (" +
+            "      SELECT 1 FROM job blocker" +
+            "      WHERE blocker.workspace_id = earlier.workspace_id" +
+            "        AND blocker.id < earlier.id" +
+            "        AND blocker.deleted = false" +
+            "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "    )" +
+            ")", nativeQuery = true)
+    boolean isJobNextInDispatchOrderExecutable(@Param("candidateJobId") int candidateJobId);
+
+    /** Guarded variant of {@link #findNextDispatchableJobId}. */
+    @Query(value = "SELECT MIN(j.id) FROM job j" +
+            " JOIN workspace w ON w.id = j.workspace_id" +
+            " WHERE j.status IN ('pending', 'approved')" +
+            "   AND j.deleted = false" +
+            "   AND w.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id AND s.status = 'pending') )" +
+            "   AND NOT EXISTS (" +
+            "     SELECT 1 FROM job earlier" +
+            "     WHERE earlier.workspace_id = j.workspace_id" +
+            "       AND earlier.id < j.id" +
+            "       AND earlier.deleted = false" +
+            "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "       AND ( earlier.status NOT IN ('pending','approved')" +
+            "             OR NOT EXISTS (SELECT 1 FROM step s2 WHERE s2.job_id = earlier.id)" +
+            "             OR EXISTS (SELECT 1 FROM step s2 WHERE s2.job_id = earlier.id AND s2.status = 'pending') )" +
+            "   )", nativeQuery = true)
+    Integer findNextDispatchableExecutableJobId();
+
+    /** Count of jobs the guarded FIFO-admission query currently considers eligible - a
+     *  pending/approved job that is uninitialised or still has a pending step. Queue-depth gauge. */
+    @Query(value = "SELECT COUNT(*) FROM job j" +
+            " JOIN workspace w ON w.id = j.workspace_id" +
+            " WHERE j.status IN ('pending','approved')" +
+            "   AND j.deleted = false" +
+            "   AND w.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job_id = j.id AND s.status = 'pending') )",
+            nativeQuery = true)
+    int countDispatchEligibleJobs();
 }

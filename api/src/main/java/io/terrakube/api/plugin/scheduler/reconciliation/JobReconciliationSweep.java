@@ -16,6 +16,8 @@ import org.quartz.JobKey;
 import org.quartz.ObjectAlreadyExistsException;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -40,7 +42,6 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
  *    FIFO isn't blocked on a callback that will never arrive.
  */
 @Slf4j
-@AllArgsConstructor
 @Component
 public class JobReconciliationSweep implements org.quartz.Job {
 
@@ -51,12 +52,16 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // Duplicated as a literal in executor's JobExecutionWatchdog - separate Spring Boot apps, no
     // shared module for this constant.
     private static final String HEARTBEAT_PREFIX = "executor-job-heartbeat:";
-    private static final Duration HEARTBEAT_GRACE_PERIOD = Duration.ofSeconds(60);
 
     // Redis here has no persistent volume, so a restart comes back completely empty - every
     // heartbeat gone at once. Give executors a full refresh cycle (15s) plus margin to
     // re-populate before trusting a missing key means the executor is actually dead.
     private static final Duration REDIS_WARMUP_PERIOD = Duration.ofSeconds(90);
+
+    // Same key ScheduleJob's withExecutionLock uses, so a sweep-driven reconcile and a live
+    // ScheduleJob firing for the same job id never run concurrently across replicas.
+    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
+    private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
 
     JobRepository jobRepository;
     StepRepository stepRepository;
@@ -64,16 +69,118 @@ public class JobReconciliationSweep implements org.quartz.Job {
     Scheduler scheduler;
     ScheduleJobService scheduleJobService;
     RedisTemplate<String, Object> redisTemplate;
+    ReconciliationProperties properties;
+    JobReconciliationService reconciliationService;
+    JobReconciliationMetrics metrics;
+    Duration heartbeatGracePeriod;
+
+    @Autowired
+    public JobReconciliationSweep(
+            JobRepository jobRepository,
+            StepRepository stepRepository,
+            WorkspaceRepository workspaceRepository,
+            Scheduler scheduler,
+            ScheduleJobService scheduleJobService,
+            RedisTemplate<String, Object> redisTemplate,
+            ReconciliationProperties properties,
+            JobReconciliationService reconciliationService,
+            JobReconciliationMetrics metrics,
+            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds) {
+        this.jobRepository = jobRepository;
+        this.stepRepository = stepRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.scheduler = scheduler;
+        this.scheduleJobService = scheduleJobService;
+        this.redisTemplate = redisTemplate;
+        this.properties = properties;
+        this.reconciliationService = reconciliationService;
+        this.metrics = metrics;
+        this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
+    }
+
+    public JobReconciliationSweep(
+            JobRepository jobRepository,
+            StepRepository stepRepository,
+            WorkspaceRepository workspaceRepository,
+            Scheduler scheduler,
+            ScheduleJobService scheduleJobService,
+            RedisTemplate<String, Object> redisTemplate,
+            ReconciliationProperties properties,
+            JobReconciliationService reconciliationService,
+            JobReconciliationMetrics metrics) {
+        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300);
+    }
 
     @Transactional
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
         boolean redisRecentlyRestarted = isRedisWithinWarmupPeriod();
         for (Job job : jobRepository.findAllByStatusInOrderByIdAsc(ACTIVE_STATUSES)) {
+            if (properties.isSweepEnabled()) {
+                ReconciliationResult result = reconcileZeroPendingJob(job);
+                if (result != null) {
+                    if (result.disposition() == ReconciliationResult.ReconciliationDisposition.APPLIED && result.targetStatus() != null) {
+                        job.setStatus(result.targetStatus());
+                    }
+                    if (result.disposition() == ReconciliationResult.ReconciliationDisposition.APPLIED
+                            || result.disposition() == ReconciliationResult.ReconciliationDisposition.ALREADY_TERMINAL) {
+                        continue;
+                    }
+                }
+            }
             reconcileTrigger(job);
             if (isExecutorOwnedStatus(job.getStatus())) {
                 failIfExecutorHeartbeatExpired(job, redisRecentlyRestarted);
             }
+        }
+    }
+
+    // Hands a job that is non-terminal with >=1 step and no active work (pending, running, or queue)
+    // to the shared reconciliation routine (dry-run when auto-remediate is off). Jobs with no steps yet keep
+    // today's trigger-only reconciliation - they're just uninitialised, not stuck.
+    private ReconciliationResult reconcileZeroPendingJob(Job job) {
+        if (job.getWorkspace() == null) {
+            return null;
+        }
+        List<Step> steps = stepRepository.findByJobId(job.getId());
+        boolean hasActiveWork = steps.stream().anyMatch(s -> s.getStatus() == JobStatus.pending
+                || s.getStatus() == JobStatus.running
+                || s.getStatus() == JobStatus.queue);
+        if (steps.isEmpty() || hasActiveWork) {
+            return null;
+        }
+        if (!acquirePerJobLock(job.getId())) {
+            return null; // a live ScheduleJob firing (or another replica's sweep) owns this job now
+        }
+        try {
+            return reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
+        } catch (RuntimeException e) {
+            log.warn("Reconciliation of zero-pending job {} failed this sweep, will retry: {}",
+                    job.getId(), e.getMessage());
+            return null;
+        } finally {
+            releasePerJobLock(job.getId());
+        }
+    }
+
+    // Fails closed like ScheduleJob.acquireExecutionLock: an unreachable Redis means "skip this
+    // job this sweep" rather than reconciling without the cross-replica guard.
+    private boolean acquirePerJobLock(int jobId) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (DataAccessException e) {
+            log.warn("Could not reach Redis for the reconciliation lock on job {}: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+
+    private void releasePerJobLock(int jobId) {
+        try {
+            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
+        } catch (DataAccessException e) {
+            log.warn("Could not release the reconciliation lock on job {} (TTL will clear it): {}", jobId, e.getMessage());
         }
     }
 
@@ -101,13 +208,34 @@ public class JobReconciliationSweep implements org.quartz.Job {
     }
 
     private void reconcileTrigger(Job job) {
+        if (!ACTIVE_STATUSES.contains(job.getStatus())) {
+            return;
+        }
+        if (job.getWorkspace() == null) {
+            log.warn("Job {} has no active workspace, cancelling orphaned job", job.getId());
+            try {
+                job.setStatus(JobStatus.cancelled);
+                jobRepository.save(job);
+                for (Step step : stepRepository.findByJobId(job.getId())) {
+                    if (step.getStatus() == JobStatus.pending || step.getStatus() == JobStatus.running || step.getStatus() == JobStatus.queue) {
+                        step.setStatus(JobStatus.cancelled);
+                        stepRepository.save(step);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to cancel orphaned job {} during sweep: {}", job.getId(), e.getMessage(), e);
+            }
+            return;
+        }
         try {
             JobKey key = new JobKey(PREFIX_JOB_CONTEXT + job.getId());
             if (!scheduler.checkExists(key)) {
                 log.warn("Job {} has no Quartz trigger despite status {}, recreating it", job.getId(), job.getStatus());
                 scheduleJobService.createJobContext(job);
+                metrics.quartzTriggerRecreated();
             }
         } catch (ObjectAlreadyExistsException e) {
+            metrics.quartzTriggerRace();
             log.info("Job {}'s trigger was recreated by another cluster member first, ignoring", job.getId());
         } catch (ParseException | SchedulerException e) {
             log.warn("Could not reconcile trigger for Job {}, will retry next sweep: {}", job.getId(), e.getMessage());
@@ -115,7 +243,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
     }
 
     // Fails a job whose executor heartbeat has expired. Skips jobs younger than
-    // HEARTBEAT_GRACE_PERIOD so a freshly-dispatched job gets a full refresh cycle first. Unlike
+    // heartbeatGracePeriod so a freshly-dispatched job gets a full refresh cycle first. Unlike
     // most Redis errors elsewhere in this codebase, an unreachable Redis here does nothing rather
     // than assuming the job is dead - presuming a live job dead risks failing it mid-apply.
     private void failIfExecutorHeartbeatExpired(Job job, boolean redisRecentlyRestarted) {
@@ -123,7 +251,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
             return;
         }
         Duration age = Duration.between(job.getUpdatedDate().toInstant(), Instant.now());
-        if (age.compareTo(HEARTBEAT_GRACE_PERIOD) < 0) {
+        if (age.compareTo(heartbeatGracePeriod) < 0) {
             return;
         }
         if (redisRecentlyRestarted) {
@@ -143,7 +271,13 @@ public class JobReconciliationSweep implements org.quartz.Job {
         }
 
         log.warn("Job {} has no executor heartbeat after {}, the executor that had it is gone - failing it", job.getId(), age);
-        jobRepository.updateStatusById(JobStatus.failed, job.getId());
+        int rowsUpdated = jobRepository.updateStatusByIdAndStatusIn(
+                JobStatus.failed, job.getId(), List.of(JobStatus.queue, JobStatus.running));
+        if (rowsUpdated == 0) {
+            log.info("Job {} is no longer in queue or running status in DB, skipping heartbeat failure", job.getId());
+            return;
+        }
+        job.setStatus(JobStatus.failed);
         for (Step step : stepRepository.findByJobId(job.getId())) {
             if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
                 step.setStatus(JobStatus.failed);

@@ -4,11 +4,13 @@ import {
   FlatJob,
   FlatJobHistory,
   FlatVariable,
+  JobVia,
   Resource,
   Schedule,
   Template,
   VcsType,
   StateOutputValue,
+  formatJobVia,
 } from "../types";
 import { getIaCNameById } from "./Workspaces";
 import { relativeTime } from "@/modules/utils/dates";
@@ -113,10 +115,14 @@ export async function setupWorkspaceIncludes(
           })
         );
         break;
-      case include.JOB:
+      case include.JOB: {
+        const jobVia = element.attributes?.via;
+        const isNonUi = jobVia && jobVia !== JobVia.Ui && jobVia !== "UI";
         jobs.push({
           id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          title: isNonUi
+            ? "Triggered via " + formatJobVia(jobVia)
+            : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
           latestChange: relativeTime(element.attributes.createdDate),
@@ -124,16 +130,22 @@ export async function setupWorkspaceIncludes(
         });
         setLastRun(element.attributes.updatedDate);
         break;
-      case include.HISTORY:
+      }
+      case include.HISTORY: {
         console.log(element);
+        const historyVia = element.attributes?.via;
+        const isNonUi = historyVia && historyVia !== JobVia.Ui && historyVia !== "UI";
         history.push({
           id: element.id,
-          title: "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          title: isNonUi
+            ? "Triggered via " + formatJobVia(historyVia)
+            : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
           relativeDate: relativeTime(element.attributes.createdDate),
           createdDate: element.attributes.createdDate,
           ...element.attributes,
         });
         break;
+      }
 
       case include.SCHEDULE:
         schedule.push({

@@ -37,4 +37,7 @@ public class ExecutorContext {
     private boolean tofu;
     private HashMap<String, String> environmentVariables;
     private HashMap<String, String> variables;
+    private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext> policyList;
+    private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyExemptionContext> policyExemptionList;
 }
+

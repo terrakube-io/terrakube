@@ -83,10 +83,12 @@ public class TeamTokenController {
             permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
             permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
             permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
         });
 
         if (groups.contains(instanceOwner)) {
             permissions.setManagePermission(true);
+            permissions.setManagePolicies(true);
         }
 
         log.debug("Permissions: {}", permissions);
@@ -112,7 +114,13 @@ public class TeamTokenController {
             permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
             permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
             permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
         });
+
+        if (groups.contains(instanceOwner)) {
+            permissions.setManagePermission(true);
+            permissions.setManagePolicies(true);
+        }
 
         workspaceRepository.findById(UUID.fromString(workspaceId)).ifPresent(workspace -> {
             workspace.getAccess().forEach(access -> {
@@ -191,5 +199,6 @@ public class TeamTokenController {
         private boolean planJob;
         private boolean approveJob;
         private boolean managePermission;
+        private boolean managePolicies;
     }
 }

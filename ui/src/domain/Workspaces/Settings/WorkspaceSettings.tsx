@@ -1,4 +1,5 @@
 import { WorkspaceGeneral } from "./General";
+import { WorkspacePolicies } from "./Policies";
 import { WorkspaceLocking } from "./Locking";
 import { WorkspaceSSHKey } from "./SSHKey";
 import { WorkspaceWebhook } from "./Webhook";
@@ -12,6 +13,7 @@ type Props = {
   workspace: Workspace;
   orgTemplates: Template[];
   manageWorkspace: boolean;
+  planJob?: boolean;
   vcsProvider?: VcsType;
   onWorkspaceUpdate?: () => void;
   activeSection: string;
@@ -21,6 +23,7 @@ export const WorkspaceSettings = ({
   workspace,
   orgTemplates,
   manageWorkspace,
+  planJob = false,
   vcsProvider,
   onWorkspaceUpdate,
   activeSection,
@@ -32,6 +35,15 @@ export const WorkspaceSettings = ({
   };
 
   switch (activeSection) {
+    case "policies":
+      return (
+        <WorkspacePolicies
+          workspace={workspace}
+          manageWorkspace={manageWorkspace}
+          planJob={planJob}
+          onWorkspaceUpdate={handleWorkspaceUpdate}
+        />
+      );
     case "locking":
       return (
         <WorkspaceLocking

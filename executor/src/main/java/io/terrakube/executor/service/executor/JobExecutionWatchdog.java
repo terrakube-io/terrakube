@@ -55,6 +55,7 @@ public class JobExecutionWatchdog {
     void markBusy(TerraformJob job) {
         busySince.set(Instant.now());
         currentJob.set(job);
+        refreshHeartbeat();
     }
 
     void markFree() {
@@ -83,7 +84,9 @@ public class JobExecutionWatchdog {
             return;
         }
         try {
-            redisTemplate.opsForValue().set(HEARTBEAT_PREFIX + job.getJobId(), "1", HEARTBEAT_TTL);
+            if (redisTemplate != null && redisTemplate.opsForValue() != null) {
+                redisTemplate.opsForValue().set(HEARTBEAT_PREFIX + job.getJobId(), "1", HEARTBEAT_TTL);
+            }
         } catch (DataAccessException e) {
             log.warn("Could not refresh heartbeat for Job {}: {}", job.getJobId(), e.getMessage());
         }

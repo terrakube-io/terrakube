@@ -113,4 +113,12 @@ public class Organization {
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<NotificationConfiguration> notificationConfiguration;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<io.terrakube.api.rs.policy.PolicySet> policySet;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<io.terrakube.api.rs.policy.PolicyExemption> policyExemption;
 }

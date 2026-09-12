@@ -87,6 +87,8 @@ public class ExecutorService {
     private ReferenceRepository referenceRepository;
     @Autowired
     private AddressRepository addressRepository;
+    @Autowired
+    private io.terrakube.api.plugin.policy.PolicyResolutionService policyResolutionService;
 
     public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
@@ -167,7 +169,8 @@ public class ExecutorService {
         // CLI/API workspace is created with) and would NPE later inside the executor when
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
-        if ("remote-content".equals(executorContext.getBranch())
+        if (!FlowType.policyEvaluation.name().equals(flow.getType())
+                && "remote-content".equals(executorContext.getBranch())
                 && (executorContext.getSource() == null || executorContext.getSource().isBlank()
                         || "empty".equals(executorContext.getSource()))) {
             throw new ExecutionException(
@@ -202,6 +205,10 @@ public class ExecutorService {
                 .setFolder(job.getWorkspace().getFolder() != null ? job.getWorkspace().getFolder().split(",")[0] : "/");
         executorContext.setRefresh(job.isRefresh());
         executorContext.setRefreshOnly(job.isRefreshOnly());
+        if (policyResolutionService != null) {
+            executorContext.setPolicyList(policyResolutionService.resolvePoliciesForJob(job));
+            executorContext.setPolicyExemptionList(policyResolutionService.resolveExemptionsForJob(job));
+        }
         executorContext = validateJobAddress(executorContext, job);
         if (executorContext.getEnvironmentVariables().containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
             ephemeralExecutorService.send(job, executorContext);
@@ -216,14 +223,14 @@ public class ExecutorService {
         for (Variable variable : variableList) {
             if (variable.getCategory() == null) {
                 throw new ExecutionException(String.format(
-                        "Cannot run job %s: workspace '%s' has variable '%s' with no category (expected TERRAFORM or ENV). "
+                        "Cannot run job %s: workspace '%s' has variable '%s' with no category (expected TERRAFORM, ENV or POLICY). "
                                 + "Update the variable's category before retrying.",
                         job.getId(), job.getWorkspace().getName(), variable.getKey()));
             }
             if (Category.TERRAFORM.equals(variable.getCategory())) {
                 log.info("Adding terraform variable, Key: {}", variable.getKey());
                 terraformVariables.put(variable.getKey(), variable.getValue());
-            } else {
+            } else if (Category.ENV.equals(variable.getCategory())) {
                 log.info("Adding environment variable, Key: {}", variable.getKey());
                 environmentVariables.put(variable.getKey(), variable.getValue());
             }
@@ -302,7 +309,7 @@ public class ExecutorService {
         if (workspace.getVcs() != null || workspace.getSsh() != null) {
             return;
         }
-        if (resolvedSource == null || resolvedSource.isBlank()) {
+        if (resolvedSource == null || resolvedSource.isBlank() || "empty".equals(resolvedSource)) {
             return;
         }
         log.info("Persisting resolved configuration source onto job {} for remote-content workspace",

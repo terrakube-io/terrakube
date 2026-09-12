@@ -110,6 +110,9 @@ public class NotificationConfiguration extends GenericAuditFields {
     // NOT NULL. Derive it from the workspace whenever the client didn't set it
     // directly (the org-scoped create path, organization/{orgId}/notificationConfiguration,
     // already sets it from its own immediate parent).
+    @OneToMany(mappedBy = "notificationConfiguration", fetch = FetchType.LAZY)
+    private List<io.terrakube.api.rs.policy.PolicySet> policySet;
+
     @PrePersist
     @PreUpdate
     private void syncOrganizationFromWorkspace() {

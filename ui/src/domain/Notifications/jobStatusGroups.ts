@@ -12,7 +12,7 @@ type JobStatusGroup = {
   label: string;
   color: string;
   icon: typeof CheckCircleOutlined;
-  statuses: { value: JobStatus; label: string }[];
+  statuses: { value: JobStatus; label: string; hint?: string }[];
 };
 
 export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
@@ -21,7 +21,13 @@ export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
     label: "Needs Attention",
     color: "orange",
     icon: ClockCircleOutlined,
-    statuses: [{ value: JobStatus.WaitingApproval, label: "Waiting for Approval" }],
+    statuses: [
+      {
+        value: JobStatus.WaitingApproval,
+        label: "Waiting for Approval",
+        hint: "Includes manual run approvals and OPA Soft-Mandatory policy reviews",
+      },
+    ],
   },
   {
     key: "completed",
@@ -39,7 +45,11 @@ export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
     color: "red",
     icon: ExclamationCircleOutlined,
     statuses: [
-      { value: JobStatus.Failed, label: "Failed" },
+      {
+        value: JobStatus.Failed,
+        label: "Failed",
+        hint: "Includes run errors and OPA Hard-Mandatory policy violations",
+      },
       { value: JobStatus.Rejected, label: "Rejected" },
       { value: JobStatus.Cancelled, label: "Cancelled" },
     ],

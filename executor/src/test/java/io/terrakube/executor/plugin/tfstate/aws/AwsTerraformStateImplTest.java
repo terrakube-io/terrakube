@@ -119,6 +119,28 @@ class AwsTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFile_PathStyleOnByDefaultWithEndpoint(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("http://minio:9000");
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("use_path_style = true"), "Path style stays on unless explicitly disabled");
+    }
+
+    @Test
+    void testGetBackendStateFile_PathStyleCanBeDisabled(@TempDir Path tempDir) throws IOException {
+        awsTerraformState.setEndpoint("https://oss-me-central-1.aliyuncs.com");
+        awsTerraformState.setPathStyleAccessEnabled(false);
+
+        awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
+
+        String content = FileUtils.readFileToString(new File(tempDir.toFile(), "aws_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("use_path_style = false"),
+                "Stores that reject path style, such as Alibaba OSS, need virtual hosted style here too");
+    }
+
+    @Test
     void testGetBackendStateFile_PessimisticConstraintWithEndpoint(@TempDir Path tempDir) throws IOException {
         awsTerraformState.setEndpoint("http://minio:9000");
 

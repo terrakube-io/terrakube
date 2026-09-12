@@ -41,6 +41,7 @@ const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import {
   Action,
   ActionWithSettings,
@@ -56,6 +57,7 @@ import {
 } from "../types.js";
 import { CLIDriven } from "../Workspaces/CLIDriven";
 import { ResourceDrawer } from "../Workspaces/ResourceDrawer";
+import { RunTriggers } from "../Workspaces/RunTriggers";
 import { Schedules } from "../Workspaces/Schedules";
 import { Tags } from "../Workspaces/Tags";
 import { Variables } from "../Workspaces/Variables";
@@ -85,10 +87,12 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "4": "Variables",
   "5": "Schedules",
   "6": "Settings",
+  "7": "Run Triggers",
 };
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   general: "General",
+  policies: "Policies",
   locking: "Locking",
   sshkey: "SSH Key",
   webhook: "Webhook",
@@ -299,6 +303,9 @@ export const WorkspaceDetails = ({
         break;
       case "6":
         navigate(`/organizations/${organizationId}/workspaces/${id}/settings`);
+        break;
+      case "7":
+        navigate(`/organizations/${organizationId}/workspaces/${id}/run-triggers`);
         break;
       default:
         break;
@@ -733,6 +740,15 @@ export const WorkspaceDetails = ({
         ) : (
           <p>Loading...</p>
         );
+      case "7":
+        return (
+          <RunTriggers
+            organizationId={organizationId!}
+            workspaceId={id!}
+            workspaceName={workspaceName}
+            manageWorkspace={manageWorkspace}
+          />
+        );
       case "6":
         return (
           <Suspense fallback={<LoadingFallback />}>
@@ -741,6 +757,7 @@ export const WorkspaceDetails = ({
               vcsProvider={vcsProvider}
               orgTemplates={orgTemplates}
               manageWorkspace={manageWorkspace}
+              planJob={planJob}
               onWorkspaceUpdate={() => loadWorkspace(false)}
               activeSection={settingsSection || "general"}
             />
@@ -874,6 +891,12 @@ export const WorkspaceDetails = ({
                   </>
                 )}
               </Typography.Text>
+              <PolicyStatusTag
+                status={workspace.attributes?.policyComplianceStatus}
+                organizationId={organizationId}
+                workspaceId={id}
+                clickable
+              />
               <Typography.Text>
                 <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
               </Typography.Text>

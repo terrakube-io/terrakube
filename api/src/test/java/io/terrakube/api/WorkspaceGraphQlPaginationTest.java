@@ -80,7 +80,7 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
             assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
             assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
                     .as(response.asPrettyString()).containsExactly("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
-            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isEqualTo(4);
+            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords")).isEqualTo(4);
         }
     }
 
@@ -104,6 +104,30 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
         assertThat(populated.jsonPath().getList("errors")).as(populated.asPrettyString()).isNull();
         assertThat(populated.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
                 .containsExactly(assigned.getName());
+    }
+
+    @Test
+    void customRoleTeamWithoutManageWorkspaceCannotReadProjectWorkspaces() {
+        // PROJECT_TEAM_MEMBER is a "simple" org team with manage_workspace=false and no project access.
+        String memberToken = generatePAT("PROJECT_TEAM_MEMBER");
+        Map<String, Object> variables = Map.of(
+                "organizationIds", List.of(ORGANIZATION_ID.toString()), "first", "20", "after", "0",
+                "sort", "name,id", "allFilter", "name==\"native-page-*\"",
+                "filter", "name==\"native-page-*\"", "completedFilter", "lastJobStatus==\"completed\"");
+        Response before = execute(variables, memberToken);
+        assertThat(before.jsonPath().getList("errors")).as(before.asPrettyString()).isNull();
+        assertThat(before.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .containsExactly("native-page-alpha", "native-page-bravo", "native-page-charlie");
+
+        Workspace assigned = created.getFirst();
+        assigned.setProject(projectRepository.findById(UUID.fromString("a1b2c3d4-e5f6-7890-abcd-ef1234567890")).orElseThrow());
+        workspaceRepository.saveAndFlush(assigned);
+
+        Response after = execute(variables, memberToken);
+        assertThat(after.jsonPath().getList("errors")).as(after.asPrettyString()).isNull();
+        assertThat(after.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .as(after.asPrettyString()).containsExactly("native-page-bravo", "native-page-charlie");
+        assertThat(after.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isEqualTo(2);
     }
 
     @Test

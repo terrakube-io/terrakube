@@ -90,7 +90,9 @@ public class ScheduleJobService {
         log.info("Create Job Context {}", jobDetail.getKey());
 
         Workspace workspace = job.getWorkspace();
-        workspaceRepository.save(workspace);
+        if (workspace != null) {
+            workspaceRepository.save(workspace);
+        }
         scheduler.scheduleJob(jobDetail, trigger);
         scheduler.triggerJob(jobDetail.getKey());
     }

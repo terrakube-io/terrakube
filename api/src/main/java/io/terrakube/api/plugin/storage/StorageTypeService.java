@@ -36,4 +36,10 @@ public interface StorageTypeService {
     void deleteWorkspaceStateData(String organizationId, String workspaceId);
 
     boolean migrateToOrganization(String organizationId, String workspaceId, String migrateToOrganizationId);
+
+    void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson);
+
+    String getPolicyEvaluation(String storageUri);
+
+    void deletePolicyEvaluation(String storageUri);
 }

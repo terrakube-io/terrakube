@@ -1,5 +1,5 @@
 {
-  "query": "query WorkspacePage(\n      $organizationIds: [String]\n      $first: StringOrInt\n      $after: StringOrInt\n      \n      $sort: String\n      \n      $waitingApprovalFilter: String\n      $failedFilter: String\n      $pendingFilter: String\n      $queueFilter: String\n      $runningFilter: String\n      $completedFilter: String\n      $neverExecutedFilter: String\n    ) {\n      organization(ids: $organizationIds) {\n        edges {\n          node {\n            name\n            workspace(first: $first, after: $after,  sort: $sort) {\n              edges {\n                node {\n                  id\n                  name\n                  description\n                  source\n                  branch\n                  terraformVersion\n                  iacType\n                  lastJobStatus\n                  lastJobDate\n                  locked\n                  workspaceTag { edges { node { tagId } } }\n                  project { edges { node { id name } } }\n                }\n              }\n              pageInfo { endCursor hasNextPage totalRecords }\n            }\n            all: workspace(first: \"1\") { pageInfo { totalRecords } }\n            waitingApproval: workspace(first: \"1\", filter: $waitingApprovalFilter) { pageInfo { totalRecords } }\n            failed: workspace(first: \"1\", filter: $failedFilter) { pageInfo { totalRecords } }\n            pending: workspace(first: \"1\", filter: $pendingFilter) { pageInfo { totalRecords } }\n            queue: workspace(first: \"1\", filter: $queueFilter) { pageInfo { totalRecords } }\n            running: workspace(first: \"1\", filter: $runningFilter) { pageInfo { totalRecords } }\n            completed: workspace(first: \"1\", filter: $completedFilter) { pageInfo { totalRecords } }\n            neverExecuted: workspace(first: \"1\", filter: $neverExecutedFilter) { pageInfo { totalRecords } }\n          }\n        }\n      }\n    }",
+  "query": "query WorkspacePage(\n      $organizationIds: [String]\n      $first: StringOrInt\n      $after: StringOrInt\n      \n      $sort: String\n      $status_waitingApproval: String\n      $status_failed: String\n      $status_pending: String\n      $status_queue: String\n      $status_running: String\n      $status_completed: String\n      $status_NeverExecuted: String\n      $policy_COMPLIANT: String\n      $policy_NON_COMPLIANT: String\n      $policy_EXEMPTED: String\n      $policy_UNKNOWN: String\n    ) {\n      organization(ids: $organizationIds) {\n        edges {\n          node {\n            name\n            workspace(first: $first, after: $after,  sort: $sort) {\n              edges {\n                node {\n                  id\n                  name\n                  description\n                  source\n                  branch\n                  terraformVersion\n                  iacType\n                  lastJobStatus\n                  lastJobDate\n                  locked\n                  policyComplianceStatus\n                  workspaceTag { edges { node { tagId } } }\n                  project { edges { node { id name } } }\n                }\n              }\n              pageInfo { endCursor hasNextPage totalRecords }\n            }\n            statusAll: workspace(first: \"1\") { pageInfo { totalRecords } }\n            status_waitingApproval: workspace(first: \"1\", filter: $status_waitingApproval) { pageInfo { totalRecords } }\n            status_failed: workspace(first: \"1\", filter: $status_failed) { pageInfo { totalRecords } }\n            status_pending: workspace(first: \"1\", filter: $status_pending) { pageInfo { totalRecords } }\n            status_queue: workspace(first: \"1\", filter: $status_queue) { pageInfo { totalRecords } }\n            status_running: workspace(first: \"1\", filter: $status_running) { pageInfo { totalRecords } }\n            status_completed: workspace(first: \"1\", filter: $status_completed) { pageInfo { totalRecords } }\n            status_NeverExecuted: workspace(first: \"1\", filter: $status_NeverExecuted) { pageInfo { totalRecords } }\n            policyAll: workspace(first: \"1\") { pageInfo { totalRecords } }\n            policy_COMPLIANT: workspace(first: \"1\", filter: $policy_COMPLIANT) { pageInfo { totalRecords } }\n            policy_NON_COMPLIANT: workspace(first: \"1\", filter: $policy_NON_COMPLIANT) { pageInfo { totalRecords } }\n            policy_EXEMPTED: workspace(first: \"1\", filter: $policy_EXEMPTED) { pageInfo { totalRecords } }\n            policy_UNKNOWN: workspace(first: \"1\", filter: $policy_UNKNOWN) { pageInfo { totalRecords } }\n          }\n        }\n      }\n    }",
   "variables": {
     "organizationIds": [
       "d9b58bd3-f3fc-4056-a026-1163297e80a8"
@@ -7,12 +7,16 @@
     "first": "20",
     "after": "0",
     "sort": "name,id",
-    "waitingApprovalFilter": "lastJobStatus==\"waitingApproval\"",
-    "failedFilter": "lastJobStatus==\"failed\"",
-    "pendingFilter": "lastJobStatus==\"pending\"",
-    "queueFilter": "lastJobStatus==\"queue\"",
-    "runningFilter": "lastJobStatus==\"running\"",
-    "completedFilter": "lastJobStatus==\"completed\"",
-    "neverExecutedFilter": "(lastJobStatus=isnull=true,lastJobStatus==NeverExecuted)"
+    "status_waitingApproval": "lastJobStatus==\"waitingApproval\"",
+    "status_failed": "lastJobStatus==\"failed\"",
+    "status_pending": "lastJobStatus==\"pending\"",
+    "status_queue": "lastJobStatus==\"queue\"",
+    "status_running": "lastJobStatus==\"running\"",
+    "status_completed": "lastJobStatus==\"completed\"",
+    "status_NeverExecuted": "(lastJobStatus=isnull=true,lastJobStatus==NeverExecuted)",
+    "policy_COMPLIANT": "policyComplianceStatus==\"COMPLIANT\"",
+    "policy_NON_COMPLIANT": "policyComplianceStatus==\"NON_COMPLIANT\"",
+    "policy_EXEMPTED": "policyComplianceStatus==\"EXEMPTED\"",
+    "policy_UNKNOWN": "(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)"
   }
 }

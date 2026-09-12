@@ -132,4 +132,24 @@ class GcpStorageTypeServiceImplTest {
         assertTrue(result);
         verify(storage, atLeastOnce()).copy(any(Storage.CopyRequest.class));
     }
+
+    @Test
+    void testPolicyEvaluationLifecycle() {
+        String uri = "policy-evaluations/123/violations.json";
+        String json = "{\"violations\":[]}";
+
+        gcpStorageTypeService.uploadPolicyEvaluation(uri, json);
+        verify(storage).create(any(BlobInfo.class), eq(json.getBytes(StandardCharsets.UTF_8)));
+
+        Blob blob = mock(Blob.class);
+        when(storage.get(BlobId.of(bucketName, uri))).thenReturn(blob);
+        when(blob.exists()).thenReturn(true);
+        when(blob.getContent()).thenReturn(json.getBytes(StandardCharsets.UTF_8));
+
+        String retrieved = gcpStorageTypeService.getPolicyEvaluation(uri);
+        assertEquals(json, retrieved);
+
+        gcpStorageTypeService.deletePolicyEvaluation(uri);
+        verify(storage).delete(BlobId.of(bucketName, uri));
+    }
 }

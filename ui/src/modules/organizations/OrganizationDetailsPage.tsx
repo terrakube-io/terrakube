@@ -38,11 +38,13 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   const [sortOption, setSortOption] = useState<WorkspaceSortOption>(() => getStoredWorkspaceSortOption());
   const [tags, setTags] = useState<TagModel[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [pageInfo, setPageInfo] = useState<WorkspacePageInfo>({ hasNextPage: false, totalRecords: 0 });
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [policyCounts, setPolicyCounts] = useState<Record<string, number>>({});
   const [debouncedSearch, setDebouncedSearch] = useState(filterState.search);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation>();
@@ -56,7 +58,16 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
 
   useEffect(() => {
     setPage(1);
-  }, [id, debouncedSearch, filterState.status, filterState.tagIds, filterState.projectId, sortOption, pageSize]);
+  }, [
+    id,
+    debouncedSearch,
+    filterState.status,
+    filterState.policyStatus,
+    filterState.tagIds,
+    filterState.projectId,
+    sortOption,
+    pageSize,
+  ]);
 
   const request = useMemo<WorkspacePageRequest | null>(() => {
     if (!id) return null;
@@ -66,11 +77,22 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       after: (page - 1) * pageSize,
       search: debouncedSearch,
       status: filterState.status,
+      policyStatus: filterState.policyStatus,
       tagIds: filterState.tagIds,
       projectId: filterState.projectId,
       sort: sortOption,
     };
-  }, [id, page, pageSize, debouncedSearch, filterState.status, filterState.tagIds, filterState.projectId, sortOption]);
+  }, [
+    id,
+    page,
+    pageSize,
+    debouncedSearch,
+    filterState.status,
+    filterState.policyStatus,
+    filterState.tagIds,
+    filterState.projectId,
+    sortOption,
+  ]);
 
   const fetchPage = useCallback(
     async (includeStatusCounts = true) => {
@@ -97,7 +119,10 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       }
       loadedOnce.current = true;
       setPageInfo(response.data.pageInfo);
-      if (includeStatusCounts) setStatusCounts(response.data.statusCounts);
+      if (includeStatusCounts) {
+        setStatusCounts(response.data.statusCounts);
+        setPolicyCounts(response.data.policyCounts);
+      }
       setError(undefined);
       setLoading(false);
     },
@@ -114,13 +139,23 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   useEffect(() => {
     if (!id) return;
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, id);
+    setProjectsLoaded(false);
 
     projectService.listProjects(id).then((response) => {
       if (!response.isError && response.data) {
         setProjects(response.data.map((project) => ({ id: project.id, name: project.name })));
+        setProjectsLoaded(true);
       }
     });
   }, [id, setOrganizationName]);
+
+  // The project filter is kept in sessionStorage across organizations; drop it when it points to a
+  // project that does not belong to this organization, otherwise the server-side filter matches nothing.
+  useEffect(() => {
+    const { projectId, setProjectId } = filterState;
+    if (!projectsLoaded || !projectId || projectId === "__unassigned__") return;
+    if (!projects.some((project) => project.id === projectId)) setProjectId(null);
+  }, [projectsLoaded, projects, filterState.projectId]);
 
   usePolling(() => fetchPage(false), { interval: 10000, enabled: Boolean(request), immediate: false });
 
@@ -199,6 +234,9 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             statusCounts={statusCounts}
             status={filterState.status}
             onStatusChange={filterState.setStatus}
+            policyStatus={filterState.policyStatus}
+            onPolicyStatusChange={filterState.setPolicyStatus}
+            policyCounts={policyCounts}
             search={filterState.search}
             onSearchChange={filterState.setSearch}
             tagIds={filterState.tagIds}
@@ -235,7 +273,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
                     aria-label={`Open workspace ${item.name}`}
                     style={{ position: "absolute", inset: 0, zIndex: 1 }}
                   />
-                  <WorkspaceCard tags={tags} item={item} />
+                  <WorkspaceCard tags={tags} item={item} organizationId={id} />
                 </List.Item>
               )}
             />

@@ -65,7 +65,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Workspace workspace) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
-        result.setVia("GitLab");
+        result.setVia(JobVia.GITLAB.getValue());
         try {
             // Verify the GitLab token
             String tokenHeader = headers.get("x-gitlab-token");
@@ -759,7 +759,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         }
     }
 
-    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
+    public void sendCommitStatus(Job job, String customContext, GitlabCommitStatus commitStatus, String description) {
         Workspace workspace = job.getWorkspace();
         String jobUrl = String.format("%s/organizations/%s/workspaces/%s/runs/%s", uiUrl,
                 workspace.getOrganization().getId(), workspace.getId(), job.getId());
@@ -767,27 +767,6 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         try {
             String projectId = getGitlabProjectId(ownerAndRepos, job.getWorkspace().getVcs().getAccessToken(), job.getWorkspace().getVcs().getApiUrl());
-            GitlabCommitStatus commitStatus = GitlabCommitStatus.pending;
-            String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
-                    + workspace.getName();
-
-            // Determine the commit status based on jobStatus
-            switch (jobStatus) {
-                case completed:
-                    commitStatus = GitlabCommitStatus.success;
-                    break;
-                case failed:
-                case rejected:
-                case cancelled:
-                    commitStatus = GitlabCommitStatus.failed;
-                    break;
-                case unknown:
-                    commitStatus = GitlabCommitStatus.failed;
-                    break;
-                default:
-                    break;
-            }
-            String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
 
             // Create WebClient instance
             WebClient webClient = webClientBuilder
@@ -802,9 +781,9 @@ public class GitLabWebhookService extends WebhookServiceBase {
             // Create request body
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("state", commitStatus.toString());
-            requestBody.put("name", commitStatusContext);
+            requestBody.put("name", customContext);
             requestBody.put("target_url", jobUrl);
-            requestBody.put("description", commitStatusDescription);
+            requestBody.put("description", description != null ? description : "");
 
             // Send POST request
             String response = webClient.post()
@@ -823,7 +802,32 @@ public class GitLabWebhookService extends WebhookServiceBase {
             }
             log.error("Error sending commit status to GitLab", e);
         }
+    }
 
+    public void sendCommitStatus(Job job, JobStatus jobStatus, String runSummary) {
+        Workspace workspace = job.getWorkspace();
+        GitlabCommitStatus commitStatus = GitlabCommitStatus.pending;
+        String commitStatusContext = "Terrakube - " + workspace.getOrganization().getName() + " - "
+                + workspace.getName();
+
+        // Determine the commit status based on jobStatus
+        switch (jobStatus) {
+            case completed:
+                commitStatus = GitlabCommitStatus.success;
+                break;
+            case failed:
+            case rejected:
+            case cancelled:
+                commitStatus = GitlabCommitStatus.failed;
+                break;
+            case unknown:
+                commitStatus = GitlabCommitStatus.failed;
+                break;
+            default:
+                break;
+        }
+        String commitStatusDescription = buildCommitStatusDescription(jobStatus, runSummary);
+        sendCommitStatus(job, commitStatusContext, commitStatus, commitStatusDescription);
     }
 
     /**

@@ -157,4 +157,25 @@ class AzureStorageTypeServiceImplTest {
         assertTrue(result);
         verify(targetBlobClient, atLeastOnce()).upload(any(BinaryData.class), eq(true));
     }
+
+    @Test
+    void testPolicyEvaluationLifecycle() {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.exists()).thenReturn(true);
+        String uri = "policy-evaluations/123/violations.json";
+        String json = "{\"violations\":[]}";
+
+        when(containerClient.getBlobClient(uri)).thenReturn(blobClient);
+        when(blobClient.exists()).thenReturn(true);
+        when(blobClient.downloadContent()).thenReturn(BinaryData.fromString(json));
+
+        azureStorageTypeService.uploadPolicyEvaluation(uri, json);
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
+
+        String retrieved = azureStorageTypeService.getPolicyEvaluation(uri);
+        assertEquals(json, retrieved);
+
+        azureStorageTypeService.deletePolicyEvaluation(uri);
+        verify(blobClient).delete();
+    }
 }

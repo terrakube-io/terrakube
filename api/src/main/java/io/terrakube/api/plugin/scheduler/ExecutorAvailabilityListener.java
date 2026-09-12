@@ -28,15 +28,18 @@ public class ExecutorAvailabilityListener implements MessageListener {
     private final RedisMessageListenerContainer redisMessageListenerContainer;
     private final JobRepository jobRepository;
     private final ScheduleJobService scheduleJobService;
+    private final io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
     // Initialized to "now" at startup, not zero, so the gauge below doesn't report a huge bogus
     // age before the very first real signal arrives after a fresh deploy.
     private final AtomicLong lastSignalEpochMillis = new AtomicLong(System.currentTimeMillis());
 
     public ExecutorAvailabilityListener(RedisMessageListenerContainer redisMessageListenerContainer,
-            JobRepository jobRepository, ScheduleJobService scheduleJobService, MeterRegistry meterRegistry) {
+            JobRepository jobRepository, ScheduleJobService scheduleJobService, MeterRegistry meterRegistry,
+            io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties) {
         this.redisMessageListenerContainer = redisMessageListenerContainer;
         this.jobRepository = jobRepository;
         this.scheduleJobService = scheduleJobService;
+        this.reconciliationProperties = reconciliationProperties;
         Gauge.builder("executor.availability.age.seconds", lastSignalEpochMillis,
                         signal -> (System.currentTimeMillis() - signal.get()) / 1000.0)
                 .description("Seconds since the executor module last signalled it has capacity available")
@@ -52,7 +55,9 @@ public class ExecutorAvailabilityListener implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         lastSignalEpochMillis.set(System.currentTimeMillis());
         try {
-            Integer nextJobId = jobRepository.findNextDispatchableJobId();
+            Integer nextJobId = reconciliationProperties.isAdmissionGuardEnabled()
+                    ? jobRepository.findNextDispatchableExecutableJobId()
+                    : jobRepository.findNextDispatchableJobId();
             if (nextJobId != null) {
                 scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
             }

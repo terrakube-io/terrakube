@@ -87,11 +87,14 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         try {
             File workspaceCloneFolder = setupWorkspaceDirectory(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId());
-            if (!terraformJob.getBranch().equals("remote-content")) {
+            if ("policyEvaluation".equals(terraformJob.getType())) {
+                log.info("policyEvaluation job detected: bypassing workspace git clone and tar.gz download (headless compliance evaluation)");
+            } else if (!terraformJob.getBranch().equals("remote-content")) {
                 downloadWorkspaceGit(workspaceCloneFolder, terraformJob);
             } else {
                 downloadWorkspaceTarGz(workspaceCloneFolder, terraformJob.getOrganizationId(), terraformJob.getJobId());
             }
+
             if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
                 generateSshFolder(workspaceCloneFolder, terraformJob.getModuleSshKey(), SSH_DIRECTORY_FILE_MODULE);
             }

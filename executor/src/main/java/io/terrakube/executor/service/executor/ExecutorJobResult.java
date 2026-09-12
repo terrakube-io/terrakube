@@ -12,4 +12,6 @@ public class ExecutorJobResult {
     String outputErrorLog;
     int exitCode;
     boolean isPlan;
+    boolean hasSoftMandatoryViolations;
+    String approvalTeam;
 }

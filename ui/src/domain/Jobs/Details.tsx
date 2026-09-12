@@ -1,4 +1,11 @@
-import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  CommentOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Avatar,
@@ -14,7 +21,8 @@ import {
   Typography,
 } from "antd";
 import { AxiosResponse } from "axios";
-import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosAuxiliary } from "../../config/axiosConfig";
 import { useAbortController, usePolling, useStructuredOutputStream } from "../../hooks";
@@ -22,7 +30,7 @@ import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { statusColors } from "../../modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
-import { IncludedItem, Job, JobStep, Workspace } from "../types";
+import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
 import {
   ContextAvailability,
   parseContextAvailability,
@@ -45,6 +53,8 @@ import {
   normalizeUITemplates,
 } from "./structuredPlan";
 import { relativeTime } from "@/modules/utils/dates";
+import { PolicyChecksOutput } from "./PolicyChecksOutput";
+import { PolicyEvaluationContext } from "../types";
 
 type Props = {
   jobId: string;
@@ -79,6 +89,11 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [workspaceVcsId, setWorkspaceVcsId] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const [triggeredBy, setTriggeredBy] = useState<{
+    jobId: number;
+    workspaceId: string;
+    workspaceName: string;
+  } | null>(null);
   // Controlled per-step Collapse open/closed state, keyed by step id. Was previously driven by
   // Collapse's uncontrolled defaultActiveKey with `${item.id}-${item.status}` as the element key -
   // every status transition (pending -> running -> completed) therefore remounted the whole step
@@ -120,6 +135,12 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
+  const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
+  const hasPolicySoftViolations = useMemo(() => {
+    if (!policyEvaluation) return false;
+    if ((policyEvaluation.softMandatoryViolations ?? 0) > 0) return true;
+    return Boolean(policyEvaluation.results?.some((r) => (r.softMandatoryViolations ?? 0) > 0));
+  }, [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
   const [contextEverPersisted, setContextEverPersisted] = useState(false);
@@ -138,7 +159,6 @@ export const DetailsJob = ({ jobId }: Props) => {
   const isAbortError = (error: unknown) => {
     return error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError");
   };
-
 
   const parseIncompleteVariableGuard = (jobOutput?: string): IncompleteVariableGuard | null => {
     if (jobOutput == null) {
@@ -406,6 +426,29 @@ export const DetailsJob = ({ jobId }: Props) => {
     return 0;
   };
 
+  // The upstream run of a job started by a run trigger. Resolved separately because the job
+  // only carries the id, and the link needs the workspace it belongs to. Run triggers never
+  // cross organizations, so the current one is always the right place to look.
+  const upstreamJobId = job?.data?.attributes?.triggeredByJobId;
+  useEffect(() => {
+    if (!upstreamJobId || !organizationId) {
+      setTriggeredBy(null);
+      return;
+    }
+    axiosInstance
+      .get(`organization/${organizationId}/job/${upstreamJobId}?include=workspace`)
+      .then((response) => {
+        const workspace = (response.data.included ?? []).find((item: any) => item.type === "workspace");
+        setTriggeredBy({
+          jobId: upstreamJobId,
+          workspaceId: workspace?.id ?? "",
+          workspaceName: workspace?.attributes?.name ?? "",
+        });
+      })
+      // The upstream run may have been pruned from history; the id alone is still worth showing.
+      .catch(() => setTriggeredBy({ jobId: upstreamJobId, workspaceId: "", workspaceName: "" }));
+  }, [upstreamJobId, organizationId]);
+
   const loadJob = useCallback(async () => {
     const requestId = ++jobRequestRef.current;
     const signal = getJobSignal();
@@ -534,6 +577,9 @@ export const DetailsJob = ({ jobId }: Props) => {
       }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
+      if (response?.data?.policyEvaluation) {
+        setPolicyEvaluation(response.data.policyEvaluation);
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       if (requestId !== contextRequestRef.current) return;
@@ -683,8 +729,32 @@ export const DetailsJob = ({ jobId }: Props) => {
             : null}
           <div>
             <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
-            <h2 style={{ display: "inline" }}>Triggered via UI</h2>
+            <h2 style={{ display: "inline" }}>Triggered via {formatJobVia(job.data.attributes.via)}</h2>
           </div>
+          {triggeredBy && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginTop: 8, marginBottom: 8 }}
+              description={
+                <>
+                  This run started because{" "}
+                  {triggeredBy.workspaceId ? (
+                    <Link
+                      to={`/organizations/${organizationId}/workspaces/${triggeredBy.workspaceId}/runs/${triggeredBy.jobId}`}
+                    >
+                      run #{triggeredBy.jobId} on {triggeredBy.workspaceName}
+                    </Link>
+                  ) : (
+                    <b>run #{triggeredBy.jobId}</b>
+                  )}{" "}
+                  changed state.
+                  {(job.data.attributes.cascadeDepth ?? 0) > 1 &&
+                    ` It is ${job.data.attributes.cascadeDepth} triggers deep in the chain.`}
+                </>
+              }
+            />
+          )}
 
           <Collapse
             items={[
@@ -693,7 +763,7 @@ export const DetailsJob = ({ jobId }: Props) => {
                 label: (
                   <span>
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
-                    <b>{job.data.attributes.createdBy}</b> triggered a run from {job.data.attributes.via || "UI"}{" "}
+                    <b>{job.data.attributes.createdBy}</b> triggered a run from {formatJobVia(job.data.attributes.via)}{" "}
                     {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
                   </span>
                 ),
@@ -746,6 +816,58 @@ export const DetailsJob = ({ jobId }: Props) => {
               },
             ]}
           />
+
+          {policyEvaluation && (
+            <Collapse
+              defaultActiveKey={["policy-guardrails"]}
+              style={{ width: "100%" }}
+              items={[
+                {
+                  key: "policy-guardrails",
+                  label: (
+                    <Space align="center">
+                      <SafetyCertificateOutlined style={{ fontSize: "18px", color: "#722ed1" }} />
+                      <h3 style={{ display: "inline", margin: 0 }}>
+                        Policy Guardrails (OPA)
+                      </h3>
+                      <Tag
+                        color={
+                          (policyEvaluation.hardMandatoryViolations ?? 0) > 0
+                            ? "error"
+                            : (policyEvaluation.softMandatoryViolations ?? 0) > 0
+                            ? "warning"
+                            : "success"
+                        }
+                      >
+                        {(policyEvaluation.hardMandatoryViolations ?? 0) > 0
+                          ? "Failed"
+                          : (policyEvaluation.softMandatoryViolations ?? 0) > 0
+                          ? "Action Required"
+                          : "Compliant"}
+                      </Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <PolicyChecksOutput
+                      policyEvaluation={policyEvaluation}
+                      jobId={jobId}
+                      organizationId={organizationId || job?.data?.relationships?.organization?.data?.id}
+                      workspaceId={job?.data?.relationships?.workspace?.data?.id}
+                      status={job.data.attributes.status}
+                      approvalTeam={job.data.attributes.approvalTeam}
+                      onOverrideSuccess={() => {
+                        void refreshJobDetails();
+                      }}
+                      onRejectSuccess={() => {
+                        void refreshJobDetails();
+                      }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
+
           {steps.length > 0 ? (
             steps.map((item) => {
               const stepLabel = renderStepLabel(item);
@@ -783,7 +905,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             <span />
           )}
 
-          {job.data.attributes.status === "waitingApproval" ? (
+          {job.data.attributes.status === "waitingApproval" && !hasPolicySoftViolations ? (
             <div style={{ margin: "auto", width: "50%", marginTop: "20px" }}>
               <Card
                 title={

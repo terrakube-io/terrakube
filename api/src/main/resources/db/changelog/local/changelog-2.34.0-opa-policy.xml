@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Add manage_policies column to Team table -->
+    <changeSet id="add-manage-policies-to-team" author="terrakube">
+        <addColumn tableName="team">
+            <column name="manage_policies" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <!-- Explicitly update all existing team records to false to prevent Hibernate primitive boolean null mapping errors -->
+        <update tableName="team">
+            <column name="manage_policies" valueBoolean="false"/>
+        </update>
+    </changeSet>
+
+    <!-- 1. Policy Set Table -->
+    <changeSet id="create-table-policy-set" author="terrakube">
+        <createTable tableName="policy_set">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="name" type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="description" type="TEXT"/>
+            <column name="enforcement_level" type="VARCHAR(50)" defaultValue="HARD_MANDATORY"><constraints nullable="false"/></column>
+            <column name="shadow_enforcement_level" type="VARCHAR(50)"/>
+            <column name="override_team" type="VARCHAR(255)"/>
+            <column name="global" type="BOOLEAN" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="repository" type="VARCHAR(1024)"/>
+            <column name="branch" type="VARCHAR(255)" defaultValue="main"/>
+            <column name="folder" type="VARCHAR(1024)" defaultValue="/"/>
+            <column name="vcs_id" type="VARCHAR(36)"><constraints foreignKeyName="fk_policy_set_vcs" references="vcs(id)"/></column>
+            <column name="organization_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_policy_set_org" references="organization(id)"/></column>
+            <column name="notification_configuration_id" type="VARCHAR(36)">
+                <constraints foreignKeyName="fk_policy_set_notification" references="notification_configuration(id)"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_policy_set_org" tableName="policy_set"><column name="organization_id"/></createIndex>
+    </changeSet>
+
+    <!-- 2. Policy Attachment Table -->
+    <changeSet id="create-table-policy-attachment" author="terrakube">
+        <createTable tableName="policy_attachment">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="policy_set_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_attachment_policy_set" references="policy_set(id)"/></column>
+            <column name="workspace_id" type="VARCHAR(36)"><constraints foreignKeyName="fk_attachment_workspace" references="workspace(id)"/></column>
+            <column name="project_id" type="VARCHAR(36)"><constraints foreignKeyName="fk_attachment_project" references="project(id)"/></column>
+            <column name="tag_id" type="VARCHAR(36)">
+                <constraints foreignKeyName="fk_policy_attachment_tag" references="tag(id)"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_attachment_tag_id" tableName="policy_attachment"><column name="tag_id"/></createIndex>
+        <createIndex indexName="idx_attachment_policy_set" tableName="policy_attachment"><column name="policy_set_id"/></createIndex>
+    </changeSet>
+
+    <!-- 3. Policy Evaluation Table -->
+    <changeSet id="create-table-policy-evaluation" author="terrakube">
+        <createTable tableName="policy_evaluation">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="job_id" type="BIGINT"><constraints nullable="false" foreignKeyName="fk_eval_job" references="job(id)"/></column>
+            <column name="step_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_eval_step" references="step(id)"/></column>
+            <column name="status" type="VARCHAR(50)"><constraints nullable="false"/></column>
+            <column name="passed_rules" type="INT" defaultValueNumeric="0"/>
+            <column name="warning_rules" type="INT" defaultValueNumeric="0"/>
+            <column name="soft_mandatory_violations" type="INT" defaultValueNumeric="0"/>
+            <column name="hard_mandatory_violations" type="INT" defaultValueNumeric="0"/>
+            <column name="shadow_hard_violations" type="INT" defaultValueNumeric="0"/>
+            <column name="shadow_soft_violations" type="INT" defaultValueNumeric="0"/>
+            <column name="storage_uri" type="VARCHAR(1024)"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_eval_job" tableName="policy_evaluation"><column name="job_id"/></createIndex>
+    </changeSet>
+
+    <!-- 4. Policy Override Table -->
+    <changeSet id="create-table-policy-override" author="terrakube">
+        <createTable tableName="policy_override">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="evaluation_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_override_eval" references="policy_evaluation(id)"/></column>
+            <column name="overridden_by" type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="overridden_at" type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="justification" type="TEXT"><constraints nullable="false"/></column>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+    </changeSet>
+
+    <!-- 5. Policy Exemption Table -->
+    <changeSet id="create-table-policy-exemption" author="terrakube">
+        <createTable tableName="policy_exemption">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="policy_set_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_exemption_policy_set" references="policy_set(id)"/></column>
+            <column name="rule_id" type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="workspace_id" type="VARCHAR(36)"><constraints foreignKeyName="fk_exemption_workspace" references="workspace(id)"/></column>
+            <column name="project_id" type="VARCHAR(36)"><constraints foreignKeyName="fk_exemption_project" references="project(id)"/></column>
+            <column name="ticket_reference" type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="justification" type="TEXT"><constraints nullable="false"/></column>
+            <column name="expires_at" type="TIMESTAMP"/>
+            <column name="organization_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_exemption_org" references="organization(id)"/></column>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_exemption_org" tableName="policy_exemption"><column name="organization_id"/></createIndex>
+        <createIndex indexName="idx_exemption_ws_rule" tableName="policy_exemption">
+            <column name="workspace_id"/>
+            <column name="rule_id"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- 6. Add policy_compliance_status Column to Workspace Table -->
+    <changeSet id="add-policy-compliance-status-to-workspace" author="terrakube">
+        <addColumn tableName="workspace">
+            <column name="policy_compliance_status" type="VARCHAR(50)" defaultValue="UNKNOWN"/>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- 1. Policy Set Parameter Table -->
+    <changeSet id="create-table-policy-set-parameter" author="terrakube">
+        <createTable tableName="policy_set_parameter">
+            <column name="id" type="VARCHAR(36)"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="policy_set_id" type="VARCHAR(36)"><constraints nullable="false" foreignKeyName="fk_param_policy_set" references="policy_set(id)"/></column>
+            <column name="parameter_key" type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="parameter_value" type="TEXT"><constraints nullable="false"/></column>
+            <column name="description" type="TEXT"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)"/>
+            <column name="updated_by" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_policy_param_set" tableName="policy_set_parameter">
+            <column name="policy_set_id"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- 2. Clean up legacy Category.POLICY variables at organization level -->
+    <changeSet id="cleanup-legacy-policy-category-globalvars" author="terrakube">
+        <delete tableName="globalvar">
+            <where>variable_category = 'POLICY'</where>
+        </delete>
+    </changeSet>
+
+</databaseChangeLog>

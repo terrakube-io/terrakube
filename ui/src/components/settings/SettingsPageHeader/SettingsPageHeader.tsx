@@ -5,11 +5,13 @@ type Props = {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
+  action?: React.ReactNode;
   docUrl?: string;
   divider?: boolean;
 };
 
-export default function SettingsPageHeader({ title, description, actions, docUrl, divider = true }: Props) {
+export default function SettingsPageHeader({ title, description, actions, action, docUrl, divider = true }: Props) {
+  const headerActions = actions ?? action;
   return (
     <>
       <Flex justify="space-between" align="center" wrap gap="middle">
@@ -23,9 +25,9 @@ export default function SettingsPageHeader({ title, description, actions, docUrl
             </Typography.Text>
           )}
         </div>
-        {(actions || docUrl) && (
+        {(headerActions || docUrl) && (
           <Flex align="center" gap="small">
-            {actions}
+            {headerActions}
             {docUrl && (
               <Tooltip title="Open documentation">
                 <Button

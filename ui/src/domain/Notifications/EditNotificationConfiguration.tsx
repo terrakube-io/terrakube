@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, CloseCircleOutlined, LinkOutlined, SendOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, LinkOutlined, SendOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -13,6 +13,7 @@ import {
   Spin,
   Switch,
   Tag,
+  Tooltip,
   Typography,
   message,
   theme,
@@ -435,17 +436,29 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
                     </Space>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
                       {group.statuses.map((status) => (
-                        <Checkbox
-                          key={status.value}
-                          checked={selectedStatuses.includes(status.value)}
-                          onChange={(e) => {
-                            setSelectedStatuses((current) =>
-                              e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
-                            );
-                          }}
-                        >
-                          {status.label}
-                        </Checkbox>
+                        <Space key={status.value} size={4} align="center">
+                          <Checkbox
+                            checked={selectedStatuses.includes(status.value)}
+                            onChange={(e) => {
+                              setSelectedStatuses((current) =>
+                                e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
+                              );
+                            }}
+                          >
+                            {status.label}
+                          </Checkbox>
+                          {status.hint && (
+                            <Tooltip title={status.hint}>
+                              <InfoCircleOutlined
+                                style={{
+                                  color: token.colorTextSecondary,
+                                  fontSize: 12,
+                                  cursor: "help",
+                                }}
+                              />
+                            </Tooltip>
+                          )}
+                        </Space>
                       ))}
                     </div>
                   </div>

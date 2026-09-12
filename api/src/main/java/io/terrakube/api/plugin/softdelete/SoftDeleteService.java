@@ -13,6 +13,7 @@ import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
 
@@ -52,7 +53,22 @@ public class SoftDeleteService {
             }
         }
 
+        disableWorkspaceJobs(workspace);
         deleteWorkspaceStorage(workspace);
+    }
+
+    public void disableWorkspaceJobs(Workspace workspace) {
+        String workspaceId = workspace.getId().toString();
+        List<Integer> activeJobIds = jobRepository.findActiveJobIdsByWorkspace(workspaceId);
+        log.info("Cancelling active jobs {} for workspace {}", activeJobIds, workspaceId);
+        for (Integer jobId : activeJobIds) {
+            try {
+                scheduleJobService.deleteJobContext(jobId);
+                jobRepository.updateStatusById(JobStatus.cancelled, jobId);
+            } catch (Exception e) {
+                log.error("Failed to cancel active job {} on deleted workspace {}: {}", jobId, workspaceId, e.getMessage());
+            }
+        }
     }
 
     public void deleteWorkspaceStorage(Workspace workspace){

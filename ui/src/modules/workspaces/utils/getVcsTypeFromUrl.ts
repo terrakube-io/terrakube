@@ -8,7 +8,12 @@ export default function (normalizedSource: string): VcsType {
   const bitbucketEndpoints = ["bitbucket.org"];
   // Let's just be safe in case the wrong url was passed
   const fixedUrl = formatSshUrl(normalizedSource);
-  const hostname = new URL(fixedUrl).hostname;
+  let hostname: string;
+  try {
+    hostname = new URL(fixedUrl).hostname;
+  } catch {
+    return VcsType.UNKNOWN;
+  }
   // ghe.com uses subdomain
   if (githubEndpoints.includes(hostname) || githubEndpoints.some((h) => hostname.endsWith(h))) return VcsType.GITHUB;
   // visualstudio.com uses subdomin

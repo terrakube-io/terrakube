@@ -30,6 +30,7 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                       lastJobStatus
                       lastJobDate
                       locked
+                      policyComplianceStatus
                       workspaceTag {
                         edges {
                           node {
@@ -91,6 +92,7 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
       normalizedSource: formatSshUrl(element.node.source),
       terraformVersion: element.node.terraformVersion,
       locked: element.node.locked,
+      policyComplianceStatus: element.node.policyComplianceStatus,
       tags: element.node?.workspaceTag?.edges?.map((e: any) => e.node.tagId),
       projectId: element.node?.project?.edges?.[0]?.node?.id,
       projectName: element.node?.project?.edges?.[0]?.node?.name,
@@ -132,34 +134,55 @@ function combineFilters(...filters: (string | undefined)[]): string | undefined 
   return filters.filter(Boolean).join(";") || undefined;
 }
 
-function workspaceFilter(request: WorkspacePageRequest, status = request.status): string | undefined {
+type WorkspaceFilterOverrides = Pick<WorkspacePageRequest, "status" | "policyStatus">;
+
+function workspaceFilter(request: WorkspacePageRequest, overrides: WorkspaceFilterOverrides = {}): string | undefined {
+  const status = overrides.status ?? request.status;
+  const policyStatus = overrides.policyStatus ?? request.policyStatus;
   const search = request.search?.trim();
-  const base = combineFilters(
+  return combineFilters(
     search ? `(name=ini=${quoteRsql(`*${search}*`)},description=ini=${quoteRsql(`*${search}*`)})` : undefined,
     request.tagIds?.length ? `workspaceTag.tagId=in=(${request.tagIds.map(quoteRsql).join(",")})` : undefined,
     request.projectId === "__unassigned__"
       ? "project.id=isnull=true"
       : request.projectId
         ? `project.id==${quoteRsql(request.projectId)}`
-        : undefined
-  );
-
-  return combineFilters(
-    base,
+        : undefined,
     status && status !== "All"
       ? status === "NeverExecuted"
         ? "(lastJobStatus=isnull=true,lastJobStatus==NeverExecuted)"
         : `lastJobStatus==${quoteRsql(status)}`
+      : undefined,
+    policyStatus && policyStatus !== "All"
+      ? policyStatus === "UNKNOWN"
+        ? "(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)"
+        : `policyComplianceStatus==${quoteRsql(policyStatus)}`
       : undefined
   );
 }
+
+const STATUS_COUNT_KEYS = ["waitingApproval", "failed", "pending", "queue", "running", "completed", "NeverExecuted"];
+const POLICY_COUNT_KEYS = ["COMPLIANT", "NON_COMPLIANT", "EXEMPTED", "UNKNOWN"];
 
 async function listWorkspacePage(
   request: WorkspacePageRequest,
   includeStatusCounts = true
 ): Promise<ApiResponse<WorkspacePageResponse>> {
   const filter = workspaceFilter(request);
-  const baseFilter = workspaceFilter(request, "All");
+  // Facet counts: each dimension is counted with every other filter applied, but its own filter varied.
+  const countFilters: Record<string, string | undefined> = includeStatusCounts
+    ? {
+        statusAll: workspaceFilter(request, { status: "All" }),
+        ...Object.fromEntries(
+          STATUS_COUNT_KEYS.map((key) => [`status_${key}`, workspaceFilter(request, { status: key })])
+        ),
+        policyAll: workspaceFilter(request, { policyStatus: "All" }),
+        ...Object.fromEntries(
+          POLICY_COUNT_KEYS.map((key) => [`policy_${key}`, workspaceFilter(request, { policyStatus: key })])
+        ),
+      }
+    : {};
+  const countAliases = Object.keys(countFilters);
   const body = {
     query: `query WorkspacePage(
       $organizationIds: [String]
@@ -167,18 +190,10 @@ async function listWorkspacePage(
       $after: StringOrInt
       ${filter ? "$filter: String" : ""}
       $sort: String
-      ${
-        includeStatusCounts
-          ? `${baseFilter ? "$allFilter: String" : ""}
-      $waitingApprovalFilter: String
-      $failedFilter: String
-      $pendingFilter: String
-      $queueFilter: String
-      $runningFilter: String
-      $completedFilter: String
-      $neverExecutedFilter: String`
-          : ""
-      }
+      ${countAliases
+        .filter((alias) => countFilters[alias])
+        .map((alias) => `$${alias}: String`)
+        .join("\n      ")}
     ) {
       organization(ids: $organizationIds) {
         edges {
@@ -197,24 +212,19 @@ async function listWorkspacePage(
                   lastJobStatus
                   lastJobDate
                   locked
+                  policyComplianceStatus
                   workspaceTag { edges { node { tagId } } }
                   project { edges { node { id name } } }
                 }
               }
               pageInfo { endCursor hasNextPage totalRecords }
             }
-            ${
-              includeStatusCounts
-                ? `all: workspace(first: "1"${baseFilter ? ", filter: $allFilter" : ""}) { pageInfo { totalRecords } }
-            waitingApproval: workspace(first: "1", filter: $waitingApprovalFilter) { pageInfo { totalRecords } }
-            failed: workspace(first: "1", filter: $failedFilter) { pageInfo { totalRecords } }
-            pending: workspace(first: "1", filter: $pendingFilter) { pageInfo { totalRecords } }
-            queue: workspace(first: "1", filter: $queueFilter) { pageInfo { totalRecords } }
-            running: workspace(first: "1", filter: $runningFilter) { pageInfo { totalRecords } }
-            completed: workspace(first: "1", filter: $completedFilter) { pageInfo { totalRecords } }
-            neverExecuted: workspace(first: "1", filter: $neverExecutedFilter) { pageInfo { totalRecords } }`
-                : ""
-            }
+            ${countAliases
+              .map(
+                (alias) =>
+                  `${alias}: workspace(first: "1"${countFilters[alias] ? `, filter: $${alias}` : ""}) { pageInfo { totalRecords } }`
+              )
+              .join("\n            ")}
           }
         }
       }
@@ -225,14 +235,7 @@ async function listWorkspacePage(
       after: String(request.after),
       filter,
       sort: workspaceSortMap[request.sort],
-      allFilter: baseFilter,
-      waitingApprovalFilter: workspaceFilter(request, "waitingApproval"),
-      failedFilter: workspaceFilter(request, "failed"),
-      pendingFilter: workspaceFilter(request, "pending"),
-      queueFilter: workspaceFilter(request, "queue"),
-      runningFilter: workspaceFilter(request, "running"),
-      completedFilter: workspaceFilter(request, "completed"),
-      neverExecutedFilter: workspaceFilter(request, "NeverExecuted"),
+      ...countFilters,
     },
   };
 
@@ -252,6 +255,7 @@ async function listWorkspacePage(
         workspaces: [],
         pageInfo: { hasNextPage: false, totalRecords: 0 },
         statusCounts: {},
+        policyCounts: {},
       },
     };
   }
@@ -270,10 +274,12 @@ async function listWorkspacePage(
     lastStatus: node.lastJobStatus,
     lastRun: node.lastJobDate,
     locked: node.locked,
+    policyComplianceStatus: node.policyComplianceStatus,
     tags: node.workspaceTag?.edges?.map(({ node: tag }: any) => tag.tagId),
     projectId: node.project?.edges?.[0]?.node?.id,
     projectName: node.project?.edges?.[0]?.node?.name,
   }));
+  const count = (alias: string) => organization?.[alias]?.pageInfo?.totalRecords ?? 0;
 
   return {
     isError: false,
@@ -283,14 +289,12 @@ async function listWorkspacePage(
       workspaces,
       pageInfo: page.pageInfo,
       statusCounts: {
-        All: organization?.all?.pageInfo?.totalRecords ?? 0,
-        waitingApproval: organization?.waitingApproval?.pageInfo?.totalRecords ?? 0,
-        failed: organization?.failed?.pageInfo?.totalRecords ?? 0,
-        pending: organization?.pending?.pageInfo?.totalRecords ?? 0,
-        queue: organization?.queue?.pageInfo?.totalRecords ?? 0,
-        running: organization?.running?.pageInfo?.totalRecords ?? 0,
-        completed: organization?.completed?.pageInfo?.totalRecords ?? 0,
-        NeverExecuted: organization?.neverExecuted?.pageInfo?.totalRecords ?? 0,
+        All: count("statusAll"),
+        ...Object.fromEntries(STATUS_COUNT_KEYS.map((key) => [key, count(`status_${key}`)])),
+      },
+      policyCounts: {
+        All: count("policyAll"),
+        ...Object.fromEntries(POLICY_COUNT_KEYS.map((key) => [key, count(`policy_${key}`)])),
       },
     },
   };

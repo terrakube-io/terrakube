@@ -10,7 +10,6 @@ import com.yahoo.elide.core.filter.predicates.FalsePredicate;
 import com.yahoo.elide.core.filter.predicates.InInsensitivePredicate;
 import com.yahoo.elide.core.filter.predicates.InPredicate;
 import com.yahoo.elide.core.filter.predicates.IsNullPredicate;
-import com.yahoo.elide.core.filter.predicates.TruePredicate;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.checks.FilterExpressionCheck;
 import com.yahoo.elide.core.type.Type;
@@ -82,7 +81,8 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
                 new InInsensitivePredicate(role, "admin", "write"),
                 new AndFilterExpression(
                         customRole,
-                        new TruePredicate(path(entityClass, requestScope, relation + ".manageWorkspace"))));
+                        // TruePredicate renders as "(1 = 1)" and ignores its path, so compare the column explicitly.
+                        new InPredicate(path(entityClass, requestScope, relation + ".manageWorkspace"), true)));
     }
 
     private Path path(Type<?> entityClass, RequestScope requestScope, String field) {

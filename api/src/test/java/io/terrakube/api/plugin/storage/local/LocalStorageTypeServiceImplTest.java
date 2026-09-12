@@ -159,4 +159,22 @@ class LocalStorageTypeServiceImplTest {
             mockedFileUtils.verify(() -> FileUtils.moveToDirectory(any(File.class), any(File.class), eq(true)), times(3));
         }
     }
+
+    @Test
+    void testPolicyEvaluationLifecycle() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            String uri = "policy-evaluations/123/violations.json";
+            String json = "{\"violations\":[]}";
+
+            localStorageTypeService.uploadPolicyEvaluation(uri, json);
+            String retrieved = localStorageTypeService.getPolicyEvaluation(uri);
+            assertEquals(json, retrieved);
+
+            localStorageTypeService.deletePolicyEvaluation(uri);
+            String afterDelete = localStorageTypeService.getPolicyEvaluation(uri);
+            assertEquals("{}", afterDelete);
+        }
+    }
 }

@@ -373,6 +373,14 @@ const router = createBrowserRouter(
           element: <WorkspaceDetailsRoute selectedTab="5" />,
         },
         {
+          path: "/workspaces/:id/run-triggers",
+          element: <WorkspaceDetailsRoute selectedTab="7" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/run-triggers",
+          element: <WorkspaceDetailsRoute selectedTab="7" />,
+        },
+        {
           path: "/workspaces/:id/settings",
           element: <WorkspaceDetailsRoute selectedTab="6" />,
         },
@@ -387,6 +395,14 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/workspaces/:id/settings/general",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+        },
+        {
+          path: "/workspaces/:id/settings/policies",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/settings/policies",
+          element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
         },
         {
           path: "/workspaces/:id/settings/locking",
@@ -535,6 +551,18 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/settings/federated-credentials",
           element: <OrganizationSettings selectedTab="11" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/policies/new",
+          element: <OrganizationSettings selectedTab="13" editorMode="new" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/policies/edit/:entityid",
+          element: <SettingsEditorWrapper selectedTab="13" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/policies",
+          element: <OrganizationSettings selectedTab="13" />,
         },
         {
           path: "/organizations/:orgid/settings/templates",

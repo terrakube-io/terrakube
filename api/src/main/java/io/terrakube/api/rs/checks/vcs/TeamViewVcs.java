@@ -41,7 +41,8 @@ public class TeamViewVcs extends OperationCheck<Vcs> {
             if (isMember)
                 return true;
             else
-                return groupService.isMemberWithLimitedAccessV2(requestScope.getUser(), vcs.getOrganization());
+                return groupService.isMemberWithLimitedAccessV2(requestScope.getUser(), vcs.getOrganization())
+                        || groupService.isMemberWithProjectAccess(requestScope.getUser(), vcs.getOrganization());
         }
     }
 }

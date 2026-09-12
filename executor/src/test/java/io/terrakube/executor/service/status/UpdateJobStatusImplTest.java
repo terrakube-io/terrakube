@@ -185,4 +185,27 @@ public class UpdateJobStatusImplTest {
         Assertions.assertEquals("pending", job.getAttributes().getStatus());
         Assertions.assertEquals(true, job.getAttributes().isPlanChanges());
     }
+
+    @Test
+    public void planWithSoftMandatoryViolations_marksJobWaitingApprovalAndSetsApprovalTeam() {
+        Job job = stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, "SecOps");
+
+        Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
+        Assertions.assertEquals("SecOps", job.getAttributes().getApprovalTeam());
+        Assertions.assertTrue(job.getAttributes().isPlanChanges());
+    }
+
+    @Test
+    public void planWithSoftMandatoryViolationsWithoutApprovalTeam_marksJobWaitingApproval() {
+        Job job = stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, null);
+
+        Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
+        Assertions.assertNull(job.getAttributes().getApprovalTeam());
+    }
 }

@@ -39,6 +39,7 @@ describe("workspaceService.listWorkspaces", () => {
                         lastJobStatus: null,
                         lastJobDate: null,
                         locked: true,
+                        policyComplianceStatus: "COMPLIANT",
                         workspaceTag: { edges: [] },
                         project: { edges: [] },
                       },
@@ -55,6 +56,7 @@ describe("workspaceService.listWorkspaces", () => {
                         lastJobStatus: null,
                         lastJobDate: null,
                         locked: false,
+                        policyComplianceStatus: "NON_COMPLIANT",
                         workspaceTag: { edges: [] },
                         project: { edges: [] },
                       },
@@ -71,7 +73,9 @@ describe("workspaceService.listWorkspaces", () => {
     const result = await workspaceService.listWorkspaces("org-1");
 
     expect(result.data!.workspaces.find((w) => w.id === "ws-1")?.locked).toBe(true);
+    expect(result.data!.workspaces.find((w) => w.id === "ws-1")?.policyComplianceStatus).toBe("COMPLIANT");
     expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.locked).toBe(false);
+    expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.policyComplianceStatus).toBe("NON_COMPLIANT");
   });
 });
 
@@ -102,9 +106,11 @@ describe("workspaceService.listWorkspacePage", () => {
     const { query, variables } = JSON.parse(JSON.stringify(mockApiPost.mock.calls[0][1]));
     expect(() => parse(query)).not.toThrow();
     expect(query).not.toContain("$filter");
-    expect(query).not.toContain("$allFilter");
+    expect(query).not.toContain("$statusAll");
+    expect(query).not.toContain("$policyAll");
     expect(variables.filter).toBeUndefined();
-    expect(variables.allFilter).toBeUndefined();
+    expect(variables.statusAll).toBeUndefined();
+    expect(variables.policyAll).toBeUndefined();
   });
 
   it("omits status count queries during polling but keeps the page total", async () => {
@@ -115,7 +121,7 @@ describe("workspaceService.listWorkspacePage", () => {
     expect(document.definitions[0].kind).toBe(Kind.OPERATION_DEFINITION);
     expect(query).toContain("pageInfo { endCursor hasNextPage totalRecords }");
     expect(query).not.toMatch(/\w+: workspace/);
-    expect(query).not.toContain("$allFilter");
+    expect(query).not.toContain("$statusAll");
     expect(variables.sort).toBe("lastJobStatus,id");
   });
 
@@ -147,14 +153,19 @@ describe("workspaceService.listWorkspacePage", () => {
                   ],
                   pageInfo: { endCursor: "40", hasNextPage: true, totalRecords: 42 },
                 },
-                all: { pageInfo: { totalRecords: 42 } },
-                waitingApproval: { pageInfo: { totalRecords: 1 } },
-                failed: { pageInfo: { totalRecords: 2 } },
-                pending: { pageInfo: { totalRecords: 3 } },
-                queue: { pageInfo: { totalRecords: 4 } },
-                running: { pageInfo: { totalRecords: 5 } },
-                completed: { pageInfo: { totalRecords: 6 } },
-                neverExecuted: { pageInfo: { totalRecords: 7 } },
+                statusAll: { pageInfo: { totalRecords: 42 } },
+                status_waitingApproval: { pageInfo: { totalRecords: 1 } },
+                status_failed: { pageInfo: { totalRecords: 2 } },
+                status_pending: { pageInfo: { totalRecords: 3 } },
+                status_queue: { pageInfo: { totalRecords: 4 } },
+                status_running: { pageInfo: { totalRecords: 5 } },
+                status_completed: { pageInfo: { totalRecords: 6 } },
+                status_NeverExecuted: { pageInfo: { totalRecords: 7 } },
+                policyAll: { pageInfo: { totalRecords: 5 } },
+                policy_COMPLIANT: { pageInfo: { totalRecords: 3 } },
+                policy_NON_COMPLIANT: { pageInfo: { totalRecords: 1 } },
+                policy_EXEMPTED: { pageInfo: { totalRecords: 0 } },
+                policy_UNKNOWN: { pageInfo: { totalRecords: 1 } },
               },
             },
           ],
@@ -168,6 +179,7 @@ describe("workspaceService.listWorkspacePage", () => {
       after: 20,
       search: "platform",
       status: "running",
+      policyStatus: "NON_COMPLIANT",
       tagIds: ["tag-1"],
       projectId: "project-1",
       sort: "lastRun_desc",
@@ -181,19 +193,26 @@ describe("workspaceService.listWorkspacePage", () => {
           first: "20",
           after: "20",
           filter:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running"',
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running";policyComplianceStatus=="NON_COMPLIANT"',
           sort: "-lastJobDate,-id",
-          allFilter:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1"',
+          statusAll:
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";policyComplianceStatus=="NON_COMPLIANT"',
+          policyAll:
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running"',
+          policy_UNKNOWN:
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running";(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)',
         }),
       }),
       { dataWrapped: true, contentType: "application/json" }
     );
     expect(result.data?.organizationName).toBe("Acme");
     expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $filter");
-    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $allFilter");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $statusAll");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("policy_COMPLIANT: workspace");
     expect(result.data?.pageInfo).toEqual({ endCursor: "40", hasNextPage: true, totalRecords: 42 });
     expect(result.data?.statusCounts.running).toBe(5);
+    expect(result.data?.statusCounts.NeverExecuted).toBe(7);
+    expect(result.data?.policyCounts).toEqual({ All: 5, COMPLIANT: 3, NON_COMPLIANT: 1, EXEMPTED: 0, UNKNOWN: 1 });
     expect(result.data?.workspaces[0]).toEqual(
       expect.objectContaining({
         id: "ws-1",

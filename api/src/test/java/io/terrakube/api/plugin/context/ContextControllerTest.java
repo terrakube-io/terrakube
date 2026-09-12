@@ -34,8 +34,9 @@ class ContextControllerTest {
         ContextProperties properties = new ContextProperties();
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(meterRegistry);
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, meterRegistry);
+        io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService = Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class);
         return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()),
-                Mockito.mock(StreamingService.class), storageMetrics, readService, properties);
+                Mockito.mock(StreamingService.class), storageMetrics, readService, properties, policyEvaluationService);
     }
 
     @Test
@@ -336,7 +337,8 @@ class ContextControllerTest {
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(registry);
         ContextController controller = new ContextController(storageTypeService, jobRepository,
                 new ContextSanitizer(new ObjectMapper()), streamingService, storageMetrics,
-                new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties);
+                new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties,
+                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class));
 
         controller.streamContext("42", null);
 

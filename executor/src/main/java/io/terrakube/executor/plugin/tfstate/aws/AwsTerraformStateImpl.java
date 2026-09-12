@@ -63,6 +63,17 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private boolean useLockfile;
 
+    // Written into the generated backend as use_path_style. Must follow the same
+    // setting as the S3 client: an object store that rejects path-style rejects
+    // it for the backend too, and that failure surfaces as a client-side
+    // OpenTofu error rather than a server one.
+    //
+    // @Builder.Default is load-bearing. Without it an unset builder field is the
+    // primitive default false, which would silently turn path-style OFF for every
+    // existing custom-endpoint deployment.
+    @Builder.Default
+    private boolean pathStyleAccessEnabled = true;
+
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
 
@@ -137,7 +148,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                     awsBackendHcl.appendln("    }");
                     awsBackendHcl.appendln("    skip_requesting_account_id = true");
                     awsBackendHcl.appendln("    skip_s3_checksum = true");
-                    awsBackendHcl.appendln("    use_path_style = true");
+                    awsBackendHcl.appendln("    use_path_style = " + pathStyleAccessEnabled);
                 }
 
                 awsBackendHcl.appendln("    skip_credentials_validation  = true");
@@ -361,5 +372,65 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
     }
 
+    @Override
+    public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Saving OPA binary to S3: {}", blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromFile(sourceFile));
+            log.info("Successfully cached OPA binary version {} ({}_{}) in S3", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache OPA binary version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Attempting to restore OPA binary from S3: {}", blobKey);
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+            s3client.headObject(headRequest);
+
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .build();
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
+                    ResponseTransformer.toBytes());
+            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored OPA binary");
+            }
+
+            log.info("Successfully restored OPA binary version {} ({}_{}) from S3", version, os, arch);
+            return true;
+        } catch (NoSuchKeyException e) {
+            log.info("OPA binary version {} ({}_{}) not found in S3 cache", version, os, arch);
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to restore OPA binary version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
 }
+
 
