@@ -246,16 +246,7 @@ export const PolicySetParameters: React.FC<Props> = ({
 
   return (
     <Card
-      title={
-        <div>
-          <Text strong style={{ fontSize: 16 }}>
-            Policy Parameters ({parameters.length})
-          </Text>
-          <Paragraph type="secondary" style={{ margin: "4px 0 0 0", fontSize: 13 }}>
-            Parameters defined here are injected directly into this policy set during OPA evaluation and accessible in Rego via <Text code>data.terrakube.inputs.&lt;key&gt;</Text>.
-          </Paragraph>
-        </div>
-      }
+      title={`Policy Parameters (${parameters.length})`}
       extra={
         <Button
           type="primary"
@@ -268,6 +259,10 @@ export const PolicySetParameters: React.FC<Props> = ({
         </Button>
       }
     >
+      <Paragraph type="secondary" style={{ marginBottom: 16, fontSize: 13 }}>
+        Parameters defined here are injected directly into this policy set during OPA evaluation and accessible in Rego via <Text code>data.terrakube.inputs.&lt;key&gt;</Text>.
+      </Paragraph>
+
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
         <Input
           placeholder="Search parameters by key or description..."

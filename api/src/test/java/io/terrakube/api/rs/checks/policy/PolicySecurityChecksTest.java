@@ -9,6 +9,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.policy.PolicyEvaluation;
 import io.terrakube.api.rs.policy.PolicyOverride;
 import io.terrakube.api.rs.policy.PolicySet;
+import io.terrakube.api.rs.policy.PolicySetParameter;
 import io.terrakube.api.rs.team.Team;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -114,4 +115,70 @@ class PolicySecurityChecksTest {
         when(groupService.isMember(user, "Security-Approvers")).thenReturn(false);
         assertFalse(check.ok(override, requestScope, Optional.empty()));
     }
+
+    @Test
+    void testTeamManagePolicySetParameter_SuperUserAndRbac() {
+        TeamManagePolicySetParameter check = new TeamManagePolicySetParameter();
+        check.authenticatedUser = authenticatedUser;
+        check.groupService = groupService;
+        check.rbacService = rbacService;
+
+        PolicySetParameter param = new PolicySetParameter();
+        param.setId(UUID.randomUUID());
+
+        // SuperUser test
+        when(authenticatedUser.isSuperUser(user)).thenReturn(true);
+        assertTrue(check.ok(param, requestScope, Optional.empty()));
+
+        // Non-superuser RBAC test
+        when(authenticatedUser.isSuperUser(user)).thenReturn(false);
+        when(authenticatedUser.isServiceAccount(user)).thenReturn(false);
+
+        Team team = new Team();
+        team.setName("SecOps");
+        Organization org = new Organization();
+        org.setTeam(List.of(team));
+        PolicySet ps = new PolicySet();
+        ps.setOrganization(org);
+        param.setPolicySet(ps);
+
+        when(groupService.isMember(user, "SecOps")).thenReturn(true);
+        when(rbacService.canManagePolicies(team)).thenReturn(true);
+        assertTrue(check.ok(param, requestScope, Optional.empty()));
+
+        when(rbacService.canManagePolicies(team)).thenReturn(false);
+        assertFalse(check.ok(param, requestScope, Optional.empty()));
+    }
+
+    @Test
+    void testTeamViewPolicySetParameter_SuperUserAndMembership() {
+        io.terrakube.api.rs.checks.membership.MembershipService membershipService = Mockito.mock(io.terrakube.api.rs.checks.membership.MembershipService.class);
+        TeamViewPolicySetParameter check = new TeamViewPolicySetParameter();
+        check.authenticatedUser = authenticatedUser;
+        check.membershipService = membershipService;
+        check.groupService = groupService;
+
+        PolicySetParameter param = new PolicySetParameter();
+        param.setId(UUID.randomUUID());
+
+        when(authenticatedUser.isSuperUser(user)).thenReturn(true);
+        assertTrue(check.ok(param, requestScope, Optional.empty()));
+
+        when(authenticatedUser.isSuperUser(user)).thenReturn(false);
+        Team team = new Team();
+        team.setName("SecOps");
+        Organization org = new Organization();
+        org.setTeam(List.of(team));
+        PolicySet ps = new PolicySet();
+        ps.setOrganization(org);
+        param.setPolicySet(ps);
+
+        when(membershipService.checkMembership(user, List.of(team))).thenReturn(true);
+        assertTrue(check.ok(param, requestScope, Optional.empty()));
+
+        when(membershipService.checkMembership(user, List.of(team))).thenReturn(false);
+        when(groupService.isMemberWithLimitedAccessV2(user, org)).thenReturn(false);
+        assertFalse(check.ok(param, requestScope, Optional.empty()));
+    }
 }
+
