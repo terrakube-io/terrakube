@@ -23,6 +23,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -136,6 +137,26 @@ class JobReconciliationSweepTest {
         subject().execute(null);
 
         // No exception propagates - the sweep tick completes normally.
+    }
+
+    @Test
+    void cancelsOrphanedJobWithNullWorkspaceWithoutFailing() throws Exception {
+        Job orphaned = job(18, JobStatus.pending);
+        orphaned.setWorkspace(null);
+        Step step = step(JobStatus.pending);
+        doReturn(List.of(orphaned)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(orphaned).when(jobRepository).save(orphaned);
+        doReturn(List.of(step)).when(stepRepository).findByJobId(18);
+        doReturn(step).when(stepRepository).save(step);
+
+        subject().execute(null);
+
+        verify(scheduleJobService, times(0)).createJobContext(any());
+        assertThat(orphaned.getStatus()).isEqualTo(JobStatus.cancelled);
+        verify(jobRepository, times(1)).save(orphaned);
+        assertThat(step.getStatus()).isEqualTo(JobStatus.cancelled);
+        verify(stepRepository, times(1)).save(step);
     }
 
     @Test

@@ -41,6 +41,7 @@ const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import {
   Action,
   ActionWithSettings,
@@ -91,6 +92,7 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   general: "General",
+  policies: "Policies",
   locking: "Locking",
   sshkey: "SSH Key",
   webhook: "Webhook",
@@ -755,6 +757,7 @@ export const WorkspaceDetails = ({
               vcsProvider={vcsProvider}
               orgTemplates={orgTemplates}
               manageWorkspace={manageWorkspace}
+              planJob={planJob}
               onWorkspaceUpdate={() => loadWorkspace(false)}
               activeSection={settingsSection || "general"}
             />
@@ -888,6 +891,12 @@ export const WorkspaceDetails = ({
                   </>
                 )}
               </Typography.Text>
+              <PolicyStatusTag
+                status={workspace.attributes?.policyComplianceStatus}
+                organizationId={organizationId}
+                workspaceId={id}
+                clickable
+              />
               <Typography.Text>
                 <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
               </Typography.Text>

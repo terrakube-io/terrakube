@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
 import IacTypeLogo from "@/modules/workspaces/components/IacTypeLogo";
@@ -141,6 +142,14 @@ function WorkspaceRow({
       <div className="workspace-col-status">
         <WorkspaceStatusTag status={item.lastStatus} />
       </div>
+      <div className="workspace-col-policy">
+        <PolicyStatusTag
+          status={item.policyComplianceStatus}
+          organizationId={organizationId}
+          workspaceId={item.id}
+          clickable
+        />
+      </div>
       <div className="workspace-col-run">
         <ClockCircleOutlined />
         <span>{relativeTime(item.lastRun) ?? "Never Executed"}</span>
@@ -226,6 +235,9 @@ export default function WorkspaceTable({
             sortOption={sortOption}
             onSortChange={onSortChange}
           />
+        </div>
+        <div className="workspace-col-policy">
+          <span>Policy</span>
         </div>
         <div className="workspace-col-run">
           <SortableHeader

@@ -7,16 +7,20 @@ import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import VcsLogo from "@/components/display/VcsLogo";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
+import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import WorkspaceCardTags from "@/modules/workspaces/components/WorkspaceCardTags";
 import { TagModel } from "@/modules/organizations/types";
+import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
 import IacTypeLogo from "./IacTypeLogo";
 import { relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   item: WorkspaceListItem;
   tags: TagModel[];
+  organizationId?: string;
 };
-export default function WorkspaceCard({ item, tags }: Props) {
+export default function WorkspaceCard({ item, tags, organizationId }: Props) {
+  const orgId = organizationId || sessionStorage.getItem(ORGANIZATION_ARCHIVE) || undefined;
   return (
     <Card hoverable style={{ width: "100%" }}>
       <Space style={{ width: "100%" }} orientation="vertical">
@@ -45,6 +49,14 @@ export default function WorkspaceCard({ item, tags }: Props) {
         <Space size={40} style={{ marginTop: "25px" }} wrap>
           <Space>
             <WorkspaceStatusTag status={item.lastStatus} /> <br />
+          </Space>
+          <Space>
+            <PolicyStatusTag
+              status={item.policyComplianceStatus}
+              organizationId={orgId}
+              workspaceId={item.id}
+              clickable
+            />
           </Space>
           <Space>
             <ClockCircleOutlined />

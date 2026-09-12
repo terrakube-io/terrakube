@@ -12,5 +12,7 @@ public enum FlowType {
 
     disableWorkspace,
 
-    scheduleTemplates
+    scheduleTemplates,
+
+    policyEvaluation
 }

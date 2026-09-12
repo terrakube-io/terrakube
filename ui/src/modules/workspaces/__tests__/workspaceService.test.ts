@@ -34,6 +34,7 @@ describe("workspaceService.listWorkspaces", () => {
                         lastJobStatus: null,
                         lastJobDate: null,
                         locked: true,
+                        policyComplianceStatus: "COMPLIANT",
                         workspaceTag: { edges: [] },
                         project: { edges: [] },
                       },
@@ -50,6 +51,7 @@ describe("workspaceService.listWorkspaces", () => {
                         lastJobStatus: null,
                         lastJobDate: null,
                         locked: false,
+                        policyComplianceStatus: "NON_COMPLIANT",
                         workspaceTag: { edges: [] },
                         project: { edges: [] },
                       },
@@ -66,6 +68,8 @@ describe("workspaceService.listWorkspaces", () => {
     const result = await workspaceService.listWorkspaces("org-1");
 
     expect(result.data!.workspaces.find((w) => w.id === "ws-1")?.locked).toBe(true);
+    expect(result.data!.workspaces.find((w) => w.id === "ws-1")?.policyComplianceStatus).toBe("COMPLIANT");
     expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.locked).toBe(false);
+    expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.policyComplianceStatus).toBe("NON_COMPLIANT");
   });
 });

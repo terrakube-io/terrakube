@@ -2,6 +2,8 @@ package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.Workspace;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +13,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
+
+    /**
+     * Returns a page of workspaces for drift-scan use; generates a paginated SELECT
+     * rather than an unguarded findAll() that loads the entire table into memory.
+     */
+    Page<Workspace> findAll(Pageable pageable);
 
     Workspace getByOrganizationNameAndName(String organizationName, String workspaceName);
 

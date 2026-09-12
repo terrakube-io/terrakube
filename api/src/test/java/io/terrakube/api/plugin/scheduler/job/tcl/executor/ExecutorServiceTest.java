@@ -158,6 +158,14 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void shouldNotPersistJobOverrideSourceWhenResolvedSourceIsEmptyLiteral() {
+        executorService.persistJobOverrideSource(job, "remote-content", "empty");
+
+        assertThat(job.getOverrideSource()).isNull();
+        verify(jobRepository, never()).save(job);
+    }
+
+    @Test
     void shouldNotPersistJobOverrideSourceForVcsWorkspace() {
         // "Run now"'s branch name field is free text - a VCS workspace could arrive here with
         // branch resolved to "remote-content" (e.g. mistyped/pasted), with resolvedSource actually

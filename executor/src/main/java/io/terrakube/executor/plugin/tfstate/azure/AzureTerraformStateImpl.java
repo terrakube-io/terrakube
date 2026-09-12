@@ -261,4 +261,58 @@ public class AzureTerraformStateImpl implements TerraformState {
             return false;
         }
     }
+
+    @Override
+    public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        String blobName = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Saving OPA binary to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            blobClient.uploadFromFile(sourceFile.getAbsolutePath(), true);
+            log.info("Successfully cached OPA binary version {} ({}_{}) in Azure Blob", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache OPA binary version {} ({}_{}) in Azure Blob: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String blobName = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        log.info("Attempting to restore OPA binary from Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                log.info("OPA binary container does not exist in Azure Blob, no cache available");
+                return false;
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            if (!blobClient.exists()) {
+                log.info("OPA binary version {} ({}_{}) not found in Azure Blob cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored OPA binary");
+            }
+
+            log.info("Successfully restored OPA binary version {} ({}_{}) from Azure Blob", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore OPA binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
 }

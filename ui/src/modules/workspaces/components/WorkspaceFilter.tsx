@@ -1,11 +1,20 @@
-import { PlusOutlined, DeleteOutlined, DownOutlined } from "@ant-design/icons";
-import { Row, Col, Select, Input, Button, Popover, Badge, Switch, Flex, Typography, Tag } from "antd";
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  SafetyCertificateOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
+  QuestionCircleOutlined,
+} from "@ant-design/icons";
+import { Row, Col, Select, Input, Button, Popover, Badge, Switch, Flex, Typography, Tag, Space } from "antd";
 import clsx from "classnames";
 import { useEffect, useMemo, useState } from "react";
 import organizationService from "@/modules/organizations/organizationService";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceSortOption, WORKSPACE_SORT_OPTIONS } from "../utils/workspaceSort";
-import { WorkspaceStatusFilter } from "../utils/workspaceFilter";
+import { WorkspaceStatusFilter, PolicyComplianceFilter } from "../utils/workspaceFilter";
 import { WORKSPACE_STATUS_PALETTE } from "../utils/workspaceStatusPalette";
 import "./WorkspaceFilter.css";
 
@@ -13,6 +22,9 @@ type Props = {
   organizationId: string;
   status: string;
   onStatusChange: (status: string) => void;
+  policyStatus?: string;
+  onPolicyStatusChange?: (status: string) => void;
+  policyCounts?: Record<string, number>;
   search: string;
   onSearchChange: (search: string) => void;
   tagIds: string[];
@@ -33,6 +45,9 @@ export default function WorkspaceFilter({
   organizationId,
   status,
   onStatusChange,
+  policyStatus,
+  onPolicyStatusChange,
+  policyCounts,
   search,
   onSearchChange,
   tagIds,
@@ -163,12 +178,67 @@ export default function WorkspaceFilter({
 
   const controlSize = compact ? "small" : "middle";
 
-  const hasActiveFilters = status !== WorkspaceStatusFilter.All || tagIds.length > 0 || !!projectId;
+  const hasActiveFilters =
+    status !== WorkspaceStatusFilter.All ||
+    (policyStatus && policyStatus !== PolicyComplianceFilter.All) ||
+    tagIds.length > 0 ||
+    !!projectId;
   const handleClearFilters = () => {
     onStatusChange(WorkspaceStatusFilter.All);
+    if (onPolicyStatusChange) {
+      onPolicyStatusChange(PolicyComplianceFilter.All);
+    }
     onTagIdsChange([]);
     onProjectIdChange(null);
   };
+
+  const policyOptions = [
+    {
+      value: PolicyComplianceFilter.All,
+      label: (
+        <Space size={6}>
+          <SafetyCertificateOutlined style={{ color: "var(--tk-accent, #1677ff)" }} />
+          <span>All policies ({policyCounts?.All ?? 0})</span>
+        </Space>
+      ),
+    },
+    {
+      value: PolicyComplianceFilter.Compliant,
+      label: (
+        <Space size={6}>
+          <CheckCircleOutlined style={{ color: "#2eb039" }} />
+          <span>Compliant ({policyCounts?.COMPLIANT ?? 0})</span>
+        </Space>
+      ),
+    },
+    {
+      value: PolicyComplianceFilter.NonCompliant,
+      label: (
+        <Space size={6}>
+          <CloseCircleOutlined style={{ color: "#FB0136" }} />
+          <span>Non-compliant ({policyCounts?.NON_COMPLIANT ?? 0})</span>
+        </Space>
+      ),
+    },
+    {
+      value: PolicyComplianceFilter.Exempted,
+      label: (
+        <Space size={6}>
+          <ExclamationCircleOutlined style={{ color: "#108ee9" }} />
+          <span>Exempted ({policyCounts?.EXEMPTED ?? 0})</span>
+        </Space>
+      ),
+    },
+    {
+      value: PolicyComplianceFilter.Unknown,
+      label: (
+        <Space size={6}>
+          <QuestionCircleOutlined style={{ color: "#8c8c8c" }} />
+          <span>Unknown ({policyCounts?.UNKNOWN ?? 0})</span>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div className={clsx("workspace-filter-container", { "workspace-filter-container--compact": compact })}>
@@ -259,6 +329,17 @@ export default function WorkspaceFilter({
                 ...projects.map((p) => ({ label: p.name, value: p.id })),
               ]}
               style={{ minWidth: 140 }}
+            />
+          )}
+          {onPolicyStatusChange && (
+            <Select
+              size={controlSize}
+              value={policyStatus || PolicyComplianceFilter.All}
+              onChange={(val) => onPolicyStatusChange(val)}
+              options={policyOptions}
+              style={{ minWidth: 165 }}
+              placeholder="Policy status"
+              data-testid="workspace-policy-filter-select"
             />
           )}
           <Popover

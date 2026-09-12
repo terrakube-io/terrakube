@@ -262,9 +262,37 @@ public class ScheduleJobTest {
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
         verify(redisTemplate, times(1)).delete(anyString());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
-        // Regression check: the scheduler updates job.status via a plain jobRepository.save(),
-        // never through Elide, so JobNotificationHook (an Elide LifeCycleHook) never sees this
-        // transition - notifyStatusChanged() must be called explicitly at every such call site.
+        verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
+    }
+
+    @Test
+    public void pendingJobWithPolicyEvaluation() throws Exception {
+        Job job = job(JobStatus.pending);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.policyEvaluation.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, times(1)).execute(any(), any(), any());
+        verify(jobRepository, times(1)).save(job);
+        verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
+        verify(redisTemplate, times(1)).delete(anyString());
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
         verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
 
@@ -1507,5 +1535,23 @@ public class ScheduleJobTest {
         Assertions.assertEquals(JobStatus.rejected, job.getStatus());
         Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
+    }
+
+    @Test
+    public void orphanedJobWithNullWorkspaceIsCancelledAndDescheduled() {
+        Job job = job(JobStatus.pending);
+        job.setWorkspace(null);
+        Step step = new Step();
+        step.setStatus(JobStatus.pending);
+        doReturn(job).when(jobRepository).save(job);
+        doReturn(List.of(step)).when(stepRepository).findByJobId(job.getId());
+        doReturn(step).when(stepRepository).save(any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.cancelled, job.getStatus());
+        Assertions.assertEquals(JobStatus.cancelled, step.getStatus());
+        verify(jobRepository, times(1)).save(job);
+        verify(stepRepository, times(1)).save(step);
     }
 }

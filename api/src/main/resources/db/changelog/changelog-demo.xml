@@ -18,5 +18,6 @@
     <include file="/db/changelog/demo-data/h2-test-values.xml" />
     <include file="/db/changelog/demo-data/rbac-v2-demo-data.xml" />
     <include file="/db/changelog/demo-data/project-access-demo-data.xml" />
+    <include file="/db/changelog/demo-data/simple-governance.xml" />
     <include file="/db/changelog/demo-data/run-trigger-scenarios.xml" />
 </databaseChangeLog>

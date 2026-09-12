@@ -42,11 +42,19 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     () =>
       filterWorkspaces(workspaces, {
         status: filterState.status,
+        policyStatus: filterState.policyStatus,
         search: filterState.search,
         tagIds: filterState.tagIds,
         projectId: filterState.projectId,
       }),
-    [workspaces, filterState.status, filterState.search, filterState.tagIds, filterState.projectId]
+    [
+      workspaces,
+      filterState.status,
+      filterState.policyStatus,
+      filterState.search,
+      filterState.tagIds,
+      filterState.projectId,
+    ]
   );
 
   const sortedWorkspaces = useMemo(
@@ -66,10 +74,42 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       [JobStatus.Completed]: 0,
     };
     for (const ws of workspaces) {
-      if (!ws.lastStatus) {
+      if (
+        !ws.lastStatus ||
+        ws.lastStatus === WorkspaceStatusFilter.NeverExecuted ||
+        ws.lastStatus.toLowerCase() === "neverexecuted"
+      ) {
         counts[WorkspaceStatusFilter.NeverExecuted]++;
       } else if (ws.lastStatus in counts) {
         counts[ws.lastStatus]++;
+      } else {
+        const matchingKey = Object.keys(counts).find((k) => k.toLowerCase() === ws.lastStatus?.toLowerCase());
+        if (matchingKey) {
+          counts[matchingKey]++;
+        }
+      }
+    }
+    return counts;
+  }, [workspaces]);
+
+  const policyCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      All: workspaces.length,
+      COMPLIANT: 0,
+      NON_COMPLIANT: 0,
+      EXEMPTED: 0,
+      UNKNOWN: 0,
+    };
+    for (const ws of workspaces) {
+      const status = ws.policyComplianceStatus?.toUpperCase();
+      if (status === "COMPLIANT") {
+        counts.COMPLIANT++;
+      } else if (status === "NON_COMPLIANT") {
+        counts.NON_COMPLIANT++;
+      } else if (status === "EXEMPTED") {
+        counts.EXEMPTED++;
+      } else {
+        counts.UNKNOWN++;
       }
     }
     return counts;
@@ -181,6 +221,9 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             statusCounts={statusCounts}
             status={filterState.status}
             onStatusChange={filterState.setStatus}
+            policyStatus={filterState.policyStatus}
+            onPolicyStatusChange={filterState.setPolicyStatus}
+            policyCounts={policyCounts}
             search={filterState.search}
             onSearchChange={filterState.setSearch}
             tagIds={filterState.tagIds}
@@ -213,7 +256,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
                   aria-label={`Open workspace ${item.name}`}
                   style={{ position: "absolute", inset: 0, zIndex: 1 }}
                 />
-                <WorkspaceCard tags={tags} item={item} />
+                <WorkspaceCard tags={tags} item={item} organizationId={id} />
               </List.Item>
             )}
           />

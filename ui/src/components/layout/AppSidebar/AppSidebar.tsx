@@ -23,6 +23,7 @@ import {
   RobotOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
+  SecurityScanOutlined,
   SettingOutlined,
   ShareAltOutlined,
   TagsOutlined,
@@ -196,6 +197,12 @@ export default function AppSidebar({
           path: "federated-credentials",
           icon: <SafetyCertificateOutlined />,
         },
+        {
+          key: "policies",
+          label: "Policy Sets",
+          path: "policies",
+          icon: <SecurityScanOutlined />,
+        },
       ],
     },
     {
@@ -220,6 +227,7 @@ export default function AppSidebar({
 
   const workspaceSettingsItems = [
     { key: "general", label: "General", path: "general", icon: <SettingOutlined /> },
+    { key: "policies", label: "Policies", path: "policies", icon: <SafetyCertificateOutlined /> },
     { key: "locking", label: "Locking", path: "locking", icon: <LockOutlined /> },
     { key: "sshkey", label: "SSH Key", path: "sshkey", icon: <KeyOutlined /> },
     { key: "webhook", label: "Webhook", path: "webhook", icon: <ApiOutlined /> },

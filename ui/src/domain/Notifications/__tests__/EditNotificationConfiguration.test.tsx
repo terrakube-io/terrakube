@@ -170,4 +170,19 @@ describe("EditNotificationConfiguration", () => {
     expect(await screen.findByText("This workspace only")).toBeInTheDocument();
     expect(screen.queryByText("Organization-wide default")).not.toBeInTheDocument();
   });
+
+  it("renders informational tooltips clarifying OPA policy reviews and violations on relevant triggers", async () => {
+    render(
+      <EditNotificationConfiguration orgId="org-1" mode="create" onDone={jest.fn()} />
+    );
+
+    const attentionGroup = within(await screen.findByTestId("trigger-group-needs-attention"));
+    expect(attentionGroup.getByRole("checkbox", { name: "Waiting for Approval" })).toBeInTheDocument();
+    expect(attentionGroup.getByRole("img", { name: "info-circle" })).toBeInTheDocument();
+
+    const erroredGroup = within(screen.getByTestId("trigger-group-errored"));
+    expect(erroredGroup.getByRole("checkbox", { name: "Failed" })).toBeInTheDocument();
+    expect(erroredGroup.getByRole("img", { name: "info-circle" })).toBeInTheDocument();
+  });
 });
+

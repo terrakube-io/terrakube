@@ -41,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -65,6 +66,20 @@ public class RemoteTfeController {
         Map<String, Object> body = new HashMap<>();
         body.put("errors", List.of(error));
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .contentType(MediaType.valueOf("application/vnd.api+json"))
+                .body(body);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Bad request on TFC API: {}", ex.getMessage());
+        Map<String, String> error = new HashMap<>();
+        error.put("status", "400");
+        error.put("title", "bad_request");
+        error.put("detail", ex.getMessage());
+        Map<String, Object> body = new HashMap<>();
+        body.put("errors", List.of(error));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .contentType(MediaType.valueOf("application/vnd.api+json"))
                 .body(body);
     }
@@ -325,6 +340,69 @@ public class RemoteTfeController {
         log.info("Running discard: {}", runId.replace("run-", ""));
         int runIdFixed = Integer.parseInt(runId.replace("run-", ""));
         return ResponseEntity.ok(remoteTfeService.runDiscard(runIdFixed, (JwtAuthenticationToken) principal));
+    }
+
+    @Transactional
+    @GetMapping(produces = "application/vnd.api+json", path = "/runs/{runId}/policy-checks")
+    public ResponseEntity<io.terrakube.api.plugin.state.model.policy.PolicyCheckList> getRunPolicyChecks(
+            @PathVariable("runId") String runId, Principal principal) {
+        log.info("Getting policy checks for run {}", runId.replace("run-", ""));
+        int runIdFixed = Integer.parseInt(runId.replace("run-", ""));
+        return ResponseEntity.ok(remoteTfeService.getRunPolicyChecks(runIdFixed, (JwtAuthenticationToken) principal));
+    }
+
+    @Transactional
+    @GetMapping(produces = "application/vnd.api+json", path = "/policy-checks/{id}")
+    public ResponseEntity<io.terrakube.api.plugin.state.model.policy.PolicyCheckData> getPolicyCheck(
+            @PathVariable("id") String id, Principal principal) {
+        log.info("Getting policy check {}", id);
+        UUID checkId = parsePolicyCheckId(id);
+        io.terrakube.api.plugin.state.model.policy.PolicyCheckData data = remoteTfeService.getPolicyCheck(checkId, (JwtAuthenticationToken) principal);
+        if (data == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(data);
+    }
+
+    @Transactional
+    @GetMapping(path = "/policy-checks/{id}/output")
+    public ResponseEntity<String> getPolicyCheckOutput(
+            @PathVariable("id") String id, Principal principal) {
+        log.info("Getting policy check output for {}", id);
+        UUID checkId = parsePolicyCheckId(id);
+        String output = remoteTfeService.getPolicyCheckOutput(checkId, (JwtAuthenticationToken) principal);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_PLAIN);
+        return new ResponseEntity<>(output, headers, HttpStatus.OK);
+    }
+
+    @Transactional
+    @PostMapping(produces = "application/vnd.api+json", path = "/policy-checks/{id}/actions/override")
+    public ResponseEntity<io.terrakube.api.plugin.state.model.policy.PolicyCheckData> overridePolicyCheck(
+            @PathVariable("id") String id,
+            @RequestBody(required = false) Map<String, Object> body,
+            Principal principal) {
+        log.info("Overriding policy check {}", id);
+        if (!(principal instanceof JwtAuthenticationToken jwtToken)) {
+            log.warn("overridePolicyCheck rejected: principal is not a JwtAuthenticationToken (type={})",
+                    principal == null ? "null" : principal.getClass().getName());
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+        UUID checkId = parsePolicyCheckId(id);
+        String justification = null;
+        if (body != null && body.containsKey("justification")) {
+            justification = String.valueOf(body.get("justification"));
+        }
+        return ResponseEntity.ok(remoteTfeService.overridePolicyCheck(checkId, justification, jwtToken));
+    }
+
+    private UUID parsePolicyCheckId(String id) {
+        String cleanId = id.startsWith("polchk-") ? id.substring("polchk-".length()) : id;
+        try {
+            return UUID.fromString(cleanId);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid policy check ID: " + id);
+        }
     }
 
     @Transactional

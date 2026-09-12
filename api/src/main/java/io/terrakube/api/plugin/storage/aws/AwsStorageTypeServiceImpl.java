@@ -274,4 +274,30 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
             s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(content.key()).build());
         }
     }
+
+    @Override
+    public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
+        log.info("Uploading policy evaluation to S3 bucket: {}, key: {}", bucketName, storageUri);
+        uploadStringToBucket(bucketName, storageUri, policyEvaluationJson);
+    }
+
+    @Override
+    public String getPolicyEvaluation(String storageUri) {
+        byte[] bytes = downloadObjectFromBucket(bucketName, storageUri);
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        } else {
+            return "{}";
+        }
+    }
+
+    @Override
+    public void deletePolicyEvaluation(String storageUri) {
+        try {
+            log.info("Deleting policy evaluation from S3 bucket: {}, key: {}", bucketName, storageUri);
+            s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(storageUri).build());
+        } catch (Exception e) {
+            log.warn("Failed to delete policy evaluation {} from S3: {}", storageUri, e.getMessage());
+        }
+    }
 }

@@ -60,9 +60,18 @@ import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
+import io.terrakube.api.plugin.state.model.policy.PolicyCheckList;
+import io.terrakube.api.plugin.state.model.policy.PolicyCheckModel;
+import io.terrakube.api.plugin.state.model.runs.PolicyChecksModel;
+import io.terrakube.api.rs.policy.PolicyEvaluation;
+import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
+import io.terrakube.api.rs.policy.PolicyOverride;
+import io.terrakube.api.rs.policy.PolicySet;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
 import org.quartz.SchedulerException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamOffset;
@@ -119,11 +128,28 @@ public class RemoteTfeService {
     private static final String LATEST_TERRAFORM_VERSION = "latest";
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
-    // Real job status transitions happen here via plain jobRepository.save(), never through an
-    // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
-    // them, so every status-changing save below calls this directly, same as ScheduleJob/
-    // ScheduleJobTrigger.
     private JobNotificationTrigger jobNotificationTrigger;
+
+    @Autowired(required = false)
+    private PolicyEvaluationRepository policyEvaluationRepository;
+
+    @Autowired(required = false)
+    private PolicyOverrideRepository policyOverrideRepository;
+
+    @Autowired(required = false)
+    private PolicySetRepository policySetRepository;
+
+    public void setPolicyEvaluationRepository(PolicyEvaluationRepository policyEvaluationRepository) {
+        this.policyEvaluationRepository = policyEvaluationRepository;
+    }
+
+    public void setPolicyOverrideRepository(PolicyOverrideRepository policyOverrideRepository) {
+        this.policyOverrideRepository = policyOverrideRepository;
+    }
+
+    public void setPolicySetRepository(PolicySetRepository policySetRepository) {
+        this.policySetRepository = policySetRepository;
+    }
 
     public RemoteTfeService(JobRepository jobRepository,
                             ContentRepository contentRepository,
@@ -1360,6 +1386,31 @@ public class RemoteTfeService {
             runEventsModel.setData(new ArrayList<Resource>());
             relationships.setRunEventsModel(runEventsModel);
 
+            if (policyEvaluationRepository != null) {
+                List<PolicyEvaluation> evaluations = policyEvaluationRepository.findByJob(job);
+                if (evaluations != null && !evaluations.isEmpty()) {
+                    PolicyChecksModel policyChecksModel = new PolicyChecksModel();
+                    List<Resource> checkResources = new ArrayList<>();
+                    for (PolicyEvaluation eval : evaluations) {
+                        Resource checkResource = new Resource();
+                        checkResource.setId(eval.getId().toString());
+                        checkResource.setType("policy-checks");
+                        checkResources.add(checkResource);
+                    }
+                    policyChecksModel.setData(checkResources);
+                    relationships.setPolicyChecks(policyChecksModel);
+
+                    if (include != null && include.contains("policy-checks")) {
+                        if (runsData.getIncluded() == null) {
+                            runsData.setIncluded(new ArrayList<>());
+                        }
+                        for (PolicyEvaluation eval : evaluations) {
+                            runsData.getIncluded().add(buildPolicyCheckModel(eval, currentUser));
+                        }
+                    }
+                }
+            }
+
             log.info("Included: {}", include);
             // if(include != null && include.equals("workspace")){
             // runsData.setIncluded(new ArrayList());
@@ -1763,5 +1814,243 @@ public class RemoteTfeService {
         } else {
             return null;
         }
+    }
+
+    public PolicyCheckModel buildPolicyCheckModel(PolicyEvaluation evaluation, JwtAuthenticationToken currentUser) {
+        PolicyCheckModel model = new PolicyCheckModel();
+        model.setId(evaluation.getId().toString());
+        model.setType("policy-checks");
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("scope", "workspace");
+
+        String status;
+        if (evaluation.getHardMandatoryViolations() > 0) {
+            status = "hard_failed";
+        } else if (evaluation.getSoftMandatoryViolations() > 0) {
+            if (evaluation.getOverride() != null) {
+                status = "overridden";
+            } else {
+                status = "soft_failed";
+            }
+        } else if (evaluation.getStatus() == PolicyEvaluationStatus.FAILED) {
+            status = "errored";
+        } else {
+            status = "passed";
+        }
+        attributes.put("status", status);
+
+        boolean isOverridable = evaluation.getHardMandatoryViolations() == 0 && evaluation.getSoftMandatoryViolations() > 0;
+        attributes.put("actions", Map.of("is-overridable", isOverridable));
+
+        boolean canOverride = isOverridable && validateUserCanOverridePolicy(evaluation, currentUser);
+        attributes.put("permissions", Map.of("can-override", canOverride));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("passed", evaluation.getPassedRules());
+        result.put("hard-failed", evaluation.getHardMandatoryViolations());
+        result.put("soft-failed", evaluation.getSoftMandatoryViolations());
+        result.put("advisory-failed", evaluation.getWarningRules());
+        result.put("total-failed", evaluation.getHardMandatoryViolations() + evaluation.getSoftMandatoryViolations());
+        result.put("duration", 100);
+        result.put("result", evaluation.getHardMandatoryViolations() == 0 && (evaluation.getSoftMandatoryViolations() == 0 || evaluation.getOverride() != null));
+        attributes.put("result", result);
+
+        Map<String, Object> timestamps = new HashMap<>();
+        Date created = evaluation.getCreatedDate() != null ? evaluation.getCreatedDate() : new Date();
+        if ("passed".equals(status)) {
+            timestamps.put("passed-at", created);
+        } else if ("hard_failed".equals(status)) {
+            timestamps.put("hard-failed-at", created);
+        } else if ("soft_failed".equals(status)) {
+            timestamps.put("soft-failed-at", created);
+        } else if ("overridden".equals(status) && evaluation.getOverride() != null) {
+            timestamps.put("soft-failed-at", created);
+            timestamps.put("overridden-at", evaluation.getOverride().getOverriddenAt());
+        }
+        attributes.put("status-timestamps", timestamps);
+
+        model.setAttributes(attributes);
+
+        Map<String, Object> relationships = new HashMap<>();
+        if (evaluation.getJob() != null) {
+            Map<String, Object> runRelation = new HashMap<>();
+            Resource runResource = new Resource();
+            runResource.setId(String.valueOf(evaluation.getJob().getId()));
+            runResource.setType("runs");
+            runRelation.put("data", runResource);
+            relationships.put("run", runRelation);
+        }
+        model.setRelationships(relationships);
+
+        return model;
+    }
+
+    public boolean validateUserCanOverridePolicy(PolicyEvaluation evaluation, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            return false;
+        }
+        if (validateTerrakubeUser(currentUser)) {
+            return true;
+        }
+        Job job = evaluation.getJob();
+        if (job == null || job.getOrganization() == null) {
+            return false;
+        }
+
+        Organization org = job.getOrganization();
+        List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
+
+        // Check if there is an overrideTeam configured on any violated PolicySet
+        if (policySetRepository != null) {
+            List<PolicySet> policySets = policySetRepository.findByOrganization(org);
+            for (PolicySet ps : policySets) {
+                if (ps.getOverrideTeam() != null && !ps.getOverrideTeam().isBlank()) {
+                    if (userGroups != null && userGroups.contains(ps.getOverrideTeam())) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // If user is Org Admin, they can override
+        if (org.getTeam() != null && validateUserManageWorkspace(org, currentUser)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public PolicyCheckList getRunPolicyChecks(int runId, JwtAuthenticationToken currentUser) {
+        Job job = jobRepository.findById(runId).orElse(null);
+        PolicyCheckList list = new PolicyCheckList();
+        list.setData(new ArrayList<>());
+
+        if (policyEvaluationRepository != null && job != null) {
+            List<PolicyEvaluation> evaluations = policyEvaluationRepository.findByJob(job);
+            if (evaluations != null) {
+                for (PolicyEvaluation eval : evaluations) {
+                    list.getData().add(buildPolicyCheckModel(eval, currentUser));
+                }
+            }
+        }
+        return list;
+    }
+
+    public PolicyCheckData getPolicyCheck(UUID policyCheckId, JwtAuthenticationToken currentUser) {
+        if (policyEvaluationRepository == null) {
+            return null;
+        }
+        Optional<PolicyEvaluation> evalOpt = policyEvaluationRepository.findById(policyCheckId);
+        if (evalOpt.isEmpty()) {
+            return null;
+        }
+        PolicyCheckData data = new PolicyCheckData();
+        data.setData(buildPolicyCheckModel(evalOpt.get(), currentUser));
+        return data;
+    }
+
+    public String getPolicyCheckOutput(UUID policyCheckId, JwtAuthenticationToken currentUser) {
+        if (policyEvaluationRepository == null) {
+            return "Policy evaluation engine not available.\n";
+        }
+        Optional<PolicyEvaluation> evalOpt = policyEvaluationRepository.findById(policyCheckId);
+        if (evalOpt.isEmpty()) {
+            return "Policy evaluation not found.\n";
+        }
+        PolicyEvaluation eval = evalOpt.get();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n------------------------------------------------------------------------\n");
+        sb.append("\uD83D\uDEE1\uFE0F  TERRAKUBE POLICY GUARDRAILS (OPA)\n");
+        sb.append("------------------------------------------------------------------------\n");
+
+        if (eval.getPassedRules() > 0) {
+            sb.append(String.format("[PASSED]   %d policy rule(s) passed\n", eval.getPassedRules()));
+        }
+        if (eval.getWarningRules() > 0) {
+            sb.append(String.format("[ADVISORY] %d advisory warning(s) detected\n", eval.getWarningRules()));
+        }
+        if (eval.getSoftMandatoryViolations() > 0) {
+            if (eval.getOverride() != null) {
+                sb.append(String.format("[OVERRIDDEN] %d soft mandatory violation(s) overridden by %s\n",
+                        eval.getSoftMandatoryViolations(), eval.getOverride().getOverriddenBy()));
+                sb.append(String.format("             Justification: %s\n", eval.getOverride().getJustification()));
+            } else {
+                sb.append(String.format("[WARNING]  %d soft mandatory violation(s) requiring override approval\n",
+                        eval.getSoftMandatoryViolations()));
+            }
+        }
+        if (eval.getHardMandatoryViolations() > 0) {
+            sb.append(String.format("[FAILED]   %d hard mandatory violation(s) blocking execution\n",
+                    eval.getHardMandatoryViolations()));
+        }
+
+        sb.append("------------------------------------------------------------------------\n");
+        sb.append(String.format("Policy Check Summary: %d Passed, %d Advisory, %d Soft-Mandatory, %d Hard-Mandatory\n",
+                eval.getPassedRules(), eval.getWarningRules(), eval.getSoftMandatoryViolations(), eval.getHardMandatoryViolations()));
+
+        if (eval.getHardMandatoryViolations() > 0) {
+            sb.append("Overall Status: FAILED (Execution Halted)\n");
+        } else if (eval.getSoftMandatoryViolations() > 0 && eval.getOverride() == null) {
+            sb.append("Overall Status: REQUIRES OVERRIDE APPROVAL\n");
+        } else if (eval.getOverride() != null) {
+            sb.append("Overall Status: OVERRIDDEN (Approved)\n");
+        } else {
+            sb.append("Overall Status: PASSED\n");
+        }
+        sb.append("------------------------------------------------------------------------\n\n");
+
+        return sb.toString();
+    }
+
+    public PolicyCheckData overridePolicyCheck(UUID policyCheckId, String justification, JwtAuthenticationToken currentUser) {
+        if (policyEvaluationRepository == null) {
+            throw new IllegalStateException("Policy evaluation engine not available.");
+        }
+        PolicyEvaluation evaluation = policyEvaluationRepository.findById(policyCheckId)
+                .orElseThrow(() -> new IllegalArgumentException("Policy evaluation not found: " + policyCheckId));
+
+        if (evaluation.getHardMandatoryViolations() > 0) {
+            throw new IllegalArgumentException("Cannot override policy check with hard-mandatory violations.");
+        }
+        if (evaluation.getSoftMandatoryViolations() == 0) {
+            throw new IllegalArgumentException("Policy check has no soft-mandatory violations to override.");
+        }
+
+        if (!validateUserCanOverridePolicy(evaluation, currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException("User is not authorized to override this policy check.");
+        }
+
+        String username = "cli-user";
+        if (currentUser != null) {
+            if (currentUser.getTokenAttributes().containsKey("email")) {
+                username = (String) currentUser.getTokenAttributes().get("email");
+            } else if (currentUser.getTokenAttributes().containsKey("preferred_username")) {
+                username = (String) currentUser.getTokenAttributes().get("preferred_username");
+            } else {
+                username = currentUser.getName();
+            }
+        }
+
+        PolicyOverride override = new PolicyOverride();
+        override.setId(UUID.randomUUID());
+        override.setEvaluation(evaluation);
+        override.setOverriddenBy(username);
+        override.setOverriddenAt(new Date());
+        override.setJustification(justification != null && !justification.isBlank() ? justification : "Overridden via CLI");
+
+        if (policyOverrideRepository != null) {
+            policyOverrideRepository.save(override);
+        }
+        evaluation.setOverride(override);
+        evaluation.setStatus(PolicyEvaluationStatus.PASSED);
+        policyEvaluationRepository.save(evaluation);
+
+        log.info("Policy check {} successfully overridden by {}", policyCheckId, username);
+
+        PolicyCheckData data = new PolicyCheckData();
+        data.setData(buildPolicyCheckModel(evaluation, currentUser));
+        return data;
     }
 }

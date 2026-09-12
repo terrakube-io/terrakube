@@ -172,5 +172,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "replace_addrs")
     private List<String> replaceAddrs;
 
+    @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
+    private List<io.terrakube.api.rs.policy.PolicyEvaluation> policyEvaluation;
 }
 

@@ -1,4 +1,11 @@
-import { CheckOutlined, CloseOutlined, CommentOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  CommentOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Avatar,
@@ -14,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import { AxiosResponse } from "axios";
-import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { axiosAuxiliary } from "../../config/axiosConfig";
@@ -46,6 +53,8 @@ import {
   normalizeUITemplates,
 } from "./structuredPlan";
 import { relativeTime } from "@/modules/utils/dates";
+import { PolicyChecksOutput } from "./PolicyChecksOutput";
+import { PolicyEvaluationContext } from "../types";
 
 type Props = {
   jobId: string;
@@ -126,6 +135,12 @@ export const DetailsJob = ({ jobId }: Props) => {
   const [applyStructuredOutput, setApplyStructuredOutput] = useState<StructuredApplyOutputByStep>({});
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
+  const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
+  const hasPolicySoftViolations = useMemo(() => {
+    if (!policyEvaluation) return false;
+    if ((policyEvaluation.softMandatoryViolations ?? 0) > 0) return true;
+    return Boolean(policyEvaluation.results?.some((r) => (r.softMandatoryViolations ?? 0) > 0));
+  }, [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
   const [contextEverPersisted, setContextEverPersisted] = useState(false);
@@ -562,6 +577,9 @@ export const DetailsJob = ({ jobId }: Props) => {
       }));
       setTerraformOutputs(normalizeStructuredOutputs(response?.data?.terraformOutputs));
       setJobDiagnostics((previous) => ({ ...previous, ...normalizeJobDiagnostics(response?.data?.jobDiagnostics) }));
+      if (response?.data?.policyEvaluation) {
+        setPolicyEvaluation(response.data.policyEvaluation);
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       if (requestId !== contextRequestRef.current) return;
@@ -798,6 +816,58 @@ export const DetailsJob = ({ jobId }: Props) => {
               },
             ]}
           />
+
+          {policyEvaluation && (
+            <Collapse
+              defaultActiveKey={["policy-guardrails"]}
+              style={{ width: "100%" }}
+              items={[
+                {
+                  key: "policy-guardrails",
+                  label: (
+                    <Space align="center">
+                      <SafetyCertificateOutlined style={{ fontSize: "18px", color: "#722ed1" }} />
+                      <h3 style={{ display: "inline", margin: 0 }}>
+                        Policy Guardrails (OPA)
+                      </h3>
+                      <Tag
+                        color={
+                          (policyEvaluation.hardMandatoryViolations ?? 0) > 0
+                            ? "error"
+                            : (policyEvaluation.softMandatoryViolations ?? 0) > 0
+                            ? "warning"
+                            : "success"
+                        }
+                      >
+                        {(policyEvaluation.hardMandatoryViolations ?? 0) > 0
+                          ? "Failed"
+                          : (policyEvaluation.softMandatoryViolations ?? 0) > 0
+                          ? "Action Required"
+                          : "Compliant"}
+                      </Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <PolicyChecksOutput
+                      policyEvaluation={policyEvaluation}
+                      jobId={jobId}
+                      organizationId={organizationId || job?.data?.relationships?.organization?.data?.id}
+                      workspaceId={job?.data?.relationships?.workspace?.data?.id}
+                      status={job.data.attributes.status}
+                      approvalTeam={job.data.attributes.approvalTeam}
+                      onOverrideSuccess={() => {
+                        void refreshJobDetails();
+                      }}
+                      onRejectSuccess={() => {
+                        void refreshJobDetails();
+                      }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
+
           {steps.length > 0 ? (
             steps.map((item) => {
               const stepLabel = renderStepLabel(item);
@@ -835,7 +905,7 @@ export const DetailsJob = ({ jobId }: Props) => {
             <span />
           )}
 
-          {job.data.attributes.status === "waitingApproval" ? (
+          {job.data.attributes.status === "waitingApproval" && !hasPolicySoftViolations ? (
             <div style={{ margin: "auto", width: "50%", marginTop: "20px" }}>
               <Card
                 title={

@@ -17,4 +17,6 @@ public class Relationships {
     ApplyModel apply;
     @JsonProperty("run-events")
     RunEventsModel runEventsModel;
+    @JsonProperty("policy-checks")
+    PolicyChecksModel policyChecks;
 }

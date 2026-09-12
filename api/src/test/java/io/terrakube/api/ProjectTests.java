@@ -87,8 +87,11 @@ public class ProjectTests extends ServerApplicationTests {
                 .all()
                 .statusCode(HttpStatus.OK.value());
 
-        projectRepository.deleteAll();
+        // Delete only the project created by this test. Using deleteAll() would also remove seeded
+        // fixture projects that have workspace FK references, causing a referential integrity violation.
+        projectRepository.deleteById(java.util.UUID.fromString(projectId));
     }
+
 
 
 }

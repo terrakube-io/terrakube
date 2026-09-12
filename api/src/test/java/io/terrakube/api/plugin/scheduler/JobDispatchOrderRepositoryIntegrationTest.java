@@ -235,4 +235,22 @@ class JobDispatchOrderRepositoryIntegrationTest {
         assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(first.getId());
         assertThat(jobRepository.isJobNextInDispatchOrderExecutable(second.getId())).isFalse();
     }
+
+    @Test
+    void guardedQuery_earlierPendingJobInDeletedWorkspaceDoesNotBlockLaterJob() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job earlier = newJob(wsA, JobStatus.pending);
+        newStep(earlier, 100, JobStatus.pending);
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        wsA.setDeleted(true);
+        workspaceRepository.save(wsA);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(later.getId())).isTrue();
+        assertThat(jobRepository.isJobNextInDispatchOrder(later.getId())).isTrue();
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(later.getId());
+        assertThat(jobRepository.findNextDispatchableJobId()).isEqualTo(later.getId());
+    }
 }

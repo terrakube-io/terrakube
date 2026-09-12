@@ -165,4 +165,27 @@ class LocalTerraformStateImplTest {
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
     }
+
+    @Test
+    void testSaveAndDownloadOpaBinary(@TempDir Path tempDir) throws IOException {
+        String version = "0.68.0";
+        String os = "linux";
+        String arch = "amd64";
+
+        File sourceFile = tempDir.resolve("opa_mock").toFile();
+        FileUtils.writeStringToFile(sourceFile, "mock-opa-binary-data", Charset.defaultCharset());
+
+        boolean saved = localTerraformState.saveOpaBinary(version, os, arch, sourceFile);
+        assertTrue(saved);
+
+        File targetFile = tempDir.resolve("opa_restored").toFile();
+        boolean downloaded = localTerraformState.downloadOpaBinary(version, os, arch, targetFile);
+        assertTrue(downloaded);
+        assertTrue(targetFile.exists());
+        assertEquals("mock-opa-binary-data", FileUtils.readFileToString(targetFile, Charset.defaultCharset()));
+
+        // Cleanup
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
 }
+

@@ -19,6 +19,7 @@ const workspaces: WorkspaceListItem[] = [
     projectId: "proj-1",
     projectName: "platform",
     locked: true,
+    policyComplianceStatus: "COMPLIANT",
   },
   {
     id: "ws-2",
@@ -59,6 +60,16 @@ describe("WorkspaceTable", () => {
     expect(screen.getByText("billing-api-staging")).toBeInTheDocument();
     expect(screen.getByText("auth-service-dev")).toBeInTheDocument();
     expect(screen.getAllByText("Name")).toHaveLength(1);
+    expect(screen.getByText("Policy")).toBeInTheDocument();
+  });
+
+  it("renders policy compliance badges in the policy column with links", () => {
+    renderTable();
+    expect(screen.getByText("Compliant")).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+
+    const compliantLink = screen.getByRole("link", { name: /Policy compliance: Compliant/i });
+    expect(compliantLink).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/settings/policies");
   });
 
   it("renders the project as a chip on its own line beneath the name", () => {

@@ -16,29 +16,29 @@ public final class ProcessLauncher {
     private boolean inheritIO;
     private ExecutorService executor;
 
-    ProcessLauncher(ExecutorService executor, String... commands) {
+    public ProcessLauncher(ExecutorService executor, String... commands) {
         assert executor != null;
         this.executor = executor;
         this.process = null;
         this.builder = new ProcessBuilder(commands);
     }
 
-    void setOutputListener(Consumer<String> listener) {
+    public void setOutputListener(Consumer<String> listener) {
         assert this.process == null;
         this.outputListener = listener;
     }
 
-    void setErrorListener(Consumer<String> listener) {
+    public void setErrorListener(Consumer<String> listener) {
         assert this.process == null;
         this.errorListener = listener;
     }
 
-    void setInheritIO(boolean inheritIO) {
+    public void setInheritIO(boolean inheritIO) {
         assert this.process == null;
         this.inheritIO = inheritIO;
     }
 
-    void setDirectory(File directory) {
+    public void setDirectory(File directory) {
         assert this.process == null;
         this.builder.directory(directory);
     }
@@ -63,7 +63,7 @@ public final class ProcessLauncher {
         }
     }
 
-    CompletableFuture<Integer> launch() {
+    public CompletableFuture<Integer> launch() {
         assert this.process == null;
         if (this.inheritIO) {
             this.builder.inheritIO();

@@ -266,4 +266,55 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
             log.info("An error occurred while copying the folder {}: {}",sourceDirectory.getAbsolutePath(), e.getMessage());
         }
     }
+
+    @Override
+    public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
+        try {
+            String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
+            String path = "/.terraform-spring-boot/local/" + relativePath;
+            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+            FileUtils.forceMkdir(file.getParentFile());
+            FileUtils.writeStringToFile(file, policyEvaluationJson, StandardCharsets.UTF_8);
+            log.info("Policy evaluation saved to local storage: {}", file.getAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to save policy evaluation to local storage: {}", e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public String getPolicyEvaluation(String storageUri) {
+        String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
+        String path = "/.terraform-spring-boot/local/" + relativePath;
+        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+        if (file.exists()) {
+            try {
+                return FileUtils.readFileToString(file, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.error("Failed to read policy evaluation from local storage: {}", e.getMessage());
+            }
+        }
+        return "{}";
+    }
+
+    @Override
+    public void deletePolicyEvaluation(String storageUri) {
+        try {
+            String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
+            String path = "/.terraform-spring-boot/local/" + relativePath;
+            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+            if (file.exists()) {
+                boolean deleted = file.delete();
+                log.info("Policy evaluation file deleted: {}, success: {}", file.getAbsolutePath(), deleted);
+                File parent = file.getParentFile();
+                if (parent != null && parent.isDirectory()) {
+                    File[] children = parent.listFiles();
+                    if (children != null && children.length == 0) {
+                        FileUtils.deleteDirectory(parent);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete policy evaluation from local storage: {}", e.getMessage());
+        }
+    }
 }

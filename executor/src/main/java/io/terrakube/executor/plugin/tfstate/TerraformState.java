@@ -41,5 +41,31 @@ public interface TerraformState {
     default boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
         return false;
     }
+
+    /**
+     * Upload an OPA binary to cloud storage for cross-pod caching within the same architecture.
+     *
+     * @param version    the OPA version (e.g. "0.68.0")
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
+     * @param sourceFile the local binary executable file to upload
+     * @return true if save succeeded
+     */
+    default boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
+        return false;
+    }
+
+    /**
+     * Download a cached OPA binary from cloud storage for the specified architecture.
+     *
+     * @param version    the OPA version (e.g. "0.68.0")
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
+     * @param targetFile where to write the restored binary on the local filesystem
+     * @return true if binary was found in storage and restored successfully
+     */
+    default boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        return false;
+    }
 }
 

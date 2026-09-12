@@ -215,7 +215,14 @@ public class ScheduleJob implements org.quartz.Job {
         }
 
         if (job.getWorkspace() == null) {
-            log.warn("Workspace does not exist anymore, deleting job context for {}", jobId);
+            log.warn("Workspace does not exist anymore, cancelling job {}", jobId);
+            try {
+                job.setStatus(JobStatus.cancelled);
+                jobRepository.save(job);
+                updateJobStepsWithStatus(job.getId(), JobStatus.cancelled);
+            } catch (Exception e) {
+                log.error("Failed to cancel orphaned job {}: {}", jobId, e.getMessage(), e);
+            }
             return true;
         }
 
@@ -388,6 +395,7 @@ public class ScheduleJob implements org.quartz.Job {
                 case terraformApply:
                 case terraformDestroy:
                 case customScripts:
+                case policyEvaluation:
                     if (!isNextInDispatchOrder(job, stepId)) {
                         return false;
                     }

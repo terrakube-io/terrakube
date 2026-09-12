@@ -45,4 +45,7 @@ public class Step {
 
     @ManyToOne
     private Job job;
+
+    @OneToMany(mappedBy = "step", cascade = CascadeType.REMOVE, orphanRemoval = true)
+    private java.util.List<io.terrakube.api.rs.policy.PolicyEvaluation> policyEvaluation;
 }
