@@ -221,6 +221,21 @@
             <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
         </insert>
 
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000074" />
+            <column name="name"                     value="tf-pwd-parameter" />
+            <column name="description"              value="Terraform parameter test workspace (length 16 fails hard-mandatory threshold min_length=24)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-parameter" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000010" />
+        </insert>
+
         <!--
         ***********************************************
         *** WORKSPACES - OPENTOFU (version 1.11.14) ***
@@ -316,6 +331,21 @@
             <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
         </insert>
 
+        <insert tableName="workspace">
+            <column name="id"                       value="70000000-0000-0000-0000-000000000075" />
+            <column name="name"                     value="tofu-pwd-parameter" />
+            <column name="description"              value="OpenTofu parameter test workspace (length 16 fails hard-mandatory threshold min_length=24)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/password-parameter" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="70000000-0000-0000-0000-000000000020" />
+        </insert>
+
         <!--
         *******************
         *** POLICY SETS ***
@@ -373,6 +403,19 @@
             <column name="branch"                   value="main" />
             <column name="folder"                   value="bundles/password/hard_mandatory" />
             <column name="organization_id"          value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!-- 5. Parameter-Driven: Dynamic Min Length -->
+        <insert tableName="policy_set">
+            <column name="id"                value="70000000-0000-0000-0000-000000000044" />
+            <column name="name"              value="password-length-parameter" />
+            <column name="description"       value="Hard mandatory guardrail with dynamic threshold configured via PolicySetParameter" />
+            <column name="enforcement_level" value="HARD_MANDATORY" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/password/dynamic_length" />
+            <column name="organization_id"   value="70000000-0000-0000-0000-000000000001" />
         </insert>
 
         <!--
@@ -443,6 +486,19 @@
             <column name="workspace_id"  value="70000000-0000-0000-0000-000000000065" />
         </insert>
 
+        <!-- Parameter-Driven Attachments -->
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000080" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000044" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000074" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="70000000-0000-0000-0000-000000000081" />
+            <column name="policy_set_id" value="70000000-0000-0000-0000-000000000044" />
+            <column name="workspace_id"  value="70000000-0000-0000-0000-000000000075" />
+        </insert>
+
         <!--
         *************************
         *** POLICY EXEMPTIONS ***
@@ -470,6 +526,19 @@
             <column name="justification"    value="Legacy database password generator requires shorter password until Q4 refactor" />
             <column name="expires_at"       valueDate="2030-12-31T23:59:59" />
             <column name="organization_id"  value="70000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        ******************************
+        *** POLICY SET PARAMETERS ***
+        ******************************
+        -->
+        <insert tableName="policy_set_parameter">
+            <column name="id"              value="70000000-0000-0000-0000-000000000090" />
+            <column name="policy_set_id"   value="70000000-0000-0000-0000-000000000044" />
+            <column name="parameter_key"   value="min_length" />
+            <column name="parameter_value" value="24" />
+            <column name="description"     value="Minimum required password length enforced via policy parameter" />
         </insert>
 
     </changeSet>
