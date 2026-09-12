@@ -179,10 +179,9 @@ describe("PolicyChecksOutput", () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(postMock).toHaveBeenCalledWith(
-        "/remote/tfe/v2/policy-checks/polchk-1/actions/override",
-        { justification: "Approved hotfix exception" }
-      );
+      expect(postMock).toHaveBeenCalledWith("/remote/tfe/v2/policy-checks/polchk-1/actions/override", {
+        justification: "Approved hotfix exception",
+      });
       expect(patchMock).toHaveBeenCalledWith(
         "organization/org-123/job/123",
         { data: { type: "job", id: "123", attributes: { status: "approved" } } },
@@ -224,43 +223,21 @@ describe("PolicyChecksOutput", () => {
 
   it("hides override and reject buttons when status is approved, rejected, or completed", () => {
     const { rerender } = render(
-      <PolicyChecksOutput
-        policyEvaluation={sampleEvaluation}
-        jobId="123"
-        status="waitingApproval"
-      />
+      <PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" status="waitingApproval" />
     );
 
     expect(screen.getByTestId("override-button")).toBeInTheDocument();
     expect(screen.getByTestId("reject-button")).toBeInTheDocument();
 
-    rerender(
-      <PolicyChecksOutput
-        policyEvaluation={sampleEvaluation}
-        jobId="123"
-        status="approved"
-      />
-    );
+    rerender(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" status="approved" />);
     expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
 
-    rerender(
-      <PolicyChecksOutput
-        policyEvaluation={sampleEvaluation}
-        jobId="123"
-        status="rejected"
-      />
-    );
+    rerender(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" status="rejected" />);
     expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
 
-    rerender(
-      <PolicyChecksOutput
-        policyEvaluation={sampleEvaluation}
-        jobId="123"
-        status="completed"
-      />
-    );
+    rerender(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" status="completed" />);
     expect(screen.queryByTestId("override-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("reject-button")).not.toBeInTheDocument();
   });
@@ -339,13 +316,7 @@ describe("PolicyChecksOutput", () => {
       ],
     };
 
-    render(
-      <PolicyChecksOutput
-        policyEvaluation={timestampEvaluation}
-        jobId="123"
-        organizationId="org-123"
-      />
-    );
+    render(<PolicyChecksOutput policyEvaluation={timestampEvaluation} jobId="123" organizationId="org-123" />);
 
     expect(screen.getByText(/Active Policy Exemption/)).toBeInTheDocument();
     expect(screen.getByText(/Expires:/)).toBeInTheDocument();
@@ -377,7 +348,8 @@ describe("PolicyChecksOutput", () => {
             {
               ruleId: "password_length_soft_mandatory",
               address: "random_password.db_password_soft_fail",
-              message: "Password length of 10 characters is below organizational standard (min 12). Requires SecOps override approval.",
+              message:
+                "Password length of 10 characters is below organizational standard (min 12). Requires SecOps override approval.",
             },
           ],
         },
@@ -443,6 +415,143 @@ describe("PolicyChecksOutput", () => {
     expect(screen.getByText("s3_bucket_deny")).toBeInTheDocument();
     expect(screen.queryByText("s3_lifecycle_warn")).not.toBeInTheDocument();
   });
+
+  it("renders passed policies, passed tab, and allows toggling execution logs", () => {
+    const passedEvaluation: PolicyEvaluationContext = {
+      jobId: "127",
+      passedRules: 2,
+      warningRules: 0,
+      softMandatoryViolations: 0,
+      hardMandatoryViolations: 0,
+      results: [
+        {
+          policySetName: "aws-baseline-security",
+          enforcementLevel: "HARD_MANDATORY",
+          status: "PASSED",
+          passedRules: 1,
+          bufferedLogs: [
+            "\u001B[1;34m🔍 Checking Policy Set: aws-baseline-security\u001B[0m",
+            "✔ All policy rules passed.",
+          ],
+        },
+        {
+          policySetName: "tagging-compliance",
+          enforcementLevel: "ADVISORY",
+          status: "PASSED",
+          passedRules: 1,
+          bufferedLogs: [
+            "\u001B[1;34m🔍 Checking Policy Set: tagging-compliance\u001B[0m",
+            "✔ Mandatory tags validated.",
+          ],
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="127" />);
+
+    // Top pill displays '2 Passed'
+    const passedPill = screen.getByTestId("pill-passed");
+    expect(passedPill).toHaveTextContent("2 Passed");
+
+    // Filter bar has All (2) and Passed (2)
+    const allTab = screen.getByRole("radio", { name: /all \(2\)/i });
+    const passedTab = screen.getByRole("radio", { name: /passed \(2\)/i });
+    expect(allTab).toBeInTheDocument();
+    expect(passedTab).toBeInTheDocument();
+
+    // Both passed cards rendered in 'All' view
+    expect(screen.getByText("aws-baseline-security")).toBeInTheDocument();
+    expect(screen.getByText("tagging-compliance")).toBeInTheDocument();
+    expect(screen.getAllByText("Passed")).toHaveLength(2);
+    expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
+    expect(screen.getByText("Advisory")).toBeInTheDocument();
+
+    // Execution logs can be expanded and collapsed
+    const toggleLogsBtn = screen.getByTestId("toggle-logs-aws-baseline-security");
+    expect(toggleLogsBtn).toHaveTextContent("View Execution Logs");
+    fireEvent.click(toggleLogsBtn);
+
+    expect(screen.getByTestId("logs-content-aws-baseline-security")).toBeInTheDocument();
+    expect(screen.getByText(/✔ All policy rules passed\./)).toBeInTheDocument();
+    expect(toggleLogsBtn).toHaveTextContent("Hide Execution Logs");
+
+    fireEvent.click(toggleLogsBtn);
+    expect(screen.queryByTestId("logs-content-aws-baseline-security")).not.toBeInTheDocument();
+  });
+
+  it("toggles filter when clicking summary pills in header", () => {
+    const passedEvaluation: PolicyEvaluationContext = {
+      jobId: "128",
+      passedRules: 2,
+      warningRules: 0,
+      softMandatoryViolations: 0,
+      hardMandatoryViolations: 0,
+      results: [
+        {
+          policySetName: "aws-baseline-security",
+          enforcementLevel: "HARD_MANDATORY",
+          status: "PASSED",
+          passedRules: 1,
+        },
+        {
+          policySetName: "tagging-compliance",
+          enforcementLevel: "ADVISORY",
+          status: "PASSED",
+          passedRules: 1,
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="128" />);
+
+    const passedPill = screen.getByTestId("pill-passed");
+    const passedTab = screen.getByRole("radio", { name: /passed \(2\)/i });
+    const allTab = screen.getByRole("radio", { name: /all \(2\)/i });
+
+    // Initial state is 'All'
+    expect(allTab).toBeChecked();
+    expect(passedTab).not.toBeChecked();
+
+    // Click passed pill -> switches to passed
+    fireEvent.click(passedPill);
+    expect(passedTab).toBeChecked();
+    expect(passedPill).toHaveClass("policy-pill--active");
+
+    // Click passed pill again -> toggles back to all
+    fireEvent.click(passedPill);
+    expect(allTab).toBeChecked();
+    expect(passedPill).not.toHaveClass("policy-pill--active");
+  });
+
+  it("filters passed rules with search input", () => {
+    const passedEvaluation: PolicyEvaluationContext = {
+      jobId: "129",
+      passedRules: 2,
+      results: [
+        {
+          policySetName: "aws-baseline-security",
+          enforcementLevel: "HARD_MANDATORY",
+          status: "PASSED",
+          passedRules: 1,
+        },
+        {
+          policySetName: "tagging-compliance",
+          enforcementLevel: "ADVISORY",
+          status: "PASSED",
+          passedRules: 1,
+        },
+      ],
+    };
+
+    render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="129" />);
+
+    const searchInput = screen.getByPlaceholderText(/filter by rule, resource, or ticket/i);
+    fireEvent.change(searchInput, { target: { value: "tagging" } });
+
+    expect(screen.getByText("tagging-compliance")).toBeInTheDocument();
+    expect(screen.queryByText("aws-baseline-security")).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "nonexistent" } });
+    expect(screen.getByText("No policy results match your filter.")).toBeInTheDocument();
+  });
 });
-
-
