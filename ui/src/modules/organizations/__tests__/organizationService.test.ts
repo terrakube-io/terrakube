@@ -4,11 +4,10 @@ import organizationService from "../organizationService";
 jest.mock("@/config/axiosConfig", () => ({
   axiosGraphQL: { post: jest.fn() },
 }));
-
 const mockPost = axiosGraphQL.post as jest.Mock;
 
-describe("organizationService.listOrganizationsGraphQL", () => {
-  it("maps workspace.edges.length into workspaceCount", async () => {
+describe("organizationService.listOrganizationSummaries", () => {
+  it("maps the organization GraphQL response to the picker model", async () => {
     mockPost.mockResolvedValue({
       data: {
         data: {
@@ -20,42 +19,12 @@ describe("organizationService.listOrganizationsGraphQL", () => {
                   name: "acme",
                   description: "desc",
                   executionMode: "remote",
-                  icon: "",
-                  workspace: {
-                    edges: [{ node: { id: "ws-1" } }, { node: { id: "ws-2" } }],
-                  },
-                },
-              },
-            ],
-          },
-        },
-      },
-    });
-
-    const result = await organizationService.listOrganizationsGraphQL();
-
-    expect(result[0].workspaceCount).toBe(2);
-  });
-
-  it("groups workspace.edges by lastJobStatus into workspaceStatusCounts, treating a missing status as NeverExecuted", async () => {
-    mockPost.mockResolvedValue({
-      data: {
-        data: {
-          organization: {
-            edges: [
-              {
-                node: {
-                  id: "org-1",
-                  name: "acme",
-                  description: "desc",
-                  executionMode: "remote",
-                  icon: "",
+                  icon: "FaBuilding:#000000",
                   workspace: {
                     edges: [
-                      { node: { id: "ws-1", lastJobStatus: "failed" } },
-                      { node: { id: "ws-2", lastJobStatus: "failed" } },
-                      { node: { id: "ws-3", lastJobStatus: "completed" } },
-                      { node: { id: "ws-4", lastJobStatus: null } },
+                      { node: { id: "workspace-1", lastJobStatus: "failed" } },
+                      { node: { id: "workspace-2", lastJobStatus: "completed" } },
+                      { node: { id: "workspace-3" } },
                     ],
                   },
                 },
@@ -66,13 +35,32 @@ describe("organizationService.listOrganizationsGraphQL", () => {
       },
     });
 
-    const result = await organizationService.listOrganizationsGraphQL();
+    const result = await organizationService.listOrganizationSummaries();
 
-    expect(result[0].workspaceStatusCounts).toEqual({
-      failed: 2,
-      completed: 1,
-      NeverExecuted: 1,
+    expect(mockPost).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({ query: expect.stringContaining("lastJobStatus") }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+    expect(result).toEqual([
+      {
+        id: "org-1",
+        name: "acme",
+        description: "desc",
+        executionMode: "remote",
+        icon: "FaBuilding:#000000",
+        workspaceCount: 3,
+        workspaceStatusCounts: { failed: 1, completed: 1, NeverExecuted: 1 },
+      },
+    ]);
+  });
+
+  it("throws a useful error when GraphQL returns errors", async () => {
+    mockPost.mockResolvedValue({
+      data: { errors: [{ message: "Forbidden" }] },
     });
+
+    await expect(organizationService.listOrganizationSummaries()).rejects.toThrow("Forbidden");
   });
 });
 
