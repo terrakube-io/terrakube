@@ -1,6 +1,6 @@
 import axios from "axios";
 import { mgr } from "@/config/authConfig";
-import { apiGet } from "../apiWrapper";
+import { apiGet, apiPost } from "../apiWrapper";
 
 jest.mock("axios", () => {
   const mockAxios = jest.fn();
@@ -19,6 +19,34 @@ jest.mock("@/config/authUser", () => ({
 
 const mockedAxios = axios as unknown as jest.Mock;
 const mockRemoveUser = mgr.removeUser as jest.Mock;
+
+describe("apiWrapper GraphQL responses", () => {
+  it("reports GraphQL errors returned with HTTP 200", async () => {
+    mockedAxios.mockResolvedValueOnce({
+      status: 200,
+      data: { errors: [{ message: "Filter of type workspace is not StringValue." }] },
+    });
+    const result = await apiPost(
+      "/graphql/api/v1",
+      { query: "query WorkspacePage { organization { edges { node { name } } } }" },
+      { dataWrapped: true }
+    );
+    expect(result.isError).toBe(true);
+    expect(result.error.message).toBe("Filter of type workspace is not StringValue.");
+    expect(result.data).toBeUndefined();
+  });
+
+  it("unwraps successful GraphQL responses", async () => {
+    const data = { organization: { edges: [] } };
+    mockedAxios.mockResolvedValueOnce({ status: 200, data: { data } });
+    const result = await apiPost(
+      "/graphql/api/v1",
+      { query: "query WorkspacePage { organization { edges { node { name } } } }" },
+      { dataWrapped: true }
+    );
+    expect(result).toEqual({ isError: false, responseCode: 200, data });
+  });
+});
 
 describe("apiWrapper 401 handling", () => {
   beforeEach(() => {
