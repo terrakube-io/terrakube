@@ -59,6 +59,9 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
 
+    @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId AND status NOT IN ('failed','completed','rejected','cancelled','noChanges','notExecuted')", nativeQuery = true)
+    List<Integer> findActiveJobIdsByWorkspace(@Param("workspaceId") String workspaceId);
+
     /**
      * Ids of jobs that reached a terminal status inside the trailing sweep window - used to reclaim
      * their live-log Redis streams. Native so soft-deleted jobs are included.
@@ -95,6 +98,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "  WHERE earlier.id < :candidateJobId" +
             "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
+            "    AND earlier.workspace.deleted = false" +
             "    AND NOT EXISTS (" +
             "      SELECT 1 FROM job blocker" +
             "      WHERE blocker.workspace = earlier.workspace" +
@@ -112,6 +116,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("SELECT MIN(j.id) FROM job j" +
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
             "   AND NOT EXISTS (" +
             "     SELECT 1 FROM job earlier" +
             "     WHERE earlier.workspace = j.workspace" +
@@ -134,6 +139,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "  WHERE earlier.id < :candidateJobId" +
             "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
+            "    AND earlier.workspace.deleted = false" +
             "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = earlier)" +
             "          OR EXISTS (SELECT 1 FROM step s WHERE s.job = earlier AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "    AND NOT EXISTS (" +
@@ -150,6 +156,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("SELECT MIN(j.id) FROM job j" +
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "   AND NOT EXISTS (" +
@@ -169,6 +176,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("SELECT COUNT(j) FROM job j" +
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )")
     int countDispatchEligibleJobs();
