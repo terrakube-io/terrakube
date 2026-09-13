@@ -16,13 +16,17 @@ import java.util.Optional;
 
 public interface JobRepository extends JpaRepository<Job, Integer> {
 
-    // Terminal statuses that don't block a later job - shared by the FIFO dispatch-ordering
-    // queries below, mirrors the list ScheduleJob.runExecution already uses in Java.
-    String TERMINAL_JOB_STATUSES = "'failed','completed','rejected','cancelled','noChanges'";
+    // Status sets for JPQL FIFO dispatch-ordering queries below, matching the lists
+    // ScheduleJob.runExecution uses in Java.
+    String ACTIVE_JOB_STATUSES = "io.terrakube.api.rs.job.JobStatus.pending, io.terrakube.api.rs.job.JobStatus.approved";
+    String TERMINAL_JOB_STATUSES = "io.terrakube.api.rs.job.JobStatus.failed, io.terrakube.api.rs.job.JobStatus.completed, io.terrakube.api.rs.job.JobStatus.rejected, io.terrakube.api.rs.job.JobStatus.cancelled, io.terrakube.api.rs.job.JobStatus.noChanges";
 
     List<Job> findAllByOrganizationAndStatusNotInOrderByIdAsc(Organization organization, List<JobStatus> status);
     List<Job> findAllByStatusInOrderByIdAsc(List<JobStatus> status);
     List<Job> findAllByOrganizationNameAndStatusInOrderByIdAsc(String organizationName, List<JobStatus> status);
+
+    @Query("SELECT count(j) FROM job j WHERE j.via = :via AND j.status IN :statuses")
+    long countByViaAndStatusIn(@Param("via") String via, @Param("statuses") List<JobStatus> statuses);
 
 
     Optional<List<Job>> findAllByWorkspaceAndStatusNotInOrderByIdAsc(Workspace workspace, List<JobStatus> status);
@@ -32,7 +36,10 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     Optional<List<Job>> findByWorkspaceAndStatusInAndIdLessThan(Workspace workspace, List<JobStatus> jobStatuses, int jobId);
 
-    Optional<Job> findFirstByWorkspaceAndAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
+    Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
+    default Optional<Job> findFirstByWorkspaceAndAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses) {
+        return findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, jobStatuses);
+    }
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
 
@@ -48,8 +55,25 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.status = :status where j.id = :jobId")
     int updateStatusById(@Param("status") JobStatus status, @Param("jobId") int jobId);
 
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
+    int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
+
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
+
+    @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId AND status NOT IN ('failed','completed','rejected','cancelled','noChanges','notExecuted')", nativeQuery = true)
+    List<Integer> findActiveJobIdsByWorkspace(@Param("workspaceId") String workspaceId);
+
+    /**
+     * Ids of jobs that reached a terminal status inside the trailing sweep window - used to reclaim
+     * their live-log Redis streams. Native so soft-deleted jobs are included.
+     */
+    @Query(value = "SELECT id FROM job WHERE status IN " +
+            "('completed','failed','cancelled','rejected','noChanges','notExecuted') " +
+            "AND updated_date >= :from AND updated_date < :cutoff", nativeQuery = true)
+    List<Integer> findTerminalJobIdsUpdatedBetween(@Param("from") java.util.Date from,
+                                                   @Param("cutoff") java.util.Date cutoff);
 
     /**
      * Row-locks the job for the rest of the caller's transaction. Two overlapping Quartz
@@ -72,34 +96,91 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
      * candidateJobId's own per-workspace blocking; ScheduleJob already does that before calling
      * this.
      */
-    @Query(value = "SELECT NOT EXISTS (" +
+    @Query("SELECT CASE WHEN NOT EXISTS (" +
             "  SELECT 1 FROM job earlier" +
             "  WHERE earlier.id < :candidateJobId" +
-            "    AND earlier.status IN ('pending', 'approved')" +
+            "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
+            "    AND earlier.workspace.deleted = false" +
             "    AND NOT EXISTS (" +
             "      SELECT 1 FROM job blocker" +
-            "      WHERE blocker.workspace_id = earlier.workspace_id" +
+            "      WHERE blocker.workspace = earlier.workspace" +
             "        AND blocker.id < earlier.id" +
             "        AND blocker.deleted = false" +
             "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
             "    )" +
-            ")", nativeQuery = true)
+            ") THEN true ELSE false END")
     boolean isJobNextInDispatchOrder(@Param("candidateJobId") int candidateJobId);
 
     /**
      * The oldest pending/approved, workspace-unblocked job id waiting for the shared executor
      * pool, or null if none. Used to wake the next job immediately instead of waiting up to 30s.
      */
-    @Query(value = "SELECT MIN(j.id) FROM job j" +
-            " WHERE j.status IN ('pending', 'approved')" +
+    @Query("SELECT MIN(j.id) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
             "   AND NOT EXISTS (" +
             "     SELECT 1 FROM job earlier" +
-            "     WHERE earlier.workspace_id = j.workspace_id" +
+            "     WHERE earlier.workspace = j.workspace" +
             "       AND earlier.id < j.id" +
             "       AND earlier.deleted = false" +
             "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
-            "   )", nativeQuery = true)
+            "   )")
     Integer findNextDispatchableJobId();
+
+    // --- Guarded variants (design doc 2026-09-02 §3.6) --------------------------------------
+    // An earlier pending/approved job only blocks the FIFO queue when it still has an executable
+    // step: it has no steps yet (not initialised) OR at least one step is still pending. A job
+    // with steps but none pending has consumed all its work and must not block later jobs.
+    // queue/running/waitingApproval blockers are untouched - the executor or a user owns those,
+    // and a step can legitimately be 'running' with zero pending steps mid-apply.
+
+    /** Guarded variant of {@link #isJobNextInDispatchOrder}. */
+    @Query("SELECT CASE WHEN NOT EXISTS (" +
+            "  SELECT 1 FROM job earlier" +
+            "  WHERE earlier.id < :candidateJobId" +
+            "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "    AND earlier.deleted = false" +
+            "    AND earlier.workspace.deleted = false" +
+            "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = earlier)" +
+            "          OR EXISTS (SELECT 1 FROM step s WHERE s.job = earlier AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "    AND NOT EXISTS (" +
+            "      SELECT 1 FROM job blocker" +
+            "      WHERE blocker.workspace = earlier.workspace" +
+            "        AND blocker.id < earlier.id" +
+            "        AND blocker.deleted = false" +
+            "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "    )" +
+            ") THEN true ELSE false END")
+    boolean isJobNextInDispatchOrderExecutable(@Param("candidateJobId") int candidateJobId);
+
+    /** Guarded variant of {@link #findNextDispatchableJobId}. */
+    @Query("SELECT MIN(j.id) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "   AND NOT EXISTS (" +
+            "     SELECT 1 FROM job earlier" +
+            "     WHERE earlier.workspace = j.workspace" +
+            "       AND earlier.id < j.id" +
+            "       AND earlier.deleted = false" +
+            "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "       AND ( earlier.status NOT IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "             OR NOT EXISTS (SELECT 1 FROM step s2 WHERE s2.job = earlier)" +
+            "             OR EXISTS (SELECT 1 FROM step s2 WHERE s2.job = earlier AND s2.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "   )")
+    Integer findNextDispatchableExecutableJobId();
+
+    /** Count of jobs the guarded FIFO-admission query currently considers eligible - a
+     *  pending/approved job that is uninitialised or still has a pending step. Queue-depth gauge. */
+    @Query("SELECT COUNT(j) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )")
+    int countDispatchEligibleJobs();
 }
