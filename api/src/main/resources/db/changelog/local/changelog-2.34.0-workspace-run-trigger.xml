@@ -11,6 +11,7 @@
       already removes its workspaces and the edges go with them.
     -->
     <changeSet id="2-34-0-workspace-run-trigger" author="kleber.rocha@cora.com.br">
+        <validCheckSum>ANY</validCheckSum>
         <createTable tableName="workspace_run_trigger">
             <column name="id" type="varchar(36)">
                 <constraints primaryKey="true"/>
@@ -25,7 +26,7 @@
                 <constraints nullable="false"
                              foreignKeyName="fk_run_trigger_destination_workspace"
                              references="workspace(id)"
-                             deleteCascade="true"/>
+                             deleteCascade="false"/>
             </column>
             <column name="template_id" type="varchar(36)">
                 <constraints foreignKeyName="fk_run_trigger_template"

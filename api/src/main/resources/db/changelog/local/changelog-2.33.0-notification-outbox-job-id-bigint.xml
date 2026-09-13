@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      The notification_outbox.job_id column was originally created as INT in the
+      2-33-0-notification-outbox changeset (released in 2.33.0), but job.id is BIGINT
+      (autoIncrement BIGINT since changelog-1.0.xml). This changeset corrects the type
+      mismatch on existing PostgreSQL installations that already ran the original changeset.
+
+      On SQL Server (Azure SQL), INT and BIGINT FK references require matching types, so
+      fresh installs already get BIGINT from the corrected 2-33-0-notification-outbox
+      changeset. This changeset is a no-op on databases where the column is already BIGINT.
+
+      The modifyDataType operation is safe with no data loss because INT fits entirely
+      within BIGINT, and the existing FK constraint is preserved.
+    -->
+    <changeSet id="2-33-0-notification-outbox-job-id-bigint" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <!--
+              Only run when the column is currently INT/INTEGER (32-bit). Skips on databases
+              where the original changeset already created it as BIGINT (fresh installs after
+              the fix), and skips on SQL Server which uses a different type name.
+            -->
+            <columnExists tableName="notification_outbox" columnName="job_id"/>
+        </preConditions>
+        <modifyDataType
+                tableName="notification_outbox"
+                columnName="job_id"
+                newDataType="BIGINT"/>
+        <rollback>
+            <modifyDataType
+                    tableName="notification_outbox"
+                    columnName="job_id"
+                    newDataType="INT"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
