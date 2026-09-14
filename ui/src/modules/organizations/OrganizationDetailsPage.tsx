@@ -1,4 +1,4 @@
-import { Flex, List, Pagination, Space } from "antd";
+import { Flex, List, message, Pagination, Space } from "antd";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,6 +50,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
   const [error, setError] = useState<ErrorInformation>();
   const requestSequence = useRef(0);
   const loadedOnce = useRef(false);
+  const loadedCountsKey = useRef("");
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(filterState.search), 300);
@@ -94,9 +95,16 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     sortOption,
   ]);
 
+  // Facet counts only depend on the filters, so page turns and page-size changes reuse the last ones.
+  const countsKey = useMemo(
+    () => (request ? JSON.stringify({ ...request, first: 0, after: 0, sort: "" }) : ""),
+    [request]
+  );
+
   const fetchPage = useCallback(
-    async (includeStatusCounts = true) => {
+    async (silent = false) => {
       if (!request) return;
+      const includeStatusCounts = !silent && countsKey !== loadedCountsKey.current;
       const sequence = ++requestSequence.current;
       const response = await workspaceService.listWorkspacePage(request, includeStatusCounts);
       if (sequence !== requestSequence.current) return;
@@ -107,6 +115,9 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             title: response.error?.status || "Failed to load workspaces",
             message: response.error?.message,
           });
+        } else if (!silent) {
+          // Polling failures stay quiet; a failed search, filter or page change must not look like success.
+          message.error(response.error?.message || "Failed to load workspaces");
         }
         setLoading(false);
         return;
@@ -122,11 +133,12 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       if (includeStatusCounts) {
         setStatusCounts(response.data.statusCounts);
         setPolicyCounts(response.data.policyCounts);
+        loadedCountsKey.current = countsKey;
       }
       setError(undefined);
       setLoading(false);
     },
-    [request, setOrganizationName]
+    [request, countsKey, setOrganizationName]
   );
 
   useEffect(() => {
@@ -157,7 +169,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     if (!projects.some((project) => project.id === projectId)) setProjectId(null);
   }, [projectsLoaded, projects, filterState.projectId]);
 
-  usePolling(() => fetchPage(false), { interval: 10000, enabled: Boolean(request), immediate: false });
+  usePolling(() => fetchPage(true), { interval: 10000, enabled: Boolean(request), immediate: false });
 
   useOrganizationJobStatusSubscription({
     organizationId: id ?? "",

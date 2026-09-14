@@ -52,51 +52,20 @@ public class DexGroupServiceImpl implements GroupService {
 
     @Override
     public boolean isMember(User user, String group) {
-        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        boolean isMember = false;
-        Object tokenGroups = principal.getTokenAttributes().get("groups");
-        if (tokenGroups instanceof Collection<?> values) {
-            for (Object groupName : values) {
-                if (groupName != null && groupName.toString().equals(group)) {
-                    isMember = true;
-                    break;
-                }
-            }
-        }
-        log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
+        boolean isMember = getEffectiveGroups(user).contains(group);
+        log.debug("{} is member {} {}", ((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("name"), group, isMember);
         return isMember;
     }
 
     @Override
     public boolean isServiceMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        boolean isMember = principal.getTokenAttributes().get("iss").equals("TerrakubeInternal")? true: false;
-        boolean isFederated = isFederatedAccount(user);
-        if(!isMember) {
-            // Federated tokens are issued by an external provider and usually carry no
-            // "groups" claim, so this check cannot live inside the loop below.
-            if (isFederated && isFederatedMember(user, group))
-                isMember = true;
-
-            Object tokenGroups = principal.getTokenAttributes().get("groups");
-            if (tokenGroups instanceof Collection<?> values) {
-                for (Object groupName : values) {
-                    if (groupName != null && groupName.toString().equals(group)) {
-                        isMember = true;
-                        break;
-                    }
-                }
-            }
-            log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
-        }else{
+        if ("TerrakubeInternal".equals(principal.getTokenAttributes().get("iss"))) {
             log.debug("TerrakubeInternal Client Service Group Membership");
+            return true;
         }
-        return isMember;
-    }
-
-    private boolean isFederatedAccount(User user) {
-        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        return !federatedLookupService.findAllAuthorized(principal.getTokenAttributes()).isEmpty();
+        // Federated tokens usually carry no "groups" claim; getEffectiveGroups merges the federated names in.
+        return isMember(user, group);
     }
 
     @Override

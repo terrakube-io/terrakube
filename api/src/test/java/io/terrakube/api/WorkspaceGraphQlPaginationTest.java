@@ -3,7 +3,10 @@ package io.terrakube.api;
 import io.restassured.response.Response;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.repository.AccessRepository;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +51,11 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
             """;
 
     private final List<Workspace> created = new ArrayList<>();
+    private final List<Access> createdAccess = new ArrayList<>();
     private String token;
+
+    @Autowired
+    private AccessRepository accessRepository;
 
     @BeforeEach
     void setupWorkspaces() {
@@ -64,6 +71,8 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
 
     @AfterEach
     void removeWorkspaces() {
+        accessRepository.deleteAll(createdAccess);
+        createdAccess.clear();
         workspaceRepository.deleteAll(created);
         workspaceRepository.flush();
         created.clear();
@@ -78,9 +87,11 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
             Response response = given().headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/json")
                     .body(body).post("/graphql/api/v1");
             assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
-            assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
-                    .as(response.asPrettyString()).containsExactly("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
-            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords")).isEqualTo(4);
+            // Other suites (AccessTests) leave extra workspaces in this organization, so only the demo rows are pinned.
+            List<String> names = response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class);
+            assertThat(names).as(response.asPrettyString()).contains("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
+            assertThat(names).isSorted();
+            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords")).isEqualTo(names.size());
         }
     }
 
@@ -128,6 +139,39 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
         assertThat(after.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
                 .as(after.asPrettyString()).containsExactly("native-page-bravo", "native-page-charlie");
         assertThat(after.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isEqualTo(2);
+    }
+
+    @Test
+    void workspaceLevelReadRoleCanListTheWorkspace() {
+        // A CI pipeline team granted role=read directly on one workspace, with no org team membership.
+        Access access = new Access();
+        access.setName("NATIVE_PAGE_READERS");
+        access.setRole("read");
+        access.setWorkspace(created.get(1));
+        createdAccess.add(accessRepository.saveAndFlush(access));
+
+        Response response = execute(nativePageVariables("name,id"), generatePAT("NATIVE_PAGE_READERS"));
+        assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
+        assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .as(response.asPrettyString()).containsExactly("native-page-bravo");
+        assertThat(response.jsonPath().getInt("data.organization.edges[0].node.all.pageInfo.totalRecords")).isEqualTo(1);
+    }
+
+    @Test
+    void internalServiceTokenWithoutGroupsListsWorkspaces() {
+        // TerrakubeInternal tokens carry no groups claim; they pass as superuser before the filter applies.
+        Response response = execute(nativePageVariables("name,id"), generateSystemToken());
+        assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
+        assertThat(response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class))
+                .as(response.asPrettyString())
+                .containsExactly("native-page-alpha", "native-page-bravo", "native-page-charlie");
+    }
+
+    private Map<String, Object> nativePageVariables(String sort) {
+        return Map.of(
+                "organizationIds", List.of(ORGANIZATION_ID.toString()), "first", "20", "after", "0",
+                "sort", sort, "filter", "name==\"native-page-*\"", "allFilter", "name==\"native-page-*\"",
+                "completedFilter", "name==\"native-page-*\";lastJobStatus==\"completed\"");
     }
 
     @Test

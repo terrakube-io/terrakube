@@ -276,6 +276,19 @@ class DexGroupServiceTests {
     }
 
     @Test
+    void membershipChecksAcceptEveryGroupsClaimShape() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class));
+        for (Object groups : List.of(new String[] {"TEAM"}, List.of("TEAM"), "TEAM")) {
+            User user = userWith(Map.of("iss", "https://dex.example.com", "groups", groups));
+            assertTrue(service.isMember(user, "TEAM"));
+            assertTrue(service.isServiceMember(user, "TEAM"));
+            assertFalse(service.isMember(user, "OTHER"));
+            assertFalse(service.isServiceMember(user, "OTHER"));
+        }
+        assertTrue(service.isServiceMember(userWith(Map.of("iss", "TerrakubeInternal")), "ANY"));
+    }
+
+    @Test
     void effectiveGroupsAcceptArraysAndIgnoreNullOrBlankEntries() {
         DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class));
         for (Object groups : List.of(

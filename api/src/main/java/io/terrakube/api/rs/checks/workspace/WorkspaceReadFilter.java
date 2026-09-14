@@ -43,9 +43,8 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
                         canManageWorkspace(entityClass, requestScope, "organization.team")));
         FilterExpression projectAccess =
                 new InPredicate(path(entityClass, requestScope, "project.projectAccess.name"), groups);
-        FilterExpression workspaceAccess = new AndFilterExpression(
-                new InPredicate(path(entityClass, requestScope, "access.name"), groups),
-                canManageWorkspace(entityClass, requestScope, "access"));
+        // Any workspace-level access grant (read, plan, write, admin, custom) can view the workspace.
+        FilterExpression workspaceAccess = new InPredicate(path(entityClass, requestScope, "access.name"), groups);
 
         return new OrFilterExpression(organizationAccess, new OrFilterExpression(projectAccess, workspaceAccess));
     }
@@ -67,8 +66,8 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
                 && workspace.getProject().getProjectAccess() != null
                 && workspace.getProject().getProjectAccess().stream()
                         .anyMatch(access -> groups.contains(access.getName()));
-        boolean workspaceAccess = workspace.getAccess() != null && workspace.getAccess().stream()
-                .anyMatch(access -> groups.contains(access.getName()) && rbacService.canManageWorkspace(access));
+        boolean workspaceAccess = workspace.getAccess() != null
+                && workspace.getAccess().stream().anyMatch(access -> groups.contains(access.getName()));
         return organizationAccess || projectAccess || workspaceAccess;
     }
 

@@ -11,6 +11,7 @@ import io.terrakube.api.rs.checks.workspace.WorkspaceReadFilter;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -47,5 +48,12 @@ class WorkspaceReadFilterTest {
         assertTrue(filter.applyPredicateToObject(workspace, null, scope));
         access.setName("OTHER");
         assertFalse(filter.applyPredicateToObject(workspace, null, scope));
+
+        // Workspace-level access grants view rights regardless of role (read/plan included).
+        Access readOnly = new Access();
+        readOnly.setName("TEAM");
+        readOnly.setRole("read");
+        workspace.setAccess(List.of(readOnly));
+        assertTrue(filter.applyPredicateToObject(workspace, null, scope));
     }
 }
