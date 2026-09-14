@@ -38,6 +38,10 @@ import java.util.UUID;
 @DeletePermission(expression = "team manage workspace")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+// Elide silently truncates un-paged collections to 500 rows, and clients cannot opt into page[...] because the
+// read permission above is evaluated in memory (Elide rejects it with "Cannot paginate workspace"). Raise the
+// implicit ceiling to Elide's maximum so organizations with more than 500 workspaces list completely.
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include
 @Getter
 @Setter
