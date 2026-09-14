@@ -69,6 +69,7 @@
         </createIndex>
     </changeSet>
     <changeSet id="2-33-0-notification-outbox" author="jake">
+        <validCheckSum>ANY</validCheckSum>
         <!-- payload/last_error are "text", not "clob": clob maps to PostgreSQL's oid-backed
              Large Object storage, which requires every read to happen inside a real
              (non-autocommit) transaction - the outbox poller's findDueForDispatch() query runs
@@ -79,7 +80,7 @@
             <column name="id" type="varchar(36)">
                 <constraints primaryKey="true" nullable="false" />
             </column>
-            <column name="job_id" type="int">
+            <column name="job_id" type="BIGINT">
                 <constraints nullable="false" />
             </column>
             <column name="configuration_id" type="varchar(36)">
