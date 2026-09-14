@@ -67,6 +67,40 @@ class WorkspacePaginationTests extends ServerApplicationTests {
         }
     }
 
+    @Test
+    void listSeededSimpleBigWorkspacesViaJsonApiAndGraphQl() {
+        String simpleBigOrgId = "80000000-0000-0000-0000-000000000001";
+        int expectedWorkspaces = 1500;
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/api/v1/organization/" + simpleBigOrgId + "/workspace")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", greaterThanOrEqualTo(expectedWorkspaces));
+
+        String query = "{ organization(ids: [\"" + simpleBigOrgId + "\"]) { edges { node { "
+                + "workspace(sort: \"name\") { edges { node { id name } } } } } } }";
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .contentType("application/json")
+                .body(Map.of("query", query))
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.organization.edges[0].node.workspace.edges.size()",
+                        greaterThanOrEqualTo(expectedWorkspaces));
+    }
+
     private List<Workspace> seedWorkspaces() {
         Organization organization = organizationRepository.findById(UUID.fromString(ORGANIZATION_ID)).get();
         List<Workspace> workspaces = new ArrayList<>(SEEDED_WORKSPACES);
