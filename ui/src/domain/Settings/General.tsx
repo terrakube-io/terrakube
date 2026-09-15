@@ -11,6 +11,7 @@ import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -31,6 +32,7 @@ type Props = {
 
 export const GeneralSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams();
+  const { removeOrganization, updateOrganization } = useOrganizationSummaries();
   const [organization, setOrganization] = useState<SparseOrganization>();
   const [loading, setLoading] = useState(false);
   const [waiting, setWaiting] = useState(false);
@@ -65,6 +67,9 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
       .then((response) => {
         if (response.status == 204) {
           message.success("Organization updated successfully");
+          if (orgid) {
+            updateOrganization(orgid, { ...values, icon: iconField });
+          }
         } else {
           message.error("Organization update failed");
         }
@@ -96,6 +101,9 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
       .then((response) => {
         if (response.status == 204) {
           message.success("Organization deleted successfully, please logout and login to Terrakube");
+          if (orgid) {
+            removeOrganization(orgid);
+          }
         } else {
           message.error("Organization deletion failed");
         }

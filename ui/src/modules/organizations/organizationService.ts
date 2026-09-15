@@ -19,7 +19,7 @@ async function listOrganizations(): Promise<ApiResponse<Organization[]>> {
   return await apiGet("/api/v1/organization", { dataWrapped: true });
 }
 
-async function listOrganizationsGraphQL(): Promise<FlatOrganization[]> {
+async function listOrganizationSummaries(): Promise<FlatOrganization[]> {
   const body = {
     query: `{
       organization {
@@ -142,7 +142,7 @@ async function listOrganizationTags(organizationId: string): Promise<TagModel[]>
 
 const methods = {
   listOrganizations,
-  listOrganizationsGraphQL,
+  listOrganizationSummaries,
   getOrganizationNameGraphQL,
   listOrganizationTags,
 };
