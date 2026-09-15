@@ -10,7 +10,7 @@
       and sorts by name or last run. Each index below leads with (organization_id, deleted)
       so a single organization's rows are answered from the index.
     -->
-    <changeSet id="2-35-0-workspace-pagination-indexes" author="terrakube">
+    <changeSet id="2-34-0-workspace-pagination-indexes" author="terrakube">
         <createIndex tableName="workspace" indexName="idx_workspace_org_status">
             <column name="organization_id"/>
             <column name="deleted"/>
