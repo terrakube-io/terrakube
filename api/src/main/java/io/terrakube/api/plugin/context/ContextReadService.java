@@ -90,17 +90,25 @@ public class ContextReadService {
             owner[0] = true;
             return startLoad(id);
         });
+        CompletableFuture<String> awaited = future;
         if (owner[0]) {
             // Lifecycle is tied to the backing object-store operation, NOT to any waiting caller:
-            // the in-flight entry is removed only when this future completes.
-            future.whenComplete((value, error) -> onLoadComplete(jobId, future, value, error));
+            // the in-flight entry is removed only when this future completes. The owner waits on the
+            // chained stage so that eviction and metrics have run before read() returns; a waiter on
+            // the raw future can wake before the completion callback is executed.
+            awaited = future.whenComplete((value, error) -> onLoadComplete(jobId, future, value, error));
         }
         countRequest(owner[0] ? "miss" : "coalesced");
 
         try {
-            String result = future.get(properties.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            String result = awaited.get(properties.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS);
             if (result != null && !result.isBlank()) {
                 cache.put(jobId, result);
+            } else {
+                // A missing object is intentionally not cached. Remove its completed future before
+                // returning so an immediate next caller starts a fresh object-store read instead
+                // of coalescing onto the already-completed null result.
+                inFlight.remove(jobId, future);
             }
             return result;
         } catch (TimeoutException e) {

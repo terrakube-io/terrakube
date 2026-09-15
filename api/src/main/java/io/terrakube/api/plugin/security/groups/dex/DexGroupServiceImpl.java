@@ -22,10 +22,12 @@ import io.terrakube.api.rs.federated.Federated;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @AllArgsConstructor
@@ -50,51 +52,20 @@ public class DexGroupServiceImpl implements GroupService {
 
     @Override
     public boolean isMember(User user, String group) {
-        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        boolean isMember = false;
-        Object tokenGroups = principal.getTokenAttributes().get("groups");
-        if (tokenGroups instanceof Collection<?> values) {
-            for (Object groupName : values) {
-                if (groupName != null && groupName.toString().equals(group)) {
-                    isMember = true;
-                    break;
-                }
-            }
-        }
-        log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
+        boolean isMember = getEffectiveGroups(user).contains(group);
+        log.debug("{} is member {} {}", ((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("name"), group, isMember);
         return isMember;
     }
 
     @Override
     public boolean isServiceMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        boolean isMember = principal.getTokenAttributes().get("iss").equals("TerrakubeInternal")? true: false;
-        boolean isFederated = isFederatedAccount(user);
-        if(!isMember) {
-            // Federated tokens are issued by an external provider and usually carry no
-            // "groups" claim, so this check cannot live inside the loop below.
-            if (isFederated && isFederatedMember(user, group))
-                isMember = true;
-
-            Object tokenGroups = principal.getTokenAttributes().get("groups");
-            if (tokenGroups instanceof Collection<?> values) {
-                for (Object groupName : values) {
-                    if (groupName != null && groupName.toString().equals(group)) {
-                        isMember = true;
-                        break;
-                    }
-                }
-            }
-            log.debug("{} is member {} {}", principal.getTokenAttributes().get("name"), group, isMember);
-        }else{
+        if ("TerrakubeInternal".equals(principal.getTokenAttributes().get("iss"))) {
             log.debug("TerrakubeInternal Client Service Group Membership");
+            return true;
         }
-        return isMember;
-    }
-
-    private boolean isFederatedAccount(User user) {
-        JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        return !federatedLookupService.findAllAuthorized(principal.getTokenAttributes()).isEmpty();
+        // Federated tokens usually carry no "groups" claim; getEffectiveGroups merges the federated names in.
+        return isMember(user, group);
     }
 
     @Override
@@ -104,16 +75,23 @@ public class DexGroupServiceImpl implements GroupService {
                 .anyMatch(federated -> federated.getName().equals(group));
     }
 
-    private List<String> getEffectiveGroups(User user) {
+    @Override
+    public Set<String> getEffectiveGroups(User user) {
         JwtAuthenticationToken principal = (JwtAuthenticationToken) user.getPrincipal();
         Map<String, Object> tokenAttributes = principal.getTokenAttributes();
-        List<String> groups = new ArrayList<>();
+        Set<String> groups = new LinkedHashSet<>();
 
         Object tokenGroups = tokenAttributes.get("groups");
-        if (tokenGroups instanceof Collection<?> values) {
+        if (tokenGroups instanceof Object[] values) {
+            tokenGroups = Arrays.asList(values);
+        }
+        if (tokenGroups instanceof String group && !group.isBlank()) {
+            groups.add(group);
+        } else if (tokenGroups instanceof Collection<?> values) {
             values.stream()
                     .filter(Objects::nonNull)
                     .map(Object::toString)
+                    .filter(group -> !group.isBlank())
                     .forEach(groups::add);
         }
 
@@ -122,14 +100,7 @@ public class DexGroupServiceImpl implements GroupService {
                 .filter(Objects::nonNull)
                 .forEach(groups::add);
 
-        return groups.stream().distinct().toList();
-    }
-
-    private String[] toStringArray(Object array) {
-        if (array instanceof Collection<?> values) {
-            return values.stream().filter(Objects::nonNull).map(Object::toString).toArray(String[]::new);
-        }
-        return new String[0];
+        return groups;
     }
 
     @Override
@@ -167,7 +138,7 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithLimitedAccessV2(User user, Organization organization){
-        List<String> groups = getEffectiveGroups(user);
+        List<String> groups = new ArrayList<>(getEffectiveGroups(user));
         if (groups.isEmpty()) {
             log.debug("No groups found for user in workspace limited access check");
             return false;
@@ -183,7 +154,7 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     @SuppressWarnings("unchecked")
     public boolean isMemberWithProjectAccess(User user, Organization organization){
-        List<String> groups = getEffectiveGroups(user);
+        List<String> groups = new ArrayList<>(getEffectiveGroups(user));
         if (groups.isEmpty()) {
             log.debug("No groups found for user in project access check");
             return false;

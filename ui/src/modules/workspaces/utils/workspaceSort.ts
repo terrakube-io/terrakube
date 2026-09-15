@@ -1,6 +1,3 @@
-import { JobStatus } from "../../../domain/types";
-import { WorkspaceListItem } from "../types";
-
 /** Combined sort option: field + direction in one value for the UI */
 export type WorkspaceSortOption =
   | "name_asc"
@@ -14,87 +11,6 @@ export type WorkspaceSortOption =
   | "terraformVersion_desc";
 
 const SORT_STORAGE_KEY = "workspaceSortValue";
-
-/** Order for "sort by status" (lower index = earlier in list when ascending) */
-const STATUS_ORDER: (JobStatus | "NeverExecuted")[] = [
-  JobStatus.Running,
-  JobStatus.Queue,
-  JobStatus.WaitingApproval,
-  JobStatus.Failed,
-  JobStatus.Rejected,
-  JobStatus.Cancelled,
-  JobStatus.Completed,
-  JobStatus.NoChanges,
-  JobStatus.NotExecuted,
-  JobStatus.Approved,
-  JobStatus.Pending,
-  JobStatus.Unknown,
-  "NeverExecuted",
-];
-
-function statusRank(s: JobStatus | undefined): number {
-  const idx = STATUS_ORDER.indexOf(s ?? ("NeverExecuted" as const));
-  return idx === -1 ? STATUS_ORDER.length : idx;
-}
-
-function parseDate(iso: string | undefined): number {
-  if (!iso) return 0;
-  const t = new Date(iso).getTime();
-  return Number.isNaN(t) ? 0 : t;
-}
-
-function str(a: string | undefined, b: string | undefined): number {
-  const A = (a ?? "").toLowerCase();
-  const B = (b ?? "").toLowerCase();
-  return A.localeCompare(B, undefined, { sensitivity: "base" });
-}
-
-export function compareByName(a: WorkspaceListItem, b: WorkspaceListItem): number {
-  return str(a.name, b.name);
-}
-
-export function compareByLastRun(a: WorkspaceListItem, b: WorkspaceListItem): number {
-  return parseDate(a.lastRun) - parseDate(b.lastRun);
-}
-
-export function compareByStatus(a: WorkspaceListItem, b: WorkspaceListItem): number {
-  return statusRank(a.lastStatus) - statusRank(b.lastStatus);
-}
-
-export function compareBySource(a: WorkspaceListItem, b: WorkspaceListItem): number {
-  return str(a.source ?? a.normalizedSource, b.source ?? b.normalizedSource);
-}
-
-export function compareByTerraformVersion(a: WorkspaceListItem, b: WorkspaceListItem): number {
-  return str(a.terraformVersion, b.terraformVersion);
-}
-
-export function sortWorkspaces(workspaces: WorkspaceListItem[], option: WorkspaceSortOption): WorkspaceListItem[] {
-  const list = [...workspaces];
-
-  switch (option) {
-    case "name_asc":
-      return list.sort(compareByName);
-    case "name_desc":
-      return list.sort((a, b) => -compareByName(a, b));
-    case "lastRun_desc":
-      return list.sort((a, b) => -compareByLastRun(a, b));
-    case "lastRun_asc":
-      return list.sort(compareByLastRun);
-    case "status":
-      return list.sort(compareByStatus);
-    case "source_asc":
-      return list.sort(compareBySource);
-    case "source_desc":
-      return list.sort((a, b) => -compareBySource(a, b));
-    case "terraformVersion_asc":
-      return list.sort(compareByTerraformVersion);
-    case "terraformVersion_desc":
-      return list.sort((a, b) => -compareByTerraformVersion(a, b));
-    default:
-      return list;
-  }
-}
 
 export function getStoredWorkspaceSortOption(): WorkspaceSortOption {
   const stored = sessionStorage.getItem(SORT_STORAGE_KEY);
@@ -125,7 +41,7 @@ export const WORKSPACE_SORT_OPTIONS: { label: string; value: WorkspaceSortOption
   { label: "Name (Z → A)", value: "name_desc" },
   { label: "Last run (newest first)", value: "lastRun_desc" },
   { label: "Last run (oldest first)", value: "lastRun_asc" },
-  { label: "Job status", value: "status" },
+  { label: "Job status (grouped)", value: "status" },
   { label: "Repository (A → Z)", value: "source_asc" },
   { label: "Repository (Z → A)", value: "source_desc" },
   { label: "Terraform version (A → Z)", value: "terraformVersion_asc" },

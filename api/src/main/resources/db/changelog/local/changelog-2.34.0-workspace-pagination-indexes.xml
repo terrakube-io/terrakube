@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      The workspace list is paginated server-side: every page and facet count filters by
+      organization plus the soft-delete flag, then narrows by status, project or policy state
+      and sorts by name or last run. Each index below leads with (organization_id, deleted)
+      so a single organization's rows are answered from the index.
+    -->
+    <changeSet id="2-34-0-workspace-pagination-indexes" author="terrakube">
+        <createIndex tableName="workspace" indexName="idx_workspace_org_status">
+            <column name="organization_id"/>
+            <column name="deleted"/>
+            <column name="last_job_status"/>
+        </createIndex>
+        <createIndex tableName="workspace" indexName="idx_workspace_org_last_job_date">
+            <column name="organization_id"/>
+            <column name="deleted"/>
+            <column name="last_job_date"/>
+        </createIndex>
+        <createIndex tableName="workspace" indexName="idx_workspace_org_project">
+            <column name="organization_id"/>
+            <column name="deleted"/>
+            <column name="project_id"/>
+        </createIndex>
+        <createIndex tableName="workspace" indexName="idx_workspace_org_policy_status">
+            <column name="organization_id"/>
+            <column name="deleted"/>
+            <column name="policy_compliance_status"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

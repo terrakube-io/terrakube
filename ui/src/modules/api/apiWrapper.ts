@@ -179,6 +179,17 @@ async function post<TRequest, TResponse>(
       withCredentials: sendCookiesWithRequests,
     });
 
+    if (options.dataWrapped && response.data?.errors?.length) {
+      return {
+        isError: true,
+        error: {
+          status: "GraphQL request failed",
+          message: response.data.errors.map((error: { message: string }) => error.message).join("\n"),
+        },
+        responseCode: response.status,
+      };
+    }
+
     return {
       isError: false,
       data: options.dataWrapped ? response.data?.data : response.data,
