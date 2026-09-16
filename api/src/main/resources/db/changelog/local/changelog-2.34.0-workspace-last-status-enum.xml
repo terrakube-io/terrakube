@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!--
+        workspace.last_job_status is a varchar column, but the entity field carried no @Enumerated, so
+        Hibernate stored the JobStatus ordinal as text ("12" for NeverExecuted). Reads survived through
+        JDBC coercion; any SQL comparison did not: PostgreSQL refuses `varchar = smallint`, which broke
+        every lastJobStatus filter. The entity now maps the enum by name; this rewrites stored ordinals to
+        names in JobStatus declaration order. WorkspaceLastJobStatusChangeSetTest keeps the two in sync.
+    -->
+    <changeSet id="2-34-0-workspace-last-job-status-enum-name" author="terrakube">
+        <update tableName="workspace">
+            <column name="last_job_status" value="pending"/>
+            <where>last_job_status = '0'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="waitingApproval"/>
+            <where>last_job_status = '1'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="approved"/>
+            <where>last_job_status = '2'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="queue"/>
+            <where>last_job_status = '3'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="running"/>
+            <where>last_job_status = '4'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="completed"/>
+            <where>last_job_status = '5'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="noChanges"/>
+            <where>last_job_status = '6'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="notExecuted"/>
+            <where>last_job_status = '7'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="rejected"/>
+            <where>last_job_status = '8'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="cancelled"/>
+            <where>last_job_status = '9'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="failed"/>
+            <where>last_job_status = '10'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="unknown"/>
+            <where>last_job_status = '11'</where>
+        </update>
+        <update tableName="workspace">
+            <column name="last_job_status" value="NeverExecuted"/>
+            <where>last_job_status = '12'</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>
