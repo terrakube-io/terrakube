@@ -19,7 +19,7 @@ export function getWorkspaceStatusText(status?: string): string | undefined {
     case "NeverExecuted":
       return "Never Executed";
     case JobStatus.Rejected:
-      return "Rejected";
+      return "Discarded";
     case JobStatus.Cancelled:
       return "Cancelled";
     case JobStatus.Failed:

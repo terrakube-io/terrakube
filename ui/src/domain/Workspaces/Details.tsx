@@ -705,7 +705,7 @@ export const WorkspaceDetails = ({
       case "2":
         return jobVisible ? (
           <Suspense fallback={<LoadingFallback />}>
-            <DetailsJob jobId={jobId!} />
+            <DetailsJob jobId={jobId!} workspaceName={workspaceName} canApprove={approveJob} />
           </Suspense>
         ) : (
           <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
