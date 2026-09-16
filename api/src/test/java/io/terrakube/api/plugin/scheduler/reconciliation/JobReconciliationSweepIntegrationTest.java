@@ -10,12 +10,11 @@ import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -41,15 +40,14 @@ import io.terrakube.api.rs.workspace.Workspace;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@DirtiesContext
 class JobReconciliationSweepIntegrationTest {
 
-    @MockitoBean
-    private RedisTemplate<String, Object> redisTemplate;
-
-    // Without this, ExecutorAvailabilityListener's @PostConstruct subscribe() forces the real
-    // container to connect to Redis on context startup - there's no Redis available here.
-    @MockitoBean
-    private RedisMessageListenerContainer redisMessageListenerContainer;
+    // Quartz keeps running between tests, including while Mockito resets test-scoped stubs.
+    // Use real Redis so the background sweep always has working per-job locks.
+    @Container
+    private static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:7-alpine")
+            .withExposedPorts(6379);
 
     @Container
     private static final PostgreSQLContainer<?> postgreSQLContainer = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -59,6 +57,8 @@ class JobReconciliationSweepIntegrationTest {
 
     @DynamicPropertySource
     static void registerPostgreSQLProperties(DynamicPropertyRegistry registry) {
+        registry.add("io.terrakube.api.redis.hostname", redisContainer::getHost);
+        registry.add("io.terrakube.api.redis.port", () -> redisContainer.getMappedPort(6379));
         registry.add("io.terrakube.api.plugin.datasource.type", () -> "POSTGRESQL");
         registry.add("io.terrakube.api.plugin.datasource.hostname", postgreSQLContainer::getHost);
         registry.add("io.terrakube.api.plugin.datasource.databasePort", () -> postgreSQLContainer.getMappedPort(5432).toString());
@@ -82,22 +82,10 @@ class JobReconciliationSweepIntegrationTest {
     private Organization organization;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setup() {
         organization = new Organization();
         organization.setName("org-" + UUID.randomUUID().toString().substring(0, 8));
         organization = organizationRepository.save(organization);
-
-        // The sweep now takes a per-job Redis lock before reconciling a zero-pending job; the
-        // mocked RedisTemplate must let that lock be acquired and released.
-        org.springframework.data.redis.core.ValueOperations<String, Object> valueOperations =
-                org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
-        org.mockito.Mockito.lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        org.mockito.Mockito.lenient().when(valueOperations.setIfAbsent(
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(java.time.Duration.class))).thenReturn(true);
-        org.mockito.Mockito.lenient().when(redisTemplate.delete(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(true);
     }
 
     @Test
@@ -178,6 +166,8 @@ class JobReconciliationSweepIntegrationTest {
         }
 
         assertThat(reconciled).isTrue();
+        assertThat(workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus())
+                .isEqualTo(JobStatus.completed);
         assertThat(scheduler.checkExists(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + id))).isFalse();
     }
 }
