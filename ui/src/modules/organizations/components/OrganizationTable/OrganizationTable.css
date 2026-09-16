@@ -165,3 +165,26 @@
   justify-content: flex-end;
   padding: 12px 0;
 }
+
+@media (max-width: 720px) {
+  .organization-list-header {
+    display: none;
+  }
+
+  .organization-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .organization-col-name,
+  .organization-col-description {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .organization-col-workspaces,
+  .organization-col-mode {
+    width: auto;
+  }
+}
