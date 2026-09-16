@@ -93,8 +93,16 @@ final class HclBlockScanner {
                 continue;
             }
             List<String> labels = new ArrayList<>();
-            while (!c.eof() && c.peek() == '"') {
-                labels.add(c.quoted());
+            while (!c.eof()) {
+                if (c.peek() == '"') {
+                    labels.add(c.quoted());
+                } else {
+                    String label = c.identifier();
+                    if (label.isEmpty()) {
+                        break;
+                    }
+                    labels.add(label);
+                }
                 c.skipTrivia();
             }
             if (!c.eof() && c.peek() == '{') {
@@ -161,21 +169,22 @@ final class HclBlockScanner {
         /** At an opening quote. Returns the raw content and leaves the cursor after the closing quote. */
         String quoted() {
             int start = ++i;
-            int templateDepth = 0;
             while (!eof()) {
                 char ch = peek();
                 if (ch == '\\') {
                     i += 2;
-                } else if (ch == '"' && templateDepth == 0) {
+                } else if (ch == '"') {
                     String content = s.substring(start, i);
                     i++;
                     return content;
-                } else if ((ch == '$' || ch == '%') && at(ch + "{")) {
-                    templateDepth++;
+                } else if (at("$${") || at("%%{")) {
+                    i += 3;
+                } else if (at("${") || at("%{")) {
                     i += 2;
-                } else if (ch == '}' && templateDepth > 0) {
-                    templateDepth--;
-                    i++;
+                    expression(true);
+                    if (!eof() && peek() == '}') {
+                        i++;
+                    }
                 } else {
                     i++;
                 }
@@ -211,6 +220,11 @@ final class HclBlockScanner {
 
         /** Raw expression text up to the end of the line, a closing bracket or a comma at depth zero. */
         String expression() {
+            return expression(false);
+        }
+
+        // Template expressions end at their closing brace, not at a newline or comma.
+        String expression(boolean template) {
             int start = i;
             int depth = 0;
             while (!eof()) {
@@ -220,7 +234,7 @@ final class HclBlockScanner {
                 } else if (at("<<")) {
                     skipHeredoc();
                 } else if (ch == '#' || at("//")) {
-                    if (depth == 0) {
+                    if (depth == 0 && !template) {
                         break;
                     }
                     skipToEol();
@@ -236,7 +250,7 @@ final class HclBlockScanner {
                     }
                     depth--;
                     i++;
-                } else if ((ch == '\n' || ch == ',') && depth == 0) {
+                } else if ((ch == '\n' || ch == ',') && depth == 0 && !template) {
                     break;
                 } else {
                     i++;

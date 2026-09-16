@@ -103,6 +103,45 @@ class HclBlockScannerTest {
     }
 
     @Test
+    void acceptsUnquotedAndMixedBlockLabels() {
+        List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks("""
+                variable region { default = "eu" }
+                output region { value = var.region }
+                resource null_resource "example" {}
+                """);
+
+        assertThat(blocks).extracting(HclBlockScanner.Block::type)
+                .containsExactly("variable", "output", "resource");
+        assertThat(blocks.get(0).labels()).containsExactly("region");
+        assertThat(blocks.get(1).labels()).containsExactly("region");
+        assertThat(blocks.get(2).labels()).containsExactly("null_resource", "example");
+    }
+
+    @Test
+    void templatesPreserveExpressionsAndFollowingBlocks() {
+        for (String expression : List.of(
+                "\"${replace(\"}\", \"x\", \"y\")}\"",
+                "\"$${\"",
+                "\"%%{\"",
+                "\"${jsonencode({ a = \"}\", b = \"${var.name}\" })}\"",
+                "\"%{ if var.name == \"}\" }yes%{ endif }\"",
+                "\"${ /* } */ var.name}\"",
+                "\"${\nvar.name // }\n}\"")) {
+            List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks(
+                    "locals {\n value = " + expression + "\n}\n"
+                            + "variable \"region\" { default = \"eu\" }\n"
+                            + "output \"region\" { value = var.region }\n");
+
+            assertThat(blocks).as(expression).extracting(HclBlockScanner.Block::type)
+                    .containsExactly("locals", "variable", "output");
+            assertThat(HclBlockScanner.attributes(blocks.get(0).body()).get("value"))
+                    .as(expression).isEqualTo(expression);
+            assertThat(HclBlockScanner.attributes(blocks.get(1).body()).get("default"))
+                    .isEqualTo("\"eu\"");
+        }
+    }
+
+    @Test
     void unquoteLeavesNonStringExpressionsAlone() {
         assertThat(HclBlockScanner.unquote("list(string)")).isEqualTo("list(string)");
         assertThat(HclBlockScanner.unquote(null)).isNull();
