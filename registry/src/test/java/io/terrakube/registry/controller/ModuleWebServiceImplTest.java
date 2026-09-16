@@ -1,6 +1,8 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.module.ModuleService;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -18,6 +21,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // Standalone MockMvc test (no full Spring context / WireMock) covering the module.zip endpoint's
@@ -28,16 +32,19 @@ class ModuleWebServiceImplTest {
 
     private ModuleService moduleService;
     private StorageService storageService;
+    private ModuleInspectorService moduleInspectorService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         moduleService = mock(ModuleService.class);
         storageService = mock(StorageService.class);
+        moduleInspectorService = mock(ModuleInspectorService.class);
 
         ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
         controller.storageService = storageService;
+        controller.moduleInspectorService = moduleInspectorService;
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new StorageExceptionHandler())
@@ -79,5 +86,25 @@ class ModuleWebServiceImplTest {
         mockMvc.perform(get("/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    void detailsEndpointReturnsParsedModuleAndDefaultsSubmoduleToRoot() throws Exception {
+        when(moduleInspectorService.details("org", "vpc", "aws", "1.0.0", ""))
+                .thenReturn(new ModuleDetailsDTO(List.of("subnet"),
+                        List.of(new ModuleDetailsDTO.Variable("cidr", "string", "VPC CIDR", "\"10.0.0.0/16\"")),
+                        List.of(new ModuleDetailsDTO.Output("vpc_id", "The VPC id")),
+                        List.of(new ModuleDetailsDTO.Resource("aws_vpc", "main")),
+                        null));
+
+        mockMvc.perform(get("/terraform/modules/v1/org/vpc/aws/1.0.0/details"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submodules[0]").value("subnet"))
+                .andExpect(jsonPath("$.variables[0].name").value("cidr"))
+                .andExpect(jsonPath("$.variables[0].defaultValue").value("\"10.0.0.0/16\""))
+                .andExpect(jsonPath("$.outputs[0].description").value("The VPC id"))
+                .andExpect(jsonPath("$.resources[0].type").value("aws_vpc"));
+
+        verify(moduleInspectorService).details("org", "vpc", "aws", "1.0.0", "");
     }
 }

@@ -1,9 +1,11 @@
 package io.terrakube.registry.controller;
 
 import io.terrakube.registry.controller.model.module.ModuleDTO;
+import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
 import io.terrakube.registry.controller.model.module.VersionDTO;
 import io.terrakube.registry.controller.model.module.VersionsDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.service.module.ModuleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -27,6 +29,9 @@ public class ModuleWebServiceImpl {
 
     @Autowired
     StorageService storageService;
+
+    @Autowired
+    ModuleInspectorService moduleInspectorService;
 
     @GetMapping(value = "/{organization}/{module}/{provider}/versions", produces = "application/json")
     public ResponseEntity<ModuleDTO> searchModuleVersions(@PathVariable String organization, @PathVariable String module, @PathVariable String provider) {
@@ -56,6 +61,13 @@ public class ModuleWebServiceImpl {
         );
         moduleService.updateModuleDownloadCount(organization, module, provider);
         return ResponseEntity.noContent().headers(responseHeaders).build();
+    }
+
+    /** Inputs, outputs, resources and submodules of one module version, parsed server-side. */
+    @GetMapping(value = "/{organization}/{module}/{provider}/{version}/details", produces = "application/json")
+    public ResponseEntity<ModuleDetailsDTO> getModuleDetails(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version,
+                                                             @RequestParam(required = false, defaultValue = "") String submodule) {
+        return ResponseEntity.ok(moduleInspectorService.details(organization, module, provider, version, submodule));
     }
 
     @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")

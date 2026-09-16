@@ -4987,7 +4987,6 @@ __metadata:
     globals: "npm:^17.12.0"
     graphql: "npm:^17.0.2"
     graphql-ws: "npm:^6.2.1"
-    hcl2-parser: "npm:^1.0.3"
     html-react-parser: "npm:^6.1.7"
     html-to-image: "npm:^1.11.13"
     identity-obj-proxy: "npm:^3.0.0"
@@ -5017,7 +5016,6 @@ __metadata:
     ts-node: "npm:^10.9.2"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.70.0"
-    unzipit: "npm:^2.0.1"
     uuid: "npm:^14.0.2"
     vite: "npm:^8.3.0"
     web-vitals: "npm:^6.2.1"
@@ -7562,13 +7560,6 @@ __metadata:
     property-information: "npm:^7.0.0"
     space-separated-tokens: "npm:^2.0.0"
   checksum: 10c0/18dc8064e5c3a7a2ae862978e626b97a254e1c8a67ee9d0c9f06d373bba155ed805fc5b5ce21b990fb7bc174624889e5e1ce1cade264f1b1d58b48f994bc85ce
-  languageName: node
-  linkType: hard
-
-"hcl2-parser@npm:^1.0.3":
-  version: 1.0.3
-  resolution: "hcl2-parser@npm:1.0.3"
-  checksum: 10c0/5c5d9b12ec7f84864122e387af41df183666d9d01da6a922631fa0e5f4530b5856fdfb156346b3c23519f2bfc9bb051e8c520d4614d9935c6539d70bce1bb521
   languageName: node
   linkType: hard
 
@@ -12536,13 +12527,6 @@ __metadata:
     "@unrs/resolver-binding-win32-x64-msvc":
       optional: true
   checksum: 10c0/ddc27f6d920eabdafeac0077ebff9fd799c895cea025751dc17b360bf9be7c93c471fafebf65f205eec476f90d7daa36aef889d47362b2dd4705d68852bcfea4
-  languageName: node
-  linkType: hard
-
-"unzipit@npm:^2.0.1":
-  version: 2.0.3
-  resolution: "unzipit@npm:2.0.3"
-  checksum: 10c0/7708c33ea1620fc27c2e0e6ed611b4d0ef6477bdf24c77cad592735a132d686dd0cd87ed2702385e2ed0f583da91b65ccf8788dd34570e90f7ecb424c0a5d01f
   languageName: node
   linkType: hard
 

@@ -21,8 +21,10 @@ class CacheConfigTest {
 
         assertThat(cacheManager.getCache(CacheConfig.MODULE_VERSIONS_CACHE)).isNotNull();
         assertThat(cacheManager.getCache(CacheConfig.MODULE_VERSION_PATH_CACHE)).isNotNull();
+        assertThat(cacheManager.getCache(CacheConfig.MODULE_DETAILS_CACHE)).isNotNull();
         assertThat(cacheManager.getCacheNames())
-                .containsExactlyInAnyOrder(CacheConfig.MODULE_VERSIONS_CACHE, CacheConfig.MODULE_VERSION_PATH_CACHE);
+                .containsExactlyInAnyOrder(CacheConfig.MODULE_VERSIONS_CACHE, CacheConfig.MODULE_VERSION_PATH_CACHE,
+                        CacheConfig.MODULE_DETAILS_CACHE);
     }
 
     @Test
