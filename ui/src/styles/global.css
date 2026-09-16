@@ -12,13 +12,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-[data-theme="dark"] a:where(:not(.ant-btn)) {
-  color: var(--tk-accent);
+/* The sidebar (menu, org selector, help and user menus) styles its own links; keep the page rule off it. */
+[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *)) {
+  color: var(--tk-link);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
-[data-theme="dark"] a:where(:not(.ant-btn)):hover {
+[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *)):hover {
   color: #79c0ff;
   text-decoration: underline;
 }
@@ -106,7 +107,9 @@
   border: 1px solid var(--tk-border-primary);
   border-radius: 8px;
   box-shadow: var(--tk-shadow-sm);
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 [data-theme="dark"] .ant-card-head {
@@ -166,7 +169,9 @@
   border-color: var(--tk-border-primary) !important;
   color: var(--tk-text-primary) !important;
   border-radius: 6px;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 [data-theme="dark"] .ant-input::placeholder,
@@ -199,7 +204,11 @@
 [data-theme="dark"] .ant-btn {
   border-radius: 6px;
   box-shadow: var(--tk-shadow-sm);
-  transition: all 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+  transition:
+    background-color 0.2s cubic-bezier(0.3, 0, 0.5, 1),
+    border-color 0.2s cubic-bezier(0.3, 0, 0.5, 1),
+    color 0.2s cubic-bezier(0.3, 0, 0.5, 1),
+    box-shadow 0.2s cubic-bezier(0.3, 0, 0.5, 1);
 }
 
 [data-theme="dark"] .ant-btn-default {
@@ -331,9 +340,6 @@
 /* --- Tags & Badges --- */
 
 [data-theme="dark"] .ant-tag {
-  background: var(--tk-fill-primary) !important;
-  border-color: var(--tk-border-primary) !important;
-  color: var(--tk-text-primary) !important;
   border-radius: 2em; /* Pill shape */
 }
 
@@ -347,7 +353,21 @@
 [data-theme="dark"] .ant-tag-blue {
   background: rgba(56, 139, 253, 0.15);
   border-color: rgba(56, 139, 253, 0.4);
-  color: var(--tk-accent);
+  color: #58a6ff;
+}
+
+/* Status tags: tinted pill, text darkened (light) or lightened (dark) from the status hue so it clears 4.5:1. */
+.ant-tag.tk-status-tag {
+  --status-color: #8c8c8c;
+  color: color-mix(in srgb, var(--status-color) 60%, #000);
+  background: color-mix(in srgb, var(--status-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--status-color) 40%, transparent);
+}
+
+[data-theme="dark"] .ant-tag.tk-status-tag {
+  color: color-mix(in srgb, var(--status-color) 70%, #fff);
+  background: color-mix(in srgb, var(--status-color) 15%, transparent);
+  border-color: color-mix(in srgb, var(--status-color) 40%, transparent);
 }
 
 [data-theme="dark"] .ant-tag-green {

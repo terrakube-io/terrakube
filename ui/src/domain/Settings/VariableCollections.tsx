@@ -190,6 +190,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
         <div style={{ marginBottom: "20px", width: "100%" }}>
           <Input
             prefix={<SearchOutlined />}
+            aria-label="Search variable collections by name"
             placeholder="Search by variable collections name"
             style={{ width: "100%" }}
             value={searchTerm}

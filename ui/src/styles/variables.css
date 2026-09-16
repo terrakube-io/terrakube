@@ -29,10 +29,17 @@
   --tk-sidebar-border: #21262d;
   --tk-sidebar-text: #e6edf3;
   --tk-sidebar-text-secondary: #8b949e;
+  /* Controls that sit on the sidebar (collapse trigger, help and user menu buttons); graphite in both modes */
+  --tk-sidebar-control-bg: #21262d;
+  --tk-sidebar-control-border: #30363d;
+  --tk-sidebar-control-bg-hover: #30363d;
+  --tk-sidebar-control-border-hover: #484f58;
 
   /* Accent color follows the chosen color scheme (see themeConfig.ts), not theme mode */
   --tk-accent: #722ed1;
   --tk-accent-tint: rgba(114, 46, 209, 0.18);
+  /* Link text: equals the accent in light mode, a lighter tone in dark mode so it clears 4.5:1 */
+  --tk-link: var(--tk-accent);
 }
 
 [data-color-scheme="blue"] {
@@ -85,4 +92,10 @@
   --tk-sidebar-border: #21262d;
   --tk-sidebar-text: #e6edf3;
   --tk-sidebar-text-secondary: #8b949e;
+
+  --tk-link: #b37feb;
+}
+
+[data-theme="dark"][data-color-scheme="blue"] {
+  --tk-link: #58a6ff;
 }

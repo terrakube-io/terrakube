@@ -691,6 +691,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     >
       <div style={{ marginTop: 24 }}>
         <Search
+          aria-label="Search Terraform Registry"
           placeholder="Search Terraform Registry..."
           allowClear
           enterButton={
