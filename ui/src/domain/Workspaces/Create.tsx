@@ -620,7 +620,7 @@ export const CreateWorkspace = () => {
                         maxWidth: "100%",
                         height: "auto",
                       }}
-                      alt="example"
+                      alt={item.name}
                       src={item.icon}
                     />
                     <span style={{ fontWeight: "bold", fontSize: 18, whiteSpace: "nowrap" }}>{item.name}</span>

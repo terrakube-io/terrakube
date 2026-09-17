@@ -40,7 +40,7 @@
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 4px !important;
+  padding: 4px;
   z-index: 1000;
   border: 1px solid #e0e0e0;
   min-width: 100%;
@@ -63,33 +63,34 @@
 }
 
 .org-selector-item {
-  padding: 0 12px !important;
-  margin: 0 !important;
+  padding: 0 12px;
+  margin: 0;
   cursor: pointer;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  position: relative !important;
-  color: #1a1a1a !important;
-  font-size: 14px !important;
-  line-height: 1 !important;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+  color: #1a1a1a;
+  font-size: 14px;
+  line-height: 1;
   transition:
     background-color 0.15s ease,
     border-radius 0.15s ease;
-  text-decoration: none !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  border-radius: 6px !important;
-  border-bottom: none !important;
+  text-decoration: none;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 6px;
+  border-bottom: none;
 }
 
 .org-selector-item:hover {
-  background-color: #f5f5f5 !important;
+  background-color: #f5f5f5;
+  color: #1a1a1a;
 }
 
 .org-selector-item.selected {
-  background-color: var(--ant-color-primary-bg) !important;
-  color: #1a1a1a !important;
+  background-color: var(--ant-color-primary-bg);
+  color: #1a1a1a;
 }
 
 .org-selector-item-name {
@@ -97,11 +98,11 @@
   flex: 1;
 }
 
-.org-selector-check {
-  color: var(--ant-color-primary) !important;
-  font-size: 14px !important;
-  position: absolute !important;
-  right: 12px !important;
+.org-selector-item .org-selector-check {
+  color: var(--ant-color-primary);
+  font-size: 14px;
+  position: absolute;
+  right: 12px;
 }
 
 .org-selector-icon {
@@ -122,66 +123,69 @@
 }
 
 .org-selector-manage-link {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  gap: 8px !important;
-  padding: 0 12px !important;
-  margin: 0 !important;
-  margin-top: 4px !important;
-  border-top: none !important;
-  color: #1a1a1a !important;
-  text-decoration: none !important;
-  font-size: 14px !important;
-  line-height: 1 !important;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  margin: 0;
+  margin-top: 4px;
+  border-top: none;
+  color: #1a1a1a;
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   transition: background-color 0.15s ease;
-  white-space: nowrap !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  border-radius: 6px !important;
+  white-space: nowrap;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 6px;
 }
 
 .org-selector-manage-link:hover {
-  background-color: #f5f5f5 !important;
+  background-color: #f5f5f5;
+  color: #1a1a1a;
 }
 
-.org-selector-manage-icon {
-  color: #656a76 !important;
-  font-size: 14px !important;
+.org-selector-manage-link .org-selector-manage-icon {
+  color: #656a76;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
 /* Dark mode styles */
 [data-theme="dark"] .org-selector-dropdown {
-  background-color: #1c2128 !important;
-  border-color: #30363d !important;
+  background-color: #1c2128;
+  border-color: #30363d;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="dark"] .org-selector-item {
-  color: #e6edf3 !important;
+  color: #e6edf3;
 }
 
 [data-theme="dark"] .org-selector-item:hover {
-  background-color: #21262d !important;
+  background-color: #21262d;
+  color: #e6edf3;
 }
 
 [data-theme="dark"] .org-selector-item.selected {
-  background-color: var(--ant-color-primary-bg) !important;
-  color: #e6edf3 !important;
+  background-color: var(--ant-color-primary-bg);
+  color: #e6edf3;
 }
 
 [data-theme="dark"] .org-selector-manage-link {
-  color: #e6edf3 !important;
+  color: #e6edf3;
 }
 
 [data-theme="dark"] .org-selector-manage-link:hover {
-  background-color: #21262d !important;
+  background-color: #21262d;
+  color: #e6edf3;
 }
 
-[data-theme="dark"] .org-selector-manage-icon {
-  color: #8b949e !important;
+[data-theme="dark"] .org-selector-manage-link .org-selector-manage-icon {
+  color: #8b949e;
 }
 
 .org-selector-dropdown--top {

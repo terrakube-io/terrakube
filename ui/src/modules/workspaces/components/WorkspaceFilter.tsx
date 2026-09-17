@@ -246,6 +246,7 @@ export default function WorkspaceFilter({
       <div className="workspace-filter-search-row">
         <Input.Search
           size="large"
+          aria-label="Search workspaces by name"
           placeholder="Search by name..."
           value={searchInputValue}
           onChange={(e) => {
