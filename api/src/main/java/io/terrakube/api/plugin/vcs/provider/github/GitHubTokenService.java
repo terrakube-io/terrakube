@@ -1,7 +1,6 @@
 package io.terrakube.api.plugin.vcs.provider.github;
 
 import java.net.InetSocketAddress;
-import java.net.Proxy;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
@@ -20,11 +19,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.plugin.vcs.provider.GetAccessToken;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
@@ -40,8 +39,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import lombok.extern.slf4j.Slf4j;
-import reactor.netty.http.client.HttpClient;
-import reactor.netty.transport.ProxyProvider;
 
 @Slf4j
 @Service
@@ -63,29 +60,17 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
 
     public GitHubToken getAccessToken(String clientId, String clientSecret, String tempCode, String callback,
                                       String endpoint) throws TokenException {
-        HttpClient httpClient;
-        WebClient client;
         if(System.getProperty("http.proxyHost") != null) {
             log.info("Using proxy host: {} port: {}", System.getProperty("http.proxyHost"), System.getProperty("http.proxyPort"));
-
-            httpClient = HttpClient.create()
-                    .proxy(proxy -> proxy.type(ProxyProvider.Proxy.HTTP)
-                            .host(System.getProperty("http.proxyHost"))
-                            .port(Integer.parseInt(System.getProperty("http.proxyPort"))));
-
-            client = WebClient.builder()
-                    .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
-                    .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                    .clientConnector(new ReactorClientHttpConnector(httpClient))
-                    .build();
         } else {
             log.info("No proxy host specified, using default proxy");
-            client = WebClient.builder()
-                    .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
-                    .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                    .build();
         }
 
+        WebClient client = WebClient.builder()
+                .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
+                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                .clientConnector(ReactorNettyWebClientFactory.connector())
+                .build();
 
         log.info("Calling GitHub API");
 
@@ -94,7 +79,7 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
                         .queryParam("client_secret", clientSecret)
                         .queryParam("code", tempCode)
                         .build())
-                .retrieve().bodyToMono(GitHubToken.class).block();
+                .retrieve().bodyToMono(GitHubToken.class).block(Duration.ofSeconds(30));
 
         if (gitHubToken != null)
             return gitHubToken;

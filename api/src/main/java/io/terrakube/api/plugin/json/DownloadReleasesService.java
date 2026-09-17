@@ -1,25 +1,40 @@
 package io.terrakube.api.plugin.json;
 
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-import reactor.netty.http.client.HttpClient;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
 
-@AllArgsConstructor
 @Slf4j
 @Service
 public class DownloadReleasesService {
 
-    private WebClient.Builder webClientBuilder;
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration OVERALL_TIMEOUT = Duration.ofSeconds(60);
+
+    private final WebClient.Builder webClientBuilder;
+    private final Duration responseTimeout;
+    private final Duration overallTimeout;
+
+    @Autowired
+    public DownloadReleasesService(WebClient.Builder webClientBuilder) {
+        this(webClientBuilder, RESPONSE_TIMEOUT, OVERALL_TIMEOUT);
+    }
+
+    DownloadReleasesService(WebClient.Builder webClientBuilder, Duration responseTimeout, Duration overallTimeout) {
+        this.webClientBuilder = webClientBuilder;
+        this.responseTimeout = responseTimeout;
+        this.overallTimeout = overallTimeout;
+    }
 
     public void downloadReleasesToFile(String releasesUrl, File releasesFile) {
         downloadReleasesToFile(releasesUrl, releasesFile, null);
@@ -33,11 +48,7 @@ public class DownloadReleasesService {
         // rejects the request (api.github.com starts returning 400/500 past ~7KB of headers).
         WebClient webClient = webClientBuilder
                 .clone()
-                .clientConnector(new ReactorClientHttpConnector(
-                        HttpClient.create()
-                                .followRedirect(true)
-                                .proxyWithSystemProperties()
-                ))
+                .clientConnector(ReactorNettyWebClientFactory.redirectingConnector(responseTimeout))
                 .defaultHeaders(h -> {
                     h.add("User-Agent", "releases-downloader");
                     h.setAccept(List.of(MediaType.APPLICATION_JSON));
@@ -65,6 +76,9 @@ public class DownloadReleasesService {
                 .bodyToFlux(DataBuffer.class)
                 .as(dataBufferFlux -> DataBufferUtils.write(dataBufferFlux, releasesFile.toPath()))
                 .then()
+                // responseTimeout protects the wait for an HTTP response, while this also
+                // bounds redirects and a response body which stops making progress.
+                .timeout(overallTimeout)
                 .block();
     }
 }
