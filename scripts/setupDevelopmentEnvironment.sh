@@ -65,16 +65,17 @@ function generateApiVars() {
 		ApiDataSourceType="H2"
 	fi
 
-	if [ "$storage_value" = "MINIO" ]; then
+	if [ "$storage_value" = "SEAWEEDFS" ]; then
 		StorageType="AWS"
-		AwsStorageAccessKey="minioadmin"
-		AwsStorageSecretKey="minioadmin"
+		AwsStorageAccessKey="admin"
+		AwsStorageSecretKey="admin"
 		AwsStorageBucketName="sample"
 		AwsStorageRegion="us-east-1"
-		AwsEndpoint="http://minio:9000"
+		AwsEndpoint="http://terrakube-seaweedfs:9000"
 	else
 		StorageType="LOCAL"
 	fi
+
 
 	echo "ApiDataSourceType=$ApiDataSourceType" >>.envApi
 	echo "DatasourceHostname=$DatasourceHostname" >>.envApi
@@ -137,23 +138,24 @@ function generateExecutorVars() {
 		TerrakubeApiUrl="http://localhost:8080"
 	fi
 
-	if [ "$storage_value" = "MINIO" ]; then
+	if [ "$storage_value" = "SEAWEEDFS" ]; then
 		TerraformStateType=AwsTerraformStateImpl
-		AwsTerraformStateAccessKey="minioadmin"
-		AwsTerraformStateSecretKey="minioadmin"
+		AwsTerraformStateAccessKey="admin"
+		AwsTerraformStateSecretKey="admin"
 		AwsTerraformStateBucketName="sample"
 		AwsTerraformStateRegion="us-east-1"
 
 		TerraformOutputType=AwsTerraformOutputImpl
-		AwsTerraformOutputAccessKey="minioadmin"
-		AwsTerraformOutputSecretKey="minioadmin"
+		AwsTerraformOutputAccessKey="admin"
+		AwsTerraformOutputSecretKey="admin"
 		AwsTerraformOutputBucketName="sample"
 		AwsTerraformOutputRegion="us-east-1"
-		AwsEndpoint="http://minio:9000"
-  else
+		AwsEndpoint="http://terrakube-seaweedfs:9000"
+	else
 		TerraformStateType=LocalTerraformStateImpl
 		TerraformOutputType=LocalTerraformOutputImpl
 	fi
+
 
   TerrakubeRedisHostname=terrakube-redis
 	TerrakubeEnableSecurity=true
@@ -236,16 +238,17 @@ function generateRegistryVars() {
 		AppIssuerUri="https://localhost:5556/dex"
 	fi
 
-	if [ "$storage_value" = "MINIO" ]; then
+	if [ "$storage_value" = "SEAWEEDFS" ]; then
 		RegistryStorageType=AwsStorageImpl
-		AwsStorageAccessKey="minioadmin"
-		AwsStorageSecretKey="minioadmin"
+		AwsStorageAccessKey="admin"
+		AwsStorageSecretKey="admin"
 		AwsStorageBucketName="sample"
 		AwsStorageRegion="us-east-1"
-		AwsEndpoint="http://terrakube-minio:9000"
-  else
+		AwsEndpoint="http://terrakube-seaweedfs:9000"
+	else
 		RegistryStorageType=Local
 	fi
+
 
 	AuthenticationValidationTypeRegistry=DEX
 	TerrakubeEnableSecurity=true
@@ -377,8 +380,7 @@ function generateWorkspaceInformation() {
 	WORKSPACE_EXECUTOR="https://$CODESPACE_NAME-8090.app.github.dev"
 	WORKSPACE_UI="https://$CODESPACE_NAME-3000.app.github.dev"
 	WORKSPACE_DEX="https://$CODESPACE_NAME-5556.app.github.dev"
-	WORKSPACE_MINIO="https://$CODESPACE_NAME-9000.app.github.dev"
-	WORKSPACE_CONSOLE_MINIO="https://$CODESPACE_NAME-9001.app.github.dev"
+	WORKSPACE_SEAWEEDFS="https://$CODESPACE_NAME-9000.app.github.dev"
 	WORKSPACE_LOGIN_REGISTRY=$(echo "https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
 
 	sed -i "s+DEVCONTAINER_WORKSPACE_UI+$WORKSPACE_UI+gi" DEVCONTAINER.md
@@ -387,8 +389,7 @@ function generateWorkspaceInformation() {
 	sed -i "s+DEVCONTAINER_WORKSPACE_EXECUTOR+$WORKSPACE_EXECUTOR+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_WORKSPACE_DEX+$WORKSPACE_DEX+gi" DEVCONTAINER.md
 	sed -i "s+DEVCONTAINER_LOGIN_REGISTRY+$WORKSPACE_LOGIN_REGISTRY+gi" DEVCONTAINER.md
-	sed -i "s+DEVCONTAINER_WORKSPACE_MINIO+$WORKSPACE_MINIO+gi" DEVCONTAINER.md
-	sed -i "s+DEVCONTAINER_WORKSPACE_CONSOLE_MINIO+$WORKSPACE_CONSOLE_MINIO+gi" DEVCONTAINER.md
+	sed -i "s+DEVCONTAINER_WORKSPACE_SEAWEEDFS+$WORKSPACE_SEAWEEDFS+gi" DEVCONTAINER.md
 }
 
 function importCACertificateDevContainer() {

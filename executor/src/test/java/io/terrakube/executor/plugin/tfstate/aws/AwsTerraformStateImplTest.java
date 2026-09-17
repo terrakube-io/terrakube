@@ -110,7 +110,7 @@ class AwsTerraformStateImplTest {
     @Test
     void testGetBackendStateFile_UsesLockfileWithCustomEndpoint(@TempDir Path tempDir) throws IOException {
         awsTerraformState.setUseLockfile(true);
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
 
@@ -120,7 +120,7 @@ class AwsTerraformStateImplTest {
 
     @Test
     void testGetBackendStateFile_PathStyleOnByDefaultWithEndpoint(@TempDir Path tempDir) throws IOException {
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "1.13.0");
 
@@ -142,7 +142,7 @@ class AwsTerraformStateImplTest {
 
     @Test
     void testGetBackendStateFile_PessimisticConstraintWithEndpoint(@TempDir Path tempDir) throws IOException {
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         String result = awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "~>1.13.0");
 
@@ -155,7 +155,7 @@ class AwsTerraformStateImplTest {
 
     @Test
     void testGetBackendStateFile_IvyRangeWithEndpoint(@TempDir Path tempDir) throws IOException {
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         String result = awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), "[1.13.0,1.14.0]");
 
@@ -203,7 +203,7 @@ class AwsTerraformStateImplTest {
         "1.*",                // X-Range: any 1.y version (alternative)
     })
     void testGetBackendStateFile_NewStyleConstraintUsesEndpointsBlock(String version, @TempDir Path tempDir) throws IOException {
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), version);
 
@@ -222,7 +222,7 @@ class AwsTerraformStateImplTest {
         ">=1.4.0 <1.5.9",    // primitive range (< 1.6.0)
     })
     void testGetBackendStateFile_LegacyConstraintUsesOldEndpoint(String version, @TempDir Path tempDir) throws IOException {
-        awsTerraformState.setEndpoint("http://minio:9000");
+        awsTerraformState.setEndpoint("http://seaweedfs:9000");
 
         awsTerraformState.getBackendStateFile("org1", "ws1", tempDir.toFile(), version);
 

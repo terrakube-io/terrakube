@@ -23,8 +23,8 @@ function generateApiVars(){
   PatSecret=ejZRSFgheUBOZXAyUURUITUzdmdINDNeUGpSWHlDM1g=
   InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
   TERRAKUBE_ADMIN_GROUP="CUSTOM_ADMIN_NAME"
-  AwsStorageAccessKey="minioadmin"
-  AwsStorageSecretKey="minioadmin"
+  AwsStorageAccessKey="admin"
+  AwsStorageSecretKey="admin"
   AwsStorageBucketName="sample"
   AwsStorageRegion="us-east-1"
 
@@ -86,14 +86,14 @@ function generateExecutorVars(){
   InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
   
   TerraformStateType=AwsTerraformStateImpl
-  AwsTerraformStateAccessKey="minioadmin"
-  AwsTerraformStateSecretKey="minioadmin"
+  AwsTerraformStateAccessKey="admin"
+  AwsTerraformStateSecretKey="admin"
   AwsTerraformStateBucketName="sample"
   AwsTerraformStateRegion="us-east-1"
 
   TerraformOutputType=AwsTerraformOutputImpl
-  AwsTerraformOutputAccessKey="minioadmin"
-  AwsTerraformOutputSecretKey="minioadmin"
+  AwsTerraformOutputAccessKey="admin"
+  AwsTerraformOutputSecretKey="admin"
   AwsTerraformOutputBucketName="sample"
   AwsTerraformOutputRegion="us-east-1"
   
@@ -168,8 +168,8 @@ function generateRegistryVars(){
   InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
   RegistryStorageType=AwsStorageImpl
 
-  AwsStorageAccessKey="minioadmin"
-  AwsStorageSecretKey="minioadmin"
+  AwsStorageAccessKey="admin"
+  AwsStorageSecretKey="admin"
   AwsStorageBucketName="sample"
   AwsStorageRegion="us-east-1"
 
@@ -313,8 +313,7 @@ function generateWorkspaceInformation(){
   WORKSPACE_EXECUTOR=$(gp url 8090)
   WORKSPACE_UI=$(gp url 3000)
   WORKSPACE_DEX=$(gp url 5556)
-  WORKSPACE_MINIO=$(gp url 9000)
-  WORKSPACE_CONSOLE_MINIO=$(gp url 9001)
+  WORKSPACE_SEAWEEDFS=$(gp url 9000)
   WORKSPACE_LOGIN_REGISTRY=$(gp url 8075 | sed "s+https://++g")
 
   sed -i "s+GITPOD_WORKSPACE_UI+$WORKSPACE_UI+gi" GITPOD.md
@@ -323,8 +322,7 @@ function generateWorkspaceInformation(){
   sed -i "s+GITPOD_WORKSPACE_EXECUTOR+$WORKSPACE_EXECUTOR+gi" GITPOD.md
   sed -i "s+GITPOD_WORKSPACE_DEX+$WORKSPACE_DEX+gi" GITPOD.md
   sed -i "s+GITPOD_LOGIN_REGISTRY+$WORKSPACE_LOGIN_REGISTRY+gi" GITPOD.md
-  sed -i "s+GITPOD_WORKSPACE_MINIO+$WORKSPACE_MINIO+gi" GITPOD.md
-  sed -i "s+GITPOD_WORKSPACE_CONSOLE_MINIO+$WORKSPACE_CONSOLE_MINIO+gi" GITPOD.md
+  sed -i "s+GITPOD_WORKSPACE_SEAWEEDFS+$WORKSPACE_SEAWEEDFS+gi" GITPOD.md
 }
 
 generateApiVars
@@ -339,4 +337,4 @@ if [ "$USER" = "gitpod" ]; then
   generateWorkspaceInformation
 fi
 
-echo "Setup Development Environment Minio Completed"
+echo "Setup Development Environment SeaweedFS Completed"

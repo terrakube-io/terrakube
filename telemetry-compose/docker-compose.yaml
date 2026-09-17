@@ -44,22 +44,21 @@ services:
       - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
       - 389:389
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: "server -s3 -s3.port=9000 -dir=/data"
     ports:
       - '9000:9000'
-      - '9001:9001'
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: admin
     volumes:
-      - 'minio_data:/data'
-  minio-init:
-    image: minio/mc
+      - 'seaweedfs_data:/data'
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:latest
     depends_on:
-      - minio
-    entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 minioadmin minioadmin; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/sample; exit 0;"]
+      - seaweedfs
+    entrypoint: [ "/bin/sh", "-c", "sleep 3; echo 's3.bucket.create -name sample' | weed shell -master=seaweedfs:9333; exit 0;" ]
   redis-service:
     image: valkey/valkey:8-alpine
     command:
@@ -86,5 +85,5 @@ services:
     - 14250:14250
 
 volumes:
-  minio_data:
+  seaweedfs_data:
   redis_data:

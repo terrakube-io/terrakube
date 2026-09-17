@@ -28,7 +28,7 @@
   // "forwardPorts": [3000, 5432],
 
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh -d POSTGRESQL -s MINIO",
+  "postCreateCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh -d POSTGRESQL -s SEAWEEDFS",
 
   // Configure tool-specific properties.
   "customizations": {
@@ -84,12 +84,12 @@
       "visibility": "public"
     },
     "9000": {
-      "label": "MinIO API",
+      "label": "SeaweedFS S3",
       "onAutoForward": "silent",
       "visibility": "public"
     },
     "9001": {
-      "label": "MinIO Console",
+      "label": "SeaweedFS Master",
       "onAutoForward": "silent",
       "visibility": "public"
     }

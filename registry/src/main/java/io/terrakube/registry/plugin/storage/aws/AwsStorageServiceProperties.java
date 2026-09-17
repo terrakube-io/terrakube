@@ -36,7 +36,7 @@ public class AwsStorageServiceProperties {
     // the rollback switch back to the byte-proxy path.
     private boolean presignedRedirectEnabled;
 
-    // S3-compatible backends (Qumulo, MinIO, ...) may require a real signing region instead of
+    // S3-compatible backends (Qumulo, SeaweedFS, ...) may require a real signing region instead of
     // "auto" and may not support chunked transfer encoding or checksum validation. Defaults keep
     // the previous behavior for custom endpoints.
     private String endpointRegion = "auto";

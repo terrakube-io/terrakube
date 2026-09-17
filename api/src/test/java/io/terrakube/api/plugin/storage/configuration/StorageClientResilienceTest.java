@@ -118,8 +118,8 @@ class StorageClientResilienceTest {
     private static AwsStorageTypeProperties s3CompatibleProps() {
         AwsStorageTypeProperties props = new AwsStorageTypeProperties();
         props.setEndpoint("http://localhost:9000");
-        props.setAccessKey("minio");
-        props.setSecretKey("minio123");
+        props.setAccessKey("seaweedfs");
+        props.setSecretKey("seaweedfs123");
         props.setChecksumValidationEnabled(true);
         return props;
     }

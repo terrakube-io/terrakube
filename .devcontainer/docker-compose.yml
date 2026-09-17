@@ -101,9 +101,9 @@ x-ldap: &ldap_env
   # single-file LDIF bind mount ("Device or resource busy").
   LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
 
-x-minio: &minio_env
-  MINIO_ROOT_USER: ${TK_OUTPUT_ACCESS_KEY}
-  MINIO_ROOT_PASSWORD: ${TK_OUTPUT_SECRET_KEY}
+x-seaweedfs: &seaweedfs_env
+  AWS_ACCESS_KEY_ID: ${TK_OUTPUT_ACCESS_KEY}
+  AWS_SECRET_ACCESS_KEY: ${TK_OUTPUT_SECRET_KEY}
 
 x-ui: &ui_env
   REACT_APP_TERRAKUBE_API_URL: https://terrakube-api.${DOMAIN}/api/v1/
@@ -252,21 +252,23 @@ services:
       - 'maven_data:/home/vscode/.m2'
     networks:
       - terrakube-network
-  minio:
-    container_name: terrakube-minio
-    image: minio/minio:${TK_MINIO_VERSION}
-    command: server /data --console-address ":9001"
-    environment: *minio_env
+  seaweedfs:
+    container_name: terrakube-seaweedfs
+    image: chrislusf/seaweedfs:${TK_SEAWEEDFS_VERSION}
+    command: "server -s3 -s3.port=9000 -dir=/data"
+    ports:
+      - "9000:9000"
+    environment: *seaweedfs_env
     volumes:
-      - 'minio_data:/data'
+      - 'seaweedfs_data:/data'
     networks:
       - terrakube-network
-  minio-init:
-    image: minio/mc
-    container_name: terrakube-minio-init
+  seaweedfs-init:
+    container_name: terrakube-seaweedfs-init
+    image: chrislusf/seaweedfs:${TK_SEAWEEDFS_VERSION}
     depends_on:
-      - minio
-    entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 ${TK_OUTPUT_ACCESS_KEY} ${TK_OUTPUT_SECRET_KEY}; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/${TK_OUTPUT_BUCKET_NAME}; exit 0;"]
+      - seaweedfs
+    entrypoint: [ "/bin/sh", "-c", "sleep 3; echo 's3.bucket.create -name ${TK_OUTPUT_BUCKET_NAME}' | weed shell -master=terrakube-seaweedfs:9333; exit 0;" ]
     networks:
       - terrakube-network
   redis-service:
@@ -310,7 +312,7 @@ services:
 #    networks:
 #      - terrakube-network
 volumes:
-  minio_data:
+  seaweedfs_data:
   redis_data:
   maven_data:
   postgresql_data:

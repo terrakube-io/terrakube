@@ -73,7 +73,7 @@ Terraform CLI
 
 ---
 
-## S3-Compatible Storage (MinIO / LocalStack)
+## S3-Compatible Storage (SeaweedFS / LocalStack)
 
 Presigned redirects are fully supported with custom S3-compatible endpoints. When `AwsEndpoint` is configured, both `S3Client` and `S3Presigner` use `pathStyleAccessEnabled(true)` with the same `endpointOverride`.
 

@@ -46,7 +46,7 @@ class PolicyDriftDispatchTransactionsTest {
 
         Job completedJob = new Job();
         completedJob.setId(77);
-        completedJob.setTerraformPlan("http://minio/plan.json");
+        completedJob.setTerraformPlan("http://seaweedfs/plan.json");
         when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(ws, List.of(JobStatus.completed)))
                 .thenReturn(Optional.of(completedJob));
 
@@ -64,7 +64,7 @@ class PolicyDriftDispatchTransactionsTest {
         Job captured = captor.getValue();
         assertEquals(JobVia.DRIFT.getValue(), captured.getVia());
         assertEquals("serviceAccount", captured.getCreatedBy());
-        assertEquals("http://minio/plan.json", captured.getTerraformPlan());
+        assertEquals("http://seaweedfs/plan.json", captured.getTerraformPlan());
         assertEquals(JobStatus.pending, captured.getStatus());
         assertTrue(captured.isPlanChanges());
 
@@ -84,7 +84,7 @@ class PolicyDriftDispatchTransactionsTest {
         saved.setId(202);
         when(jobRepository.save(any(Job.class))).thenReturn(saved);
 
-        Job result = transactions.dispatchPolicyEvaluationJob(ws, "http://minio/plan2.json", "alice", JobVia.UI.getValue());
+        Job result = transactions.dispatchPolicyEvaluationJob(ws, "http://seaweedfs/plan2.json", "alice", JobVia.UI.getValue());
 
         assertNotNull(result);
         assertEquals(202, result.getId());
@@ -94,7 +94,7 @@ class PolicyDriftDispatchTransactionsTest {
         Job captured = captor.getValue();
         assertEquals(JobVia.UI.getValue(), captured.getVia());
         assertEquals("alice", captured.getCreatedBy());
-        assertEquals("http://minio/plan2.json", captured.getTerraformPlan());
+        assertEquals("http://seaweedfs/plan2.json", captured.getTerraformPlan());
 
         verify(scheduleJobService).createJobContext(saved);
     }
@@ -111,7 +111,7 @@ class PolicyDriftDispatchTransactionsTest {
         doThrow(new RuntimeException("Quartz connection lost")).when(scheduleJobService).createJobContext(saved);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                transactions.dispatchPolicyEvaluationJob(ws, "http://minio/plan.json", "alice", JobVia.UI.getValue())
+                transactions.dispatchPolicyEvaluationJob(ws, "http://seaweedfs/plan.json", "alice", JobVia.UI.getValue())
         );
 
         assertTrue(ex.getMessage().contains("Failed to dispatch policy evaluation job"));
