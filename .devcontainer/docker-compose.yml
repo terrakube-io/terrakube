@@ -254,7 +254,7 @@ services:
       - terrakube-network
   minio:
     container_name: terrakube-minio
-    image: minio/minio:${TK_MINIO_VERSION}
+    image: pgsty/silo:${TK_MINIO_VERSION}
     command: server /data --console-address ":9001"
     environment: *minio_env
     volumes:
@@ -262,7 +262,7 @@ services:
     networks:
       - terrakube-network
   minio-init:
-    image: minio/mc
+    image: pgsty/silo:${TK_MINIO_VERSION}
     container_name: terrakube-minio-init
     depends_on:
       - minio

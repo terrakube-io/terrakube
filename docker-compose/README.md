@@ -59,3 +59,7 @@ Terrakube will be available in the following URL:
 * https://terrakube.platform.local
   * Username: admin@example.com
   * Password: admin 
+
+## Storage Backend Note
+
+> **Note:** The local S3-compatible storage service (`pgsty/silo`) configured in this Docker Compose file is intended as an example for local development and demonstration purposes. In production environments, you should configure your desired storage backend (such as AWS S3, Azure Blob Storage, or Google Cloud Storage) based on your organization's infrastructure and compliance requirements.
