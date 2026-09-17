@@ -124,7 +124,7 @@
 
 /* Popover Content */
 .filter-popover-content {
-  width: 500px;
+  width: min(500px, calc(100vw - 32px));
   padding: 16px;
 }
 
@@ -242,7 +242,7 @@
 }
 
 .workspace-project-select {
-  width: 220px;
+  width: min(220px, 100%);
   flex-shrink: 0;
 }
 

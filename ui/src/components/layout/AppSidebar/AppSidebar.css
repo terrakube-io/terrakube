@@ -4,6 +4,46 @@
   overflow: visible;
 }
 
+/* Narrow viewports: the sidebar floats over the page as a drawer instead of taking width from it. */
+.app-sidebar--drawer {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 1000;
+  height: 100dvh;
+  box-shadow: var(--tk-shadow-lg);
+}
+
+.app-sidebar--drawer .ant-layout-sider-zero-width-trigger {
+  top: 12px;
+  background: var(--tk-sidebar-bg);
+  border: 1px solid var(--tk-sidebar-border);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  color: var(--tk-sidebar-text);
+}
+
+.app-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar--drawer,
+  .app-sidebar--drawer .ant-layout-sider-children {
+    transition: none;
+  }
+}
+
+/* Defensive: antd's internal Sider wrapper doesn't always carry an explicit
+   height, which breaks the height:100% chain below it and can push the
+   footer (org switcher) out of view on tall nested menus. */
+.app-sidebar .ant-layout-sider-children {
+  height: 100%;
+}
+
 /* Defensive: antd's internal Sider wrapper doesn't always carry an explicit
    height, which breaks the height:100% chain below it and can push the
    footer (org switcher) out of view on tall nested menus. */

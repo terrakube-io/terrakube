@@ -211,3 +211,34 @@
   justify-content: flex-end;
   padding: 12px 16px;
 }
+
+/* Narrow viewports: the row wraps into name + meta on one line, status and run on the next.
+   The column header is hidden because sorting lives in the filter bar's sort select. */
+@media (max-width: 720px) {
+  .workspace-list-header {
+    display: none;
+  }
+
+  .workspace-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .workspace-col-name {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .workspace-col-status,
+  .workspace-col-policy,
+  .workspace-col-run,
+  .workspace-col-version,
+  .workspace-col-source {
+    width: auto;
+  }
+
+  .workspace-col-source {
+    flex-basis: 100%;
+  }
+}
