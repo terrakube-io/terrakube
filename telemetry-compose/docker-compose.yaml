@@ -45,7 +45,7 @@ services:
     ports:
       - 389:389
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:latest
     command: server /data --console-address ":9001"
     ports:
       - '9000:9000'
@@ -56,7 +56,7 @@ services:
     volumes:
       - 'minio_data:/data'
   minio-init:
-    image: minio/mc
+    image: pgsty/silo:latest
     depends_on:
       - minio
     entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 minioadmin minioadmin; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/sample; exit 0;"]
