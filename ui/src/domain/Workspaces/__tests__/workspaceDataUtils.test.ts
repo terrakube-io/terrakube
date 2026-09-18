@@ -206,6 +206,19 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     return { jobs: capturedJobs, history: capturedHistory };
   };
 
+  it("preserves approval details in run history", async () => {
+    const payload = createPayload("UI");
+    Object.assign(payload.included[0].attributes, {
+      approvedBy: "reviewer@example.com",
+      approvedAt: "2026-09-08T12:04:00Z",
+    });
+    const { jobs } = await runSetup(payload);
+    expect(jobs[0]).toMatchObject({
+      approvedBy: "reviewer@example.com",
+      approvedAt: "2026-09-08T12:04:00Z",
+    });
+  });
+
   it("generates dynamic Triggered via <Source> titles for non-UI webhook runs", async () => {
     const { jobs, history } = await runSetup(createPayload("Github", "Gitlab"));
     expect(jobs[0].title).toBe("Triggered via GitHub");

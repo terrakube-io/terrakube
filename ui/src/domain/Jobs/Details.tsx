@@ -765,6 +765,20 @@ export const DetailsJob = ({ jobId }: Props) => {
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {formatJobVia(job.data.attributes.via)}{" "}
                     {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
+                    {job.data.attributes.approvedBy && (
+                      <span style={{ display: "block" }}>
+                        Approved by <b>{job.data.attributes.approvedBy}</b>
+                        {job.data.attributes.approvedAt && (
+                          <>
+                            {" "}
+                            on{" "}
+                            <time dateTime={job.data.attributes.approvedAt}>
+                              {new Date(job.data.attributes.approvedAt).toLocaleString()}
+                            </time>
+                          </>
+                        )}
+                      </span>
+                    )}
                   </span>
                 ),
                 children: (
