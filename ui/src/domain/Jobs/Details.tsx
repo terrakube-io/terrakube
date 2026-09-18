@@ -1,18 +1,12 @@
-import {
-  CheckOutlined,
-  CloseOutlined,
-  CommentOutlined,
-  SafetyCertificateOutlined,
-  StopOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, SafetyCertificateOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
 import {
   Alert,
   Avatar,
   Button,
-  Card,
   Collapse,
+  Descriptions,
   message,
+  Popconfirm,
   Radio,
   RadioChangeEvent,
   Space,
@@ -46,6 +40,7 @@ import {
   StructuredApplyOutputByStep,
   StructuredOutputsByStep,
   StructuredPlanOutputByStep,
+  getPlanChangeActionLabel,
   normalizeJobDiagnostics,
   normalizeStructuredApplyOutput,
   normalizeStructuredOutputs,
@@ -55,9 +50,14 @@ import {
 import { relativeTime } from "@/modules/utils/dates";
 import { PolicyChecksOutput } from "./PolicyChecksOutput";
 import { PolicyEvaluationContext } from "../types";
+import "./Details.css";
 
 type Props = {
   jobId: string;
+  /** Shown in the run headline so the operator knows which workspace they are approving for. */
+  workspaceName?: string;
+  /** The `approveJob` permission of the current user; without it the approve and discard actions are not offered. */
+  canApprove?: boolean;
 };
 
 const INCOMPLETE_VARIABLE_GUARD_STEP_NAME = "Incomplete sensitive variables";
@@ -80,9 +80,11 @@ type IncompleteVariableGuard = {
   rawMessage: string;
 };
 
-export const DetailsJob = ({ jobId }: Props) => {
+export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [loading, setLoading] = useState(false);
+  // One flag for approve, discard and cancel: a second click while the PATCH is in flight is a bug, not intent.
+  const [actionPending, setActionPending] = useState(false);
   const [job, setJob] = useState<AxiosResponse<Job>>();
   const [workspaceSource, setWorkspaceSource] = useState<string>();
   const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<string>();
@@ -235,10 +237,6 @@ export const DetailsJob = ({ jobId }: Props) => {
     );
   };
 
-  const handleComingSoon = () => {
-    message.info("Coming Soon!");
-  };
-
   const onChange = (e: RadioChangeEvent) => {
     const nextUIType = e.target.value as "structured" | "console";
     setUIType(nextUIType);
@@ -256,8 +254,7 @@ export const DetailsJob = ({ jobId }: Props) => {
     const anyPlanHasRows = planEntries.some((rows) => Array.isArray(rows) && rows.length > 0);
     const markedNoChange =
       noChangePlanStepId != null &&
-      !(Array.isArray(planStructuredOutput[noChangePlanStepId]) &&
-        planStructuredOutput[noChangePlanStepId].length > 0);
+      !(Array.isArray(planStructuredOutput[noChangePlanStepId]) && planStructuredOutput[noChangePlanStepId].length > 0);
     const inferredNoChange =
       contextEverPersisted &&
       planEntries.length > 0 &&
@@ -336,31 +333,25 @@ export const DetailsJob = ({ jobId }: Props) => {
     );
   };
 
-  const handleCancel = () => {
-    const body = {
-      data: {
-        type: "job",
-        id: jobId,
-        attributes: {
-          status: "cancelled",
-        },
-      },
-    };
-
-    axiosInstance
-      .patch(`organization/${organizationId}/job/${jobId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
-      .then(() => {
-        message.success("Job Cancelled Succesfully");
-        loadJob();
+  const patchStatus = (status: "approved" | "rejected" | "cancelled", successText: string, failText: string) => {
+    setActionPending(true);
+    return axiosInstance
+      .patch(
+        `organization/${organizationId}/job/${jobId}`,
+        { data: { type: "job", id: jobId, attributes: { status } } },
+        { headers: { "Content-Type": "application/vnd.api+json" } }
+      )
+      .then(async () => {
+        message.success(successText);
+        await refreshJobDetails();
       })
       .catch((error) => {
-        message.error("Could not cancel job: " + error.response.data.errors[0].detail);
-      });
+        message.error(`${failText}: ${error?.response?.data?.errors?.[0]?.detail ?? error.message}`);
+      })
+      .finally(() => setActionPending(false));
   };
+
+  const handleCancel = () => patchStatus("cancelled", "Run cancelled", "Could not cancel run");
 
   // Delegates to the same status -> icon/color map WorkspaceStatusTag uses, so a step's icon
   // always matches the color/shape used everywhere else status is shown for the same status value.
@@ -370,55 +361,9 @@ export const DetailsJob = ({ jobId }: Props) => {
     });
   };
 
-  const handleApprove = () => {
-    const body = {
-      data: {
-        type: "job",
-        id: jobId,
-        attributes: {
-          status: "approved",
-        },
-      },
-    };
+  const handleApprove = () => patchStatus("approved", "Run approved", "Could not approve run");
 
-    axiosInstance
-      .patch(`organization/${organizationId}/job/${jobId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
-      .then(() => {
-        message.success("Approve successful");
-      })
-      .catch((error) => {
-        message.error("Could not approve: " + error.response.data.errors[0].detail);
-      });
-  };
-
-  const handleRejected = () => {
-    const body = {
-      data: {
-        type: "job",
-        id: jobId,
-        attributes: {
-          status: "rejected",
-        },
-      },
-    };
-
-    axiosInstance
-      .patch(`organization/${organizationId}/job/${jobId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
-      .then(() => {
-        message.success("Discard successful");
-      })
-      .catch((error) => {
-        message.error("Could not discard: " + error.response.data.errors[0].detail);
-      });
-  };
+  const handleDiscard = () => patchStatus("rejected", "Run discarded", "Could not discard run");
 
   const sortbyName = (a: JobStep, b: JobStep) => {
     if (a.stepNumber < b.stepNumber) return -1;
@@ -630,8 +575,7 @@ export const DetailsJob = ({ jobId }: Props) => {
     if (status === previousJobStatusRef.current) {
       return;
     }
-    const becameTerminal =
-      !isTerminalStatus(previousJobStatusRef.current) && isTerminalStatus(status);
+    const becameTerminal = !isTerminalStatus(previousJobStatusRef.current) && isTerminalStatus(status);
     previousJobStatusRef.current = status;
 
     if (!jobId) {
@@ -707,6 +651,116 @@ export const DetailsJob = ({ jobId }: Props) => {
     }
   }, [liveStructuredOutput, loadContext]);
 
+  // What the approver is signing off on, from the structured plan of every plan step on this run.
+  const planTotals = useMemo(() => {
+    const totals = { create: 0, update: 0, delete: 0, replace: 0 };
+    let seen = false;
+    for (const changes of Object.values(planStructuredOutput)) {
+      for (const change of changes) {
+        seen = true;
+        const label = getPlanChangeActionLabel(change.actions, change.action);
+        if (label in totals) totals[label as keyof typeof totals] += 1;
+      }
+    }
+    return seen ? totals : null;
+  }, [planStructuredOutput]);
+
+  const renderActionBar = () => {
+    const status = job?.data?.attributes.status;
+    const approvalTeam = job?.data?.attributes.approvalTeam;
+
+    if (status === "waitingApproval" && !hasPolicySoftViolations) {
+      const summary = planTotals
+        ? `${planTotals.create} to add, ${planTotals.update} to change, ${planTotals.delete} to destroy` +
+          (planTotals.replace ? `, ${planTotals.replace} to replace` : "")
+        : null;
+      return (
+        <div className="job-action-bar" role="region" aria-label="Run approval">
+          <div className="job-action-bar-text">
+            <strong>Waiting for approval.</strong>{" "}
+            {summary ? <span className="job-action-bar-summary">{summary}.</span> : "The plan is ready to review."}{" "}
+            {approvalTeam ? (
+              <>
+                Someone from <strong>{approvalTeam}</strong> must approve
+                {canApprove ? "" : "; you are not a member"}.
+              </>
+            ) : canApprove ? (
+              ""
+            ) : (
+              "You do not have permission to approve runs on this workspace."
+            )}
+          </div>
+          {canApprove && (
+            <Space>
+              <Popconfirm
+                title="Approve and apply this run?"
+                description={
+                  summary ? (
+                    <>
+                      This will apply the plan: {summary}.
+                      {planTotals && planTotals.delete > 0 && (
+                        <>
+                          {" "}
+                          <strong>{planTotals.delete} resource(s) will be destroyed.</strong>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    "The plan will be applied to the workspace."
+                  )
+                }
+                okText="Approve"
+                cancelText="Back"
+                onConfirm={handleApprove}
+              >
+                <Button icon={<CheckOutlined />} type="primary" loading={actionPending} data-testid="approve-run">
+                  Approve
+                </Button>
+              </Popconfirm>
+              <Popconfirm
+                title="Discard this run?"
+                description="The plan will not be applied and the run is marked as discarded."
+                okText="Discard run"
+                cancelText="Back"
+                okButtonProps={{ danger: true }}
+                onConfirm={handleDiscard}
+              >
+                <Button icon={<CloseOutlined />} danger disabled={actionPending} data-testid="discard-run">
+                  Discard run
+                </Button>
+              </Popconfirm>
+            </Space>
+          )}
+        </div>
+      );
+    }
+
+    if (status === "running" || status === "pending") {
+      return (
+        <div className="job-action-bar" role="region" aria-label="Run controls">
+          <div className="job-action-bar-text">
+            <strong>{status === "running" ? "Running." : "Queued."}</strong> You can cancel this run to stop it from
+            executing.
+          </div>
+          <Popconfirm
+            title="Cancel this run?"
+            description="Terraform is stopped where it is; resources already changed stay changed."
+            okText="Cancel run"
+            cancelText="Back"
+            okButtonProps={{ danger: true }}
+            onConfirm={handleCancel}
+          >
+            <Button icon={<StopOutlined />} danger loading={actionPending} data-testid="cancel-run">
+              Cancel run
+            </Button>
+          </Popconfirm>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div style={{ marginTop: "14px" }}>
       {loading || !job?.data || !steps ? (
@@ -727,10 +781,17 @@ export const DetailsJob = ({ jobId }: Props) => {
           {job.data.attributes.prCommentError
             ? renderPrCommentErrorAlert(job.data.attributes.prCommentError, job.data.attributes.prNumber)
             : null}
-          <div>
-            <WorkspaceStatusTag status={job.data.attributes.status} />{" "}
-            <h2 style={{ display: "inline" }}>Triggered via {formatJobVia(job.data.attributes.via)}</h2>
+          <div className="job-headline">
+            <WorkspaceStatusTag status={job.data.attributes.status} />
+            <h2 className="job-headline-title">
+              Run #{job.data.id}
+              {workspaceName ? <span className="job-headline-meta"> · {workspaceName}</span> : null}
+              {job.data.attributes.commitId ? (
+                <span className="job-headline-meta"> · {job.data.attributes.commitId.slice(0, 7)}</span>
+              ) : null}
+            </h2>
           </div>
+          {renderActionBar()}
           {triggeredBy && (
             <Alert
               type="info"
@@ -765,54 +826,44 @@ export const DetailsJob = ({ jobId }: Props) => {
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {formatJobVia(job.data.attributes.via)}{" "}
                     {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
-                  </span>
-                ),
-                children: (
-                  <p>
-                    <table>
-                      <tbody>
-                        <tr>
-                          <td>JobId:</td>
-                          <td>{job.data.id}</td>
-                        </tr>
-                        {workspaceDefaultBranch !== "remote-content" ? (
+                    {job.data.attributes.approvedBy && (
+                      <span style={{ display: "block" }}>
+                        Approved by <b>{job.data.attributes.approvedBy}</b>
+                        {job.data.attributes.approvedAt && (
                           <>
-                            <tr>
-                              <td>Workspace source:</td>
-                              <td>{workspaceSource}</td>
-                            </tr>
-                            <tr>
-                              <td>Workspace default branch:</td>
-                              <td>{workspaceDefaultBranch}</td>
-                            </tr>
-                            <tr>
-                              <td>Job branch:</td>
-                              <td>{(job.data.attributes as any).overrideBranch}</td>
-                            </tr>
-                            <tr>
-                              <td>Commit:</td>
-                              <td>{job.data.attributes.commitId}</td>
-                            </tr>
-                            <tr>
-                              <td>VcsId:</td>
-                              <td>{workspaceVcsId}</td>
-                            </tr>
-                            <tr>
-                              <td>VcsName:</td>
-                              <td>{workspaceVcsName}</td>
-                            </tr>
-                          </>
-                        ) : (
-                          <>
-                            <tr>
-                              <td>Using CLI driven workflow</td>
-                            </tr>
+                            {" "}
+                            on{" "}
+                            <time dateTime={job.data.attributes.approvedAt}>
+                              {new Date(job.data.attributes.approvedAt).toLocaleString()}
+                            </time>
                           </>
                         )}
-                      </tbody>
-                    </table>
-                  </p>
+                      </span>
+                    )}
+                  </span>
                 ),
+                children:
+                  workspaceDefaultBranch !== "remote-content" ? (
+                    <Descriptions
+                      size="small"
+                      column={1}
+                      items={[
+                        { key: "run", label: "Run", children: job.data.id },
+                        { key: "source", label: "Source", children: workspaceSource },
+                        { key: "default-branch", label: "Default branch", children: workspaceDefaultBranch },
+                        {
+                          key: "run-branch",
+                          label: "Run branch",
+                          children: (job.data.attributes as any).overrideBranch,
+                        },
+                        { key: "commit", label: "Commit", children: job.data.attributes.commitId },
+                        { key: "vcs", label: "VCS", children: workspaceVcsName },
+                        { key: "vcs-id", label: "VCS id", children: workspaceVcsId },
+                      ]}
+                    />
+                  ) : (
+                    <Typography.Text type="secondary">CLI-driven workflow: no VCS source for this run.</Typography.Text>
+                  ),
               },
             ]}
           />
@@ -826,24 +877,22 @@ export const DetailsJob = ({ jobId }: Props) => {
                   key: "policy-guardrails",
                   label: (
                     <Space align="center">
-                      <SafetyCertificateOutlined style={{ fontSize: "18px", color: "#722ed1" }} />
-                      <h3 style={{ display: "inline", margin: 0 }}>
-                        Policy Guardrails (OPA)
-                      </h3>
+                      <SafetyCertificateOutlined style={{ fontSize: "18px", color: "var(--tk-accent)" }} />
+                      <h3 style={{ display: "inline", margin: 0 }}>Policy Guardrails (OPA)</h3>
                       <Tag
                         color={
                           (policyEvaluation.hardMandatoryViolations ?? 0) > 0
                             ? "error"
                             : (policyEvaluation.softMandatoryViolations ?? 0) > 0
-                            ? "warning"
-                            : "success"
+                              ? "warning"
+                              : "success"
                         }
                       >
                         {(policyEvaluation.hardMandatoryViolations ?? 0) > 0
                           ? "Failed"
                           : (policyEvaluation.softMandatoryViolations ?? 0) > 0
-                          ? "Action Required"
-                          : "Compliant"}
+                            ? "Action Required"
+                            : "Compliant"}
                       </Tag>
                     </Space>
                   ),
@@ -868,98 +917,40 @@ export const DetailsJob = ({ jobId }: Props) => {
             />
           )}
 
-          {steps.length > 0 ? (
-            steps.map((item) => {
-              const stepLabel = renderStepLabel(item);
-              // Steps with nothing to show yet (e.g. a pending approval step) still render through
-              // Collapse rather than a bare Card - a disabled panel keeps the same arrow/label/extra
-              // grid as every expandable step, so rows stay in one aligned column instead of the
-              // Card variant's text sitting flush left of the others.
-              const isCollapsible = shouldStepBeCollapsible(item);
+          {steps.length > 0
+            ? steps.map((item) => {
+                const stepLabel = renderStepLabel(item);
+                // Steps with nothing to show yet (e.g. a pending approval step) still render through
+                // Collapse rather than a bare Card - a disabled panel keeps the same arrow/label/extra
+                // grid as every expandable step, so rows stay in one aligned column instead of the
+                // Card variant's text sitting flush left of the others.
+                const isCollapsible = shouldStepBeCollapsible(item);
 
-              return (
-                <Collapse
-                  key={item.id}
-                  style={{ width: "100%" }}
-                  activeKey={isCollapsible ? (activeStepKeys[item.id] ?? []) : []}
-                  onChange={(keys) => {
-                    userToggledStepIds.current.add(item.id);
-                    setActiveStepKeys((previous) => ({
-                      ...previous,
-                      [item.id]: Array.isArray(keys) ? keys : [keys],
-                    }));
-                  }}
-                  items={[
-                    {
-                      key: "2",
-                      label: stepLabel,
-                      collapsible: isCollapsible ? undefined : "disabled",
-                      extra: isCollapsible ? renderStepExtra(item) : undefined,
-                      children: isCollapsible ? renderStepContent(item) : undefined,
-                    },
-                  ]}
-                />
-              );
-            })
-          ) : (
-            <span />
-          )}
-
-          {job.data.attributes.status === "waitingApproval" && !hasPolicySoftViolations ? (
-            <div style={{ margin: "auto", width: "50%", marginTop: "20px" }}>
-              <Card
-                title={
-                  <span style={{ fontSize: "14px" }}>
-                    <b>Needs Confirmation:</b>{" "}
-                    {job.data.attributes.approvalTeam ? (
-                      <>
-                        Someone from <b>{job.data.attributes.approvalTeam}</b> must confirm to continue.
-                      </>
-                    ) : (
-                      "Someone must confirm to continue."
-                    )}
-                  </span>
-                }
-              >
-                <Space size={20}>
-                  <Button icon={<CheckOutlined />} onClick={handleApprove} type="primary">
-                    Approve
-                  </Button>
-                  <Button icon={<CloseOutlined />} onClick={handleRejected} type="primary" danger>
-                    Discard
-                  </Button>
-                  <Button icon={<CommentOutlined />} onClick={handleComingSoon}>
-                    Add Comment
-                  </Button>
-                </Space>
-              </Card>
-            </div>
-          ) : (
-            <span />
-          )}
-
-          {job.data.attributes.status === "running" || job.data.attributes.status === "pending" ? (
-            <div style={{ margin: "auto", width: "50%", marginTop: "20px" }}>
-              <Card
-                title={
-                  <span style={{ fontSize: "14px" }}>
-                    <b>Cancelable:</b> You can cancel this job to stop it from executing.
-                  </span>
-                }
-              >
-                <Space size={20}>
-                  <Button icon={<StopOutlined />} onClick={handleCancel} type="default" danger>
-                    Cancel Job
-                  </Button>
-                  <Button icon={<CommentOutlined />} onClick={handleComingSoon}>
-                    Add Comment
-                  </Button>
-                </Space>
-              </Card>
-            </div>
-          ) : (
-            <span />
-          )}
+                return (
+                  <Collapse
+                    key={item.id}
+                    style={{ width: "100%" }}
+                    activeKey={isCollapsible ? (activeStepKeys[item.id] ?? []) : []}
+                    onChange={(keys) => {
+                      userToggledStepIds.current.add(item.id);
+                      setActiveStepKeys((previous) => ({
+                        ...previous,
+                        [item.id]: Array.isArray(keys) ? keys : [keys],
+                      }));
+                    }}
+                    items={[
+                      {
+                        key: "2",
+                        label: stepLabel,
+                        collapsible: isCollapsible ? undefined : "disabled",
+                        extra: isCollapsible ? renderStepExtra(item) : undefined,
+                        children: isCollapsible ? renderStepContent(item) : undefined,
+                      },
+                    ]}
+                  />
+                );
+              })
+            : null}
         </Space>
       )}
     </div>

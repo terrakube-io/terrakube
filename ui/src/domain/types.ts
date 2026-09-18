@@ -172,6 +172,8 @@ export type JobAttributes = {
   via: JobVia;
   output: string;
   approvalTeam: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
   commitId: string;
   prNumber?: number;
   prCommentError?: string;
@@ -196,6 +198,8 @@ export type FlatJob = {
   latestChange: string;
   commitId?: string;
   createdBy: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
   via?: JobVia;
   prNumber?: number;
   prCommentError?: string;

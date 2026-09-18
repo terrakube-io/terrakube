@@ -490,7 +490,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
         });
       }
 
-      message.success("Policy override rejected. Run marked as rejected.");
+      message.success("Run discarded because of policy violations");
       setOverrideDrawerOpen(false);
       form.resetFields();
       if (onOverrideSuccess) {
@@ -646,15 +646,15 @@ export const PolicyChecksOutput: React.FC<Props> = ({
         {canOverride && (
           <Space>
             <Popconfirm
-              title="Reject Run"
-              description="Are you sure you want to reject this run due to policy violations?"
+              title="Discard this run?"
+              description="The plan will not be applied because of the policy violations, and the run is marked as discarded."
               onConfirm={handleRejectSubmit}
-              okText="Yes, Reject"
+              okText="Discard run"
               cancelText="No"
               okButtonProps={{ danger: true }}
             >
               <Button danger icon={<CloseOutlined />} loading={rejectSubmitting} data-testid="reject-button">
-                Reject Run
+                Discard run
               </Button>
             </Popconfirm>
             <Button

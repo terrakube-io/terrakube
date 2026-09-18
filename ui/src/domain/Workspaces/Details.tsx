@@ -596,6 +596,20 @@ export const WorkspaceDetails = ({
                                     </Typography.Title>
                                     <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
                                     <b>{item.via || "UI"}</b>{" "}
+                                    {item.approvedBy && (
+                                      <div>
+                                        Approved by <b>{item.approvedBy}</b>
+                                        {item.approvedAt && (
+                                          <>
+                                            {" "}
+                                            on{" "}
+                                            <time dateTime={item.approvedAt}>
+                                              {new Date(item.approvedAt).toLocaleString()}
+                                            </time>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
                                     {item.commitId !== "000000000" ? (
                                       <>
                                         <FiGitCommit /> {item.commitId?.substring(0, 6)}{" "}
@@ -703,7 +717,7 @@ export const WorkspaceDetails = ({
       case "2":
         return jobVisible ? (
           <Suspense fallback={<LoadingFallback />}>
-            <DetailsJob jobId={jobId!} />
+            <DetailsJob jobId={jobId!} workspaceName={workspaceName} canApprove={approveJob} />
           </Suspense>
         ) : (
           <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
