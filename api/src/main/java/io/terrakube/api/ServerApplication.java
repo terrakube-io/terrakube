@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 
 import org.springframework.web.reactive.function.client.WebClient;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 
 @SpringBootApplication
 @EnableJpaRepositories(basePackages = "io.terrakube.api.repository")
@@ -33,8 +34,7 @@ public class ServerApplication {
 	@Bean
 	@ConditionalOnMissingBean
 	public WebClient.Builder webClientBuilder() {
-		return WebClient.builder();
+		return WebClient.builder().clientConnector(ReactorNettyWebClientFactory.connector());
 	}
 
 }
-
