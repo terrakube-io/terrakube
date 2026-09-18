@@ -4550,6 +4550,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"acorn@npm:^8.17.0":
+  version: 8.18.0
+  resolution: "acorn@npm:8.18.0"
+  bin:
+    acorn: bin/acorn
+  checksum: 10c0/be771be2135cc07910cf76f444ad514d7dcfd6d4a8026e597e93155275abc8ef61eee12211d52146e9d962874269b634f397464942087be013c89d0c54c5f8e5
+  languageName: node
+  linkType: hard
+
 "agent-base@npm:6":
   version: 6.0.2
   resolution: "agent-base@npm:6.0.2"
@@ -4967,6 +4976,8 @@ __metadata:
     "@typescript-eslint/eslint-plugin": "npm:^8.70.0"
     "@typescript-eslint/parser": "npm:^8.70.0"
     "@vitejs/plugin-react": "npm:^6.1.1"
+    acorn: "npm:^8.17.0"
+    acorn-jsx: "npm:^5.3.2"
     ansi-to-react: "npm:^6.2.6"
     antd: "npm:^6.6.3"
     axios: "npm:^1.20.0"
