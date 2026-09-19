@@ -129,4 +129,5 @@
     <include file="/db/changelog/local/changelog-2.34.0-workspace-run-trigger.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-policy-set-parameters.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-workspace-pagination-indexes.xml" />
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-tag-value.xml" />
 </databaseChangeLog>

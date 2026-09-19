@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Key/value workspace tags (HCP Terraform "tag bindings"): the tag table keeps the keys of an
+      organization and each workspace binding stores its own value. NULL means a key-only tag, so
+      existing rows keep working unchanged.
+    -->
+    <changeSet id="2-34-0-workspace-tag-value" author="terrakube">
+        <addColumn tableName="workspacetag">
+            <column name="tag_value" type="varchar(255)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

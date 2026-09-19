@@ -4,8 +4,13 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingModel;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.AccessRepository;
@@ -27,6 +32,7 @@ import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -38,19 +44,27 @@ import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -98,7 +112,7 @@ class RemoteTfeServiceTest {
         when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
                 .thenReturn(Optional.empty());
 
-        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("alpha"), currentUser);
+        WorkspaceList result = service.listWorkspace("sample-org", query("search[name]", "alpha"), currentUser);
 
         assertEquals(2, result.getData().size());
         assertEquals("alpha", result.getData().get(0).getAttributes().get("name"));
@@ -130,7 +144,7 @@ class RemoteTfeServiceTest {
         when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
                 .thenReturn(Optional.empty());
 
-        WorkspaceList result = service.listWorkspace("sample-org", Optional.of("prod,aws"), Optional.empty(), currentUser);
+        WorkspaceList result = service.listWorkspace("sample-org", query("search[tags]", "prod,aws"), currentUser);
 
         assertEquals(1, result.getData().size());
         assertEquals("prod-aws", result.getData().get(0).getAttributes().get("name"));
@@ -156,7 +170,7 @@ class RemoteTfeServiceTest {
         when(rbacService.canManageJob(team)).thenReturn(false);
         when(rbacService.canApproveJob(team)).thenReturn(false);
 
-        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("restricted"), currentUser);
+        WorkspaceList result = service.listWorkspace("sample-org", query("search[name]", "restricted"), currentUser);
 
         Map<String, Boolean> permissions = permissions(result.getData().get(0));
         assertFalse(permissions.get("can-update"));
@@ -182,7 +196,7 @@ class RemoteTfeServiceTest {
         when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
                 .thenReturn(Optional.empty());
 
-        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("constrained"), currentUser);
+        WorkspaceList result = service.listWorkspace("sample-org", query("search[name]", "constrained"), currentUser);
 
         assertEquals("latest", result.getData().get(0).getAttributes().get("terraform-version"));
     }
@@ -199,7 +213,7 @@ class RemoteTfeServiceTest {
         when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
                 .thenReturn(Optional.empty());
 
-        WorkspaceList result = service.listWorkspace("sample-org", Optional.empty(), Optional.of("exact"), currentUser);
+        WorkspaceList result = service.listWorkspace("sample-org", query("search[name]", "exact"), currentUser);
 
         assertEquals("1.6.0", result.getData().get(0).getAttributes().get("terraform-version"));
     }
@@ -310,6 +324,385 @@ class RemoteTfeServiceTest {
         StreamOffset[] offsets = offsetsCaptor.getValue();
         assertEquals(1, offsets.length);
         assertEquals("789", offsets[0].getKey());
+    }
+
+    // --- key/value tags (tag bindings) ---
+
+    @Test
+    void listWorkspaceWithTaggedFilterMatchesKeyAndValue() {
+        TagFixture fixture = new TagFixture();
+        Workspace prod = fixture.workspace("app-prod", "env", "prod");
+        fixture.workspace("app-dev", "env", "dev");
+        fixture.workspace("app-untagged");
+
+        // The CLI repeats the keys of key/value tags in search[tags]
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query(
+                "filter[tagged][0][key]", "env", "filter[tagged][0][value]", "prod", "search[tags]", "env"),
+                fixture.currentUser);
+
+        assertEquals(List.of(prod.getName()), names(result));
+    }
+
+    @Test
+    void listWorkspaceWithTaggedFilterWithoutValueMatchesAnyValueOfTheKey() {
+        TagFixture fixture = new TagFixture();
+        fixture.workspace("app-prod", "env", "prod");
+        fixture.workspace("app-keyonly", "env", null);
+        fixture.workspace("app-other", "team", "infra");
+
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query(
+                "filter[tagged][0][key]", "env", "filter[tagged][0][value]", ""), fixture.currentUser);
+
+        assertEquals(List.of("app-keyonly", "app-prod"), names(result));
+    }
+
+    @Test
+    void listWorkspaceWithTaggedFilterRequiresEveryPairWhateverTheIndexes() {
+        TagFixture fixture = new TagFixture();
+        Workspace match = fixture.workspace("match", "env", "prod", "team", "infra");
+        fixture.workspace("wrong-team", "env", "prod", "team", "apps");
+        fixture.workspace("env-only", "env", "prod");
+
+        // Go map iteration order: indexes arrive unordered and not necessarily contiguous
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query(
+                "filter[tagged][3][value]", "infra", "filter[tagged][0][key]", "env",
+                "filter[tagged][3][key]", "team", "filter[tagged][0][value]", "prod"), fixture.currentUser);
+
+        assertEquals(List.of(match.getName()), names(result));
+    }
+
+    @Test
+    void listWorkspaceAppliesAllFiltersTogetherWithoutDuplicates() {
+        TagFixture fixture = new TagFixture();
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        Workspace match = fixture.workspace("app-prod", "env", "prod", "app", null);
+        match.setProject(project);
+        Workspace otherProject = fixture.workspace("app-prod-2", "env", "prod", "app", null);
+        Workspace otherName = fixture.workspace("web-prod", "env", "prod", "app", null);
+        otherName.setProject(project);
+        when(workspaceRepository.findWorkspacesByOrganizationNameAndNameStartingWith("sample-org", "app"))
+                .thenReturn(Optional.of(List.of(match, otherProject)));
+
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query(
+                "search[name]", "app", "search[tags]", "app,env", "filter[tagged][0][key]", "env",
+                "filter[tagged][0][value]", "prod", "filter[project][id]", project.getId().toString()),
+                fixture.currentUser);
+
+        assertEquals(List.of(match.getName()), names(result));
+    }
+
+    @Test
+    void listWorkspaceWithoutAnyFilterReturnsNothing() {
+        TagFixture fixture = new TagFixture();
+        fixture.workspace("app-prod", "env", "prod");
+
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query(), fixture.currentUser);
+
+        assertTrue(result.getData().isEmpty());
+        assertEquals(0, pagination(result).get("total-count"));
+    }
+
+    @Test
+    void listWorkspaceReturnsEverythingOnTheFirstPage() {
+        TagFixture fixture = new TagFixture();
+        fixture.workspace("app-a", "env", "prod");
+        fixture.workspace("app-b", "env", "prod");
+
+        WorkspaceList firstPage = fixture.service.listWorkspace("sample-org", query("search[tags]", "env"),
+                fixture.currentUser);
+        WorkspaceList secondPage = fixture.service.listWorkspace("sample-org",
+                query("search[tags]", "env", "page[number]", "2"), fixture.currentUser);
+
+        assertEquals(2, firstPage.getData().size());
+        assertEquals(1, pagination(firstPage).get("current-page"));
+        assertEquals(1, pagination(firstPage).get("total-pages"));
+        assertEquals(2, pagination(firstPage).get("total-count"));
+        assertTrue(secondPage.getData().isEmpty());
+        assertEquals(2, pagination(secondPage).get("current-page"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void workspaceTagNamesIncludeKeysWithAndWithoutValue() {
+        TagFixture fixture = new TagFixture();
+        fixture.workspace("app", "env", "prod", "legacy", null);
+
+        WorkspaceList result = fixture.service.listWorkspace("sample-org", query("search[tags]", "legacy"),
+                fixture.currentUser);
+
+        assertEquals(List.of("env", "legacy"), result.getData().get(0).getAttributes().get("tag-names"));
+    }
+
+    @Test
+    void listTagBindingsExposesKeyOnlyTagsWithEmptyValue() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "prod", "legacy", null);
+
+        TagBindingList bindings = fixture.service.listTagBindings(workspace.getId().toString(), fixture.currentUser);
+
+        assertEquals(List.of(Map.of("key", "env", "value", "prod"), Map.of("key", "legacy", "value", "")),
+                bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
+        assertEquals("tag-bindings", bindings.getData().get(0).getType());
+    }
+
+    @Test
+    void listTagBindingsOfUnknownWorkspaceReturnsNull() {
+        TagFixture fixture = new TagFixture();
+
+        assertNull(fixture.service.listTagBindings(UUID.randomUUID().toString(), fixture.currentUser));
+    }
+
+    @Test
+    void listTagBindingsWithoutOrganizationAccessIsForbidden() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "prod");
+        when(teamTokenService.getCurrentGroups(fixture.currentUser)).thenReturn(List.of("outsiders"));
+
+        assertThrows(AccessDeniedException.class,
+                () -> fixture.service.listTagBindings(workspace.getId().toString(), fixture.currentUser));
+    }
+
+    @Test
+    void updateTagBindingsUpsertsByKeyAndKeepsOtherTags() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "dev", "owner", "alice");
+        fixture.tag("region");
+
+        TagBindingList result = fixture.service.updateTagBindings(workspace.getId().toString(),
+                bindings("env", "prod", "region", "eu", "team", null), fixture.currentUser);
+
+        assertEquals(List.of(Map.of("key", "env", "value", "prod"), Map.of("key", "owner", "value", "alice"),
+                        Map.of("key", "region", "value", "eu"), Map.of("key", "team", "value", "")),
+                result.getData().stream().map(TagBindingModel::getAttributes).toList());
+        assertEquals(4, workspace.getWorkspaceTag().size());
+        verify(workspaceTagRepository, never()).delete(any());
+        verify(workspaceTagRepository, never()).deleteByWorkspace(any());
+        // "team" is a new organization key
+        verify(tagRepository).save(Mockito.argThat(tag -> "team".equals(tag.getName())));
+    }
+
+    @Test
+    void updateTagBindingsWithoutManagePermissionIsForbidden() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "dev");
+        when(rbacService.canManageWorkspace(fixture.team)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> fixture.service.updateTagBindings(
+                workspace.getId().toString(), bindings("env", "prod"), fixture.currentUser));
+        verify(workspaceTagRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTagBindingsRejectsKeysAndValuesTooLongForTheDatabase() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app");
+
+        assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
+                workspace.getId().toString(), bindings("k".repeat(65), "v"), fixture.currentUser));
+        assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
+                workspace.getId().toString(), bindings("env", "v".repeat(256)), fixture.currentUser));
+        assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
+                workspace.getId().toString(), bindings("", "v"), fixture.currentUser));
+        verify(workspaceTagRepository, never()).save(any());
+    }
+
+    @Test
+    void legacyTagsApiDoesNotOverwriteTheValueOfAKeyValueTag() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "prod");
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        TagDataList tags = new TagDataList();
+        tags.setData(List.of(tagModel("env"), tagModel("app")));
+
+        fixture.service.updateWorkspaceTags(workspace.getId().toString(), tags, fixture.currentUser);
+
+        TagBindingList bindings = fixture.service.listTagBindings(workspace.getId().toString(), fixture.currentUser);
+        assertEquals(List.of(Map.of("key", "app", "value", ""), Map.of("key", "env", "value", "prod")),
+                bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createWorkspaceAppliesTagsAndTagBindings() {
+        TagFixture fixture = new TagFixture();
+        AtomicReference<Workspace> saved = new AtomicReference<>();
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace created = invocation.getArgument(0);
+            created.setId(UUID.randomUUID());
+            created.setAccess(Collections.emptyList());
+            saved.set(created);
+            return created;
+        });
+        when(workspaceRepository.getByOrganizationNameAndName("sample-org", "created"))
+                .thenAnswer(invocation -> saved.get());
+        when(workspaceRepository.findById(any(UUID.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+        io.terrakube.api.plugin.state.model.workspace.Relationships relationships =
+                new io.terrakube.api.plugin.state.model.workspace.Relationships();
+        TagDataList tags = new TagDataList();
+        tags.setData(List.of(tagModel("legacy")));
+        relationships.setTags(tags);
+        relationships.setTagBindings(bindings("env", "prod"));
+        WorkspaceModel model = new WorkspaceModel();
+        model.setAttributes(new HashMap<>(Map.of("name", "created", "terraform-version", "1.9.0")));
+        model.setRelationships(relationships);
+        WorkspaceData request = new WorkspaceData();
+        request.setData(model);
+
+        WorkspaceData response = fixture.service.createWorkspace("sample-org", request, fixture.currentUser);
+
+        assertEquals(List.of("env", "legacy"), response.getData().getAttributes().get("tag-names"));
+        TagBindingList bindings = fixture.service.listTagBindings(response.getData().getId(), fixture.currentUser);
+        assertEquals(List.of(Map.of("key", "env", "value", "prod"), Map.of("key", "legacy", "value", "")),
+                bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
+        // A single workspace resolves only its own tags, not every tag of the organization
+        verify(tagRepository, never()).findByOrganizationName(anyString());
+    }
+
+    @Test
+    void updateTagBindingsWithAKeyRepeatedInTheRequestKeepsOneBinding() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app");
+
+        TagBindingList result = fixture.service.updateTagBindings(workspace.getId().toString(),
+                bindings("env", "prod", "env", "dev"), fixture.currentUser);
+
+        assertEquals(List.of(Map.of("key", "env", "value", "dev")),
+                result.getData().stream().map(TagBindingModel::getAttributes).toList());
+        assertEquals(1, workspace.getWorkspaceTag().size());
+    }
+
+    /**
+     * An organization whose single team manages workspaces; tags and workspace tags are kept in memory
+     * behind the repository mocks.
+     */
+    private class TagFixture {
+        final RemoteTfeService service = remoteTfeService();
+        final JwtAuthenticationToken currentUser = currentUser();
+        final Organization organization = organization("sample-org");
+        final Team team = team("admins");
+        final List<Tag> tags = new ArrayList<>();
+        final List<Workspace> workspaces = new ArrayList<>();
+
+        @SuppressWarnings("unchecked")
+        TagFixture() {
+            organization.setTeam(List.of(team));
+            organization.setWorkspace(workspaces);
+            when(teamTokenService.getCurrentGroups(currentUser)).thenReturn(List.of("admins"));
+            when(rbacService.canManageWorkspace(team)).thenReturn(true);
+            when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(organization);
+            when(tagRepository.findByOrganizationName("sample-org")).thenReturn(tags);
+            when(tagRepository.getByOrganizationNameAndName(Mockito.eq("sample-org"), anyString()))
+                    .thenAnswer(invocation -> findTag(invocation.getArgument(1)));
+            when(tagRepository.save(any(Tag.class))).thenAnswer(invocation -> {
+                Tag tag = invocation.getArgument(0);
+                tag.setId(UUID.randomUUID());
+                tags.add(tag);
+                return tag;
+            });
+            when(tagRepository.findAllById(any())).thenAnswer(invocation -> {
+                List<UUID> ids = new ArrayList<>();
+                ((Iterable<UUID>) invocation.getArgument(0)).forEach(ids::add);
+                return tags.stream().filter(tag -> ids.contains(tag.getId())).toList();
+            });
+            // workspace.getWorkspaceTag() plays the workspacetag table
+            when(workspaceTagRepository.findByWorkspace(any(Workspace.class))).thenAnswer(invocation -> {
+                Workspace workspace = invocation.getArgument(0);
+                return workspace.getWorkspaceTag() == null ? List.of() : new ArrayList<>(workspace.getWorkspaceTag());
+            });
+            when(workspaceTagRepository.save(any(WorkspaceTag.class))).thenAnswer(invocation -> {
+                WorkspaceTag workspaceTag = invocation.getArgument(0);
+                if (workspaceTag.getId() == null) {
+                    workspaceTag.setId(UUID.randomUUID());
+                    Workspace workspace = workspaceTag.getWorkspace();
+                    if (workspace.getWorkspaceTag() == null) {
+                        workspace.setWorkspaceTag(new ArrayList<>());
+                    }
+                    workspace.getWorkspaceTag().add(workspaceTag);
+                }
+                return workspaceTag;
+            });
+            when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList()))
+                    .thenReturn(Optional.empty());
+        }
+
+        Tag tag(String name) {
+            Tag existing = findTag(name);
+            if (existing != null) {
+                return existing;
+            }
+            Tag tag = RemoteTfeServiceTest.this.tag(name, organization);
+            tags.add(tag);
+            return tag;
+        }
+
+        private Tag findTag(String name) {
+            return tags.stream().filter(tag -> tag.getName().equals(name)).findFirst().orElse(null);
+        }
+
+        /** keyValues: key, value (null for a key-only tag), key, value, ... */
+        Workspace workspace(String name, String... keyValues) {
+            Workspace workspace = RemoteTfeServiceTest.this.workspace(name, organization);
+            List<WorkspaceTag> workspaceTags = new ArrayList<>();
+            for (int i = 0; i < keyValues.length; i += 2) {
+                WorkspaceTag workspaceTag = workspaceTag(tag(keyValues[i]));
+                workspaceTag.setValue(keyValues[i + 1]);
+                workspaceTag.setWorkspace(workspace);
+                workspaceTags.add(workspaceTag);
+            }
+            workspace.setWorkspaceTag(workspaceTags);
+            workspaces.add(workspace);
+            when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
+            return workspace;
+        }
+    }
+
+    private static MultiValueMap<String, String> parameters(String... keyValues) {
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        for (int i = 0; i < keyValues.length; i += 2) {
+            parameters.add(keyValues[i], keyValues[i + 1]);
+        }
+        return parameters;
+    }
+
+    private static WorkspaceListQuery query(String... keyValues) {
+        return WorkspaceListQuery.from(parameters(keyValues));
+    }
+
+    /** keyValues: key, value (null to omit the value like go-tfe does for key-only tags), ... */
+    private static TagBindingList bindings(String... keyValues) {
+        List<TagBindingModel> data = new ArrayList<>();
+        for (int i = 0; i < keyValues.length; i += 2) {
+            TagBindingModel binding = new TagBindingModel();
+            binding.setType("tag-bindings");
+            Map<String, Object> attributes = new HashMap<>();
+            attributes.put("key", keyValues[i]);
+            if (keyValues[i + 1] != null) {
+                attributes.put("value", keyValues[i + 1]);
+            }
+            binding.setAttributes(attributes);
+            data.add(binding);
+        }
+        TagBindingList tagBindingList = new TagBindingList();
+        tagBindingList.setData(data);
+        return tagBindingList;
+    }
+
+    private static TagModel tagModel(String name) {
+        TagModel tagModel = new TagModel();
+        tagModel.setType("tags");
+        tagModel.setAttributes(Map.of("name", name));
+        return tagModel;
+    }
+
+    private static List<String> names(WorkspaceList workspaceList) {
+        return workspaceList.getData().stream().map(model -> model.getAttributes().get("name").toString()).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> pagination(WorkspaceList workspaceList) {
+        return (Map<String, Object>) workspaceList.getMeta().get("pagination");
     }
 
     private RemoteTfeService remoteTfeService() {

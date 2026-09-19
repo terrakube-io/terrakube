@@ -1,5 +1,6 @@
 package io.terrakube.api;
 
+import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -9,6 +10,7 @@ import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import io.terrakube.api.rs.team.Team;
 
@@ -26,6 +28,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TfcApiTests extends ServerApplicationTests {
+
+    @Autowired
+    WorkspaceTagRepository workspaceTagRepository;
 
     @BeforeEach
     public void setup() {
@@ -520,5 +525,121 @@ class TfcApiTests extends ServerApplicationTests {
 
         // Verify that some jobs were deleted due to KEEP_JOB_HISTORY limit, firstJob should have been deleted only secondJOb and thirdJob should exists
         assertThat(remainingJobs.size()).isEqualTo(2);
+    }
+
+    // Same calls and payloads as go-tfe (Workspaces.Create / ListTagBindings / AddTagBindings / List)
+    @Test
+    void keyValueTagsFollowTheTerraformCloudBlockFlow() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String workspaceName = "kv_tags_" + UUID.randomUUID().toString().substring(0, 8);
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {"data":{"type":"workspaces","attributes":{"name":"%s","terraform-version":"1.9.0"},
+                          "relationships":{
+                            "tags":{"data":[{"type":"tags","attributes":{"name":"kvtest_legacy"}}]},
+                            "tag-bindings":{"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"prod"}}]}}}}
+                        """.formatted(workspaceName))
+                .when()
+                .post("/remote/tfe/v2/organizations/simple/workspaces")
+                .then()
+                .log().all()
+                .statusCode(HttpStatus.CREATED.value())
+                .body("data.attributes.tag-names", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy")))
+                .extract().path("data.id");
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.type", IsEqual.equalTo(List.of("tag-bindings", "tag-bindings")))
+                    .body("data.attributes.key", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy")))
+                    .body("data.attributes.value", IsEqual.equalTo(List.of("prod", "")));
+
+            // Upsert by key: kvtest_legacy is not in the request and must survive
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"dev"}},
+                                     {"type":"tag-bindings","attributes":{"key":"kvtest_team"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.key", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy", "kvtest_team")))
+                    .body("data.attributes.value", IsEqual.equalTo(List.of("dev", "", "")));
+
+            // The CLI sends filter[tagged] and repeats the keys in search[tags]
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvtest_env")
+                    .queryParam("filter[tagged][0][value]", "dev")
+                    .queryParam("search[tags]", "kvtest_env")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(workspaceName)))
+                    .body("data[0].attributes.tag-names", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy", "kvtest_team")))
+                    .body("meta.pagination.current-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.total-pages", IsEqual.equalTo(1));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvtest_env")
+                    .queryParam("filter[tagged][0][value]", "prod")
+                    .queryParam("search[tags]", "kvtest_env")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.size()", IsEqual.equalTo(0));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"%s","value":"x"}}]}
+                            """.formatted("k".repeat(65)))
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.BAD_REQUEST.value());
+
+            // 403 and not 404: a 404 makes the CLI treat the server as lacking key/value tag support
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"))
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.FORBIDDEN.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"), "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"prod"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.FORBIDDEN.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + UUID.randomUUID() + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.NOT_FOUND.value());
+        } finally {
+            Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId)).orElseThrow();
+            workspaceTagRepository.deleteAll(workspaceTagRepository.findByWorkspace(workspace));
+            workspaceRepository.delete(workspace);
+        }
     }
 }
