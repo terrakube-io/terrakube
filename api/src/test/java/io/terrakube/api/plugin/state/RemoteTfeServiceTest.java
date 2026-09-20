@@ -522,6 +522,26 @@ class RemoteTfeServiceTest {
                 bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
     }
 
+    // go-tfe marshals a tag name with omitempty, so a client attaching an existing tag sends its id alone.
+    // Such a request was accepted before key/value tags and must keep working.
+    @Test
+    void legacyTagsApiIgnoresTagsSentWithoutAName() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", "env", "prod");
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        TagModel withoutName = new TagModel();
+        withoutName.setType("tags");
+        withoutName.setId(UUID.randomUUID().toString());
+        TagDataList tags = new TagDataList();
+        tags.setData(List.of(withoutName, tagModel("app")));
+
+        assertTrue(fixture.service.updateWorkspaceTags(workspace.getId().toString(), tags, fixture.currentUser));
+
+        TagBindingList bindings = fixture.service.listTagBindings(workspace.getId().toString(), fixture.currentUser);
+        assertEquals(List.of(Map.of("key", "app", "value", ""), Map.of("key", "env", "value", "prod")),
+                bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void createWorkspaceAppliesTagsAndTagBindings() {

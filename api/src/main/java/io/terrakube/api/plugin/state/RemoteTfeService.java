@@ -922,12 +922,21 @@ public class RemoteTfeService {
         return true;
     }
 
-    // Key-only tags (legacy tags API and list-style tags on create) keep the value a key may already have
+    /**
+     * Key-only tags (legacy tags API and list-style tags on create) keep the value a key may already have.
+     * Entries without a name are skipped: go-tfe marshals {@code name} with omitempty, so a client attaching
+     * an existing tag sends its id alone, and such a request used to be accepted.
+     */
     private void addKeyOnlyTags(Workspace workspace, TagDataList tagDataList) {
         List<TagModel> tags = tagDataList == null || tagDataList.getData() == null ? List.of() : tagDataList.getData();
-        tags.forEach(tagModel -> validateTagBinding(tagName(tagModel), null));
+        List<String> names = tags.stream().map(RemoteTfeService::tagName).filter(name -> name != null && !name.isBlank()).toList();
+        if (names.size() < tags.size()) {
+            log.warn("Ignoring {} tag(s) sent without a name for workspace {}", tags.size() - names.size(),
+                    workspace.getName());
+        }
+        names.forEach(name -> validateTagBinding(name, null));
         List<WorkspaceTag> current = new ArrayList<>(workspaceTagRepository.findByWorkspace(workspace));
-        tags.forEach(tagModel -> upsertWorkspaceTag(workspace, current, tagName(tagModel), null, false));
+        names.forEach(name -> upsertWorkspaceTag(workspace, current, name, null, false));
     }
 
     private static String tagName(TagModel tagModel) {
