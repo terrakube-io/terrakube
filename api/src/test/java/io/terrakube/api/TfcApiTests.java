@@ -607,7 +607,7 @@ class TfcApiTests extends ServerApplicationTests {
                     .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
                     .body("""
                             {"data":[{"type":"tag-bindings","attributes":{"key":"%s","value":"x"}}]}
-                            """.formatted("k".repeat(65)))
+                            """.formatted("k".repeat(129)))
                     .when()
                     .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
                     .then()
@@ -731,6 +731,90 @@ class TfcApiTests extends ServerApplicationTests {
         } finally {
             deleteWorkspaceWithTags(devId);
             deleteWorkspaceWithTags(prodId);
+        }
+    }
+
+    @Test
+    void workspaceListPagesFollowPageSize() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        List<String> ids = new ArrayList<>();
+        for (String name : List.of("a", "b", "c")) {
+            ids.add(createWorkspaceWithTagBindings(adminToken, "kv_page_" + name + "_" + suffix, "kvpage_" + suffix, name));
+        }
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("search[tags]", "kvpage_" + suffix)
+                    .queryParam("page[size]", "2")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of("kv_page_a_" + suffix, "kv_page_b_" + suffix)))
+                    .body("meta.pagination.current-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.page-size", IsEqual.equalTo(2))
+                    .body("meta.pagination.next-page", IsEqual.equalTo(2))
+                    .body("meta.pagination.total-pages", IsEqual.equalTo(2))
+                    .body("meta.pagination.total-count", IsEqual.equalTo(3));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("search[tags]", "kvpage_" + suffix)
+                    .queryParam("page[size]", "2")
+                    .queryParam("page[number]", "2")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of("kv_page_c_" + suffix)))
+                    .body("meta.pagination.prev-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.next-page", IsEqual.equalTo(null));
+        } finally {
+            ids.forEach(this::deleteWorkspaceWithTags);
+        }
+    }
+
+    @Test
+    void tagBindingsAreLimitedToTenKeysPerWorkspace() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String[] nineBindings = new String[18];
+        for (int i = 0; i < 9; i++) {
+            nineBindings[i * 2] = "kvlimit_" + i;
+            nineBindings[i * 2 + 1] = "v";
+        }
+        String workspaceId = createWorkspaceWithTagBindings(adminToken,
+                "kv_limit_" + UUID.randomUUID().toString().substring(0, 8), nineBindings);
+
+        try {
+            // Updating an existing key does not count again: 9 existing + 1 new = 10
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvlimit_0","value":"changed"}},
+                                     {"type":"tag-bindings","attributes":{"key":"kvlimit_9","value":"v"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.size()", IsEqual.equalTo(10));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvlimit_10","value":"v"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.BAD_REQUEST.value())
+                    .body("errors[0].status", IsEqual.equalTo("400"));
+        } finally {
+            deleteWorkspaceWithTags(workspaceId);
         }
     }
 

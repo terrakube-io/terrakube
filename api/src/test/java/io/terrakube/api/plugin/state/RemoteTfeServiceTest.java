@@ -404,22 +404,39 @@ class RemoteTfeServiceTest {
     }
 
     @Test
-    void listWorkspaceReturnsEverythingOnTheFirstPage() {
+    void listWorkspacePagesMatchesWithPageSize() {
         TagFixture fixture = new TagFixture();
         fixture.workspace("app-a", "env", "prod");
         fixture.workspace("app-b", "env", "prod");
+        fixture.workspace("app-c", "env", "prod");
+
+        WorkspaceList firstPage = fixture.service.listWorkspace("sample-org",
+                query("search[tags]", "env", "page[size]", "2"), fixture.currentUser);
+        WorkspaceList secondPage = fixture.service.listWorkspace("sample-org",
+                query("search[tags]", "env", "page[size]", "2", "page[number]", "2"), fixture.currentUser);
+        WorkspaceList pastTheEnd = fixture.service.listWorkspace("sample-org",
+                query("search[tags]", "env", "page[size]", "2", "page[number]", "3"), fixture.currentUser);
+
+        assertEquals(List.of("app-a", "app-b"), names(firstPage));
+        assertEquals(paginationOf(1, 2, null, 2, 2, 3), pagination(firstPage));
+        assertEquals(List.of("app-c"), names(secondPage));
+        assertEquals(paginationOf(2, 2, 1, null, 2, 3), pagination(secondPage));
+        assertTrue(pastTheEnd.getData().isEmpty());
+        assertEquals(paginationOf(3, 2, 2, null, 2, 3), pagination(pastTheEnd));
+    }
+
+    @Test
+    void listWorkspaceUsesTwentyWorkspacesPerPageByDefault() {
+        TagFixture fixture = new TagFixture();
+        for (int i = 1; i <= 21; i++) {
+            fixture.workspace(String.format("app-%02d", i), "env", "prod");
+        }
 
         WorkspaceList firstPage = fixture.service.listWorkspace("sample-org", query("search[tags]", "env"),
                 fixture.currentUser);
-        WorkspaceList secondPage = fixture.service.listWorkspace("sample-org",
-                query("search[tags]", "env", "page[number]", "2"), fixture.currentUser);
 
-        assertEquals(2, firstPage.getData().size());
-        assertEquals(1, pagination(firstPage).get("current-page"));
-        assertEquals(1, pagination(firstPage).get("total-pages"));
-        assertEquals(2, pagination(firstPage).get("total-count"));
-        assertTrue(secondPage.getData().isEmpty());
-        assertEquals(2, pagination(secondPage).get("current-page"));
+        assertEquals(20, firstPage.getData().size());
+        assertEquals(paginationOf(1, 20, null, 2, 2, 21), pagination(firstPage));
     }
 
     @Test
@@ -499,12 +516,57 @@ class RemoteTfeServiceTest {
         Workspace workspace = fixture.workspace("app");
 
         assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
-                workspace.getId().toString(), bindings("k".repeat(65), "v"), fixture.currentUser));
+                workspace.getId().toString(), bindings("k".repeat(129), "v"), fixture.currentUser));
         assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
-                workspace.getId().toString(), bindings("env", "v".repeat(256)), fixture.currentUser));
+                workspace.getId().toString(), bindings("env", "v".repeat(257)), fixture.currentUser));
         assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
                 workspace.getId().toString(), bindings("", "v"), fixture.currentUser));
         verify(workspaceTagRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTagBindingsAcceptsTheHcpTerraformMaximumLengths() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app");
+
+        TagBindingList result = fixture.service.updateTagBindings(workspace.getId().toString(),
+                bindings("k".repeat(128), "v".repeat(256)), fixture.currentUser);
+
+        assertEquals(List.of(Map.of("key", "k".repeat(128), "value", "v".repeat(256))),
+                result.getData().stream().map(TagBindingModel::getAttributes).toList());
+    }
+
+    @Test
+    void updateTagBindingsRejectsMoreThanTenTagsCountingExistingKeysOnce() {
+        TagFixture fixture = new TagFixture();
+        Workspace workspace = fixture.workspace("app", keyValues(9));
+
+        // 9 existing keys: updating one of them and adding one new key reaches exactly 10
+        TagBindingList result = fixture.service.updateTagBindings(workspace.getId().toString(),
+                bindings("key-1", "changed", "key-10", "v"), fixture.currentUser);
+        assertEquals(10, result.getData().size());
+
+        // An 11th key is rejected before anything is written
+        Mockito.clearInvocations(workspaceTagRepository);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service.updateTagBindings(workspace.getId().toString(),
+                        bindings("key-1", "again", "key-11", "v"), fixture.currentUser));
+        assertTrue(error.getMessage().contains("at most 10 tags"));
+        verify(workspaceTagRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTagBindingsLetsAWorkspaceAlreadyAboveTheLimitUpdateItsKeys() {
+        TagFixture fixture = new TagFixture();
+        // More than 10 tags can already exist, added from the UI before the limit
+        Workspace workspace = fixture.workspace("app", keyValues(12));
+
+        TagBindingList result = fixture.service.updateTagBindings(workspace.getId().toString(),
+                bindings("key-1", "changed"), fixture.currentUser);
+        assertEquals(12, result.getData().size());
+
+        assertThrows(IllegalArgumentException.class, () -> fixture.service.updateTagBindings(
+                workspace.getId().toString(), bindings("key-13", "v"), fixture.currentUser));
     }
 
     @Test
@@ -578,6 +640,28 @@ class RemoteTfeServiceTest {
                 bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
         // A single workspace resolves only its own tags, not every tag of the organization
         verify(tagRepository, never()).findByOrganizationName(anyString());
+    }
+
+    @Test
+    void createWorkspaceRejectsMoreThanTenTagsAcrossTagsAndTagBindings() {
+        TagFixture fixture = new TagFixture();
+        io.terrakube.api.plugin.state.model.workspace.Relationships relationships =
+                new io.terrakube.api.plugin.state.model.workspace.Relationships();
+        TagDataList tags = new TagDataList();
+        tags.setData(List.of(tagModel("t1"), tagModel("t2"), tagModel("t3"), tagModel("t4"), tagModel("t5"),
+                tagModel("shared")));
+        relationships.setTags(tags);
+        // "shared" is sent in both lists and counts once: 6 + 5 = 11 distinct keys
+        relationships.setTagBindings(bindings("shared", "x", "b1", "1", "b2", "2", "b3", "3", "b4", "4", "b5", "5"));
+        WorkspaceModel model = new WorkspaceModel();
+        model.setAttributes(new HashMap<>(Map.of("name", "too-many", "terraform-version", "1.9.0")));
+        model.setRelationships(relationships);
+        WorkspaceData request = new WorkspaceData();
+        request.setData(model);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> fixture.service.createWorkspace("sample-org", request, fixture.currentUser));
+        verify(workspaceRepository, never()).save(any(Workspace.class));
     }
 
     @Test
@@ -714,6 +798,28 @@ class RemoteTfeServiceTest {
         tagModel.setType("tags");
         tagModel.setAttributes(Map.of("name", name));
         return tagModel;
+    }
+
+    /** key-1=v1 ... key-N=vN, in the key, value, key, value form of TagFixture.workspace */
+    private static String[] keyValues(int count) {
+        String[] keyValues = new String[count * 2];
+        for (int i = 0; i < count; i++) {
+            keyValues[i * 2] = "key-" + (i + 1);
+            keyValues[i * 2 + 1] = "v" + (i + 1);
+        }
+        return keyValues;
+    }
+
+    private static Map<String, Object> paginationOf(int currentPage, int pageSize, Integer prevPage, Integer nextPage,
+                                                    int totalPages, int totalCount) {
+        Map<String, Object> pagination = new HashMap<>();
+        pagination.put("current-page", currentPage);
+        pagination.put("page-size", pageSize);
+        pagination.put("prev-page", prevPage);
+        pagination.put("next-page", nextPage);
+        pagination.put("total-pages", totalPages);
+        pagination.put("total-count", totalCount);
+        return pagination;
     }
 
     private static List<String> names(WorkspaceList workspaceList) {

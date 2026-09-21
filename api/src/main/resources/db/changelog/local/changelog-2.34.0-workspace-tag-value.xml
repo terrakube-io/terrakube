@@ -7,11 +7,20 @@
     <!--
       Key/value workspace tags (HCP Terraform "tag bindings"): the tag table keeps the keys of an
       organization and each workspace binding stores its own value. NULL means a key-only tag, so
-      existing rows keep working unchanged.
+      existing rows keep working unchanged. Lengths follow the HCP Terraform API: keys up to 128
+      characters, values up to 256.
     -->
     <changeSet id="2-34-0-workspace-tag-value" author="terrakube">
         <addColumn tableName="workspacetag">
-            <column name="tag_value" type="varchar(255)"/>
+            <column name="tag_value" type="varchar(256)"/>
         </addColumn>
+    </changeSet>
+
+    <!--
+      Widening only: PostgreSQL and H2 keep the data as is, and SQL Server allows growing a varchar
+      column that belongs to a unique constraint (const_tag_org), so the constraint stays in place.
+    -->
+    <changeSet id="2-34-0-tag-key-length" author="terrakube">
+        <modifyDataType tableName="tag" columnName="name" newDataType="varchar(128)"/>
     </changeSet>
 </databaseChangeLog>

@@ -18,7 +18,11 @@ import java.util.regex.Pattern;
  * iterating a Go map, so its order carries no meaning.
  */
 record WorkspaceListQuery(List<String> searchTags, List<TagFilter> tagged, String searchName, String projectId,
-                          int pageNumber) {
+                          int pageNumber, int pageSize) {
+
+    // Same defaults as the HCP Terraform API: 20 per page, at most 100
+    static final int DEFAULT_PAGE_SIZE = 20;
+    static final int MAX_PAGE_SIZE = 100;
 
     private static final Pattern TAGGED_PARAMETER = Pattern.compile("^filter\\[tagged]\\[(\\d+)]\\[(key|value)]$");
 
@@ -51,7 +55,8 @@ record WorkspaceListQuery(List<String> searchTags, List<TagFilter> tagged, Strin
                 .forEach(keyValue -> tagged.add(new TagFilter(keyValue[0], keyValue[1] == null ? "" : keyValue[1])));
 
         return new WorkspaceListQuery(searchTags, tagged, emptyToNull(parameters.getFirst("search[name]")),
-                emptyToNull(parameters.getFirst("filter[project][id]")), parsePageNumber(parameters.getFirst("page[number]")));
+                emptyToNull(parameters.getFirst("filter[project][id]")), parsePageNumber(parameters.getFirst("page[number]")),
+                parsePageSize(parameters.getFirst("page[size]")));
     }
 
     boolean hasAnyCondition() {
@@ -68,5 +73,19 @@ record WorkspaceListQuery(List<String> searchTags, List<TagFilter> tagged, Strin
         } catch (NumberFormatException e) {
             return 1;
         }
+    }
+
+    private static int parsePageSize(String pageSize) {
+        try {
+            int size = pageSize == null ? DEFAULT_PAGE_SIZE : Integer.parseInt(pageSize.trim());
+            return size < 1 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
+        } catch (NumberFormatException e) {
+            return DEFAULT_PAGE_SIZE;
+        }
+    }
+
+    /** Zero-based index of the first match on the requested page. */
+    long offset() {
+        return (long) (pageNumber - 1) * pageSize;
     }
 }

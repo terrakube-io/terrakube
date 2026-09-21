@@ -68,4 +68,30 @@ class WorkspaceListQueryTest {
         assertNull(query.searchName());
         assertEquals(1, query.pageNumber());
     }
+
+    @Test
+    void pageSizeDefaultsToTwentyAndIsCappedAtOneHundred() {
+        assertEquals(20, pageSize(null));
+        assertEquals(5, pageSize("5"));
+        assertEquals(100, pageSize("500"));
+        assertEquals(20, pageSize("0"));
+        assertEquals(20, pageSize("not-a-number"));
+    }
+
+    @Test
+    void offsetSkipsThePreviousPages() {
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        parameters.add("page[number]", "3");
+        parameters.add("page[size]", "10");
+
+        assertEquals(20, WorkspaceListQuery.from(parameters).offset());
+    }
+
+    private static int pageSize(String value) {
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        if (value != null) {
+            parameters.add("page[size]", value);
+        }
+        return WorkspaceListQuery.from(parameters).pageSize();
+    }
 }
