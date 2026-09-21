@@ -726,7 +726,13 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
                 okButtonProps={{ danger: true }}
                 onConfirm={handleDiscard}
               >
-                <Button icon={<CloseOutlined />} danger disabled={actionPending} data-testid="discard-run">
+                <Button
+                  icon={<CloseOutlined />}
+                  type="primary"
+                  danger
+                  disabled={actionPending}
+                  data-testid="discard-run"
+                >
                   Discard run
                 </Button>
               </Popconfirm>
