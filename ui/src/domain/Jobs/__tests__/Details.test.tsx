@@ -649,3 +649,36 @@ describe("DetailsJob no-change apply semantics", () => {
     expect(screen.queryByText(/Apply completed with no changes/)).not.toBeInTheDocument();
   });
 });
+
+describe("plan approval attribution", () => {
+  it.each([null, "reviewer@example.com"])("shows approval only when recorded (%s)", async (approvedBy) => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {}
+          : {
+              data: {
+                id: "3554",
+                attributes: {
+                  status: "completed",
+                  createdBy: "author@example.com",
+                  approvedBy,
+                  approvedAt: approvedBy ? "2026-09-16T10:30:00Z" : null,
+                },
+              },
+              included: [],
+            },
+      })
+    );
+    render(<DetailsJob jobId="3554" />);
+    await screen.findByText("author@example.com");
+    if (approvedBy) {
+      expect(screen.getByText(approvedBy)).toBeInTheDocument();
+      expect(screen.getByText(/Approved by/)).toBeInTheDocument();
+      expect(document.querySelector('time[datetime="2026-09-16T10:30:00Z"]')).toBeInTheDocument();
+    } else {
+      expect(screen.queryByText(/Approved by/)).not.toBeInTheDocument();
+    }
+  });
+});

@@ -25,6 +25,9 @@ import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -288,6 +291,40 @@ class JobTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
+
+        given()
+                .header("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .get("/api/v1/organization/" + organization.getId() + "/job/" + jobId)
+                .then().statusCode(HttpStatus.OK.value())
+                .body("data.attributes.approvedBy", IsEqual.equalTo("test@terrakube.io"))
+                .body("data.attributes.approvedAt", matchesPattern("\\d{4}-\\d{2}-\\d{2}T.*Z"));
+        Job approved = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals("test@terrakube.io", approved.getApprovedBy());
+        assertNotNull(approved.getApprovedAt());
+    }
+
+    @Test
+    void approvalMetadataCannotBeForged() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        for (String field : new String[] {"approvedBy", "approvedAt"}) {
+            String value = field.equals("approvedBy") ? "forged@example.com" : "2026-01-01T00:00:00Z";
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                            "Content-Type", "application/vnd.api+json")
+                    .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId
+                            + "\",\"attributes\":{\"" + field + "\":\"" + value + "\"}}}")
+                    .patch("/api/v1/organization/" + organization.getId() + "/job/" + jobId)
+                    .then().statusCode(HttpStatus.FORBIDDEN.value());
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                            "Content-Type", "application/vnd.api+json")
+                    .body(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                            .replace("\"templateReference\":", "\"" + field + "\":\"" + value
+                                    + "\",\"templateReference\":"))
+                    .post("/api/v1/organization/" + organization.getId() + "/job")
+                    .then().statusCode(HttpStatus.FORBIDDEN.value());
+        }
     }
 
     @Test
@@ -308,6 +345,9 @@ class JobTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.FORBIDDEN.value());
+        Job denied = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertNull(denied.getApprovedBy());
+        assertNull(denied.getApprovedAt());
     }
 
     @Test

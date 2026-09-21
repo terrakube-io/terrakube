@@ -1,3 +1,4 @@
+import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
   CheckOutlined,
   CloseOutlined,
@@ -765,6 +766,10 @@ export const DetailsJob = ({ jobId }: Props) => {
                     <Avatar size="small" shape="square" icon={<UserOutlined />} />{" "}
                     <b>{job.data.attributes.createdBy}</b> triggered a run from {formatJobVia(job.data.attributes.via)}{" "}
                     {job.data.attributes.createdDate ? relativeTime(job.data.attributes.createdDate) : ""}
+                    <ApprovalAttribution
+                      approvedBy={job.data.attributes.approvedBy}
+                      approvedAt={job.data.attributes.approvedAt}
+                    />
                   </span>
                 ),
                 children: (
