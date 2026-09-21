@@ -1,5 +1,14 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.security.audit.JobApprovalService;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.template.Template;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import java.util.ArrayList;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
@@ -52,7 +61,6 @@ import org.springframework.util.MultiValueMap;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -61,6 +69,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -324,6 +333,59 @@ class RemoteTfeServiceTest {
         StreamOffset[] offsets = offsetsCaptor.getValue();
         assertEquals(1, offsets.length);
         assertEquals("789", offsets[0].getKey());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, auditor@example.com", "true, auditor@example.com", "false,", "true,"})
+    void cliApprovalRecordsActorAndDoesNotOverwriteOnRetry(boolean planOnly, String auditor) {
+        RemoteTfeService service = Mockito.spy(remoteTfeService());
+        ReflectionTestUtils.setField(service, "jobApprovalService",
+                new JobApprovalService(() -> Optional.ofNullable(auditor)));
+        JwtAuthenticationToken user = new JwtAuthenticationToken(Jwt.withTokenValue("token")
+                .header("alg", "none").issuer("issuer").subject("cli-user-id").build());
+        Organization org = organization("sample-org");
+        Team approvers = team("approvers");
+        org.setTeam(List.of(approvers));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
+        when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        Job job = new Job();
+        job.setId(3554);
+        job.setOrganization(org);
+        job.setWorkspace(workspace("sample", org));
+        job.setStatus(planOnly ? JobStatus.completed
+                : JobStatus.waitingApproval);
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(planOnly ? 100 : 150);
+        step.setStatus(JobStatus.pending);
+        job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.getReferenceById(3554)).thenReturn(job);
+        when(jobRepository.save(job)).thenReturn(job);
+        when(stepRepository.save(any(Step.class))).thenAnswer(call -> call.getArgument(0));
+        when(templateRepository.getByOrganizationNameAndName("sample-org", "Terraform-Plan/Apply-Cli"))
+                .thenReturn(new Template());
+        Mockito.doReturn(null).when(service).getRun(3554, null);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.runApply(3554, user);
+            assertEquals(auditor == null ? "cli-user-id" : auditor, job.getApprovedBy());
+            assertNotNull(job.getApprovedAt());
+            var approvedAt = job.getApprovedAt();
+            if (planOnly) {
+                // A fresh request also loads the approval step created by the first request.
+                Step approvalStep = new Step();
+                approvalStep.setStepNumber(150);
+                approvalStep.setStatus(JobStatus.pending);
+                job.getStep().add(approvalStep);
+            }
+            service.runApply(3554, user);
+            assertEquals(approvedAt, job.getApprovedAt());
+            var callbacks = TransactionSynchronizationManager.getSynchronizations();
+            assertEquals(1, callbacks.size());
+            callbacks.forEach(TransactionSynchronization::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     // --- key/value tags (tag bindings) ---

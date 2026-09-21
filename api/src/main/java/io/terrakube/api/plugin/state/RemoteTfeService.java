@@ -63,6 +63,7 @@ import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckList;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckModel;
@@ -136,6 +137,9 @@ public class RemoteTfeService {
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
+
+    @Autowired
+    private JobApprovalService jobApprovalService;
 
     @Autowired(required = false)
     private PolicyEvaluationRepository policyEvaluationRepository;
@@ -1792,6 +1796,7 @@ public class RemoteTfeService {
                 Template cliTemplate = templateRepository.getByOrganizationNameAndName(job.getOrganization().getName(),
                         "Terraform-Plan/Apply-Cli");
                 job.setTcl(cliTemplate.getTcl());
+                jobApprovalService.recordApproval(job, currentUser);
                 job.setStatus(JobStatus.pending);
                 job = jobRepository.save(job);
                 jobNotificationTrigger.notifyStatusChanged(job);
@@ -1800,6 +1805,12 @@ public class RemoteTfeService {
 
             for (Step step : job.getStep()) {
                 if (step.getStepNumber() == 150) {
+                    if (step.getStatus() == JobStatus.completed) {
+                        break;
+                    }
+                    if (job.getApprovedAt() == null) {
+                        jobApprovalService.recordApproval(job, currentUser);
+                    }
                     step.setStatus(JobStatus.completed);
                     step.setOutput(String.format("https://%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.hostname,
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));

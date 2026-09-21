@@ -1,14 +1,15 @@
 package io.terrakube.api.plugin.vcs.provider.gitlab;
 
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.netty.http.client.HttpClient;
+
+import java.time.Duration;
 
 @Service
 public class GitLabTokenService {
@@ -29,7 +30,7 @@ public class GitLabTokenService {
                         .queryParam("grant_type", "authorization_code")
                         .queryParam("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback))
                         .build())
-                .retrieve().bodyToMono(GitLabToken.class).block();
+                .retrieve().bodyToMono(GitLabToken.class).block(Duration.ofSeconds(30));
 
         return validateNewToken(gitLabToken);
     }
@@ -42,7 +43,7 @@ public class GitLabTokenService {
                         .queryParam("grant_type", "refresh_token")
                         .queryParam("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback))
                         .build())
-                .retrieve().bodyToMono(GitLabToken.class).block();
+                .retrieve().bodyToMono(GitLabToken.class).block(Duration.ofSeconds(30));
 
         return validateNewToken(gitLabToken);
     }
@@ -52,10 +53,7 @@ public class GitLabTokenService {
                 .clone()
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .clientConnector(
-                        new ReactorClientHttpConnector(
-                                HttpClient.create().proxyWithSystemProperties())
-                )
+                .clientConnector(ReactorNettyWebClientFactory.connector())
                 .build();
     }
 

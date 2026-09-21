@@ -9,17 +9,16 @@ import com.azure.identity.DefaultAzureCredentialBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.netty.http.client.HttpClient;
 
 import java.net.InetSocketAddress;
 import java.time.Duration;
@@ -54,7 +53,7 @@ public class AzDevOpsTokenService {
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
                 .bodyToMono(AzDevOpsToken.class)
-                .block();
+                .block(Duration.ofSeconds(30));
 
         return validateNewToken(azDevOpsToken);
     }
@@ -72,7 +71,7 @@ public class AzDevOpsTokenService {
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
                 .bodyToMono(AzDevOpsToken.class)
-                .block();
+                .block(Duration.ofSeconds(30));
 
         return validateNewToken(azDevOpsToken);
     }
@@ -130,10 +129,7 @@ public class AzDevOpsTokenService {
                 .clone()
                 .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                .clientConnector(
-                        new ReactorClientHttpConnector(
-                                HttpClient.create().proxyWithSystemProperties())
-                )
+                .clientConnector(ReactorNettyWebClientFactory.connector())
                 .build();
     }
 
