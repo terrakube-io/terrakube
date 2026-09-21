@@ -3,7 +3,9 @@ package io.terrakube.api.plugin.security.audit;
 import java.util.Date;
 
 import io.terrakube.api.rs.job.Job;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -11,10 +13,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class JobApprovalService {
+    private final AuditorAware<String> auditorProvider;
+
     public void recordApproval(Job job, JwtAuthenticationToken user) {
-        String email = user.getToken().getClaimAsString("email");
-        String approver = email == null || email.isBlank() ? user.getName() : email;
+        String approver = auditorProvider.getCurrentAuditor().orElse(user.getName());
         Date approvedAt = new Date();
         job.setApprovedBy(approver);
         job.setApprovedAt(approvedAt);

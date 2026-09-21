@@ -1,3 +1,4 @@
+import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
   ClockCircleOutlined,
   FolderOutlined,
@@ -596,20 +597,7 @@ export const WorkspaceDetails = ({
                                     </Typography.Title>
                                     <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
                                     <b>{item.via || "UI"}</b>{" "}
-                                    {item.approvedBy && (
-                                      <div>
-                                        Approved by <b>{item.approvedBy}</b>
-                                        {item.approvedAt && (
-                                          <>
-                                            {" "}
-                                            on{" "}
-                                            <time dateTime={item.approvedAt}>
-                                              {new Date(item.approvedAt).toLocaleString()}
-                                            </time>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
+                                    <ApprovalAttribution approvedBy={item.approvedBy} approvedAt={item.approvedAt} />
                                     {item.commitId !== "000000000" ? (
                                       <>
                                         <FiGitCommit /> {item.commitId?.substring(0, 6)}{" "}

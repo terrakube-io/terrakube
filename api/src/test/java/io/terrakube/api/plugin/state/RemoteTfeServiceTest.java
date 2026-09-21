@@ -4,7 +4,7 @@ import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.template.Template;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -323,11 +323,11 @@ class RemoteTfeServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void cliApprovalRecordsActorAndDoesNotOverwriteOnRetry(boolean planOnly) {
+    @CsvSource({"false, auditor@example.com", "true, auditor@example.com", "false,", "true,"})
+    void cliApprovalRecordsActorAndDoesNotOverwriteOnRetry(boolean planOnly, String auditor) {
         RemoteTfeService service = Mockito.spy(remoteTfeService());
         ReflectionTestUtils.setField(service, "jobApprovalService",
-                new JobApprovalService());
+                new JobApprovalService(() -> Optional.ofNullable(auditor)));
         JwtAuthenticationToken user = new JwtAuthenticationToken(Jwt.withTokenValue("token")
                 .header("alg", "none").issuer("issuer").subject("cli-user-id").build());
         Organization org = organization("sample-org");
@@ -355,7 +355,7 @@ class RemoteTfeServiceTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             service.runApply(3554, user);
-            assertEquals("cli-user-id", job.getApprovedBy());
+            assertEquals(auditor == null ? "cli-user-id" : auditor, job.getApprovedBy());
             assertNotNull(job.getApprovedAt());
             var approvedAt = job.getApprovedAt();
             if (planOnly) {
