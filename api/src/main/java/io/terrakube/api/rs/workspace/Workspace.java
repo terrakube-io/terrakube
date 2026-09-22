@@ -70,6 +70,7 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "folder")
     private String folder;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "last_job_status")
     private JobStatus lastJobStatus = JobStatus.NeverExecuted;
 
