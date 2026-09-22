@@ -51,6 +51,8 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class ExecutorService {
 
+    private static final String EPHEMERAL_EXECUTOR_FLAG = "TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR";
+
     @Value("${io.terrakube.hostname}")
     String hostname;
 
@@ -210,11 +212,16 @@ public class ExecutorService {
             executorContext.setPolicyExemptionList(policyResolutionService.resolveExemptionsForJob(job));
         }
         executorContext = validateJobAddress(executorContext, job);
-        if (executorContext.getEnvironmentVariables().containsKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR")) {
+        if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
             ephemeralExecutorService.send(job, executorContext);
         } else {
             persistentExecutorService.send(job, executorContext);
         }
+    }
+
+    static boolean isEphemeralExecutorEnabled(Map<String, String> environmentVariables) {
+        return environmentVariables.containsKey(EPHEMERAL_EXECUTOR_FLAG)
+                && !"0".equals(environmentVariables.get(EPHEMERAL_EXECUTOR_FLAG));
     }
 
     void splitWorkspaceVariablesByCategory(Job job, HashMap<String, String> terraformVariables,
