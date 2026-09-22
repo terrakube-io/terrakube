@@ -33,7 +33,10 @@ import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.LinksStateConsumer;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.RemoteStateConsumer;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingModel;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -127,6 +130,10 @@ public class RemoteTfeService {
     private RbacService rbacService;
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
+    // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
+    private static final int TAG_KEY_MAX_LENGTH = 128;
+    private static final int TAG_VALUE_MAX_LENGTH = 256;
+    private static final int MAX_TAGS_PER_WORKSPACE = 10;
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
@@ -484,6 +491,20 @@ public class RemoteTfeService {
 
     WorkspaceData getWorkspace(Workspace workspace, Map<String, Object> otherAttributes,
                                JwtAuthenticationToken currentUser) {
+        if (workspace == null) {
+            return null;
+        }
+        // Queried rather than read from the entity so tags added earlier in the same request are included
+        List<WorkspaceTag> workspaceTags = workspaceTagRepository.findByWorkspace(workspace);
+        return getWorkspace(workspace, otherAttributes, currentUser, workspaceTags, loadTagNames(workspaceTags));
+    }
+
+    /**
+     * @param tagNames tag id to tag name; callers rendering many workspaces load the organization tags once
+     */
+    WorkspaceData getWorkspace(Workspace workspace, Map<String, Object> otherAttributes,
+                               JwtAuthenticationToken currentUser, List<WorkspaceTag> workspaceTags,
+                               Map<String, String> tagNames) {
         if (workspace != null) {
             log.info("Found Workspace Id: {} Terraform: {} Global Remote State: {}", workspace.getId().toString(),
                     workspace.getTerraformVersion(), workspace.isGlobalRemoteState());
@@ -500,6 +521,8 @@ public class RemoteTfeService {
             attributes.put("execution-mode", workspace.getExecutionMode());
 
             attributes.put("global-remote-state", workspace.isGlobalRemoteState());
+            // The CLI checks every configured tag key against this list, key/value tags included
+            attributes.put("tag-names", workspaceTagNames(workspaceTags, tagNames));
 
             if (workspace.getFolder() != null
                     && (workspace.getVcs() != null || workspace.getSsh() != null)
@@ -631,52 +654,284 @@ public class RemoteTfeService {
 
     }
 
-    WorkspaceList listWorkspace(String organizationName, Optional<String> searchTags, Optional<String> searchName,
-                                JwtAuthenticationToken currentUser) {
+    WorkspaceList listWorkspace(String organizationName, WorkspaceListQuery query, JwtAuthenticationToken currentUser) {
         WorkspaceList workspaceList = new WorkspaceList();
-        workspaceList.setData(new ArrayList());
+        workspaceList.setData(new ArrayList<>());
 
-        if (searchTags.isPresent()) {
-            String searchTagData = searchTags.get();
-            List<String> listTags = Arrays.stream(searchTagData.split(",")).toList();
-            log.info("Searching workspaces with tags: {}", searchTags);
+        if (!query.hasAnyCondition()) {
+            log.info("No workspace filter received for organization {}, returning an empty list", organizationName);
+            workspaceList.setMeta(paginationMeta(query, 0));
+            return workspaceList;
+        }
+
+        List<Workspace> candidates;
+        if (query.searchName() != null) {
+            log.info("Searching workspaces with name prefix: {}", query.searchName());
+            candidates = workspaceRepository
+                    .findWorkspacesByOrganizationNameAndNameStartingWith(organizationName, query.searchName())
+                    .orElse(List.of());
+        } else {
             Organization organization = organizationRepository.getOrganizationByName(organizationName);
-            Map<String, String> organizationTagNames = new HashMap<>();
-            for (Tag tag : tagRepository.findByOrganizationName(organizationName)) {
-                if (tag.getId() != null) {
-                    organizationTagNames.put(tag.getId().toString(), tag.getName());
-                }
-            }
-            for (Workspace workspace : organization.getWorkspace()) {
-                List<WorkspaceTag> workspaceTagList = workspace.getWorkspaceTag();
-                int matchingTags = 0;
-
-                for (WorkspaceTag workspaceTag : workspaceTagList) {
-                    if (listTags.indexOf(organizationTagNames.get(workspaceTag.getTagId())) > -1) {
-                        matchingTags++;
-                    }
-                }
-                log.info("Workspace {} Tags Count {} Searching Tag Quantity {} Matched {}", workspace.getName(),
-                        workspaceTagList.size(), listTags.size(), matchingTags);
-                if (matchingTags == listTags.size()) {
-                    workspaceList.getData().add(
-                            getWorkspace(workspace, new HashMap<>(), currentUser).getData());
-                }
-            }
+            candidates = organization == null || organization.getWorkspace() == null
+                    ? List.of() : organization.getWorkspace();
         }
 
-        if (searchName.isPresent()) {
-            String searchNameData = searchName.get();
-            log.info("Searching workspaces with name prefix: {}", searchNameData);
-            Optional<List<Workspace>> workspaceListByName = workspaceRepository
-                    .findWorkspacesByOrganizationNameAndNameStartingWith(organizationName, searchNameData);
-            if (workspaceListByName.isPresent())
-                for (Workspace workspace : workspaceListByName.get()) {
-                    workspaceList.getData().add(
-                            getWorkspace(workspace, new HashMap<>(), currentUser).getData());
-                }
-        }
+        Map<String, String> organizationTagNames = loadOrganizationTagNames(organizationName);
+        Set<UUID> seen = new HashSet<>();
+        List<Workspace> matches = candidates.stream()
+                .filter(workspace -> matchesProject(workspace, query.projectId()))
+                .filter(workspace -> matchesTags(workspace, query, organizationTagNames))
+                .filter(workspace -> seen.add(workspace.getId()))
+                .sorted(Comparator.comparing(Workspace::getName))
+                .toList();
+        log.info("Workspaces matching tags {} tag bindings {} project {}: {}", query.searchTags(), query.tagged(),
+                query.projectId(), matches.size());
+
+        // Only the requested page is rendered; the CLI follows next-page until current-page reaches total-pages
+        matches.stream()
+                .skip(query.offset())
+                .limit(query.pageSize())
+                .forEach(workspace -> workspaceList.getData().add(
+                        getWorkspace(workspace, new HashMap<>(), currentUser, workspaceTags(workspace),
+                                organizationTagNames).getData()));
+        workspaceList.setMeta(paginationMeta(query, matches.size()));
         return workspaceList;
+    }
+
+    private static Map<String, Object> paginationMeta(WorkspaceListQuery query, int totalCount) {
+        int pageNumber = query.pageNumber();
+        // An empty result still has one (empty) page, as in HCP Terraform
+        int totalPages = Math.max(1, (totalCount + query.pageSize() - 1) / query.pageSize());
+        Map<String, Object> pagination = new LinkedHashMap<>();
+        pagination.put("current-page", pageNumber);
+        pagination.put("page-size", query.pageSize());
+        pagination.put("prev-page", pageNumber > 1 ? pageNumber - 1 : null);
+        pagination.put("next-page", pageNumber < totalPages ? pageNumber + 1 : null);
+        pagination.put("total-pages", totalPages);
+        pagination.put("total-count", totalCount);
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("pagination", pagination);
+        return meta;
+    }
+
+    private static boolean matchesProject(Workspace workspace, String projectId) {
+        return projectId == null
+                || (workspace.getProject() != null && projectId.equals(workspace.getProject().getId().toString()));
+    }
+
+    private boolean matchesTags(Workspace workspace, WorkspaceListQuery query,
+                                Map<String, String> organizationTagNames) {
+        if (query.searchTags().isEmpty() && query.tagged().isEmpty()) {
+            return true;
+        }
+        Map<String, String> valueByKey = new HashMap<>();
+        for (WorkspaceTag workspaceTag : workspaceTags(workspace)) {
+            String key = organizationTagNames.get(workspaceTag.getTagId());
+            if (key != null) {
+                valueByKey.put(key, bindingValue(workspaceTag));
+            }
+        }
+        for (String key : query.searchTags()) {
+            if (!valueByKey.containsKey(key)) {
+                return false;
+            }
+        }
+        for (WorkspaceListQuery.TagFilter tagFilter : query.tagged()) {
+            if (!valueByKey.containsKey(tagFilter.key())) {
+                return false;
+            }
+            if (tagFilter.hasValue() && !tagFilter.value().equals(valueByKey.get(tagFilter.key()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    Map<String, String> loadOrganizationTagNames(String organizationName) {
+        Map<String, String> organizationTagNames = new HashMap<>();
+        for (Tag tag : tagRepository.findByOrganizationName(organizationName)) {
+            if (tag.getId() != null) {
+                organizationTagNames.put(tag.getId().toString(), tag.getName());
+            }
+        }
+        return organizationTagNames;
+    }
+
+    // Resolves only the tags bound to one workspace, instead of every tag of its organization
+    private Map<String, String> loadTagNames(List<WorkspaceTag> workspaceTags) {
+        List<UUID> tagIds = workspaceTags.stream()
+                .map(WorkspaceTag::getTagId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(UUID::fromString)
+                .toList();
+        Map<String, String> tagNames = new HashMap<>();
+        if (!tagIds.isEmpty()) {
+            for (Tag tag : tagRepository.findAllById(tagIds)) {
+                tagNames.put(tag.getId().toString(), tag.getName());
+            }
+        }
+        return tagNames;
+    }
+
+    private static List<WorkspaceTag> workspaceTags(Workspace workspace) {
+        return workspace.getWorkspaceTag() == null ? List.of() : workspace.getWorkspaceTag();
+    }
+
+    private static List<String> workspaceTagNames(List<WorkspaceTag> workspaceTags, Map<String, String> tagNames) {
+        return workspaceTags.stream()
+                .map(workspaceTag -> tagNames.get(workspaceTag.getTagId()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    // Key-only tags are stored as NULL and exposed with an empty value, as HCP Terraform does
+    private static String bindingValue(WorkspaceTag workspaceTag) {
+        return workspaceTag.getValue() == null ? "" : workspaceTag.getValue();
+    }
+
+    TagBindingList listTagBindings(String workspaceId, JwtAuthenticationToken currentUser) {
+        Optional<Workspace> workspace = workspaceRepository.findById(UUID.fromString(workspaceId));
+        if (workspace.isEmpty()) {
+            return null;
+        }
+        Organization organization = workspace.get().getOrganization();
+        // Answer 403, never 404: the CLI reads a 404 here as "server has no key/value tag support"
+        if (!validateUserIsMemberOrg(organization, currentUser)
+                && !validateUserLimitedWorkspaceAccess(organization, currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to read tags for this workspace");
+        }
+        return toTagBindingList(workspaceTagRepository.findByWorkspace(workspace.get()));
+    }
+
+    /**
+     * Adds or updates the given bindings key by key. Bindings missing from the request are kept, as in
+     * HCP Terraform: the CLI only sends the tags of its own configuration.
+     */
+    TagBindingList updateTagBindings(String workspaceId, TagBindingList tagBindingList,
+                                     JwtAuthenticationToken currentUser) {
+        Optional<Workspace> workspace = workspaceRepository.findById(UUID.fromString(workspaceId));
+        if (workspace.isEmpty()) {
+            return null;
+        }
+        if (!validateUserManageWorkspace(workspace.get().getOrganization(), currentUser)
+                && !validateLimitedManageWorkspace(workspace.get(), currentUser)) {
+            log.warn("User does not have permission to update tags for workspace {}", workspace.get().getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to manage tags for this workspace");
+        }
+
+        upsertTagBindings(workspace.get(), tagBindingList);
+        return toTagBindingList(workspaceTagRepository.findByWorkspace(workspace.get()));
+    }
+
+    private void upsertTagBindings(Workspace workspace, TagBindingList tagBindingList) {
+        List<TagBindingModel> bindings = bindings(tagBindingList);
+        bindings.forEach(binding -> validateTagBinding(bindingAttribute(binding, "key"), bindingAttribute(binding, "value")));
+        List<WorkspaceTag> current = new ArrayList<>(workspaceTagRepository.findByWorkspace(workspace));
+        validateTagCount(current, bindings.stream().map(binding -> bindingAttribute(binding, "key")).toList());
+        bindings.forEach(binding -> upsertWorkspaceTag(workspace, current, bindingAttribute(binding, "key"),
+                bindingAttribute(binding, "value"), true));
+    }
+
+    private static List<TagBindingModel> bindings(TagBindingList tagBindingList) {
+        return tagBindingList == null || tagBindingList.getData() == null ? List.of() : tagBindingList.getData();
+    }
+
+    /**
+     * HCP Terraform allows at most 10 tags on a workspace. Counts the keys the workspace would end up with, so
+     * updating the value of an existing key never counts twice. A workspace already above the limit (tags added
+     * from the UI) may still update its keys; only requests adding keys beyond the limit are rejected.
+     */
+    private void validateTagCount(List<WorkspaceTag> current, Collection<String> requestedKeys) {
+        Set<String> existingKeys = new HashSet<>(loadTagNames(current).values());
+        Set<String> resultingKeys = new HashSet<>(existingKeys);
+        resultingKeys.addAll(requestedKeys);
+        if (resultingKeys.size() > MAX_TAGS_PER_WORKSPACE && resultingKeys.size() > existingKeys.size()) {
+            throw new IllegalArgumentException(String.format(
+                    "A workspace can have at most %d tags; this request would leave it with %d",
+                    MAX_TAGS_PER_WORKSPACE, resultingKeys.size()));
+        }
+    }
+
+    private static String bindingAttribute(TagBindingModel binding, String name) {
+        if (binding == null || binding.getAttributes() == null || binding.getAttributes().get(name) == null) {
+            return null;
+        }
+        return binding.getAttributes().get(name).toString();
+    }
+
+    private TagBindingList toTagBindingList(List<WorkspaceTag> workspaceTags) {
+        Map<String, String> tagNames = loadTagNames(workspaceTags);
+        List<TagBindingModel> bindings = new ArrayList<>();
+        for (WorkspaceTag workspaceTag : workspaceTags) {
+            String key = tagNames.get(workspaceTag.getTagId());
+            if (key == null) {
+                continue;
+            }
+            TagBindingModel binding = new TagBindingModel();
+            binding.setType("tag-bindings");
+            binding.setId(workspaceTag.getId() == null ? null : workspaceTag.getId().toString());
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("key", key);
+            attributes.put("value", bindingValue(workspaceTag));
+            binding.setAttributes(attributes);
+            bindings.add(binding);
+        }
+        bindings.sort(Comparator.comparing(binding -> binding.getAttributes().get("key").toString()));
+        TagBindingList tagBindingList = new TagBindingList();
+        tagBindingList.setData(bindings);
+        return tagBindingList;
+    }
+
+    static void validateTagBinding(String key, String value) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException("Tag key must not be empty");
+        }
+        if (key.length() > TAG_KEY_MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    String.format("Tag key '%s' exceeds %d characters", key, TAG_KEY_MAX_LENGTH));
+        }
+        if (value != null && value.length() > TAG_VALUE_MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    String.format("Value of tag '%s' exceeds %d characters", key, TAG_VALUE_MAX_LENGTH));
+        }
+    }
+
+    /**
+     * One binding per key and workspace (unique constraint const_workspace_tag).
+     *
+     * @param current        bindings of the workspace, loaded once per request; new bindings are appended so a
+     *                       key repeated in the same request updates instead of inserting twice
+     * @param overwriteValue false for the key-only tags API, which must not wipe the value of a key/value tag
+     */
+    private void upsertWorkspaceTag(Workspace workspace, List<WorkspaceTag> current, String key, String value,
+                                    boolean overwriteValue) {
+        Tag tag = searchOrCreateTagOrganization(workspace, key);
+        String normalizedValue = value == null || value.isEmpty() ? null : value;
+        String tagId = tag.getId().toString();
+        Optional<WorkspaceTag> existing = current.stream()
+                .filter(workspaceTag -> tagId.equals(workspaceTag.getTagId()))
+                .findFirst();
+
+        if (existing.isPresent()) {
+            if (overwriteValue && !Objects.equals(existing.get().getValue(), normalizedValue)) {
+                log.info("Updating value of tag {} in workspace {}", key, workspace.getName());
+                existing.get().setValue(normalizedValue);
+                workspaceTagRepository.save(existing.get());
+            }
+            return;
+        }
+
+        log.info("Adding tag {} to workspace {}", key, workspace.getName());
+        WorkspaceTag workspaceTag = new WorkspaceTag();
+        workspaceTag.setTagId(tagId);
+        workspaceTag.setValue(normalizedValue);
+        workspaceTag.setWorkspace(workspace);
+        current.add(workspaceTagRepository.save(workspaceTag));
     }
 
     boolean updateWorkspaceTags(String workspaceId, TagDataList tagDataList, JwtAuthenticationToken currentUser) {
@@ -690,24 +945,33 @@ public class RemoteTfeService {
                     "User does not have permission to manage tags for this workspace");
         }
 
-        tagDataList.getData().forEach(tagModel -> {
-            Tag tag = searchOrCreateTagOrganization(workspace, tagModel.getAttributes().get("name"));
-            log.info("Updating tag {} in Workspace {}", tagModel.getAttributes().get("name"), workspace.getName());
-            if (workspaceTagRepository.getByWorkspaceAndTagId(workspace, tag.getId().toString()) == null) {
-                log.info("Tag {} does not exist in workspace {}, adding new tag to workspace...",
-                        tagModel.getAttributes().get("name"), workspace.getName());
-                WorkspaceTag newWorkspaceTag = new WorkspaceTag();
-                //newWorkspaceTag.setId(UUID.randomUUID());
-                newWorkspaceTag.setTagId(tag.getId().toString());
-                newWorkspaceTag.setWorkspace(workspace);
-                workspaceTagRepository.save(newWorkspaceTag);
-            } else {
-                log.info("Tag {} exist in workspace {}, there is no need to update",
-                        tagModel.getAttributes().get("name"), workspace.getName());
-            }
-        });
-
+        addKeyOnlyTags(workspace, tagDataList);
         return true;
+    }
+
+    /**
+     * Key-only tags (legacy tags API and list-style tags on create) keep the value a key may already have.
+     * Entries without a name are skipped: go-tfe marshals {@code name} with omitempty, so a client attaching
+     * an existing tag sends its id alone, and such a request used to be accepted.
+     */
+    private void addKeyOnlyTags(Workspace workspace, TagDataList tagDataList) {
+        List<String> names = keyOnlyTagNames(tagDataList);
+        int sent = tagDataList == null || tagDataList.getData() == null ? 0 : tagDataList.getData().size();
+        if (names.size() < sent) {
+            log.warn("Ignoring {} tag(s) sent without a name for workspace {}", sent - names.size(), workspace.getName());
+        }
+        names.forEach(name -> validateTagBinding(name, null));
+        List<WorkspaceTag> current = new ArrayList<>(workspaceTagRepository.findByWorkspace(workspace));
+        names.forEach(name -> upsertWorkspaceTag(workspace, current, name, null, false));
+    }
+
+    private static List<String> keyOnlyTagNames(TagDataList tagDataList) {
+        List<TagModel> tags = tagDataList == null || tagDataList.getData() == null ? List.of() : tagDataList.getData();
+        return tags.stream().map(RemoteTfeService::tagName).filter(name -> name != null && !name.isBlank()).toList();
+    }
+
+    private static String tagName(TagModel tagModel) {
+        return tagModel == null || tagModel.getAttributes() == null ? null : tagModel.getAttributes().get("name");
     }
 
     synchronized Tag searchOrCreateTagOrganization(Workspace workspace, String tagName) {
@@ -791,7 +1055,21 @@ public class RemoteTfeService {
                 Project project = projectRepository.getReferenceById(UUID.fromString(projectId));
                 newWorkspace.setProject(project);
             }
-            workspaceRepository.save(newWorkspace);
+            // go-tfe sends list-style tags as "tags" and key/value tags as "tag-bindings"
+            io.terrakube.api.plugin.state.model.workspace.Relationships relationships = workspaceData.getData().getRelationships();
+            if (relationships != null) {
+                // Both lists count toward the workspace limit; checked before anything is saved
+                Set<String> requestedKeys = new HashSet<>(keyOnlyTagNames(relationships.getTags()));
+                bindings(relationships.getTagBindings()).forEach(binding -> requestedKeys.add(bindingAttribute(binding, "key")));
+                validateTagCount(List.of(), requestedKeys);
+            }
+
+            newWorkspace = workspaceRepository.save(newWorkspace);
+
+            if (relationships != null) {
+                addKeyOnlyTags(newWorkspace, relationships.getTags());
+                upsertTagBindings(newWorkspace, relationships.getTagBindings());
+            }
         }
         Map<String, Object> otherAttributes = new HashMap<>();
         otherAttributes.put("locked", false);

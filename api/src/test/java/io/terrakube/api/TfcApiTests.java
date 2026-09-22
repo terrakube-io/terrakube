@@ -1,5 +1,6 @@
 package io.terrakube.api;
 
+import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -9,9 +10,11 @@ import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import io.terrakube.api.rs.team.Team;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +29,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TfcApiTests extends ServerApplicationTests {
+
+    @Autowired
+    WorkspaceTagRepository workspaceTagRepository;
 
     @BeforeEach
     public void setup() {
@@ -520,5 +526,321 @@ class TfcApiTests extends ServerApplicationTests {
 
         // Verify that some jobs were deleted due to KEEP_JOB_HISTORY limit, firstJob should have been deleted only secondJOb and thirdJob should exists
         assertThat(remainingJobs.size()).isEqualTo(2);
+    }
+
+    // Same calls and payloads as go-tfe (Workspaces.Create / ListTagBindings / AddTagBindings / List)
+    @Test
+    void keyValueTagsFollowTheTerraformCloudBlockFlow() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String workspaceName = "kv_tags_" + UUID.randomUUID().toString().substring(0, 8);
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {"data":{"type":"workspaces","attributes":{"name":"%s","terraform-version":"1.9.0"},
+                          "relationships":{
+                            "tags":{"data":[{"type":"tags","attributes":{"name":"kvtest_legacy"}}]},
+                            "tag-bindings":{"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"prod"}}]}}}}
+                        """.formatted(workspaceName))
+                .when()
+                .post("/remote/tfe/v2/organizations/simple/workspaces")
+                .then()
+                .log().all()
+                .statusCode(HttpStatus.CREATED.value())
+                .body("data.attributes.tag-names", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy")))
+                .extract().path("data.id");
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.type", IsEqual.equalTo(List.of("tag-bindings", "tag-bindings")))
+                    .body("data.attributes.key", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy")))
+                    .body("data.attributes.value", IsEqual.equalTo(List.of("prod", "")));
+
+            // Upsert by key: kvtest_legacy is not in the request and must survive
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"dev"}},
+                                     {"type":"tag-bindings","attributes":{"key":"kvtest_team"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.key", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy", "kvtest_team")))
+                    .body("data.attributes.value", IsEqual.equalTo(List.of("dev", "", "")));
+
+            // The CLI sends filter[tagged] and repeats the keys in search[tags]
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvtest_env")
+                    .queryParam("filter[tagged][0][value]", "dev")
+                    .queryParam("search[tags]", "kvtest_env")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(workspaceName)))
+                    .body("data[0].attributes.tag-names", IsEqual.equalTo(List.of("kvtest_env", "kvtest_legacy", "kvtest_team")))
+                    .body("meta.pagination.current-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.total-pages", IsEqual.equalTo(1));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvtest_env")
+                    .queryParam("filter[tagged][0][value]", "prod")
+                    .queryParam("search[tags]", "kvtest_env")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.size()", IsEqual.equalTo(0));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"%s","value":"x"}}]}
+                            """.formatted("k".repeat(129)))
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.BAD_REQUEST.value());
+
+            // 403 and not 404: a 404 makes the CLI treat the server as lacking key/value tag support
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"))
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.FORBIDDEN.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"), "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvtest_env","value":"prod"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.FORBIDDEN.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + UUID.randomUUID() + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.NOT_FOUND.value());
+        } finally {
+            deleteWorkspaceWithTags(workspaceId);
+        }
+    }
+
+    /**
+     * The regression this feature is about: several workspaces share the tag keys and differ only in a value.
+     * Filtering by key alone (what the server understood before) matches all of them, which made
+     * `terraform init` pick a different workspace depending on the local state.
+     */
+    @Test
+    void keyValueTagsTellApartWorkspacesThatShareTheKeys() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String devName = "kv_dev_" + suffix;
+        String prodName = "kv_prod_" + suffix;
+        String devId = createWorkspaceWithTagBindings(adminToken, devName, "kvpair_env", "dev", "kvpair_app", "myapp");
+        String prodId = createWorkspaceWithTagBindings(adminToken, prodName, "kvpair_env", "prod", "kvpair_app", "myapp");
+
+        try {
+            // Keys only: both workspaces match, which is why the CLI also sends filter[tagged]
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("search[tags]", "kvpair_env,kvpair_app")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(devName, prodName)));
+
+            // What the CLI sends for `tags = { env = "dev", app = "myapp" }`
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvpair_env")
+                    .queryParam("filter[tagged][0][value]", "dev")
+                    .queryParam("filter[tagged][1][key]", "kvpair_app")
+                    .queryParam("filter[tagged][1][value]", "myapp")
+                    .queryParam("search[tags]", "kvpair_env,kvpair_app")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(devName)))
+                    .body("meta.pagination.total-count", IsEqual.equalTo(1));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvpair_env")
+                    .queryParam("filter[tagged][0][value]", "prod")
+                    .queryParam("search[tags]", "kvpair_env")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(prodName)));
+
+            // A tag added without a value (UI, or an older CLI) must not wipe the value of that key
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tags","attributes":{"name":"kvpair_env"}},
+                                     {"type":"tags","attributes":{"name":"kvpair_legacy"}}]}
+                            """)
+                    .when()
+                    .post("/remote/tfe/v2/workspaces/" + devId + "/relationships/tags")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .when()
+                    .get("/remote/tfe/v2/workspaces/" + devId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.key", IsEqual.equalTo(List.of("kvpair_app", "kvpair_env", "kvpair_legacy")))
+                    .body("data.attributes.value", IsEqual.equalTo(List.of("myapp", "dev", "")));
+
+            // ...so the workspace is still told apart by its value
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("filter[tagged][0][key]", "kvpair_env")
+                    .queryParam("filter[tagged][0][value]", "dev")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of(devName)));
+        } finally {
+            deleteWorkspaceWithTags(devId);
+            deleteWorkspaceWithTags(prodId);
+        }
+    }
+
+    @Test
+    void workspaceListPagesFollowPageSize() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        List<String> ids = new ArrayList<>();
+        for (String name : List.of("a", "b", "c")) {
+            ids.add(createWorkspaceWithTagBindings(adminToken, "kv_page_" + name + "_" + suffix, "kvpage_" + suffix, name));
+        }
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("search[tags]", "kvpage_" + suffix)
+                    .queryParam("page[size]", "2")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of("kv_page_a_" + suffix, "kv_page_b_" + suffix)))
+                    .body("meta.pagination.current-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.page-size", IsEqual.equalTo(2))
+                    .body("meta.pagination.next-page", IsEqual.equalTo(2))
+                    .body("meta.pagination.total-pages", IsEqual.equalTo(2))
+                    .body("meta.pagination.total-count", IsEqual.equalTo(3));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken)
+                    .queryParam("search[tags]", "kvpage_" + suffix)
+                    .queryParam("page[size]", "2")
+                    .queryParam("page[number]", "2")
+                    .when()
+                    .get("/remote/tfe/v2/organizations/simple/workspaces")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.attributes.name", IsEqual.equalTo(List.of("kv_page_c_" + suffix)))
+                    .body("meta.pagination.prev-page", IsEqual.equalTo(1))
+                    .body("meta.pagination.next-page", IsEqual.equalTo(null));
+        } finally {
+            ids.forEach(this::deleteWorkspaceWithTags);
+        }
+    }
+
+    @Test
+    void tagBindingsAreLimitedToTenKeysPerWorkspace() {
+        String adminToken = generatePAT("TERRAKUBE_DEVELOPERS");
+        String[] nineBindings = new String[18];
+        for (int i = 0; i < 9; i++) {
+            nineBindings[i * 2] = "kvlimit_" + i;
+            nineBindings[i * 2 + 1] = "v";
+        }
+        String workspaceId = createWorkspaceWithTagBindings(adminToken,
+                "kv_limit_" + UUID.randomUUID().toString().substring(0, 8), nineBindings);
+
+        try {
+            // Updating an existing key does not count again: 9 existing + 1 new = 10
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvlimit_0","value":"changed"}},
+                                     {"type":"tag-bindings","attributes":{"key":"kvlimit_9","value":"v"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("data.size()", IsEqual.equalTo(10));
+
+            given()
+                    .headers("Authorization", "Bearer " + adminToken, "Content-Type", "application/vnd.api+json")
+                    .body("""
+                            {"data":[{"type":"tag-bindings","attributes":{"key":"kvlimit_10","value":"v"}}]}
+                            """)
+                    .when()
+                    .patch("/remote/tfe/v2/workspaces/" + workspaceId + "/tag-bindings")
+                    .then()
+                    .log().all()
+                    .statusCode(HttpStatus.BAD_REQUEST.value())
+                    .body("errors[0].status", IsEqual.equalTo("400"));
+        } finally {
+            deleteWorkspaceWithTags(workspaceId);
+        }
+    }
+
+    /** keyValues: key, value, key, value ... */
+    private String createWorkspaceWithTagBindings(String token, String name, String... keyValues) {
+        List<String> bindings = new ArrayList<>();
+        for (int i = 0; i < keyValues.length; i += 2) {
+            bindings.add("{\"type\":\"tag-bindings\",\"attributes\":{\"key\":\"%s\",\"value\":\"%s\"}}"
+                    .formatted(keyValues[i], keyValues[i + 1]));
+        }
+        return given()
+                .headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {"data":{"type":"workspaces","attributes":{"name":"%s","terraform-version":"1.9.0"},
+                          "relationships":{"tag-bindings":{"data":[%s]}}}}
+                        """.formatted(name, String.join(",", bindings)))
+                .when()
+                .post("/remote/tfe/v2/organizations/simple/workspaces")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+    }
+
+    private void deleteWorkspaceWithTags(String workspaceId) {
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId)).orElseThrow();
+        workspaceTagRepository.deleteAll(workspaceTagRepository.findByWorkspace(workspace));
+        workspaceRepository.delete(workspace);
     }
 }

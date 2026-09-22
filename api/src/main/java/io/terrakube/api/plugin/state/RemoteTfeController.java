@@ -17,6 +17,7 @@ import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceError;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
+import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -138,12 +140,28 @@ public class RemoteTfeController {
     @Transactional
     @GetMapping(produces = "application/vnd.api+json", path = "organizations/{organizationName}/workspaces")
     public ResponseEntity<WorkspaceList> listWorkspace(@PathVariable("organizationName") String organizationName,
-            @RequestParam("search[tags]") Optional<String> searchTags,
-            @RequestParam("search[name]") Optional<String> searchName, Principal principal) {
-        log.info("Searching Tags: {} {}", organizationName, searchTags.isPresent() ? searchTags.get() : null);
-        log.info("Searching Names: {} {}", organizationName, searchName.isPresent() ? searchName.get() : null);
-        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.listWorkspace(organizationName, searchTags,
-                searchName, (JwtAuthenticationToken) principal)));
+            @RequestParam MultiValueMap<String, String> parameters, Principal principal) {
+        WorkspaceListQuery query = WorkspaceListQuery.from(parameters);
+        log.info("Searching workspaces in {}: {}", organizationName, query);
+        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.listWorkspace(organizationName, query,
+                (JwtAuthenticationToken) principal)));
+    }
+
+    @Transactional
+    @GetMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/tag-bindings")
+    public ResponseEntity<TagBindingList> listWorkspaceTagBindings(@PathVariable("workspaceId") String workspaceId,
+            Principal principal) {
+        return ResponseEntity.of(Optional.ofNullable(
+                remoteTfeService.listTagBindings(workspaceId, (JwtAuthenticationToken) principal)));
+    }
+
+    @Transactional
+    @PatchMapping(produces = "application/vnd.api+json", path = "/workspaces/{workspaceId}/tag-bindings")
+    public ResponseEntity<TagBindingList> updateWorkspaceTagBindings(@PathVariable("workspaceId") String workspaceId,
+            @RequestBody TagBindingList tagBindingList, Principal principal) {
+        log.info("Updating Workspace {} Tag Bindings {}", workspaceId, tagBindingList);
+        return ResponseEntity.of(Optional.ofNullable(
+                remoteTfeService.updateTagBindings(workspaceId, tagBindingList, (JwtAuthenticationToken) principal)));
     }
 
     @Transactional
