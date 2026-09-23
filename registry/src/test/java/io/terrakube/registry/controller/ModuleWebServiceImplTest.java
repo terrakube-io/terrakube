@@ -9,10 +9,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -34,6 +36,7 @@ class ModuleWebServiceImplTest {
     void setUp() {
         moduleService = mock(ModuleService.class);
         storageService = mock(StorageService.class);
+        when(moduleService.getAvailableVersions("org", "module", "aws")).thenReturn(List.of("1.0.0"));
 
         ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
@@ -79,5 +82,24 @@ class ModuleWebServiceImplTest {
         mockMvc.perform(get("/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    void servesDownloadPathForAvailableVersion() throws Exception {
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0")).thenReturn("s3::path");
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "s3::path"));
+    }
+
+    @Test
+    void removedVersionIsNotDownloadable() throws Exception {
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/2.0.0/download"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/terraform/modules/v1/download/org/module/aws/2.0.0/module.zip"))
+                .andExpect(status().isNotFound());
+        verify(moduleService, never()).getModuleVersionPath(anyString(), anyString(), anyString(), anyString());
+        verifyNoMoreInteractions(storageService);
     }
 }

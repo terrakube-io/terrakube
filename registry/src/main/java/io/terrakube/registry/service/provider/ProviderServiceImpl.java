@@ -10,6 +10,9 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -29,7 +32,7 @@ public class ProviderServiceImpl implements ProviderService {
             "                node{\n" +
             "                    id\n" +
             "                    name\n" +
-            "                    version{\n" +
+            "                    version(filter: \"removed==false\"){\n" +
             "                        edges{\n" +
             "                            node{\n" +
             "                                id\n" +
@@ -66,7 +69,7 @@ public class ProviderServiceImpl implements ProviderService {
             "                node{\n" +
             "                    id\n" +
             "                    name\n" +
-            "                    version(filter: \"versionNumber==%s\"){\n" +
+            "                    version(filter: \"versionNumber==%s;removed==false\"){\n" +
             "                        edges{\n" +
             "                            node{\n" +
             "                                id\n" +
@@ -102,6 +105,33 @@ public class ProviderServiceImpl implements ProviderService {
             "  }\n" +
             "}";
 
+    // The client's typed Version model has no deprecation fields, so the message is aliased into
+    // "protocols". Removed versions are the ones missing from the available versions list.
+    private static final String SEARCH_PROVIDER_VERSION_NOTICES = """
+            {
+              organization(filter: "name==%s") {
+                edges {
+                  node {
+                    provider(filter: "name==%s") {
+                      edges {
+                        node {
+                          version(filter: "deprecated==true,removed==true") {
+                            edges {
+                              node {
+                                versionNumber
+                                protocols: deprecationMessage
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
     @Override
     public List<VersionDTO> getAvailableVersions(String organization, String provider) {
         log.info("Organization Provider: {} {}", organization, provider);
@@ -129,6 +159,37 @@ public class ProviderServiceImpl implements ProviderService {
         });
 
         return versionDTOList;
+    }
+
+    @Override
+    public List<String> getWarnings(String organization, String provider, List<VersionDTO> availableVersionList) {
+        Set<String> availableVersions = availableVersionList.stream()
+                .map(VersionDTO::getVersion)
+                .collect(Collectors.toSet());
+        List<String> warnings = new ArrayList<>();
+
+        GraphQLRequest query = new GraphQLRequest();
+        query.setQuery(String.format(SEARCH_PROVIDER_VERSION_NOTICES, organization, provider));
+        // Warnings are informational: failing to load them must never break terraform init.
+        try {
+            terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().forEach(organizationEdge ->
+                    organizationEdge.getNode().getProvider().getEdges().forEach(providerEdge ->
+                            providerEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
+                                String versionNumber = versionEdge.getNode().getVersionNumber();
+                                // Printed on users' terminals: drop control characters such as ANSI escapes and newlines.
+                                String message = Objects.toString(versionEdge.getNode().getProtocols(), "").replaceAll("\\p{Cntrl}", " ").strip();
+                                boolean hasMessage = !message.isEmpty();
+                                if (availableVersions.contains(versionNumber)) {
+                                    warnings.add("Version " + versionNumber + " of " + organization + "/" + provider + " is deprecated" + (hasMessage ? ": " + message : "."));
+                                } else if (hasMessage) {
+                                    warnings.add("Version " + versionNumber + " of " + organization + "/" + provider + " was removed: " + message);
+                                }
+                            })));
+        } catch (RuntimeException e) {
+            log.warn("Failed to load version warnings for provider {}/{}: {}", organization, provider, e.getMessage());
+            return List.of();
+        }
+        return warnings;
     }
 
     @Override
