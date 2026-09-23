@@ -11,6 +11,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -37,6 +38,7 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -99,6 +101,27 @@ public class SetupWorkspaceTest {
             FileUtils.writeStringToFile(tf, "", StandardCharsets.US_ASCII, false);
             tfEntry = new TarEntry(tf, "variables.tf");
             tar.putNextEntry(tfEntry);
+            tar.closeEntry();
+            return tgzFile.toURI();
+        }
+    }
+
+    private URI executableScriptTarGz() throws IOException {
+        File tgzFile = File.createTempFile("executableScriptTarGz", ".tar.gz");
+        GzipCompressorOutputStream tgz = new GzipCompressorOutputStream(new FileOutputStream(tgzFile));
+        try (TarOutputStream tar = new TarOutputStream(tgz)) {
+            File tf = File.createTempFile("tfMain", ".tf");
+            FileUtils.writeStringToFile(tf, "", StandardCharsets.US_ASCII, false);
+            TarEntry tfEntry = new TarEntry(tf, "main.tf");
+            tfEntry.setMode(0100644);
+            tar.putNextEntry(tfEntry);
+            tar.closeEntry();
+
+            File script = File.createTempFile("script", ".sh");
+            FileUtils.writeStringToFile(script, "", StandardCharsets.US_ASCII, false);
+            TarEntry scriptEntry = new TarEntry(script, "scripts/run.sh");
+            scriptEntry.setMode(0100755);
+            tar.putNextEntry(scriptEntry);
             tar.closeEntry();
             return tgzFile.toURI();
         }
@@ -581,6 +604,17 @@ public class SetupWorkspaceTest {
         File workspaceDir = setup.prepareWorkspace(job);
         File terrformDir = FileUtils.getFile(workspaceDir, "main.tf");
         Assertions.assertTrue(terrformDir.exists());
+    }
+
+    @Test
+    public void keepsExecutableBitFromTarGz() throws Exception {
+        Assumptions.assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        TerraformJob job = successfulTarGzJob();
+        job.setSource(executableScriptTarGz().toString());
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        File workspaceDir = setup.prepareWorkspace(job);
+        Assertions.assertTrue(Files.isExecutable(FileUtils.getFile(workspaceDir, "scripts", "run.sh").toPath()));
+        Assertions.assertFalse(Files.isExecutable(FileUtils.getFile(workspaceDir, "main.tf").toPath()));
     }
 
     @Test

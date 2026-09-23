@@ -64,6 +64,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     public static final String SSH_DIRECTORY = "%s/.ssh";
     public static final String SSH_DIRECTORY_MODULE = "%s/.sshModule";
     private static final Pattern COMMIT_ID_PATTERN = Pattern.compile("^[a-fA-F0-9]{40}$");
+    // owner, group and others execute bits of a tar entry mode
+    private static final int EXECUTE_BITS = 0111;
 
     WorkspaceSecurity workspaceSecurity;
     boolean enableRegistrySecurity;
@@ -400,6 +402,11 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                         while ((count = tarIn.read(data, 0, 2048)) != -1) {
                             dest.write(data, 0, count);
                         }
+                    }
+                    // Keep the executable bit recorded in the archive, as a VCS checkout does, so
+                    // scripts uploaded by the terraform CLI can still be run (#1773)
+                    if ((entry.getMode() & EXECUTE_BITS) != 0 && !f.setExecutable(true, true)) {
+                        log.warn("Unable to set the executable permission on {}", f.getCanonicalPath());
                     }
                 }
             }
