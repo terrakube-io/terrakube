@@ -184,6 +184,7 @@ public class ModuleRefreshJob implements Job {
     private void calculateLatestModuleVersion(Module module, String organizationName) {
         try {
             module.setLatestVersion(moduleVersionRepository.findAllByModuleId(module.getId()).stream()
+                    .filter(moduleVersion -> !moduleVersion.isRemoved())
                     .map(ModuleVersion::getVersion)
                     .filter(Semver::isValid)
                     .max(Comparator.comparing(Semver::parse))

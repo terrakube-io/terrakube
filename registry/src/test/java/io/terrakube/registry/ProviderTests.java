@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Test;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.when;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 
 public class ProviderTests extends OpenRegistryApplicationTests{
 
@@ -153,5 +156,71 @@ public class ProviderTests extends OpenRegistryApplicationTests{
                 .log().all()
                 .statusCode(HttpStatus.SC_OK);
 
+    }
+
+    // 3.0.1 is still available (deprecated); 2.0.0 is missing from the available list (removed).
+    private static final String PROVIDER_VERSION_NOTICES = """
+            {"data":{"organization":{"edges":[{"node":{"provider":{"edges":[{"node":{"version":{"edges":[
+              {"node":{"versionNumber":"3.0.1","protocols":"Removal on 2026-12-31"}},
+              {"node":{"versionNumber":"2.0.0","protocols":"Broken release, use 3.0.1"}}
+            ]}}}]}}}]}}}
+            """;
+
+    private static final String NO_PROVIDER_VERSIONS = """
+            {"data":{"organization":{"edges":[{"node":{"provider":{"edges":[{"node":{"version":{"edges":[]}}}]}}}]}}}
+            """;
+
+    @Test
+    void providerVersionsIncludeDeprecationWarnings() {
+        wireMockServer.resetAll();
+
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("removed==false"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(PROVIDER_SEARCH_VERSION)));
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("deprecated==true,removed==true"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(PROVIDER_VERSION_NOTICES)));
+
+        when()
+                .get("/terraform/providers/v1/simple/random/versions")
+                .then()
+                .statusCode(HttpStatus.SC_OK)
+                .body("versions.version", contains("3.0.1"))
+                .body("warnings", contains(
+                        "Version 3.0.1 of simple/random is deprecated: Removal on 2026-12-31",
+                        "Version 2.0.0 of simple/random was removed: Broken release, use 3.0.1"));
+    }
+
+    @Test
+    void providerVersionsAreServedWhenWarningsCannotBeLoaded() {
+        wireMockServer.resetAll();
+
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("removed==false"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(PROVIDER_SEARCH_VERSION)));
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("deprecated==true,removed==true"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR)));
+
+        when()
+                .get("/terraform/providers/v1/simple/random/versions")
+                .then()
+                .statusCode(HttpStatus.SC_OK)
+                .body("versions.version", contains("3.0.1"))
+                .body("$", not(hasKey("warnings")));
+    }
+
+    @Test
+    void removedProviderVersionIsNotDownloadable() {
+        wireMockServer.resetAll();
+
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("removed==false"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(NO_PROVIDER_VERSIONS)));
+
+        when()
+                .get("/terraform/providers/v1/simple/random/2.0.0/download/linux/amd64")
+                .then()
+                .statusCode(HttpStatus.SC_NOT_FOUND);
     }
 }

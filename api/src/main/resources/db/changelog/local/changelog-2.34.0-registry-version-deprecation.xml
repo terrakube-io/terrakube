@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Module and provider versions can be deprecated (still served, with a warning) or removed
+      (no longer served by the registry). Rows are kept so the refresh jobs do not re-import them.
+    -->
+    <changeSet id="2-34-0-module-version-deprecation" author="terrakube">
+        <addColumn tableName="module_version">
+            <column name="deprecated" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="removed" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="deprecation_message" type="varchar(1024)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="2-34-0-provider-version-deprecation" author="terrakube">
+        <addColumn tableName="version">
+            <column name="deprecated" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="removed" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="deprecation_message" type="varchar(1024)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

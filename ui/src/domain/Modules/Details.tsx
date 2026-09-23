@@ -36,6 +36,14 @@ import { compareVersions } from "../Workspaces/Workspaces";
 import "./Module.css";
 import VcsLogo from "@/components/display/VcsLogo";
 import { relativeTime } from "@/modules/utils/dates";
+import VersionStatusModal, {
+  recommendedVersion,
+  VersionStatus,
+  VersionStatusAlert,
+  versionMenuItems,
+  versionStatusChangeMessage,
+} from "@/components/modals/VersionStatusModal";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 
 const Markdown = lazy(async () => {
   const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
@@ -64,12 +72,15 @@ type Params = {
   id: string;
 };
 
+type ModuleVersionItem = ModuleVersionAttributes & { id: string };
+
 export const ModuleDetails = ({ organizationName }: Props) => {
   const { orgid, id } = useParams<Params>();
   const [module, setModule] = useState<ModuleModel>();
   const [moduleName, setModuleName] = useState("...");
   const [version, setVersion] = useState("...");
-  const [allVersions, setAllVersions] = useState<ModuleVersionAttributes[]>([]);
+  const [allVersions, setAllVersions] = useState<ModuleVersionItem[]>([]);
+  const [versionStatusOpen, setVersionStatusOpen] = useState(false);
   const [vcsProvider, setVCSProvider] = useState<VcsType>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +96,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const [submodule, setSubmodule] = useState("");
   const [submodulePath, setSubmodulePath] = useState("");
   const navigate = useNavigate();
+  const { permissions } = useOrgPermissions();
 
   const {
     token: {
@@ -128,12 +140,45 @@ export const ModuleDetails = ({ organizationName }: Props) => {
     }
   };
 
-  const handleClick = (e: { key: string }) => {
+  const selectedVersion = allVersions.find((v) => v.version === version);
+  const versionsNewestFirst = [...allVersions].sort((a, b) => compareVersions(b.version, a.version));
+  const upgradeTo = recommendedVersion(versionsNewestFirst)?.version;
+
+  const saveVersionStatus = async (status: Required<VersionStatus>) => {
+    if (!selectedVersion) return;
+    try {
+      await axiosInstance.patch(
+        `organization/${orgid}/module/${id}/version/${selectedVersion.id}`,
+        { data: { type: "module_version", id: selectedVersion.id, attributes: status } },
+        { headers: { "Content-Type": "application/vnd.api+json" } }
+      );
+      setAllVersions((versions) => versions.map((v) => (v.id === selectedVersion.id ? { ...v, ...status } : v)));
+      setVersionStatusOpen(false);
+      message.success(versionStatusChangeMessage(selectedVersion.version, status, "module"));
+    } catch (err) {
+      message.error("Failed to update version: " + getErrorMessage(err));
+    }
+  };
+
+  // Removed versions are no longer served by the registry, so there is nothing to load for them.
+  const showVersion = (path: string, selected: string, versions: ModuleVersionItem[]) => {
+    setVersion(selected);
+    if (versions.find((v) => v.version === selected)?.removed) {
+      setHclObject(null);
+      setMarkdown("_The README is not available because this version was removed from the registry._");
+      setLoadingInputs("Not available for removed versions");
+      setLoadingOutputs("Not available for removed versions");
+      setLoadingResources("Not available for removed versions");
+      return;
+    }
     setMarkdown("loading...");
-    setVersion(e.key);
+    loadReadme(path, selected);
+    loadModuleDetails(path, selected);
+  };
+
+  const handleClick = (e: { key: string }) => {
     if (module) {
-      loadReadme(module.attributes.registryPath, e.key);
-      loadModuleDetails(module.attributes.registryPath, e.key);
+      showVersion(module.attributes.registryPath, e.key, allVersions);
     } else {
       setMarkdown("Failed to load module");
     }
@@ -246,11 +291,12 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       .then((response) => {
         setModule(response.data.data);
         setModuleName(response.data.data.attributes.name);
-        const latestVersion = response.data.data.attributes.latestVersion;
-        setVersion(latestVersion);
-        loadReadme(response.data.data.attributes.registryPath, latestVersion);
-        loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
-        setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
+        const versions = setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
+        showVersion(
+          response.data.data.attributes.registryPath,
+          defaultVersion(response.data.data.attributes.latestVersion, versions),
+          versions
+        );
       })
       .catch((err) => {
         setError(getErrorMessage(err));
@@ -319,10 +365,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         Version {version}{" "}
                         <Dropdown
                           menu={{
-                            items: allVersions
-                              .sort((a, b) => compareVersions(a.version, b.version))
-                              .reverse()
-                              .map((v) => ({ key: v.version, label: v.version })),
+                            items: versionMenuItems(versionsNewestFirst, (v) => v.version),
                             onClick: handleClick,
                           }}
                           trigger={["click"]}
@@ -353,6 +396,9 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                         )}
                       </Typography.Text>
                     </Space>
+                    {selectedVersion && (
+                      <VersionStatusAlert version={version} status={selectedVersion} upgradeTo={upgradeTo} />
+                    )}
                     <Divider style={{ margin: "16px 0" }} />
                     <Typography.Title level={4} style={{ margin: 0 }}>
                       Module Details
@@ -691,6 +737,15 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                     <Dropdown
                       menu={{
                         items: [
+                          ...(permissions.manageModule && selectedVersion
+                            ? [
+                                {
+                                  key: "versionStatus",
+                                  label: `Change status of version ${version}…`,
+                                  onClick: () => setVersionStatusOpen(true),
+                                },
+                              ]
+                            : []),
                           {
                             key: "delete",
                             label: (
@@ -735,19 +790,34 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                     <Divider />
                     <p className="moduleSubtitles">Copy configuration details</p>
                   </div>
-                  <pre className="moduleCode">
-                    module &quot;{module.attributes.name}&quot; {"{"}
-                    <br />
-                    &nbsp;&nbsp;source = &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
-                    {module.attributes.registryPath}
-                    {submodulePath}&quot;
-                    <br />
-                    &nbsp;&nbsp;version = &quot;{version}&quot;
-                    <br />
-                    &nbsp;&nbsp;# insert required variables here
-                    <br />
-                    {"}"}
-                  </pre>
+                  {selectedVersion?.removed ? (
+                    <Typography.Text type="secondary">
+                      Version {version} is no longer served by the registry.
+                      {upgradeTo ? ` Use version ${upgradeTo} instead.` : ""}
+                    </Typography.Text>
+                  ) : (
+                    <>
+                      {selectedVersion?.deprecated && (
+                        <Typography.Text type="warning">
+                          Version {version} is deprecated.
+                          {upgradeTo && upgradeTo !== version ? ` Consider version ${upgradeTo}.` : ""}
+                        </Typography.Text>
+                      )}
+                      <pre className="moduleCode">
+                        module &quot;{module.attributes.name}&quot; {"{"}
+                        <br />
+                        &nbsp;&nbsp;source = &quot;{new URL(window._env_.REACT_APP_REGISTRY_URI).hostname}/
+                        {module.attributes.registryPath}
+                        {submodulePath}&quot;
+                        <br />
+                        &nbsp;&nbsp;version = &quot;{version}&quot;
+                        <br />
+                        &nbsp;&nbsp;# insert required variables here
+                        <br />
+                        {"}"}
+                      </pre>
+                    </>
+                  )}
                   <Tag style={{ width: "100%", fontSize: "13px" }} color="blue">
                     <div style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
                       When running Terraform on the CLI, you must configure credentials in .terraformrc or terraform.rc
@@ -767,6 +837,16 @@ export const ModuleDetails = ({ organizationName }: Props) => {
           </Row>
         </div>
       )}
+      {selectedVersion && (
+        <VersionStatusModal
+          open={versionStatusOpen}
+          version={selectedVersion.version}
+          kind="module"
+          status={selectedVersion}
+          onCancel={() => setVersionStatusOpen(false)}
+          onSave={saveVersionStatus}
+        />
+      )}
     </PageWrapper>
   );
 };
@@ -783,16 +863,25 @@ function fixSshURL(source: string | undefined): string {
 function setModuleInclude(
   includes: any[],
   setVCSProvider: React.Dispatch<React.SetStateAction<VcsType | undefined>>,
-  setAllVersions: React.Dispatch<React.SetStateAction<ModuleVersionAttributes[]>>
-) {
-  const versions: ModuleVersionAttributes[] = [];
+  setAllVersions: React.Dispatch<React.SetStateAction<ModuleVersionItem[]>>
+): ModuleVersionItem[] {
+  const versions: ModuleVersionItem[] = [];
   (includes ?? []).forEach((element: any) => {
     if (element.type === "vcs") {
       setVCSProvider(element.attributes.vcsType);
     }
     if (element.type === "module_version") {
-      versions.push(element.attributes);
+      versions.push({ id: element.id, ...element.attributes });
     }
   });
   setAllVersions(versions);
+  return versions;
+}
+
+// latestVersion is only recalculated by the module refresh job, so it can still point at a version
+// that was removed since then. Show the recommended version that is still served instead.
+function defaultVersion(latestVersion: string, versions: ModuleVersionItem[]): string {
+  if (!versions.find((v) => v.version === latestVersion)?.removed) return latestVersion;
+  const newestFirst = [...versions].sort((a, b) => compareVersions(b.version, a.version));
+  return recommendedVersion(newestFirst)?.version ?? latestVersion;
 }

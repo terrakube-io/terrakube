@@ -35,6 +35,17 @@ public class Version {
     @Column(name = "protocols")
     private String protocols;
 
+    @Column(name = "deprecated")
+    private boolean deprecated;
+
+    // Removed versions are hidden from the registry but kept so the refresh job does not re-import them.
+    @Column(name = "removed")
+    private boolean removed;
+
+    // Shown for deprecated and removed versions, e.g. a removal date or upgrade instructions.
+    @Column(name = "deprecation_message")
+    private String deprecationMessage;
+
     @ManyToOne
     private Provider provider;
 

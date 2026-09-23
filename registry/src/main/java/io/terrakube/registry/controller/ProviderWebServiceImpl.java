@@ -25,12 +25,16 @@ public class ProviderWebServiceImpl {
         List<VersionDTO> versionDTOList = providerService.getAvailableVersions(organization, provider);
         VersionsDTO versionsDTO = new VersionsDTO();
         versionsDTO.setVersions(versionDTOList);
+        versionsDTO.setWarnings(providerService.getWarnings(organization, provider, versionDTOList));
         return ResponseEntity.ok(versionsDTO);
     }
 
     @GetMapping(value = "/{organization}/{provider}/{version}/download/{os}/{arch}", produces = "application/json")
     public ResponseEntity<FileDTO> getModuleVersionPath(@PathVariable String organization, @PathVariable String provider, @PathVariable String version, @PathVariable String os, @PathVariable String arch) {
         FileDTO fileDTO = providerService.getFileInformation(organization, provider, version, os, arch);
+        if (fileDTO.getFilename() == null) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok().body(fileDTO);
     }
 }

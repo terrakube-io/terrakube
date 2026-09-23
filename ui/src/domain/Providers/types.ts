@@ -25,6 +25,9 @@ export type ProviderVersionModel = {
   attributes: {
     versionNumber: string;
     protocols: string;
+    deprecated?: boolean;
+    removed?: boolean;
+    deprecationMessage?: string | null;
   };
 };
 

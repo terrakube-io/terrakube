@@ -7,6 +7,7 @@ import {
   TerraformRegistryProviderVersions,
   TerraformRegistryProviderDownload,
 } from "./types";
+import { VersionStatus } from "@/components/modals/VersionStatusModal";
 
 const JSON_API_CONTENT_TYPE = "application/vnd.api+json";
 
@@ -60,6 +61,19 @@ export const createProvider = async (
     }
   );
   return response.data;
+};
+
+export const updateVersionStatus = async (
+  orgId: string,
+  providerId: string,
+  versionId: string,
+  attributes: Required<VersionStatus>
+): Promise<void> => {
+  await axiosInstance.patch(
+    `organization/${orgId}/provider/${providerId}/version/${versionId}`,
+    { data: { type: "version", id: versionId, attributes } },
+    { headers: { "Content-Type": JSON_API_CONTENT_TYPE } }
+  );
 };
 
 export const createVersion = async (

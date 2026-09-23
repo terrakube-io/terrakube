@@ -44,4 +44,15 @@ public class ModuleVersion {
 
     @Column(name = "git_tag")
     private String gitTag;
+
+    @Column(name = "deprecated")
+    private boolean deprecated;
+
+    // Removed versions are hidden from the registry but kept so the refresh job does not re-import them.
+    @Column(name = "removed")
+    private boolean removed;
+
+    // Shown for deprecated and removed versions, e.g. a removal date or upgrade instructions.
+    @Column(name = "deprecation_message")
+    private String deprecationMessage;
 }
