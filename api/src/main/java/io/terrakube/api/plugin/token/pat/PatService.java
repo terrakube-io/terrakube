@@ -29,6 +29,10 @@ public class PatService {
     private PatRepository patRepository;
 
     public String createToken(int days, String description, Object name, Object email, Object groups) {
+        return createToken(days, description, name, email, groups, "API");
+    }
+
+    public String createToken(int days, String description, Object name, Object email, Object groups, String source) {
         String jws = "";
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64Key));
 
@@ -36,10 +40,11 @@ public class PatService {
         pat.setDays(days);
         pat.setDeleted(false);
         pat.setDescription(description);
+        pat.setSource(source);
         pat = patRepository.save(pat);
 
         try {
-            log.info("Generated Pat {}", pat.getId());
+            log.info("Generated Pat {} (source {})", pat.getId(), source);
 
             if (days > 0) {
                 log.info("Pat will expire");
@@ -76,6 +81,30 @@ public class PatService {
             patRepository.delete(pat);
         }
         return jws;
+    }
+
+    public void touchLastUsed(UUID patId) {
+        patRepository.findById(patId).ifPresent(pat -> {
+            pat.setLastUsedAt(new Date());
+            patRepository.save(pat);
+        });
+    }
+
+    /**
+     * Attribute a token to a user after the fact. Needed when the token is minted from an
+     * unauthenticated endpoint (the terraform login broker), where the auditing listener would
+     * otherwise record created_by as "Internal". @CreatedBy is only populated on insert, so this
+     * explicit set on a subsequent save sticks.
+     */
+    public void attributeTo(UUID patId, String userEmail) {
+        if (userEmail == null || userEmail.isBlank()) {
+            return;
+        }
+        patRepository.findById(patId).ifPresent(pat -> {
+            pat.setCreatedBy(userEmail);
+            pat.setUpdatedBy(userEmail);
+            patRepository.save(pat);
+        });
     }
 
 

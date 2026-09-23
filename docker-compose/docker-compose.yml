@@ -30,6 +30,10 @@ x-api: &api_env
   PatSecret: ${PAT_SECRET}
   InternalSecret: ${INTERNAL_SECRET}
   DexIssuerUri: https://terrakube-dex.${DOMAIN}/dex
+  TerraformLoginEnabled: ${TERRAFORM_LOGIN_ENABLED:-false}
+  TerraformLoginApiUrl: https://terrakube-api.${DOMAIN}
+  TerraformLoginMaxDays: ${TERRAFORM_LOGIN_MAX_DAYS:-365}
+  TerraformLoginDefaultDays: ${TERRAFORM_LOGIN_DEFAULT_DAYS:-30}
   StorageType: AWS
   AwsStorageAccessKey: $TK_OUTPUT_ACCESS_KEY
   AwsStorageSecretKey: $TK_OUTPUT_SECRET_KEY
@@ -83,6 +87,8 @@ x-registry: &registry_env
   TerrakubeUiURL: https://terrakube.${DOMAIN}
   PatSecret: ${PAT_SECRET}
   InternalSecret: ${INTERNAL_SECRET}
+  TerraformLoginEnabled: ${TERRAFORM_LOGIN_ENABLED:-false}
+  TerraformLoginApiUrl: https://terrakube-api.${DOMAIN}
   RegistryStorageType: AwsStorageImpl
   AwsStorageAccessKey: $TK_OUTPUT_ACCESS_KEY
   AwsStorageSecretKey: $TK_OUTPUT_SECRET_KEY
