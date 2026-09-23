@@ -8,7 +8,7 @@ VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0-S
 INSTALL_AWS_CLI="${INSTALL_AWS_CLI:-false}"
 
 # Build and test the Java modules
-mvn clean install -Drevision="$VERSION" -Dspring-boot.build-image.skip=true
+mvn -T 1C clean install -Drevision="$VERSION" -Dspring-boot.build-image.skip=true
 
 # Build Terrakube Images
 mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Drevision="$VERSION"

@@ -27,6 +27,8 @@ hs_err_pid*
 .idea
 *.iml
 **/.mvn/**
+!/.mvn/extensions.xml
+!/.mvn/maven-build-cache-config.xml
 
 **.DS_Store
 target

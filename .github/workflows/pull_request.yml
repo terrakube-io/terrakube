@@ -17,32 +17,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Set up JDK 25
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
-        with:
-          java-version: '25'
-          distribution: 'liberica'
+      - uses: ./.github/actions/setup-maven
       - name: Cache SonarCloud packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-      - name: Cache Maven packages
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
       - name: Build Terrakube
         if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: mvn -B verify --file pom.xml org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=AzBuilder_azb-server -Dspring-boot.build-image.skip=true
+        # The Sonar plugin is not thread-safe, so it runs after the parallel build.
+        run: |
+          mvn -B -T 1C verify -Dmaven.build.cache.enabled=true -Dspring-boot.build-image.skip=true
+          mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=AzBuilder_azb-server
         env:
           USER_NAME: ${{ secrets.USER_NAME }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      - name: Save Maven build outputs
+        if: github.event_name == 'push'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.m2/build-cache
+          key: ${{ runner.os }}-maven-build-cache-${{ github.sha }}
       - name: Build Terrakube from Fork
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && !github.event.pull_request.draft }}
-        run: mvn clean install -Dspring-boot.build-image.skip=true
+        run: mvn -B -T 1C clean install -Dmaven.build.cache.enabled=true -Dspring-boot.build-image.skip=true
