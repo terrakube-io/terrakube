@@ -8,9 +8,15 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'ui/**'
+      - '!ui/**/*.md'
 
 permissions:
   contents: read
+
+# A newer push to the same PR cancels the obsolete run; pushes to main never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   buildui:
@@ -26,6 +32,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
