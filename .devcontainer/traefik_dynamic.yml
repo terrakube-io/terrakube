@@ -2,5 +2,5 @@ tls:
   stores:
     default:
       defaultCertificate:
-        certFile: /letsencrypt/fullchain.pem
-        keyFile: /letsencrypt/privkey.pem
+        certFile: /letsencrypt/cert.pem
+        keyFile: /letsencrypt/key.pem
