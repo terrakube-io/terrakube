@@ -1,163 +1,210 @@
 name: Release Terrakube
 
-on: 
+# Builds and pushes the api-server, open-registry, executor and terrakube-ui images (amd64 + arm64,
+# plus an Alpaquita variant). Runs when a GitHub release is created, or manually, in which case the
+# version is resolved from the inputs and the GitHub release is created after the images are pushed.
+#
+# Images go to <IMAGE_REGISTRY>/<IMAGE_NAMESPACE>/<image>:<version>, configured with repository
+# variables (defaults: docker.io/azbuilder). Forks can publish to GitHub Packages by setting
+# IMAGE_REGISTRY=ghcr.io and IMAGE_NAMESPACE=<owner>. ghcr.io uses GITHUB_TOKEN; any other
+# registry uses the DOCKER_USER and DOCKER_PASSWORD secrets.
+on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override (for example: 1.2.3 or v1.2.3)"
+        required: false
+        type: string
+      bump:
+        description: "Semver bump used when version is not provided"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions: {}
 
+env:
+  IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY || 'docker.io' }}
+  IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || 'azbuilder' }}
+
 jobs:
-  build:
+  prepare:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      image-prefix: ${{ steps.resolve.outputs.image-prefix }}
+    steps:
+      - name: Resolve version and image prefix
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "release" ]; then
+            VERSION="${RELEASE_TAG#v}"
+          elif [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Manual releases publish :latest and must run on main, not ${GITHUB_REF}"
+            exit 1
+          elif [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION#v}"
+            if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid version '${INPUT_VERSION}'. Expected semver format like 1.2.3 or v1.2.3"
+              exit 1
+            fi
+          else
+            LATEST_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+            LATEST_VERSION="${LATEST_TAG#v}"
+            if [ -z "${LATEST_TAG}" ] || [ "${LATEST_TAG}" = "null" ]; then
+              LATEST_VERSION="0.0.0"
+            fi
+            if ! [[ "${LATEST_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Latest release tag '${LATEST_TAG}' is not semver-compatible. Use the version input explicitly."
+              exit 1
+            fi
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST_VERSION}"
+            case "${INPUT_BUMP}" in
+              major) VERSION="$((MAJOR + 1)).0.0" ;;
+              minor) VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+              patch) VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+              *) echo "Unsupported bump type: ${INPUT_BUMP}"; exit 1 ;;
+            esac
+          fi
+
+          PREFIX="${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}"
+          echo "Version: ${VERSION}, images: ${PREFIX,,}/*"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "image-prefix=${PREFIX,,}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write # only used when publishing to ghcr.io
     strategy:
       matrix:
         os: [jammy, jammy-arm, alpaquita]
-    env:
-      VERSION: ${{ github.event.release.tag_name }}
     runs-on: ${{ matrix.os == 'jammy-arm' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      IMAGE_PREFIX: ${{ needs.prepare.outputs.image-prefix }}
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-    - name: Cache Maven packages
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-m2
+        persist-credentials: false
 
+    # No dependency cache: a release must not restore a cache that pull request runs can write.
     - name: Set up JDK 25
       uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
       with:
         java-version: '25'
         distribution: 'liberica'
 
-    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-      with:
-        node-version: 24
-
-    - name: Login to Docker Hub
+    - name: Login to the image registry
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
       with:
-        username: ${{ secrets.DOCKER_USER }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+        registry: ${{ env.IMAGE_REGISTRY }}
+        username: ${{ env.IMAGE_REGISTRY == 'ghcr.io' && github.actor || secrets.DOCKER_USER }}
+        password: ${{ env.IMAGE_REGISTRY == 'ghcr.io' && secrets.GITHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
     - name: Set environment label for Alpaquita
       if: matrix.os == 'alpaquita'
-      run: echo "VERSION=${{ env.VERSION }}-alpaquita" >> $GITHUB_ENV
+      run: echo "VERSION=${VERSION}-alpaquita" >> "$GITHUB_ENV"
 
     - name: Set environment label for Jammy-ARM
       if: matrix.os == 'jammy-arm'
-      run: echo "VERSION=${{ env.VERSION }}-arm" >> $GITHUB_ENV
+      run: echo "VERSION=${VERSION}-arm" >> "$GITHUB_ENV"
 
     - name: Build and Push UI Images
       if: matrix.os == 'jammy' || matrix.os == 'jammy-arm'
       working-directory: ./ui
-      run: |
-        docker build --build-arg REACT_APP_TERRAKUBE_VERSION=v${{ env.VERSION }} -t azbuilder/terrakube-ui:${{ env.VERSION }} --push .
+      run: docker build -t "${IMAGE_PREFIX}/terrakube-ui:${VERSION}" --push .
 
-    - name: Update POM Version
-      run: mvn versions:set-property -Dproperty=revision -DnewVersion=${{ env.VERSION }} -DgenerateBackupPoms=false
-
-    - name: Build Image with Maven
-      run: |
-        if [ "${{ matrix.os }}" == "alpaquita" ]; then
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=bellsoft/buildpacks.builder:glibc
-        elif [ "${{ matrix.os }}" == "jammy-arm" ]; then
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true -Dbuildpack.builder=heroku/builder:24
-        else
-          mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true
-        fi
+    - name: Build Images with Maven
       env:
+        OS: ${{ matrix.os }}
         USER_NAME: ${{ secrets.USER_NAME }}
         ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-
-    - name: Tag and Push Executor Images
       run: |
-          IMAGE_ID=$(docker images executor:${{ env.VERSION }} -q)
-      
-          # Install Git
-          if [ "${{ matrix.os }}" == "alpaquita" ]; then
-            docker tag $IMAGE_ID executortemp
-          else
-            docker run --user="root" --entrypoint launcher $IMAGE_ID "apt-get update && apt-get install git jq curl -y"
-            if [ "${{ matrix.os }}" == "jammy-arm" ]; then
-              docker commit --change='ENTRYPOINT ["/cnb/process/web"]' --change='USER heroku' $(docker ps -lq) executortemp
-            else
-              docker commit --change='ENTRYPOINT ["/cnb/process/web"]' --change='USER cnb' $(docker ps -lq) executortemp
-            fi
-          fi
-      
-          IMAGE_ID=$(docker images executortemp -q)
-          docker tag $IMAGE_ID azbuilder/executor:${{ env.VERSION }}
-          docker tag $IMAGE_ID azbuilder/executor:latest
-          docker push azbuilder/executor:${{ env.VERSION }}
+        case "${OS}" in
+          alpaquita) BUILDER="-Dbuildpack.builder=bellsoft/buildpacks.builder:glibc" ;;
+          jammy-arm) BUILDER="-Dbuildpack.builder=heroku/builder:24" ;;
+          *) BUILDER="" ;;
+        esac
+        mvn -pl "api,registry,executor" spring-boot:build-image -B --file pom.xml -Dmaven.test.skip=true \
+          -Drevision="${VERSION}" ${BUILDER}
 
-    - name: Tag and Push API Images
+    - name: Build and Push Executor Images
+      env:
+        OS: ${{ matrix.os }}
       run: |
-        IMAGE_ID=$(docker images api-server:${{ env.VERSION }} -q)
-        docker tag $IMAGE_ID azbuilder/api-server:${{ env.VERSION }}
-        docker tag $IMAGE_ID azbuilder/api-server:latest
-        docker push azbuilder/api-server:${{ env.VERSION }}
+        if [ "${OS}" = "alpaquita" ]; then
+          # The Alpaquita run image has no apt; it is published without the extra tools, as before.
+          docker tag "executor:${VERSION}" "${IMAGE_PREFIX}/executor:${VERSION}"
+        else
+          # Keep the user the buildpack set: "cnb" for Paketo, "heroku" for heroku/builder.
+          RUN_USER="$(docker inspect -f '{{.Config.User}}' "executor:${VERSION}")"
+          docker build --build-arg BASE_IMAGE="executor:${VERSION}" --build-arg RUN_USER="${RUN_USER}" \
+            -t "${IMAGE_PREFIX}/executor:${VERSION}" - < executor/Dockerfile
+        fi
+        docker push "${IMAGE_PREFIX}/executor:${VERSION}"
 
-    - name: Tag and Push Registry Images
+    - name: Tag and Push API and Registry Images
       run: |
-        IMAGE_ID=$(docker images open-registry:${{ env.VERSION }} -q)
-        docker tag $IMAGE_ID azbuilder/open-registry:${{ env.VERSION }}
-        docker tag $IMAGE_ID azbuilder/open-registry:latest
-        docker push azbuilder/open-registry:${{ env.VERSION }}
+        docker tag "api-server:${VERSION}" "${IMAGE_PREFIX}/api-server:${VERSION}"
+        docker tag "open-registry:${VERSION}" "${IMAGE_PREFIX}/open-registry:${VERSION}"
+        docker push "${IMAGE_PREFIX}/api-server:${VERSION}"
+        docker push "${IMAGE_PREFIX}/open-registry:${VERSION}"
 
   merge:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # only used when publishing to ghcr.io
     env:
-      VERSION: ${{ github.event.release.tag_name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      IMAGE_PREFIX: ${{ needs.prepare.outputs.image-prefix }}
     steps:
-    - name: Login to Docker Hub
+    - name: Login to the image registry
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
       with:
-        username: ${{ secrets.DOCKER_USER }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+        registry: ${{ env.IMAGE_REGISTRY }}
+        username: ${{ env.IMAGE_REGISTRY == 'ghcr.io' && github.actor || secrets.DOCKER_USER }}
+        password: ${{ env.IMAGE_REGISTRY == 'ghcr.io' && secrets.GITHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
     - name: Create and Push Multi-Platform Images
       run: |
-        # API
-        docker buildx imagetools create \
-          --tag azbuilder/api-server:${{ env.VERSION }} \
-          --tag azbuilder/api-server:latest \
-          azbuilder/api-server:${{ env.VERSION }} \
-          azbuilder/api-server:${{ env.VERSION }}-arm
+        for IMAGE in api-server open-registry executor terrakube-ui; do
+          docker buildx imagetools create \
+            --tag "${IMAGE_PREFIX}/${IMAGE}:${VERSION}" \
+            --tag "${IMAGE_PREFIX}/${IMAGE}:latest" \
+            "${IMAGE_PREFIX}/${IMAGE}:${VERSION}" \
+            "${IMAGE_PREFIX}/${IMAGE}:${VERSION}-arm"
+        done
 
-        # Registry
-        docker buildx imagetools create \
-          --tag azbuilder/open-registry:${{ env.VERSION }} \
-          --tag azbuilder/open-registry:latest \
-          azbuilder/open-registry:${{ env.VERSION }} \
-          azbuilder/open-registry:${{ env.VERSION }}-arm
-
-        # Executor
-        docker buildx imagetools create \
-          --tag azbuilder/executor:${{ env.VERSION }} \
-          --tag azbuilder/executor:latest \
-          azbuilder/executor:${{ env.VERSION }} \
-          azbuilder/executor:${{ env.VERSION }}-arm
-
-        # UI
-        docker buildx imagetools create \
-          --tag azbuilder/terrakube-ui:${{ env.VERSION }} \
-          --tag azbuilder/terrakube-ui:latest \
-          azbuilder/terrakube-ui:${{ env.VERSION }} \
-          azbuilder/terrakube-ui:${{ env.VERSION }}-arm
-
+    # Only Docker Hub: other registries keep the intermediate -arm tags.
     - name: Delete ARM Images
+      if: env.IMAGE_REGISTRY == 'docker.io'
       run: |
-          ORGANIZATION="azbuilder"
           IMAGES=("api-server" "open-registry" "executor" "terrakube-ui")
-          TAG="${{ env.VERSION }}-arm"
+          NAMESPACE="${IMAGE_NAMESPACE,,}"
+          TAG="${VERSION}-arm"
 
           login_data() {
           cat <<EOF
@@ -171,16 +218,60 @@ jobs:
           TOKEN=$(curl -s -H "Content-Type: application/json" -X POST -d "$(login_data)" "https://hub.docker.com/v2/users/login/" | jq -r .token)
 
           for IMAGE in "${IMAGES[@]}"; do
-            DELETE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${ORGANIZATION}/${IMAGE}/tags/${TAG}/" \
+            DELETE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${NAMESPACE}/${IMAGE}/tags/${TAG}/" \
             -X DELETE \
             -H "Authorization: JWT ${TOKEN}")
 
             if [ "$DELETE_RESPONSE" -eq 204 ]; then
-              echo "Successfully deleted ${ORGANIZATION}/${IMAGE}:${TAG} from Docker Hub."
+              echo "Successfully deleted ${NAMESPACE}/${IMAGE}:${TAG} from Docker Hub."
             else
-              echo "Failed to delete ${ORGANIZATION}/${IMAGE}:${TAG}. HTTP status code: $DELETE_RESPONSE"
+              echo "Failed to delete ${NAMESPACE}/${IMAGE}:${TAG}. HTTP status code: $DELETE_RESPONSE"
             fi
           done
       env:
         USERNAME: ${{ secrets.DOCKER_USER }}
         PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  create-release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [prepare, merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Create or update GitHub release
+        run: |
+          set -euo pipefail
+
+          # Same format as the existing release tags, which have no "v" prefix.
+          TAG="${VERSION}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          METADATA_FILE="${RUNNER_TEMP}/release-metadata.json"
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${TAG}" \
+            -f target_commitish="${GITHUB_SHA}" \
+            > "${METADATA_FILE}"
+
+          RELEASE_TITLE="$(jq -r '.name // empty' "${METADATA_FILE}")"
+          jq -r '.body // empty' "${METADATA_FILE}" > "${NOTES_FILE}"
+
+          # A release created with GITHUB_TOKEN does not trigger this workflow again.
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_TITLE:-${TAG}}" \
+              --notes-file "${NOTES_FILE}"
+          else
+            gh release create "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "${RELEASE_TITLE:-${TAG}}" \
+              --notes-file "${NOTES_FILE}"
+          fi
