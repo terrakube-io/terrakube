@@ -106,7 +106,8 @@ export default function VersionStatusModal({ open, version, kind, status, onCanc
         {selected && selected !== "active" && (
           <>
             <Form.Item name="deprecationMessage" label="Message" extra={MESSAGE_HELP[kind]} rules={[{ max: 1024 }]}>
-              <Input.TextArea rows={3} maxLength={1024} showCount />
+              {/* The counter is absolutely positioned under the textarea; keep the help text below it. */}
+              <Input.TextArea rows={3} maxLength={1024} showCount style={{ marginBottom: 20 }} />
             </Form.Item>
             {selected === "removed" && <Alert type="error" showIcon title={REMOVE_WARNING[kind]} />}
           </>
