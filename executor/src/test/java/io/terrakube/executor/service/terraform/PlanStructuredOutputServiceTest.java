@@ -430,4 +430,46 @@ class PlanStructuredOutputServiceTest {
         Mockito.verify(jobContextService).getCurrentContext("o", "1");
         Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
     }
+
+    // #3602: the show -json summary used to be a single synchronous POST after the queue drain, so
+    // one transient 503 left the stale live snapshot (often empty + noChangePlan) as the result.
+    @Test
+    void publishPlanSummaryGoesThroughTheRetryingQueueAsTheFinalSnapshotWhenAsyncEnabled() throws Exception {
+        io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue queue =
+                Mockito.mock(io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue.class);
+        Mockito.when(queue.nextSequence()).thenReturn(7L);
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
+                new io.terrakube.executor.configuration.ExecutorFlagsProperties();
+        flags.setAsyncStructuredOutput(true);
+
+        String planJson = "{\"resource_changes\":[{\"address\":\"aws_instance.example\",\"type\":\"aws_instance\","
+                + "\"name\":\"example\",\"change\":{\"actions\":[\"update\"],\"before\":{\"memory\":4096},"
+                + "\"after\":{\"memory\":6144}}}]}";
+        TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
+        Mockito.when(terraformClient.showPlanJson(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> output = invocation.getArgument(1);
+                    output.accept(planJson);
+                    return CompletableFuture.completedFuture(true);
+                });
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), terraformClient, queue, flags);
+
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("o");
+        job.setJobId("1");
+        job.setStepId("step-1");
+        job.setTerraformVersion("1.16.4");
+        job.setEnvironmentVariables(new HashMap<>());
+
+        service.publishPlanSummary(job, new File("/tmp"), List.of(), List.of());
+
+        Mockito.verify(queue).submit(Mockito.argThat(s -> s.key().stepId().equals("step-1")
+                && s.isFinalSnapshot()
+                && s.getChanges().size() == 1
+                && "aws_instance.example".equals(s.getChanges().get(0).get("address"))));
+        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+    }
 }
