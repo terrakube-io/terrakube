@@ -924,6 +924,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     private boolean prepareTerraformOperation(TerraformJob terraformJob, File executorTempDirectory, File terraformWorkingDirectory, Consumer<String> output)
             throws IOException, ExecutionException, InterruptedException {
         terraformClient.setRedirectErrorStream(true);
+        resolveTerraformVersion(terraformJob);
 
         if (!executePreInitScripts(terraformJob, terraformWorkingDirectory, output)) {
             log.warn("Skipping terraform init because before-init scripts failed for Job {}", terraformJob.getJobId());
@@ -976,6 +977,38 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         Thread.sleep(5000);
         return initSuccessful;
+    }
+
+    /**
+     * Replace a workspace version constraint (e.g. {@code >= 1.3.0}, {@code ~> 1.9}) on the job
+     * with the concrete version it resolves to, so every process built for this job afterwards
+     * sees a real version. terraform-client only resolves the constraint for the download and
+     * gates {@code -json} on the raw string, where any constraint compares below 0.15.2 - plan,
+     * apply and destroy then silently ran without {@code -json} and produced no structured output.
+     * Scripts also get the concrete version in {@code terraformVersion} and on their PATH.
+     * If resolution fails the job keeps its original value and the library behaves as before.
+     */
+    void resolveTerraformVersion(TerraformJob terraformJob) {
+        String requestedVersion = terraformJob.getTerraformVersion();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return;
+        }
+
+        try {
+            TerraformDownloader downloader = terraformClient.createTerraformDownloader();
+            String resolvedVersion = terraformJob.isTofu()
+                    ? downloader.resolveTofuVersion(requestedVersion)
+                    : downloader.resolveTerraformVersion(requestedVersion);
+
+            if (resolvedVersion != null && !resolvedVersion.isBlank() && !resolvedVersion.equals(requestedVersion)) {
+                log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
+                        resolvedVersion, terraformJob.getJobId());
+                terraformJob.setTerraformVersion(resolvedVersion);
+            }
+        } catch (Exception e) {
+            log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),
+                    requestedVersion, terraformJob.getJobId(), e.getMessage());
+        }
     }
 
     /**

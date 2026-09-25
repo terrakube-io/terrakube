@@ -11,6 +11,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
+import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -116,6 +117,63 @@ class TerraformExecutorServiceImplTest {
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
         verify(terraformClient, never()).planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any());
+    }
+
+    @Test
+    void planResolvesVersionConstraintBeforeBuildingTerraformProcesses() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion(" >= 1.3.0 ");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion(" >= 1.3.0 ")).thenReturn("1.16.4");
+        when(terraformClient.init(
+                any(TerraformProcessData.class),
+                any(Consumer.class),
+                any())).thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        // terraform-client gates -json on this exact string; a constraint compares below 0.15.2
+        assertEquals("1.16.4", terraformJob.getTerraformVersion());
+        verify(terraformClient).init(
+                argThat(processData -> "1.16.4".equals(processData.getTerraformVersion())),
+                any(Consumer.class),
+                any());
+        verify(terraformState).getBackendStateFile(anyString(), anyString(), any(File.class), eq("1.16.4"));
+    }
+
+    @Test
+    void resolvesTofuVersionConstraintWithTheTofuReleaseList() {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("~> 1.9");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTofuVersion("~> 1.9")).thenReturn("1.10.6");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        assertEquals("1.10.6", terraformJob.getTerraformVersion());
+        verify(downloader, never()).resolveTerraformVersion(anyString());
+    }
+
+    @Test
+    void keepsTheRequestedVersionWhenResolutionFails() {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion(">= 99.0.0");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion(">= 99.0.0")).thenThrow(new IllegalArgumentException("no match"));
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        assertEquals(">= 99.0.0", terraformJob.getTerraformVersion());
     }
 
     @Test
