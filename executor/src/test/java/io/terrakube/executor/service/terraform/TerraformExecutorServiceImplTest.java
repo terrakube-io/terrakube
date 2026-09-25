@@ -14,6 +14,7 @@ import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformProcessData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
@@ -431,15 +432,56 @@ class TerraformExecutorServiceImplTest {
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
+        String diagnosticLine = "{\"@level\":\"error\",\"@message\":\"Error: No value for required variable\","
+                + "\"type\":\"diagnostic\",\"diagnostic\":{\"severity\":\"error\",\"summary\":\"No value for required variable\"}}";
+
         TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
         when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(1));
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(diagnosticLine);
+                    return CompletableFuture.completedFuture(1);
+                });
         doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
 
         subject.plan(terraformJob, tempDir.toFile(), false);
 
         verify(planStructuredOutputService, Mockito.atLeastOnce()).publishFinalPlanSnapshot(
                 eq("org"), eq("42"), eq("1"), any(), any());
+    }
+
+    // Regression test for #3602: when the plan never streamed -json (e.g. a version constraint made
+    // terraform-client drop the flag, #3601) the live lists stay empty. Persisting them - and the
+    // noChangePlan marker with them - rendered "no changes needed" for a plan that had changes
+    // whenever the later show -json summary write failed. Only the summary may publish here, and it
+    // must be published before the queue drain so its write is retried while the job still runs.
+    @Test
+    void planWithoutJsonEventsPublishesOnlyTheSummaryAndBeforeTheDrain() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("Terraform will perform the following actions:");
+                    lineConsumer.accept("  # aws_instance.example will be updated in-place");
+                    lineConsumer.accept("Plan: 0 to add, 1 to change, 0 to destroy.");
+                    return CompletableFuture.completedFuture(2);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(planStructuredOutputService, never()).publishPlanProgress(any(), any(), any(), any(), any());
+        verify(planStructuredOutputService, never()).publishFinalPlanSnapshot(any(), any(), any(), any(), any());
+
+        InOrder inOrder = Mockito.inOrder(planStructuredOutputService, structuredOutputPersistenceQueue);
+        inOrder.verify(planStructuredOutputService).publishPlanSummary(eq(terraformJob), any(File.class), any(), any());
+        inOrder.verify(structuredOutputPersistenceQueue).awaitDrain(any());
     }
 
     // Regression test for the reported bug: running `tofu plan` from the CLI showed only a bare
