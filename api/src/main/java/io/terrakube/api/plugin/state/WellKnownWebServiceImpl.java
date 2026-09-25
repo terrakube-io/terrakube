@@ -34,15 +34,16 @@ public class WellKnownWebServiceImpl {
                     "grant_types": ["authz_code"],
                     "authz": "%s/oauth/authorize",
                     "token": "%s/oauth/token",
-                    "ports": [10000, 10010]
-                  }""", TerraformLoginProperties.CLIENT_ID, apiUrl, apiUrl)
+                    "ports": [%d, %d]
+                  }""", TerraformLoginProperties.CLIENT_ID, apiUrl, apiUrl,
+                    TerraformLoginProperties.PORT_LOW, TerraformLoginProperties.PORT_HIGH)
             : String.format("""
                 {
                     "client": "%s",
                     "grant_types": ["authz_code", "openid", "profile", "email", "offline_access", "groups"],
                     "authz": "%s/auth?scope=openid+profile+email+offline_access+groups",
                     "token": "%s/token",
-                    "ports": [10000, 10010]
+                    "ports": [10000, 10001]
                   }""", dexClientId, dexIssuerUri, dexIssuerUri);
 
         String body = String.format("""

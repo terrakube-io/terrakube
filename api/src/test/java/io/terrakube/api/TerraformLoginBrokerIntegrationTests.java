@@ -58,8 +58,10 @@ class TerraformLoginBrokerIntegrationTests extends ServerApplicationTests {
             .when().get("/oauth/authorize");
         authz.then().statusCode(302).header("Location", containsString("/dex/auth?state="));
         String dexState = authz.getHeader("Location").replaceAll(".*state=", "");
+        String browserCookie = authz.getDetailedCookie("tk_cli_login").getValue();
 
         Response cb = given().redirects().follow(false)
+            .cookie("tk_cli_login", browserCookie)
             .queryParam("code", "dex-code").queryParam("state", dexState)
             .when().get("/oauth/callback");
         cb.then().statusCode(302).header("Location", containsString("/oauth/consent"));
@@ -123,6 +125,7 @@ class TerraformLoginBrokerIntegrationTests extends ServerApplicationTests {
             .when().get("/oauth/authorize");
         String dexState = authz.getHeader("Location").replaceAll(".*state=", "");
         Response cb = given().redirects().follow(false)
+            .cookie("tk_cli_login", authz.getDetailedCookie("tk_cli_login").getValue())
             .queryParam("code", "c").queryParam("state", dexState).when().get("/oauth/callback");
         String cookie = cb.getDetailedCookie("tk_cli_login").getValue();
         Response consent = given().redirects().follow(false).cookie("tk_cli_login", cookie)
@@ -141,5 +144,48 @@ class TerraformLoginBrokerIntegrationTests extends ServerApplicationTests {
             .formParam("code_verifier", verifier).formParam("redirect_uri", "http://localhost:10005/login")
             .formParam("client_id", "terraform-cli")
             .when().post("/oauth/token").then().statusCode(400).body("error", equalTo("invalid_grant"));
+    }
+
+    private Response startLogin(String state) {
+        return given().redirects().follow(false)
+            .queryParam("client_id", "terraform-cli").queryParam("redirect_uri", "http://localhost:10005/login")
+            .queryParam("response_type", "code")
+            .queryParam("code_challenge", PkceUtil.codeChallengeS256(PkceUtil.generateCodeVerifier()))
+            .queryParam("code_challenge_method", "S256").queryParam("state", state)
+            .when().get("/oauth/authorize");
+    }
+
+    @Test
+    void callbackFromAnotherBrowserIsRejected() {
+        stubDex(new DexIdentity("victim@terrakube.io", "V", List.of("TERRAKUBE_DEVELOPERS")));
+        Response authz = startLogin("s3");
+        String dexState = authz.getHeader("Location").replaceAll(".*state=", "");
+
+        // No cookie: the Dex URL was opened in a browser that never hit /oauth/authorize.
+        given().redirects().follow(false)
+            .queryParam("code", "c").queryParam("state", dexState)
+            .when().get("/oauth/callback")
+            .then().statusCode(403);
+
+        // A cookie for a different login session is rejected too.
+        String otherCookie = startLogin("s4").getDetailedCookie("tk_cli_login").getValue();
+        given().redirects().follow(false).cookie("tk_cli_login", otherCookie)
+            .queryParam("code", "c").queryParam("state", dexState)
+            .when().get("/oauth/callback")
+            .then().statusCode(403);
+    }
+
+    @Test
+    void idpCancelRedirectsCliWithAccessDenied() {
+        stubDex(new DexIdentity("a@terrakube.io", "A", List.of("TERRAKUBE_DEVELOPERS")));
+        Response authz = startLogin("s5");
+        String dexState = authz.getHeader("Location").replaceAll(".*state=", "");
+
+        given().redirects().follow(false)
+            .cookie("tk_cli_login", authz.getDetailedCookie("tk_cli_login").getValue())
+            .queryParam("error", "access_denied").queryParam("state", dexState)
+            .when().get("/oauth/callback")
+            .then().statusCode(302)
+            .header("Location", equalTo("http://localhost:10005/login?error=access_denied&state=s5"));
     }
 }

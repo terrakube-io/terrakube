@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.contains;
 
 public class WellKnownTests extends OpenRegistryApplicationTests {
 
@@ -27,6 +27,6 @@ public class WellKnownTests extends OpenRegistryApplicationTests {
                 .statusCode(HttpStatus.SC_OK)
                 .body("'modules.v1'", containsString("/terraform/modules/v1/"))
                 .body("'login.v1'.authz", containsString("https://sample.com/auth"))
-                .body("'login.v1'.ports", hasItems(10000, 10010));
+                .body("'login.v1'.ports", contains(10000, 10001));
     }
 }

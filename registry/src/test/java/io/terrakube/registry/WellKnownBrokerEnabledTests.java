@@ -6,7 +6,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.contains;
 
 @TestPropertySource(properties = {
     "io.terrakube.registry.login-broker-enabled=true",
@@ -23,6 +23,6 @@ public class WellKnownBrokerEnabledTests extends OpenRegistryApplicationTests {
                 .body("'login.v1'.client", equalTo("terraform-cli"))
                 .body("'login.v1'.authz", equalTo("https://api.example.test/oauth/authorize"))
                 .body("'login.v1'.token", equalTo("https://api.example.test/oauth/token"))
-                .body("'login.v1'.ports", hasItems(10000, 10010));
+                .body("'login.v1'.ports", contains(10000, 10010));
     }
 }

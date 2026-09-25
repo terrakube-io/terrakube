@@ -33,6 +33,20 @@ public class PatService {
     }
 
     public String createToken(int days, String description, Object name, Object email, Object groups, String source) {
+        return issueToken(days, description, name, email, groups, source, null).token();
+    }
+
+    public record IssuedToken(UUID id, String token) {
+    }
+
+    /**
+     * Creates a PAT and returns its id alongside the signed token. When createdBy is set the row is
+     * attributed to that user; needed when the token is minted from an unauthenticated endpoint
+     * (the terraform login broker), where the auditing listener would otherwise record the
+     * created_by of the anonymous request.
+     */
+    public IssuedToken issueToken(int days, String description, Object name, Object email, Object groups,
+                                  String source, String createdBy) {
         String jws = "";
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64Key));
 
@@ -79,34 +93,16 @@ public class PatService {
         } catch (Exception e) {
             log.error("Error generating token", e);
             patRepository.delete(pat);
+            return new IssuedToken(pat.getId(), jws);
         }
-        return jws;
-    }
-
-    public void touchLastUsed(UUID patId) {
-        patRepository.findById(patId).ifPresent(pat -> {
-            pat.setLastUsedAt(new Date());
-            patRepository.save(pat);
-        });
-    }
-
-    /**
-     * Attribute a token to a user after the fact. Needed when the token is minted from an
-     * unauthenticated endpoint (the terraform login broker), where the auditing listener would
-     * otherwise record created_by as "Internal". @CreatedBy is only populated on insert, so this
-     * explicit set on a subsequent save sticks.
-     */
-    public void attributeTo(UUID patId, String userEmail) {
-        if (userEmail == null || userEmail.isBlank()) {
-            return;
+        // @CreatedBy is only populated on insert, so this explicit set on a subsequent save sticks.
+        if (createdBy != null && !createdBy.isBlank()) {
+            pat.setCreatedBy(createdBy);
+            pat.setUpdatedBy(createdBy);
+            pat = patRepository.save(pat);
         }
-        patRepository.findById(patId).ifPresent(pat -> {
-            pat.setCreatedBy(userEmail);
-            pat.setUpdatedBy(userEmail);
-            patRepository.save(pat);
-        });
+        return new IssuedToken(pat.getId(), jws);
     }
-
 
     public boolean deleteToken(String tokenId){
         Optional<Pat> searchPat = patRepository.findById(UUID.fromString(tokenId));

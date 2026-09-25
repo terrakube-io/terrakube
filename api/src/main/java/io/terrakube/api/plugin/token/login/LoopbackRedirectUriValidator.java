@@ -8,7 +8,7 @@ import java.util.Set;
 @Component
 public class LoopbackRedirectUriValidator {
 
-    private static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]");
+    static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]");
 
     public void validate(String redirectUri) {
         URI uri;

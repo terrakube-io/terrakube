@@ -41,12 +41,10 @@ class PatServiceSourceTests extends ServerApplicationTests {
     }
 
     @Test
-    void touchLastUsedSetsTimestamp() {
+    void issueTokenReturnsIdAndAttributesCreator() {
         JSONArray groups = new JSONArray();
-        String jws = patService.createToken(7, "t", "N", "e@e.io", groups, "CLI_LOGIN");
-        UUID id = jti(jws);
-        assertNull(patRepository.findById(id).orElseThrow().getLastUsedAt());
-        patService.touchLastUsed(id);
-        assertNotNull(patRepository.findById(id).orElseThrow().getLastUsedAt());
+        PatService.IssuedToken issued = patService.issueToken(7, "t", "N", "e@e.io", groups, "CLI_LOGIN", "e@e.io");
+        assertEquals(jti(issued.token()), issued.id());
+        assertEquals("e@e.io", patRepository.findById(issued.id()).orElseThrow().getCreatedBy());
     }
 }

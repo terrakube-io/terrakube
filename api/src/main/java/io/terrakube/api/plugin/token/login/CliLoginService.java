@@ -49,8 +49,11 @@ public class CliLoginService {
     public record TokenResponse(String accessToken, String tokenType, long expiresIn) {
     }
 
+    public record AuthorizationStart(String sessionId, String location) {
+    }
+
     @Transactional
-    public String startAuthorization(AuthorizeRequest req) {
+    public AuthorizationStart startAuthorization(AuthorizeRequest req) {
         if (!TerraformLoginProperties.CLIENT_ID.equals(req.clientId())) {
             throw new BrokerBadRequestException("unknown client_id");
         }
@@ -77,9 +80,9 @@ public class CliLoginService {
         session.setExpiresAt(new Date(System.currentTimeMillis() + SESSION_TTL_MS));
         session = repository.save(session);
 
-        return dexExchangeClient.buildAuthorizeRedirect(
-            session.getId().toString(),
-            PkceUtil.codeChallengeS256(session.getDexCodeVerifier()));
+        String sessionId = session.getId().toString();
+        return new AuthorizationStart(sessionId, dexExchangeClient.buildAuthorizeRedirect(
+            sessionId, PkceUtil.codeChallengeS256(session.getDexCodeVerifier())));
     }
 
     @Transactional
@@ -111,6 +114,21 @@ public class CliLoginService {
         session.setStatus(CliAuthSessionStatus.PENDING_CONSENT);
         repository.save(session);
         return session.getId().toString();
+    }
+
+    /**
+     * The identity provider redirected back with an error (e.g. the user cancelled at Dex). Fail
+     * the session and send the browser to the CLI's loopback listener so terraform exits cleanly.
+     */
+    @Transactional
+    public String handleCallbackError(String state, String error) {
+        CliAuthSession session = loadActive(parseId(state));
+        if (session.getStatus() != CliAuthSessionStatus.PENDING_IDP) {
+            throw new BrokerBadRequestException("session is not awaiting identity provider");
+        }
+        fail(session);
+        String cliError = "access_denied".equals(error) ? "access_denied" : "server_error";
+        return session.getCliRedirectUri() + "?error=" + cliError + "&state=" + urlEnc(session.getCliState());
     }
 
     @Transactional(readOnly = true)
@@ -173,6 +191,12 @@ public class CliLoginService {
         if (!valid) {
             throw new BrokerBadRequestException("invalid_grant");
         }
+        // Claim the code atomically before minting: of two concurrent redeems only one sees a
+        // row change, the other gets invalid_grant. A failure below rolls the claim back.
+        if (repository.transitionStatus(session.getId(),
+                CliAuthSessionStatus.CODE_ISSUED, CliAuthSessionStatus.EXCHANGED) != 1) {
+            throw new BrokerBadRequestException("invalid_grant");
+        }
 
         List<String> groups;
         try {
@@ -186,17 +210,14 @@ public class CliLoginService {
             ? session.getChosenName()
             : "terraform login " + DateTimeFormatter.ISO_LOCAL_DATE
                 .withZone(ZoneOffset.UTC).format(Instant.now());
-        String jws = patService.createToken(session.getChosenDays(), description,
-            session.getIdentityName(), session.getIdentityEmail(), groups, "CLI_LOGIN");
+        // The token is minted from an unauthenticated endpoint; attribute the pat row to the
+        // user who authenticated upstream so the audit trail shows who authorized it.
+        String jws = patService.issueToken(session.getChosenDays(), description,
+            session.getIdentityName(), session.getIdentityEmail(), groups, "CLI_LOGIN",
+            session.getIdentityEmail()).token();
         if (jws == null || jws.isBlank()) {
             throw new BrokerUpstreamException("token generation failed");
         }
-        // The token is minted from an unauthenticated endpoint; attribute the pat row to the
-        // user who authenticated upstream so the audit trail shows who authorized it.
-        patService.attributeTo(jtiOf(jws), session.getIdentityEmail());
-
-        session.setStatus(CliAuthSessionStatus.EXCHANGED);
-        repository.save(session);
         return new TokenResponse(jws, "Bearer", session.getChosenDays() * 86400L);
     }
 
@@ -227,11 +248,6 @@ public class CliLoginService {
         byte[] b = new byte[32];
         RANDOM.nextBytes(b);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
-    }
-
-    private static UUID jtiOf(String jws) {
-        String payload = new String(Base64.getUrlDecoder().decode(jws.split("\\.")[1]), StandardCharsets.UTF_8);
-        return UUID.fromString(payload.replaceAll(".*\"jti\":\"([^\"]+)\".*", "$1"));
     }
 
     static String sha256Hex(String input) {

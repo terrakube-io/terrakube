@@ -17,6 +17,8 @@ public class WellKnownWebServiceImpl {
     @GetMapping(produces = "application/json")
     public ResponseEntity<String> terraformJson() {
         String hostname = openRegistryProperties.getHostname();
+        // The broker client id and port range mirror TerraformLoginProperties in the api module,
+        // which the registry does not depend on. The Dex path keeps the ports Dex has registered.
         String loginBlock = openRegistryProperties.isLoginBrokerEnabled()
             ? String.format("""
                 {
@@ -32,7 +34,7 @@ public class WellKnownWebServiceImpl {
                     "grant_types": ["authz_code", "openid", "profile", "email", "offline_access", "groups"],
                     "authz": "%s/auth?scope=openid+profile+email+offline_access+groups",
                     "token": "%s/token",
-                    "ports": [10000, 10010]
+                    "ports": [10000, 10001]
                   }""", openRegistryProperties.getClientId(),
                         openRegistryProperties.getIssuerUri(), openRegistryProperties.getIssuerUri());
 

@@ -34,10 +34,15 @@ public class OAuthBrokerController {
             @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
             @RequestParam("state") String state) {
         try {
-            String location = cliLoginService.startAuthorization(new CliLoginService.AuthorizeRequest(
-                clientId, redirectUri, responseType, codeChallenge,
-                codeChallengeMethod == null ? "S256" : codeChallengeMethod, state));
-            return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(location)).build();
+            CliLoginService.AuthorizationStart start = cliLoginService.startAuthorization(
+                new CliLoginService.AuthorizeRequest(clientId, redirectUri, responseType, codeChallenge,
+                    codeChallengeMethod == null ? "S256" : codeChallengeMethod, state));
+            // Bind the flow to this browser: /callback only proceeds when the same browser
+            // presents this cookie (RFC 6749 section 10.12).
+            return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.SET_COOKIE, cliLoginCookie.build(start.sessionId()).toString())
+                .location(URI.create(start.location()))
+                .build();
         } catch (BrokerBadRequestException e) {
             return htmlError(e.getMessage());
         }
@@ -45,10 +50,25 @@ public class OAuthBrokerController {
 
     @GetMapping("/callback")
     public ResponseEntity<String> callback(
-            @RequestParam("code") String code,
-            @RequestParam("state") String state,
+            @CookieValue(value = CliLoginCookie.COOKIE_NAME, required = false) String cookie,
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "error", required = false) String error,
             @RequestParam(value = "iss", required = false) String iss) {
+        Optional<String> boundSession = cliLoginCookie.verify(cookie);
+        if (state == null || boundSession.isEmpty() || !boundSession.get().equals(state)) {
+            return htmlForbidden("This login was not started from this browser. Run terraform login again.");
+        }
         try {
+            if (error != null && !error.isBlank()) {
+                return ResponseEntity.status(HttpStatus.FOUND)
+                    .header(HttpHeaders.SET_COOKIE, cliLoginCookie.clear().toString())
+                    .location(URI.create(cliLoginService.handleCallbackError(state, error)))
+                    .build();
+            }
+            if (code == null || code.isBlank()) {
+                return htmlError("Missing authorization code.");
+            }
             String sessionId = cliLoginService.handleCallback(code, state, iss);
             return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.SET_COOKIE, cliLoginCookie.build(sessionId).toString())
@@ -94,7 +114,10 @@ public class OAuthBrokerController {
             String location = "deny".equals(decision)
                 ? cliLoginService.deny(sessionId.get())
                 : cliLoginService.authorize(sessionId.get(), days, name);
-            return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(location)).build();
+            return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.SET_COOKIE, cliLoginCookie.clear().toString())
+                .location(URI.create(location))
+                .build();
         } catch (BrokerBadRequestException e) {
             try {
                 CliAuthSession session = cliLoginService.requireConsentSession(sessionId.get());

@@ -62,13 +62,6 @@ public class ConsentPageRenderer {
             """.formatted(escape(message)));
     }
 
-    public String renderSuccess() {
-        return page("Terrakube CLI login", """
-            <h1>You're all set</h1>
-            <p class="lead">Return to your terminal &mdash; you can close this window.</p>
-            """);
-    }
-
     private String page(String title, String body) {
         return """
             <!doctype html><html lang="en"><head><meta charset="utf-8">

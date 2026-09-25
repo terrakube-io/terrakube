@@ -8,7 +8,7 @@ import org.springframework.test.context.TestPropertySource;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.contains;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -26,6 +26,6 @@ class WellKnownLoginBrokerEnabledTests extends ServerApplicationTests {
             .body("'login.v1'.authz", equalTo("https://api.example.test/oauth/authorize"))
             .body("'login.v1'.token", equalTo("https://api.example.test/oauth/token"))
             .body("'login.v1'.grant_types", hasItem("authz_code"))
-            .body("'login.v1'.ports", hasItems(10000, 10010));
+            .body("'login.v1'.ports", contains(10000, 10010));
     }
 }

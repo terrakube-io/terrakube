@@ -132,14 +132,8 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             if (jti == null) {
                 return;
             }
-            UUID id = UUID.fromString(jti);
-            patRepository.findById(id).ifPresent(pat -> {
-                Date last = pat.getLastUsedAt();
-                if (last == null || System.currentTimeMillis() - last.getTime() > LAST_USED_THROTTLE_MS) {
-                    pat.setLastUsedAt(new Date());
-                    patRepository.save(pat);
-                }
-            });
+            long now = System.currentTimeMillis();
+            patRepository.stampLastUsed(UUID.fromString(jti), new Date(now), new Date(now - LAST_USED_THROTTLE_MS));
         } catch (Exception e) {
             log.debug("Could not stamp PAT last_used_at: {}", e.getMessage());
         }
