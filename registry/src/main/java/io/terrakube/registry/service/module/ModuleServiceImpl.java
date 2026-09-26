@@ -50,7 +50,7 @@ public class ModuleServiceImpl implements ModuleService {
                       id
                       name
                       provider
-                      version {
+                      version(filter: "removed==false") {
                         edges {
                           node {
                             id

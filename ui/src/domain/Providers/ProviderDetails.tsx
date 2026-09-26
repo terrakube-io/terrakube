@@ -5,8 +5,18 @@ import { IconContext } from "react-icons";
 import { RiFolderHistoryLine } from "react-icons/ri";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { getErrorMessage } from "@/config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
-import { getProvider, deleteProviderCascade } from "./providerService";
+import VersionStatusModal, {
+  recommendedVersion,
+  VersionStatus,
+  VersionStatusAlert,
+  versionMenuItems,
+  versionStatusChangeMessage,
+} from "@/components/modals/VersionStatusModal";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { compareVersions } from "../Workspaces/Workspaces";
+import { getProvider, deleteProviderCascade, updateVersionStatus } from "./providerService";
 import { ProviderModel, ProviderVersionModel } from "./types";
 
 type Props = {
@@ -22,7 +32,7 @@ type VersionInfo = {
   id: string;
   versionNumber: string;
   protocols: string;
-};
+} & VersionStatus;
 
 export const ProviderDetails = ({ organizationName }: Props) => {
   const { orgid, providerid } = useParams<Params>();
@@ -32,6 +42,8 @@ export const ProviderDetails = ({ organizationName }: Props) => {
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [versionStatusOpen, setVersionStatusOpen] = useState(false);
+  const { permissions } = useOrgPermissions();
 
   // Load provider data
   useEffect(() => {
@@ -48,17 +60,15 @@ export const ProviderDetails = ({ organizationName }: Props) => {
           response.included.forEach((item) => {
             if (item.type === "version") {
               const v = item as ProviderVersionModel;
-              versionList.push({
-                id: v.id,
-                versionNumber: v.attributes.versionNumber,
-                protocols: v.attributes.protocols,
-              });
+              versionList.push({ id: v.id, ...v.attributes });
             }
           });
         }
+        versionList.sort((a, b) => compareVersions(b.versionNumber, a.versionNumber));
         setVersions(versionList);
-        if (versionList.length > 0) {
-          setSelectedVersion(versionList[0].versionNumber);
+        const initial = recommendedVersion(versionList) ?? versionList[0];
+        if (initial) {
+          setSelectedVersion(initial.versionNumber);
         }
       })
       .catch((error) => {
@@ -105,6 +115,21 @@ export const ProviderDetails = ({ organizationName }: Props) => {
       })
       .finally(() => setDeleting(false));
   }, [orgid, providerid, navigate]);
+
+  const selected = versions.find((v) => v.versionNumber === selectedVersion);
+  const upgradeTo = recommendedVersion(versions)?.versionNumber;
+
+  const saveVersionStatus = async (status: Required<VersionStatus>) => {
+    if (!orgid || !providerid || !selected) return;
+    try {
+      await updateVersionStatus(orgid, providerid, selected.id, status);
+      setVersions((list) => list.map((v) => (v.id === selected.id ? { ...v, ...status } : v)));
+      setVersionStatusOpen(false);
+      message.success(versionStatusChangeMessage(selected.versionNumber, status, "provider"));
+    } catch (error) {
+      message.error("Failed to update version: " + getErrorMessage(error));
+    }
+  };
 
   const registryHostname = useMemo(() => {
     try {
@@ -164,10 +189,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                 <Typography.Text type="secondary">Version </Typography.Text>
                 <Dropdown
                   menu={{
-                    items: versions.map((v) => ({
-                      key: v.versionNumber,
-                      label: v.versionNumber,
-                    })),
+                    items: versionMenuItems(versions, (v) => v.versionNumber),
                     onClick: ({ key }) => setSelectedVersion(key),
                     selectedKeys: [selectedVersion],
                   }}
@@ -192,6 +214,8 @@ export const ProviderDetails = ({ organizationName }: Props) => {
             )}
           </Space>
 
+          {selected && <VersionStatusAlert version={selected.versionNumber} status={selected} upgradeTo={upgradeTo} />}
+
           {/* Overview content */}
           <Row gutter={32} style={{ marginTop: 16 }}>
             <Col span={16}>
@@ -209,6 +233,15 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                 <Dropdown
                   menu={{
                     items: [
+                      ...(permissions.manageProvider && selected
+                        ? [
+                            {
+                              key: "versionStatus",
+                              label: `Change status of version ${selectedVersion}…`,
+                              onClick: () => setVersionStatusOpen(true),
+                            },
+                          ]
+                        : []),
                       {
                         key: "delete",
                         label: (
@@ -256,25 +289,40 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                   .
                 </Typography.Text>
 
-                <pre
-                  style={{
-                    background: "#f5f5f5",
-                    border: "1px solid #e8e8e8",
-                    borderRadius: 6,
-                    padding: 12,
-                    marginTop: 12,
-                    fontSize: 12,
-                    lineHeight: 1.6,
-                    overflow: "auto",
-                    color: "#333",
-                  }}
-                >
-                  {terraformSnippet}
-                </pre>
+                {selected?.removed ? (
+                  <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 13 }}>
+                    Version {selected.versionNumber} is no longer served by the registry.
+                    {upgradeTo ? ` Use version ${upgradeTo} instead.` : ""}
+                  </Typography.Paragraph>
+                ) : (
+                  <>
+                    {selected?.deprecated && (
+                      <Typography.Paragraph type="warning" style={{ marginTop: 12, marginBottom: 0, fontSize: 13 }}>
+                        Version {selected.versionNumber} is deprecated.
+                        {upgradeTo && upgradeTo !== selected.versionNumber ? ` Consider version ${upgradeTo}.` : ""}
+                      </Typography.Paragraph>
+                    )}
+                    <pre
+                      style={{
+                        background: "#f5f5f5",
+                        border: "1px solid #e8e8e8",
+                        borderRadius: 6,
+                        padding: 12,
+                        marginTop: 12,
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        overflow: "auto",
+                        color: "#333",
+                      }}
+                    >
+                      {terraformSnippet}
+                    </pre>
 
-                <Button icon={<CopyOutlined />} onClick={handleCopySnippet} style={{ marginTop: 8 }}>
-                  Copy configuration
-                </Button>
+                    <Button icon={<CopyOutlined />} onClick={handleCopySnippet} style={{ marginTop: 8 }}>
+                      Copy configuration
+                    </Button>
+                  </>
+                )}
 
                 <Divider />
 
@@ -317,6 +365,16 @@ export const ProviderDetails = ({ organizationName }: Props) => {
             </Col>
           </Row>
         </div>
+      )}
+      {selected && (
+        <VersionStatusModal
+          open={versionStatusOpen}
+          version={selected.versionNumber}
+          kind="provider"
+          status={selected}
+          onCancel={() => setVersionStatusOpen(false)}
+          onSave={saveVersionStatus}
+        />
       )}
     </PageWrapper>
   );

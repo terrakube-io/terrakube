@@ -311,6 +311,9 @@ export type ModuleAttributes = {
 export type ModuleVersionAttributes = {
   version: string;
   commit: string;
+  deprecated?: boolean;
+  removed?: boolean;
+  deprecationMessage?: string | null;
 };
 
 export type FlatModule = {
