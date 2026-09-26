@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+    <!-- Skips modules whose inputs did not change. Configured in maven-build-cache-config.xml. -->
+    <extension>
+        <groupId>org.apache.maven.extensions</groupId>
+        <artifactId>maven-build-cache-extension</artifactId>
+        <version>1.3.0</version>
+    </extension>
+</extensions>

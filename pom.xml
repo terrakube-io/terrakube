@@ -15,7 +15,8 @@
     <packaging>pom</packaging>
 
     <properties>
-        <revision>2.32.0</revision>
+        <!-- Development version. Releases pass the tag with -Drevision=<version>. -->
+        <revision>0.0.0-SNAPSHOT</revision>
         <sonar.organization>azbuilder</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.project.key>AzBuilder_azb-server</sonar.project.key>

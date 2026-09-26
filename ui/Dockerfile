@@ -25,9 +25,6 @@ RUN mkdir -p /etc/sbom && \
 # => Run container (nginx-unprivileged:latest)
 FROM nginxinc/nginx-unprivileged:latest@sha256:9d689e987337916e713a2d5fa84966550d9532e4cb512e7d6ad99df87ffe1ec8
 
-# Default Terraform version, updated at build time
-ARG REACT_APP_TERRAKUBE_VERSION=2.0.0
-
 WORKDIR /usr/share/nginx/html
 
 # Static build
