@@ -2,13 +2,13 @@ package io.terrakube.api;
 
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
-import io.terrakube.api.repository.ProviderImplementationRepository;
 import io.terrakube.api.repository.ProviderRepository;
 import io.terrakube.api.repository.ProviderVersionRepository;
+import io.terrakube.api.rs.VersionStatus;
+import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.module.ModuleVersion;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.provider.implementation.Version;
-import io.terrakube.api.rs.team.Team;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,15 +21,14 @@ import java.util.UUID;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.when;
 
 class RegistryVersionDeprecationTests extends ServerApplicationTests {
 
     private static final String ORGANIZATION_ID = "f5365c9e-bc11-4781-b649-45a281ccdd4a";
     private static final String MODULE_ID = "4e92ff1e-9937-400f-848d-f0ea367927bf";
-    private static final String VIEW_ONLY_TEAM = "REGISTRY_VIEW_ONLY";
+    private static final String MANAGER_TEAM = "TERRAKUBE_DEVELOPERS";
 
     @Autowired
     ModuleRepository moduleRepository;
@@ -39,22 +38,21 @@ class RegistryVersionDeprecationTests extends ServerApplicationTests {
     ProviderRepository providerRepository;
     @Autowired
     ProviderVersionRepository providerVersionRepository;
-    @Autowired
-    ProviderImplementationRepository providerImplementationRepository;
 
     private ModuleVersion moduleVersion;
+    private String originalLatestVersion;
     private Provider provider;
-    private Team viewOnlyTeam;
-    private Version firstProviderVersion;
 
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
+        Module module = moduleRepository.findById(UUID.fromString(MODULE_ID)).orElseThrow();
+        originalLatestVersion = module.getLatestVersion();
         moduleVersion = new ModuleVersion();
-        moduleVersion.setModule(moduleRepository.findById(UUID.fromString(MODULE_ID)).orElseThrow());
-        moduleVersion.setVersion("9.9.9");
+        moduleVersion.setModule(module);
+        moduleVersion.setVersion("99.0.0");
         moduleVersion.setCommit("0000000");
         moduleVersion = moduleVersionRepository.save(moduleVersion);
 
@@ -62,141 +60,116 @@ class RegistryVersionDeprecationTests extends ServerApplicationTests {
         provider.setName("deprecation-test");
         provider.setOrganization(organizationRepository.findById(UUID.fromString(ORGANIZATION_ID)).orElseThrow());
         provider = providerRepository.save(provider);
-        firstProviderVersion = providerVersionRepository.save(providerVersion("1.0.0", false, false, null));
-        providerVersionRepository.save(providerVersion("1.1.0", true, false, "Removal on 2026-12-31"));
-        providerVersionRepository.save(providerVersion("1.2.0", false, true, "Broken release, use 1.3.0"));
-
-        viewOnlyTeam = new Team();
-        viewOnlyTeam.setName(VIEW_ONLY_TEAM);
-        viewOnlyTeam.setOrganization(provider.getOrganization());
-        viewOnlyTeam = teamRepository.save(viewOnlyTeam);
+        providerVersionRepository.save(providerVersion("1.0.0", VersionStatus.active, null));
+        providerVersionRepository.save(providerVersion("1.1.0", VersionStatus.deprecated, "Removal on 2026-12-31"));
+        providerVersionRepository.save(providerVersion("1.2.0", VersionStatus.removed, "Broken release, use 1.3.0"));
     }
 
     @AfterEach
     void cleanup() {
-        moduleVersionRepository.delete(moduleVersion);
-        providerImplementationRepository.deleteAll(providerImplementationRepository.findAllByVersionId(firstProviderVersion.getId()));
+        moduleVersionRepository.findById(moduleVersion.getId()).ifPresent(moduleVersionRepository::delete);
+        Module module = moduleRepository.findById(UUID.fromString(MODULE_ID)).orElseThrow();
+        module.setLatestVersion(originalLatestVersion);
+        moduleRepository.save(module);
         providerVersionRepository.deleteAll(providerVersionRepository.findAllByProviderId(provider.getId()));
         providerRepository.delete(provider);
-        teamRepository.delete(viewOnlyTeam);
     }
 
-    private Version providerVersion(String number, boolean deprecated, boolean removed, String message) {
+    private Version providerVersion(String number, VersionStatus status, String message) {
         Version version = new Version();
         version.setProvider(provider);
         version.setVersionNumber(number);
         version.setProtocols("5.0");
-        version.setDeprecated(deprecated);
-        version.setRemoved(removed);
+        version.setStatus(status);
         version.setDeprecationMessage(message);
         return version;
     }
 
-    private int patchModuleVersion(String group) {
+    private int patchModuleVersion(String attributes) {
         return given()
-                .headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/vnd.api+json")
+                .headers("Authorization", "Bearer " + generatePAT(MANAGER_TEAM), "Content-Type", "application/vnd.api+json")
                 .body("""
-                        {"data":{"type":"module_version","id":"%s","attributes":{"deprecated":true,"deprecationMessage":"Use 10.x"}}}
-                        """.formatted(moduleVersion.getId()))
+                        {"data":{"type":"module_version","id":"%s","attributes":%s}}
+                        """.formatted(moduleVersion.getId(), attributes))
                 .when()
                 .patch("/api/v1/organization/" + ORGANIZATION_ID + "/module/" + MODULE_ID + "/version/" + moduleVersion.getId())
                 .then()
                 .extract().statusCode();
     }
 
-    @Test
-    void moduleManagerCanDeprecateModuleVersion() {
-        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("TERRAKUBE_DEVELOPERS"));
+    private ModuleVersion savedModuleVersion() {
+        return moduleVersionRepository.findById(moduleVersion.getId()).orElseThrow();
+    }
 
-        ModuleVersion saved = moduleVersionRepository.findById(moduleVersion.getId()).orElseThrow();
-        assertTrue(saved.isDeprecated());
-        assertEquals("Use 10.x", saved.getDeprecationMessage());
+    private String latestVersion() {
+        return moduleRepository.findById(UUID.fromString(MODULE_ID)).orElseThrow().getLatestVersion();
     }
 
     @Test
-    void teamWithoutManageModuleCannotDeprecateModuleVersion() {
-        assertEquals(HttpStatus.FORBIDDEN.value(), patchModuleVersion(VIEW_ONLY_TEAM));
-        assertFalse(moduleVersionRepository.findById(moduleVersion.getId()).orElseThrow().isDeprecated());
-    }
-
-    // Adding an implementation updates the version's implementation collection, so it now goes
-    // through the version's update permission as well.
-    private int createImplementation(String group) {
-        return given()
-                .headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/vnd.api+json")
-                .body("""
-                        {"data":{"type":"implementation","attributes":{"os":"linux","arch":"amd64","filename":"p.zip","downloadUrl":"https://example.com/p.zip","shasumsUrl":"https://example.com/SHA256SUMS","shasumsSignatureUrl":"https://example.com/SHA256SUMS.sig","shasum":"abc","keyId":"KEY","asciiArmor":"ARMOR","trustSignature":"","source":"test","sourceUrl":"https://example.com"}}}
-                        """)
-                .when()
-                .post("/api/v1/organization/" + ORGANIZATION_ID + "/provider/" + provider.getId() + "/version/"
-                        + firstProviderVersion.getId() + "/implementation")
-                .then()
-                .extract().statusCode();
+    void newVersionsAreActive() {
+        assertEquals(VersionStatus.active, savedModuleVersion().getStatus());
     }
 
     @Test
-    void providerManagerCanStillAddImplementations() {
-        assertEquals(HttpStatus.CREATED.value(), createImplementation("TERRAKUBE_DEVELOPERS"));
+    void managerCanDeprecateModuleVersion() {
+        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("""
+                {"status":"deprecated","deprecationMessage":"Use 100.x"}"""));
+
+        assertEquals(VersionStatus.deprecated, savedModuleVersion().getStatus());
+        assertEquals("Use 100.x", savedModuleVersion().getDeprecationMessage());
+    }
+
+    // The message can reach a terminal: C0/C1 controls start escape sequences and bidi overrides reorder text.
+    @Test
+    void controlAndFormatCharactersAreStrippedFromTheMessage() {
+        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("""
+                {"status":"deprecated","deprecationMessage":"\\u001b[31mUse\\u009b2J 100.x\\u202e\\n"}"""));
+
+        assertEquals("[31mUse 2J 100.x", savedModuleVersion().getDeprecationMessage());
     }
 
     @Test
-    void teamWithoutManageProviderCannotAddImplementations() {
-        assertEquals(HttpStatus.FORBIDDEN.value(), createImplementation(VIEW_ONLY_TEAM));
-    }
+    void messageLongerThan1024CharactersIsRejected() {
+        assertEquals(HttpStatus.BAD_REQUEST.value(), patchModuleVersion("""
+                {"status":"deprecated","deprecationMessage":"%s"}""".formatted("x".repeat(1025))));
 
-    // Viewers must not be able to undo a removal by deleting the version (the refresh job would
-    // re-import it as active) or by creating a second, active row for the same version number.
-    @Test
-    void teamWithoutManageModuleCannotDeleteModuleVersion() {
-        given()
-                .headers("Authorization", "Bearer " + generatePAT(VIEW_ONLY_TEAM))
-                .when()
-                .delete("/api/v1/organization/" + ORGANIZATION_ID + "/module/" + MODULE_ID + "/version/" + moduleVersion.getId())
-                .then()
-                .statusCode(HttpStatus.FORBIDDEN.value());
-        assertTrue(moduleVersionRepository.findById(moduleVersion.getId()).isPresent());
-    }
-
-    private int createProviderVersion(String group) {
-        return given()
-                .headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/vnd.api+json")
-                .body("""
-                        {"data":{"type":"version","attributes":{"versionNumber":"2.0.0","protocols":"5.0"}}}
-                        """)
-                .when()
-                .post("/api/v1/organization/" + ORGANIZATION_ID + "/provider/" + provider.getId() + "/version")
-                .then()
-                .extract().statusCode();
+        assertEquals(VersionStatus.active, savedModuleVersion().getStatus());
     }
 
     @Test
-    void providerManagerCanCreateProviderVersion() {
-        assertEquals(HttpStatus.CREATED.value(), createProviderVersion("TERRAKUBE_DEVELOPERS"));
+    void removingTheNewestVersionMovesLatestVersionWithoutARefresh() {
+        // Deprecated versions are still served, so they still count as the latest version.
+        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("""
+                {"status":"deprecated"}"""));
+        assertEquals("99.0.0", latestVersion());
+
+        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("""
+                {"status":"removed"}"""));
+        assertNotEquals("99.0.0", latestVersion());
+
+        assertEquals(HttpStatus.NO_CONTENT.value(), patchModuleVersion("""
+                {"status":"active"}"""));
+        assertEquals("99.0.0", latestVersion());
     }
 
+    // The registry relies on these exact filters: it lists served versions with status!=removed and
+    // finds deprecated and removed ones with status!=active.
     @Test
-    void teamWithoutManageProviderCannotCreateProviderVersion() {
-        assertEquals(HttpStatus.FORBIDDEN.value(), createProviderVersion(VIEW_ONLY_TEAM));
-    }
-
-    // The registry relies on these exact filters and on the deprecationMessage alias, because the
-    // typed client it uses has no deprecation fields.
-    @Test
-    void graphQlFiltersRemovedVersionsAndAliasesDeprecationMessage() {
+    void graphQlFiltersVersionsByStatus() {
         String query = """
-                { "query": "{ organization(ids: [\\"%s\\"]) { edges { node { provider(filter: \\"name==deprecation-test\\") { edges { node { available: version(filter: \\"removed==false\\") { edges { node { versionNumber } } } notices: version(filter: \\"deprecated==true,removed==true\\") { edges { node { versionNumber protocols: deprecationMessage } } } } } } } } } }" }
+                { "query": "{ organization(ids: [\\"%s\\"]) { edges { node { provider(filter: \\"name==deprecation-test\\") { edges { node { served: version(filter: \\"status!=removed\\") { edges { node { versionNumber } } } flagged: version(filter: \\"status!=active\\") { edges { node { versionNumber } } } } } } } } } }" }
                 """.formatted(ORGANIZATION_ID);
 
         given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/json")
+                .headers("Authorization", "Bearer " + generatePAT(MANAGER_TEAM), "Content-Type", "application/json")
                 .body(query)
                 .when()
                 .post("/graphql/api/v1")
                 .then()
                 .statusCode(HttpStatus.OK.value())
-                .body("data.organization.edges[0].node.provider.edges[0].node.available.edges.node.versionNumber",
+                .body("data.organization.edges[0].node.provider.edges[0].node.served.edges.node.versionNumber",
                         containsInAnyOrder("1.0.0", "1.1.0"))
-                .body("data.organization.edges[0].node.provider.edges[0].node.notices.edges.node.protocols",
-                        containsInAnyOrder("Removal on 2026-12-31", "Broken release, use 1.3.0"));
+                .body("data.organization.edges[0].node.provider.edges[0].node.flagged.edges.node.versionNumber",
+                        containsInAnyOrder("1.1.0", "1.2.0"));
     }
 }

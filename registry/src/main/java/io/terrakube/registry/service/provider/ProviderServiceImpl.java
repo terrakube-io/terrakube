@@ -2,17 +2,16 @@ package io.terrakube.registry.service.provider;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.graphql.GraphQLRequest;
+import io.terrakube.registry.configuration.CacheConfig;
 import io.terrakube.registry.controller.model.provider.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -32,7 +31,7 @@ public class ProviderServiceImpl implements ProviderService {
             "                node{\n" +
             "                    id\n" +
             "                    name\n" +
-            "                    version(filter: \"removed==false\"){\n" +
+            "                    version(filter: \"status!=removed\"){\n" +
             "                        edges{\n" +
             "                            node{\n" +
             "                                id\n" +
@@ -69,7 +68,7 @@ public class ProviderServiceImpl implements ProviderService {
             "                node{\n" +
             "                    id\n" +
             "                    name\n" +
-            "                    version(filter: \"versionNumber==%s;removed==false\"){\n" +
+            "                    version(filter: \"versionNumber==%s;status!=removed\"){\n" +
             "                        edges{\n" +
             "                            node{\n" +
             "                                id\n" +
@@ -105,9 +104,7 @@ public class ProviderServiceImpl implements ProviderService {
             "  }\n" +
             "}";
 
-    // The client's typed Version model has no deprecation fields, so the message is aliased into
-    // "protocols". Removed versions are the ones missing from the available versions list.
-    private static final String SEARCH_PROVIDER_VERSION_NOTICES = """
+    private static final String SEARCH_DEPRECATED_PROVIDER_VERSIONS = """
             {
               organization(filter: "name==%s") {
                 edges {
@@ -115,11 +112,10 @@ public class ProviderServiceImpl implements ProviderService {
                     provider(filter: "name==%s") {
                       edges {
                         node {
-                          version(filter: "deprecated==true,removed==true") {
+                          version(filter: "status==deprecated") {
                             edges {
                               node {
                                 versionNumber
-                                protocols: deprecationMessage
                               }
                             }
                           }
@@ -131,6 +127,8 @@ public class ProviderServiceImpl implements ProviderService {
               }
             }
             """;
+
+    private static final int MAX_LISTED_VERSIONS = 5;
 
     @Override
     public List<VersionDTO> getAvailableVersions(String organization, String provider) {
@@ -161,35 +159,27 @@ public class ProviderServiceImpl implements ProviderService {
         return versionDTOList;
     }
 
+    // The protocol's warnings belong to the provider, not a version, and every user sees them on each
+    // lookup. So there is one summary line however many versions are deprecated; the messages stay in the UI.
+    @Cacheable(cacheNames = CacheConfig.PROVIDER_WARNINGS_CACHE, key = "#organization + '-' + #provider")
     @Override
-    public List<String> getWarnings(String organization, String provider, List<VersionDTO> availableVersionList) {
-        Set<String> availableVersions = availableVersionList.stream()
-                .map(VersionDTO::getVersion)
-                .collect(Collectors.toSet());
-        List<String> warnings = new ArrayList<>();
-
+    public List<String> getWarnings(String organization, String provider) {
         GraphQLRequest query = new GraphQLRequest();
-        query.setQuery(String.format(SEARCH_PROVIDER_VERSION_NOTICES, organization, provider));
-        // Warnings are informational: failing to load them must never break terraform init.
-        try {
-            terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().forEach(organizationEdge ->
-                    organizationEdge.getNode().getProvider().getEdges().forEach(providerEdge ->
-                            providerEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
-                                String versionNumber = versionEdge.getNode().getVersionNumber();
-                                // Printed on users' terminals: drop control characters such as ANSI escapes and newlines.
-                                String message = Objects.toString(versionEdge.getNode().getProtocols(), "").replaceAll("\\p{Cntrl}", " ").strip();
-                                boolean hasMessage = !message.isEmpty();
-                                if (availableVersions.contains(versionNumber)) {
-                                    warnings.add("Version " + versionNumber + " of " + organization + "/" + provider + " is deprecated" + (hasMessage ? ": " + message : "."));
-                                } else if (hasMessage) {
-                                    warnings.add("Version " + versionNumber + " of " + organization + "/" + provider + " was removed: " + message);
-                                }
-                            })));
-        } catch (RuntimeException e) {
-            log.warn("Failed to load version warnings for provider {}/{}: {}", organization, provider, e.getMessage());
+        query.setQuery(String.format(SEARCH_DEPRECATED_PROVIDER_VERSIONS, organization, provider));
+        List<String> deprecated = terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().stream()
+                .flatMap(organizationEdge -> organizationEdge.getNode().getProvider().getEdges().stream())
+                .flatMap(providerEdge -> providerEdge.getNode().getVersion().getEdges().stream())
+                .map(versionEdge -> versionEdge.getNode().getVersionNumber())
+                .toList();
+        if (deprecated.isEmpty()) {
             return List.of();
         }
-        return warnings;
+        String listed = String.join(", ", deprecated.subList(0, Math.min(deprecated.size(), MAX_LISTED_VERSIONS)));
+        if (deprecated.size() > MAX_LISTED_VERSIONS) {
+            listed += " and " + (deprecated.size() - MAX_LISTED_VERSIONS) + " more";
+        }
+        return List.of((deprecated.size() == 1 ? "Version " : "Versions ") + listed + " of " + organization + "/" + provider
+                + (deprecated.size() == 1 ? " is" : " are") + " deprecated. See the private registry for details.");
     }
 
     @Override

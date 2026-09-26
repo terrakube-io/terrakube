@@ -7,7 +7,11 @@ import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import io.terrakube.api.rs.DeprecationMessageConverter;
+import io.terrakube.api.rs.VersionStatus;
 import io.terrakube.api.rs.provider.Provider;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import jakarta.persistence.*;
 
@@ -35,14 +39,14 @@ public class Version {
     @Column(name = "protocols")
     private String protocols;
 
-    @Column(name = "deprecated")
-    private boolean deprecated;
-
-    // Removed versions are hidden from the registry but kept so the refresh job does not re-import them.
-    @Column(name = "removed")
-    private boolean removed;
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status")
+    private VersionStatus status = VersionStatus.active;
 
     // Shown for deprecated and removed versions, e.g. a removal date or upgrade instructions.
+    @Size(max = 1024)
+    @Convert(converter = DeprecationMessageConverter.class)
     @Column(name = "deprecation_message")
     private String deprecationMessage;
 

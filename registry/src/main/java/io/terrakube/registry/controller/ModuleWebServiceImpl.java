@@ -46,7 +46,7 @@ public class ModuleWebServiceImpl {
 
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
     public ResponseEntity<ModuleDTO> getModuleVersionPath(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version) {
-        if (!moduleService.getAvailableVersions(organization, module, provider).contains(version)) {
+        if (moduleService.isVersionRemoved(organization, module, provider, version)) {
             return ResponseEntity.notFound().build();
         }
         HttpHeaders responseHeaders = new HttpHeaders();
@@ -63,7 +63,7 @@ public class ModuleWebServiceImpl {
 
     @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")
     public ResponseEntity<byte[]> getModuleZip(@PathVariable String organizationName, @PathVariable String moduleName, @PathVariable String providerName, @PathVariable String version) {
-        if (!moduleService.getAvailableVersions(organizationName, moduleName, providerName).contains(version)) {
+        if (moduleService.isVersionRemoved(organizationName, moduleName, providerName, version)) {
             return ResponseEntity.notFound().build();
         }
         Optional<URI> presignedDownloadUrl = storageService.getPresignedDownloadUrl(organizationName, moduleName, providerName, version);

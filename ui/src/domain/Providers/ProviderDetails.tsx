@@ -289,14 +289,14 @@ export const ProviderDetails = ({ organizationName }: Props) => {
                   .
                 </Typography.Text>
 
-                {selected?.removed ? (
+                {selected?.status === "removed" ? (
                   <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 13 }}>
                     Version {selected.versionNumber} is no longer served by the registry.
                     {upgradeTo ? ` Use version ${upgradeTo} instead.` : ""}
                   </Typography.Paragraph>
                 ) : (
                   <>
-                    {selected?.deprecated && (
+                    {selected?.status === "deprecated" && (
                       <Typography.Paragraph type="warning" style={{ marginTop: 12, marginBottom: 0, fontSize: 13 }}>
                         Version {selected.versionNumber} is deprecated.
                         {upgradeTo && upgradeTo !== selected.versionNumber ? ` Consider version ${upgradeTo}.` : ""}

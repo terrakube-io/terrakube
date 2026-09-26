@@ -1,4 +1,5 @@
 import { AuditFieldBase } from "@/modules/types";
+import type { VersionStatusValue } from "@/components/modals/VersionStatusModal";
 
 export type ProviderModel = {
   id: string;
@@ -25,8 +26,7 @@ export type ProviderVersionModel = {
   attributes: {
     versionNumber: string;
     protocols: string;
-    deprecated?: boolean;
-    removed?: boolean;
+    status?: VersionStatusValue;
     deprecationMessage?: string | null;
   };
 };

@@ -9,7 +9,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.net.URI;
-import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -36,7 +35,7 @@ class ModuleWebServiceImplTest {
     void setUp() {
         moduleService = mock(ModuleService.class);
         storageService = mock(StorageService.class);
-        when(moduleService.getAvailableVersions("org", "module", "aws")).thenReturn(List.of("1.0.0"));
+        when(moduleService.isVersionRemoved("org", "module", "aws", "2.0.0")).thenReturn(true);
 
         ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
@@ -84,6 +83,7 @@ class ModuleWebServiceImplTest {
                 .andExpect(header().string("Retry-After", "5"));
     }
 
+    // Only removed versions are refused: a version this replica has not cached yet (just published) is served.
     @Test
     void servesDownloadPathForAvailableVersion() throws Exception {
         when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0")).thenReturn("s3::path");
@@ -91,6 +91,7 @@ class ModuleWebServiceImplTest {
         mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
                 .andExpect(status().isNoContent())
                 .andExpect(header().string("X-Terraform-Get", "s3::path"));
+        verify(moduleService, never()).getAvailableVersions(anyString(), anyString(), anyString());
     }
 
     @Test

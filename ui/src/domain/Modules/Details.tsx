@@ -163,7 +163,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   // Removed versions are no longer served by the registry, so there is nothing to load for them.
   const showVersion = (path: string, selected: string, versions: ModuleVersionItem[]) => {
     setVersion(selected);
-    if (versions.find((v) => v.version === selected)?.removed) {
+    if (versions.find((v) => v.version === selected)?.status === "removed") {
       setHclObject(null);
       setMarkdown("_The README is not available because this version was removed from the registry._");
       setLoadingInputs("Not available for removed versions");
@@ -790,14 +790,14 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                     <Divider />
                     <p className="moduleSubtitles">Copy configuration details</p>
                   </div>
-                  {selectedVersion?.removed ? (
+                  {selectedVersion?.status === "removed" ? (
                     <Typography.Text type="secondary">
                       Version {version} is no longer served by the registry.
                       {upgradeTo ? ` Use version ${upgradeTo} instead.` : ""}
                     </Typography.Text>
                   ) : (
                     <>
-                      {selectedVersion?.deprecated && (
+                      {selectedVersion?.status === "deprecated" && (
                         <Typography.Text type="warning">
                           Version {version} is deprecated.
                           {upgradeTo && upgradeTo !== version ? ` Consider version ${upgradeTo}.` : ""}
@@ -881,7 +881,7 @@ function setModuleInclude(
 // latestVersion is only recalculated by the module refresh job, so it can still point at a version
 // that was removed since then. Show the recommended version that is still served instead.
 function defaultVersion(latestVersion: string, versions: ModuleVersionItem[]): string {
-  if (!versions.find((v) => v.version === latestVersion)?.removed) return latestVersion;
+  if (versions.find((v) => v.version === latestVersion)?.status !== "removed") return latestVersion;
   const newestFirst = [...versions].sort((a, b) => compareVersions(b.version, a.version));
   return recommendedVersion(newestFirst)?.version ?? latestVersion;
 }

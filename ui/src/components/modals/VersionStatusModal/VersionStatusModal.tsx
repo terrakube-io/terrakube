@@ -1,11 +1,9 @@
 import { Alert, Form, Input, Modal, Radio } from "antd";
 import { useEffect, useState } from "react";
-import { VersionKind, VersionStatus } from "./versionStatus";
-
-type StatusValue = "active" | "deprecated" | "removed";
+import { VersionKind, VersionStatus, VersionStatusValue } from "./versionStatus";
 
 type FormValues = {
-  status: StatusValue;
+  status: VersionStatusValue;
   deprecationMessage?: string;
 };
 
@@ -17,14 +15,15 @@ type AlertProps = {
 };
 
 export function VersionStatusAlert({ version, status, upgradeTo }: AlertProps) {
-  if (!status.removed && !status.deprecated) return null;
+  const removed = status.status === "removed";
+  if (!removed && status.status !== "deprecated") return null;
   const suggestion = upgradeTo && upgradeTo !== version ? `Use version ${upgradeTo} instead.` : undefined;
   return (
     <Alert
-      type={status.removed ? "error" : "warning"}
+      type={removed ? "error" : "warning"}
       showIcon
       title={
-        status.removed
+        removed
           ? `Version ${version} has been removed and is no longer served by the registry.`
           : `Version ${version} is deprecated.`
       }
@@ -36,12 +35,12 @@ export function VersionStatusAlert({ version, status, upgradeTo }: AlertProps) {
 const MESSAGE_HELP: Record<VersionKind, string> = {
   module: "Shown on this page, for example a removal date or upgrade instructions.",
   provider:
-    "Shown on this page and as a warning in terraform init for everyone using this provider, for example a removal date or upgrade instructions.",
+    "Shown on this page, for example a removal date or upgrade instructions. terraform init warns everyone using this provider that the version is deprecated.",
 };
 
 const REMOVE_WARNING: Record<VersionKind, string> = {
   module:
-    "Terraform runs that require this version will fail. The registry caches module versions, so it keeps serving this version for a few minutes. You can make it active again at any time.",
+    "Terraform runs that require this version will fail. The registry can keep serving it for up to a minute. You can make it active again at any time.",
   provider: "Terraform runs that require this version will fail. You can make it active again at any time.",
 };
 
@@ -58,12 +57,12 @@ export default function VersionStatusModal({ open, version, kind, status, onCanc
   const [form] = Form.useForm<FormValues>();
   const [saving, setSaving] = useState(false);
   const selected = Form.useWatch("status", form);
-  const removing = selected === "removed" && !status.removed;
+  const removing = selected === "removed" && status.status !== "removed";
 
   useEffect(() => {
     if (open) {
       form.setFieldsValue({
-        status: status.removed ? "removed" : status.deprecated ? "deprecated" : "active",
+        status: status.status ?? "active",
         deprecationMessage: status.deprecationMessage ?? "",
       });
     }
@@ -75,8 +74,7 @@ export default function VersionStatusModal({ open, version, kind, status, onCanc
     setSaving(true);
     try {
       await onSave({
-        deprecated: values.status === "deprecated",
-        removed: values.status === "removed",
+        status: values.status,
         deprecationMessage: values.status === "active" ? null : values.deprecationMessage?.trim() || null,
       });
     } finally {
