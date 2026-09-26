@@ -29,6 +29,24 @@ public class PatService {
     private PatRepository patRepository;
 
     public String createToken(int days, String description, Object name, Object email, Object groups) {
+        return createToken(days, description, name, email, groups, "API");
+    }
+
+    public String createToken(int days, String description, Object name, Object email, Object groups, String source) {
+        return issueToken(days, description, name, email, groups, source, null).token();
+    }
+
+    public record IssuedToken(UUID id, String token) {
+    }
+
+    /**
+     * Creates a PAT and returns its id alongside the signed token. When createdBy is set the row is
+     * attributed to that user; needed when the token is minted from an unauthenticated endpoint
+     * (the terraform login broker), where the auditing listener would otherwise record the
+     * created_by of the anonymous request.
+     */
+    public IssuedToken issueToken(int days, String description, Object name, Object email, Object groups,
+                                  String source, String createdBy) {
         String jws = "";
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64Key));
 
@@ -36,10 +54,11 @@ public class PatService {
         pat.setDays(days);
         pat.setDeleted(false);
         pat.setDescription(description);
+        pat.setSource(source);
         pat = patRepository.save(pat);
 
         try {
-            log.info("Generated Pat {}", pat.getId());
+            log.info("Generated Pat {} (source {})", pat.getId(), source);
 
             if (days > 0) {
                 log.info("Pat will expire");
@@ -74,10 +93,16 @@ public class PatService {
         } catch (Exception e) {
             log.error("Error generating token", e);
             patRepository.delete(pat);
+            return new IssuedToken(pat.getId(), jws);
         }
-        return jws;
+        // @CreatedBy is only populated on insert, so this explicit set on a subsequent save sticks.
+        if (createdBy != null && !createdBy.isBlank()) {
+            pat.setCreatedBy(createdBy);
+            pat.setUpdatedBy(createdBy);
+            pat = patRepository.save(pat);
+        }
+        return new IssuedToken(pat.getId(), jws);
     }
-
 
     public boolean deleteToken(String tokenId){
         Optional<Pat> searchPat = patRepository.findById(UUID.fromString(tokenId));

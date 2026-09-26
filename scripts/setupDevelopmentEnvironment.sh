@@ -46,6 +46,18 @@ function generateApiVars() {
 	TERRAKUBE_ADMIN_GROUP="CUSTOM_ADMIN_NAME"
 
 	DexClientId="example-app"
+	TerraformLoginEnabled=true
+	TerraformLoginDefaultDays=30
+	TerraformLoginMaxDays=365
+	TerraformLoginApiUrl="https://$TerrakubeHostname"
+	TerraformLoginDexTokenUrl=""
+	TerraformLoginDexJwkSetUrl=""
+	if [ "$USER" = "vscode" ]; then
+		# The browser uses Dex through Traefik, but .localhost resolves to this
+		# devcontainer's own loopback for the server-side code exchange.
+		TerraformLoginDexTokenUrl="http://127.0.0.1:5556/dex/token"
+		TerraformLoginDexJwkSetUrl="http://127.0.0.1:5556/dex/keys"
+	fi
 
 	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
@@ -107,6 +119,12 @@ function generateApiVars() {
 	echo "TerrakubeUiURL=$TerrakubeUiURL" >>.envApi
 	echo "spring_profiles_active=demo" >>.envApi
 	echo "DexClientId=$DexClientId" >>.envApi
+	echo "TerraformLoginEnabled=$TerraformLoginEnabled" >>.envApi
+	echo "TerraformLoginDefaultDays=$TerraformLoginDefaultDays" >>.envApi
+	echo "TerraformLoginMaxDays=$TerraformLoginMaxDays" >>.envApi
+	echo "TerraformLoginApiUrl=$TerraformLoginApiUrl" >>.envApi
+	echo "TerraformLoginDexTokenUrl=$TerraformLoginDexTokenUrl" >>.envApi
+	echo "TerraformLoginDexJwkSetUrl=$TerraformLoginDexJwkSetUrl" >>.envApi
 	echo "TerrakubeToolsRepository=$TerrakubeToolsRepository" >>.envApi
 	echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >>.envApi
 	echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >>.envApi
@@ -252,6 +270,8 @@ function generateRegistryVars() {
 	PatSecret=ejZRSFgheUBOZXAyUURUITUzdmdINDNeUGpSWHlDM1g=
 	InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
 	AppClientId=example-app
+	TerraformLoginEnabled=true
+	TerraformLoginApiUrl=$AzBuilderApiUrl
 
 	# Use unique JMX port for registry (45558) to avoid conflicts with other Java apps
 	JAVA_TOOL_OPTIONS="-Xmx256m -Xms128m -Dcom.sun.management.jmxremote.port=45558 -Dcom.sun.management.jmxremote.rmi.port=45558 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false"
@@ -268,6 +288,8 @@ function generateRegistryVars() {
 	echo "InternalSecret=$InternalSecret" >>.envRegistry
 	echo "RegistryStorageType=$RegistryStorageType" >>.envRegistry
 	echo "AppClientId=$AppClientId" >>.envRegistry
+	echo "TerraformLoginEnabled=$TerraformLoginEnabled" >>.envRegistry
+	echo "TerraformLoginApiUrl=$TerraformLoginApiUrl" >>.envRegistry
 	echo "AppIssuerUri=$AppIssuerUri" >>.envRegistry
 	echo "AwsStorageAccessKey=$AwsStorageAccessKey" >>.envRegistry
 	echo "AwsStorageSecretKey=$AwsStorageSecretKey" >>.envRegistry
@@ -358,14 +380,17 @@ function generateDexConfiguration() {
 	if [ "$CODESPACES" = "true" ]; then
 		jwtIssuer="https://$CODESPACE_NAME-5556.app.github.dev"
 		uiRedirect="https://$CODESPACE_NAME-3000.app.github.dev"
+		apiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
 	elif [ "$USER" = "vscode" ]; then
 	  echo "Echo using local devcontainer"
 		jwtIssuer="https://terrakube-dex.platform.local"
 		uiRedirect="https://terrakube.platform.local"
+		apiUrl="https://terrakube-api.platform.local"
 	fi
 
 	sed -i "s+TEMPLATE_DEVCONTAINER_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/devcontainer/config-ldap.yaml
 	sed -i "s+TEMPLATE_DEVCONTAINER_REDIRECT+$uiRedirect+gi" scripts/setup/devcontainer/config-ldap.yaml
+	sed -i "s+TEMPLATE_DEVCONTAINER_API_URL+$apiUrl+gi" scripts/setup/devcontainer/config-ldap.yaml
 }
 
 function generateWorkspaceInformation() {

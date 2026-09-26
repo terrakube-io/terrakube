@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="2-34-0-cli-auth-session" author="jake">
+        <createTable tableName="cli_auth_session">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cli_redirect_uri" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cli_code_challenge" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cli_state" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="dex_code_verifier" type="varchar(128)"/>
+            <column name="identity_email" type="varchar(255)"/>
+            <column name="identity_name" type="varchar(255)"/>
+            <column name="identity_groups" type="text"/>
+            <column name="chosen_days" type="int"/>
+            <column name="chosen_name" type="varchar(64)"/>
+            <column name="auth_code_hash" type="varchar(64)"/>
+            <column name="code_expires_at" type="datetime"/>
+            <column name="expires_at" type="datetime">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="datetime"/>
+            <column name="updated_date" type="datetime"/>
+            <column name="created_by" type="varchar(128)"/>
+            <column name="updated_by" type="varchar(128)"/>
+        </createTable>
+        <createIndex tableName="cli_auth_session" indexName="idx_cli_auth_session_auth_code_hash">
+            <column name="auth_code_hash"/>
+        </createIndex>
+        <createIndex tableName="cli_auth_session" indexName="idx_cli_auth_session_expires_at">
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-34-0-pat-source" author="jake">
+        <addColumn tableName="pat">
+            <column name="source" type="varchar(20)" defaultValue="API">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_used_at" type="datetime"/>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

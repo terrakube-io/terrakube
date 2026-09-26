@@ -66,6 +66,7 @@ staticClients:
 - id: example-app
   redirectURIs:
   - 'TEMPLATE_DEVCONTAINER_REDIRECT'
+  - 'TEMPLATE_DEVCONTAINER_API_URL/oauth/callback'
   - '/device/callback'
   - 'http://localhost:10000/login'
   - 'http://localhost:10001/login'

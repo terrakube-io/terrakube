@@ -22,16 +22,19 @@ import org.springframework.security.authentication.AuthenticationManagerResolver
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +97,13 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         return switch (issuer) {
             case jwtTypePat -> {
                 log.debug("Using Terrakube Authentication Provider");
-                yield new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
+                ProviderManager delegate = new ProviderManager(
+                        new JwtAuthenticationProvider(getJwtEncoder(jwtTypePat)));
+                yield authentication -> {
+                    Authentication result = delegate.authenticate(authentication);
+                    stampLastUsed(result);
+                    return result;
+                };
             }
             case jwtTypeInternal -> {
                 log.debug("Using Terrakube Internal Authentication Provider");
@@ -105,6 +114,29 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
                 yield new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(this.dexIssuerUri)));
             }
         };
+    }
+
+    private static final long LAST_USED_THROTTLE_MS = 60 * 60 * 1000L;
+
+    // Records "this PAT was used" without a write on every request: only touch the row when
+    // last_used_at is null or older than an hour. Never fails the request on a write error.
+    private void stampLastUsed(Authentication result) {
+        try {
+            if (!(result instanceof JwtAuthenticationToken jwt)) {
+                return;
+            }
+            if (!jwtTypePat.equals(jwt.getToken().getClaimAsString("iss"))) {
+                return;
+            }
+            String jti = jwt.getToken().getId();
+            if (jti == null) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            patRepository.stampLastUsed(UUID.fromString(jti), new Date(now), new Date(now - LAST_USED_THROTTLE_MS));
+        } catch (Exception e) {
+            log.debug("Could not stamp PAT last_used_at: {}", e.getMessage());
+        }
     }
 
     // computeIfAbsent drops failed mappings, so a failed fetch is retried next request.

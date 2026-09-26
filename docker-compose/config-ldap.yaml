@@ -72,6 +72,9 @@ staticClients:
       - "/device/callback"
       - "http://localhost:10000/login"
       - "http://localhost:10001/login"
+      # When io.terrakube.token.login.enabled=true the CLI never redirects here;
+      # only the API callback below is used:
+      # - "https://terrakube-api.platform.local/oauth/callback"
     name: "Example App"
     #secret: ZXhhbXBsZS1hcHAtc2VjcmV0
     public: true

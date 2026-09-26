@@ -132,4 +132,5 @@
     <include file="/db/changelog/local/changelog-2.34.0-workspace-last-status-enum.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-job-approval.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-workspace-tag-value.xml" />
+    <include file="/db/changelog/local/changelog-2.34.0-cli-auth-session.xml"/>
 </databaseChangeLog>
