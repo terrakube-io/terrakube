@@ -46,20 +46,78 @@ final class HclBlockScanner {
             if (lines.length < 2) {
                 return "";
             }
-            boolean indented = raw.startsWith("<<-");
+            // <<- strips only the smallest common indent, so nested lines keep their relative indentation
+            int indent = 0;
+            if (raw.startsWith("<<-")) {
+                indent = Integer.MAX_VALUE;
+                for (int i = 1; i < lines.length - 1; i++) {
+                    if (!lines[i].isBlank()) {
+                        indent = Math.min(indent, leadingWhitespace(lines[i]));
+                    }
+                }
+            }
             StringBuilder text = new StringBuilder();
             for (int i = 1; i < lines.length - 1; i++) {
-                text.append(indented ? lines[i].stripLeading() : lines[i]).append('\n');
+                text.append(lines[i].substring(Math.min(indent, leadingWhitespace(lines[i])))).append('\n');
             }
             return text.toString().stripTrailing();
         }
         if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
-            return raw.substring(1, raw.length() - 1)
-                    .replace("\\\"", "\"")
-                    .replace("\\n", "\n")
-                    .replace("\\\\", "\\");
+            return unescape(raw.substring(1, raw.length() - 1));
         }
         return raw;
+    }
+
+    private static int leadingWhitespace(String line) {
+        return line.length() - line.stripLeading().length();
+    }
+
+    /** Resolves HCL string escapes in one left-to-right pass; unknown or malformed escapes are kept as written. */
+    private static String unescape(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch != '\\' || i + 1 == s.length()) {
+                out.append(ch);
+                continue;
+            }
+            char next = s.charAt(i + 1);
+            switch (next) {
+                case 'n' -> out.append('\n');
+                case 'r' -> out.append('\r');
+                case 't' -> out.append('\t');
+                case '"' -> out.append('"');
+                case '\\' -> out.append('\\');
+                case 'u', 'U' -> {
+                    int digits = next == 'u' ? 4 : 8;
+                    Integer codePoint = hex(s, i + 2, digits);
+                    if (codePoint == null) {
+                        out.append(ch).append(next);
+                    } else {
+                        out.appendCodePoint(codePoint);
+                        i += digits;
+                    }
+                }
+                default -> out.append(ch).append(next);
+            }
+            i++;
+        }
+        return out.toString();
+    }
+
+    private static Integer hex(String s, int from, int digits) {
+        if (from + digits > s.length()) {
+            return null;
+        }
+        int codePoint = 0;
+        for (int i = from; i < from + digits; i++) {
+            int digit = Character.digit(s.charAt(i), 16);
+            if (digit < 0) {
+                return null;
+            }
+            codePoint = codePoint * 16 + digit;
+        }
+        return Character.isValidCodePoint(codePoint) ? codePoint : null;
     }
 
     private static void parseItems(Cursor c, boolean insideBody, Map<String, String> attributes, List<Block> blocks) {

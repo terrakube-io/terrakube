@@ -147,4 +147,20 @@ class HclBlockScannerTest {
         assertThat(HclBlockScanner.unquote(null)).isNull();
         assertThat(HclBlockScanner.unquote("\"a\\\\b\"")).isEqualTo("a\\b");
     }
+
+    @Test
+    void indentedHeredocKeepsRelativeIndentation() {
+        assertThat(HclBlockScanner.unquote("<<-EOT\n    object({\n      id = string\n\n    })\n  EOT"))
+                .isEqualTo("object({\n  id = string\n\n})");
+        assertThat(HclBlockScanner.unquote("<<EOT\n  kept\nEOT")).isEqualTo("  kept");
+    }
+
+    @Test
+    void unquoteResolvesEscapesInOnePass() {
+        // HCL source "C:\\new\\tmp": an escaped backslash followed by n is not a newline
+        assertThat(HclBlockScanner.unquote("\"C:\\\\new\\\\tmp\"")).isEqualTo("C:\\new\\tmp");
+        assertThat(HclBlockScanner.unquote("\"a\\tb\\r\\nc\"")).isEqualTo("a\tb\r\nc");
+        assertThat(HclBlockScanner.unquote("\"\\u00e9 \\U0001F600\"")).isEqualTo("\u00e9 \uD83D\uDE00");
+        assertThat(HclBlockScanner.unquote("\"\\u+0e9 \\x \\\"")).isEqualTo("\\u+0e9 \\x \\");
+    }
 }
