@@ -1,6 +1,9 @@
 /* WorkspaceTable.css */
 
+/* Rows switch layout on the list's own width, not the viewport's: with the sidebar expanded a 1280px
+   window leaves the list too narrow for the desktop columns, and the name column used to vanish. */
 .workspace-list {
+  container: workspace-list / inline-size;
   margin-top: 16px;
   border: 1px solid var(--tk-border-primary);
   border-radius: 10px;
@@ -39,7 +42,7 @@
 .workspace-col-name {
   flex: 1 1 0;
   max-width: 50%;
-  min-width: 0;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -93,9 +96,9 @@
   white-space: nowrap;
 }
 
+/* The source link ellipsizes, so this is the column that gives way before the name does. */
 .workspace-col-source {
-  width: 260px;
-  flex-shrink: 0;
+  flex: 0 1 260px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -212,9 +215,10 @@
   padding: 12px 16px;
 }
 
-/* Narrow viewports: the row wraps into name + meta on one line, status and run on the next.
-   The column header is hidden because sorting lives in the filter bar's sort select. */
-@media (max-width: 720px) {
+/* Narrow lists: the row wraps into name + meta on one line, status and run on the next.
+   The column header is hidden because sorting lives in the filter bar's sort select.
+   Below 900px the fixed columns (about 730px with gaps and padding) leave the name too little room. */
+@container workspace-list (max-width: 899px) {
   .workspace-list-header {
     display: none;
   }
@@ -233,8 +237,7 @@
   .workspace-col-status,
   .workspace-col-policy,
   .workspace-col-run,
-  .workspace-col-version,
-  .workspace-col-source {
+  .workspace-col-version {
     width: auto;
   }
 

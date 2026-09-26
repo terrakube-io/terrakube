@@ -14,13 +14,34 @@
   box-shadow: var(--tk-shadow-lg);
 }
 
-.app-sidebar--drawer .ant-layout-sider-zero-width-trigger {
-  top: 12px;
+/* Opens the drawer. It stays above the drawer so it also closes it; the page leaves room for it
+   (see .app-content-scroll in Home.css). */
+.app-sidebar-drawer-trigger {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   background: var(--tk-sidebar-bg);
   border: 1px solid var(--tk-sidebar-border);
-  border-left: none;
-  border-radius: 0 6px 6px 0;
+  border-radius: 6px;
   color: var(--tk-sidebar-text);
+  cursor: pointer;
+}
+
+/* The trigger stays put while the drawer is open (it closes it), so the drawer header makes room for it. */
+.app-sidebar--drawer .app-sidebar-header {
+  padding-left: 52px;
+}
+
+.app-sidebar-drawer-trigger:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
 }
 
 .app-sidebar-backdrop {
@@ -35,13 +56,6 @@
   .app-sidebar--drawer .ant-layout-sider-children {
     transition: none;
   }
-}
-
-/* Defensive: antd's internal Sider wrapper doesn't always carry an explicit
-   height, which breaks the height:100% chain below it and can push the
-   footer (org switcher) out of view on tall nested menus. */
-.app-sidebar .ant-layout-sider-children {
-  height: 100%;
 }
 
 /* Defensive: antd's internal Sider wrapper doesn't always carry an explicit

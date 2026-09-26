@@ -45,8 +45,18 @@
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 767px) {
   .page-wrapper-inner-fluid {
     width: 100%;
   }
+}
+
+/* The page's primary action must stay on screen at any width: the button row wraps under the title. */
+.page-wrapper-actions {
+  max-width: 100%;
+}
+
+.page-wrapper-actions > .ant-space,
+.page-wrapper-actions > .ant-flex {
+  flex-wrap: wrap;
 }

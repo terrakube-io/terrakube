@@ -166,7 +166,7 @@
   padding: 12px 0;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 767px) {
   .organization-list-header {
     display: none;
   }

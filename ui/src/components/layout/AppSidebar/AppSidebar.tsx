@@ -32,7 +32,7 @@ import {
   MenuOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Tag, theme } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
@@ -46,6 +46,24 @@ import logo from "@/domain/Home/white_logo.png";
 import "./AppSidebar.css";
 
 const { Sider } = Layout;
+
+// One breakpoint for the whole narrow layout (below antd's `md`): the drawer, and the wrapped list rows
+// and page header in the CSS. Below it a 240px sidebar would leave too little room for the desktop rows.
+const NARROW_QUERY = "(max-width: 767px)";
+const SIDEBAR_ID = "app-sidebar";
+
+function useIsNarrow() {
+  // Read synchronously so a phone never renders the 64px rail before switching to the drawer.
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(NARROW_QUERY);
+    const update = () => setIsNarrow(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isNarrow;
+}
 
 type Props = {
   organizationName: string;
@@ -90,10 +108,12 @@ export default function AppSidebar({
   workspaceManageState,
 }: Props) {
   const [collapsed, setCollapsed] = useState(() => getStoredSidebarCollapsed());
-  // Below antd's `md` breakpoint the sidebar is an overlay drawer; `collapsed` (the stored desktop
+  // On narrow viewports the sidebar is an overlay drawer; `collapsed` (the stored desktop
   // preference) is left alone so it is restored when the viewport grows again.
-  const [isNarrow, setIsNarrow] = useState(false);
+  const isNarrow = useIsNarrow();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const siderRef = useRef<HTMLDivElement>(null);
   const [defaultSelected, setDefaultSelected] = useState(["organizations"]);
   const location = useLocation();
   const { token } = theme.useToken();
@@ -110,7 +130,20 @@ export default function AppSidebar({
 
   useEffect(() => {
     setDrawerOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, isNarrow]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    siderRef.current?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrawerOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (organizationId && !sessionStorage.getItem(ORGANIZATION_NAME)) {
@@ -424,23 +457,32 @@ export default function AppSidebar({
 
   return (
     <>
+      {isNarrow && (
+        <button
+          ref={triggerRef}
+          type="button"
+          className="app-sidebar-drawer-trigger"
+          aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={drawerOpen}
+          aria-controls={SIDEBAR_ID}
+          onClick={() => setDrawerOpen(!drawerOpen)}
+        >
+          <MenuOutlined />
+        </button>
+      )}
       {isNarrow && drawerOpen && (
         <div className="app-sidebar-backdrop" aria-hidden="true" onClick={() => setDrawerOpen(false)} />
       )}
       <Sider
+        ref={siderRef}
+        id={SIDEBAR_ID}
         theme="dark"
         width={240}
         collapsedWidth={isNarrow ? 0 : 64}
         collapsed={effectiveCollapsed}
-        breakpoint="md"
-        onBreakpoint={(broken) => {
-          setIsNarrow(broken);
-          setDrawerOpen(false);
-        }}
-        onCollapse={(value, type) => {
-          if (type === "clickTrigger") setDrawerOpen(!value);
-        }}
-        trigger={isNarrow ? <MenuOutlined aria-label={drawerOpen ? "Close navigation" : "Open navigation"} /> : null}
+        trigger={null}
+        // A closed drawer is 0px wide; keep its links out of the tab order and the accessibility tree.
+        inert={isNarrow && !drawerOpen}
         className={`app-sidebar ${isNarrow ? "app-sidebar--drawer" : ""}`}
       >
         <div className="app-sidebar-inner">
@@ -486,6 +528,8 @@ export default function AppSidebar({
             inlineCollapsed={effectiveCollapsed}
             selectedKeys={defaultSelected}
             items={items}
+            // Re-selecting the current page does not change the route, so close the drawer here too.
+            onClick={() => isNarrow && setDrawerOpen(false)}
             className="app-sidebar-menu"
           />
           <div className="app-sidebar-footer">
