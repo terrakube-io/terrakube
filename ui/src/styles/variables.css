@@ -40,6 +40,7 @@
   --tk-accent-tint: rgba(114, 46, 209, 0.18);
   /* Link text: equals the accent in light mode, a lighter tone in dark mode so it clears 4.5:1 */
   --tk-link: var(--tk-accent);
+  --tk-link-hover: var(--tk-link);
 }
 
 [data-color-scheme="blue"] {
@@ -94,8 +95,10 @@
   --tk-sidebar-text-secondary: #8b949e;
 
   --tk-link: #b37feb;
+  --tk-link-hover: #d3adf7;
 }
 
 [data-theme="dark"][data-color-scheme="blue"] {
   --tk-link: #58a6ff;
+  --tk-link-hover: #79c0ff;
 }

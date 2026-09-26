@@ -20,7 +20,7 @@
 }
 
 [data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *)):hover {
-  color: #79c0ff;
+  color: var(--tk-link-hover);
   text-decoration: underline;
 }
 
@@ -356,7 +356,12 @@
   color: #58a6ff;
 }
 
-/* Status tags: tinted pill, text darkened (light) or lightened (dark) from the status hue so it clears 4.5:1. */
+/*
+ * Status tags: tinted pill, text darkened (light) or lightened (dark) from the status hue so it clears 4.5:1.
+ * The 60%/70% text mix and 12%/15% tint were checked against the surfaces tags sit on: #fff and #f5f5f5 in
+ * light, --tk-bg-base and --tk-bg-elevated in dark. The tightest cases are orange on #f5f5f5 (4.83:1) and
+ * #FB0136 on --tk-bg-elevated (4.60:1), so re-check contrast when changing these percentages or those surfaces.
+ */
 .ant-tag.tk-status-tag {
   --status-color: #8c8c8c;
   color: color-mix(in srgb, var(--status-color) 60%, #000);
@@ -368,6 +373,20 @@
   color: color-mix(in srgb, var(--status-color) 70%, #fff);
   background: color-mix(in srgb, var(--status-color) 15%, transparent);
   border-color: color-mix(in srgb, var(--status-color) 40%, transparent);
+}
+
+/*
+ * Without color-mix() (Chrome < 111, Safari < 16.2, Firefox < 113) the rules above do not fall back to an
+ * earlier declaration: a value holding var() is invalid only at computed-value time, so the property would be
+ * unset. Keep the theme text colour and show the status as the border instead.
+ */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .ant-tag.tk-status-tag,
+  [data-theme="dark"] .ant-tag.tk-status-tag {
+    color: var(--tk-text-primary);
+    background: transparent;
+    border-color: var(--status-color);
+  }
 }
 
 [data-theme="dark"] .ant-tag-green {

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"grep -rn \\\"getWorkspaceStatusText\\\" --include=*.ts -l . 2>/dev/null; grep -rln \\\"export.*getWorkspaceStatusText\\\" . ; sed -n 20,60p styles/variables.css; sed -n 60,100p styles/variables.cs...",
+  "error": "Exit code 1\n(eval):1: no matches found: --include=*.ts",
+  "timestamp": "2026-09-26T21:23:16.700Z",
+  "retry_count": 1
+}

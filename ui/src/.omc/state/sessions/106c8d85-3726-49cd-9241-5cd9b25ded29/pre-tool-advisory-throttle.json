@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "entries": {
+    "6fb64f6e7dac2e04a6e7ac1d950e88847e4be2358d7376bdc5e06242795b7fc3": {
+      "last_emitted_at_ms": 1790457812448,
+      "message": "[SLOP WARNING] Detected fallback/workaround language in this tool input. Do not make potential slop: avoid ad-hoc fallback layers, workaround shims, or environment-specific patches unless explicitly justified. For architecture concerns, consult the architect for a concrete design first. If this seems environment-specific, ask the user to confirm constraints before proceeding.\n\nUse parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1790457764957,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    }
+  },
+  "updated_at": "2026-09-26T21:23:32.448Z"
+}

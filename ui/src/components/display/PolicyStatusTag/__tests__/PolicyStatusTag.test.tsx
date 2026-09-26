@@ -72,4 +72,14 @@ describe("PolicyStatusTag", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Compliant")).toBeInTheDocument();
   });
+
+  it("colours the tag through the tk-status-tag recipe, not Ant's color prop", () => {
+    render(<PolicyStatusTag status="NON_COMPLIANT" className="extra" />);
+    const tag = screen.getByTestId("policy-status-tag-non-compliant");
+
+    // A color prop would make Ant paint the tag itself and bypass the contrast-safe CSS.
+    expect(tag).toHaveClass("tk-status-tag", "extra");
+    expect(tag).not.toHaveClass("ant-tag-has-color");
+    expect(tag.style.getPropertyValue("--status-color")).toBe("#FB0136");
+  });
 });

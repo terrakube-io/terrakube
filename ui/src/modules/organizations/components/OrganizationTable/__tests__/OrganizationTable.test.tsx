@@ -81,7 +81,7 @@ describe("OrganizationTable", () => {
 
   it("filters rows by search term against name and description", () => {
     renderTable();
-    fireEvent.change(screen.getByPlaceholderText("Search organizations..."), { target: { value: "data" } });
+    fireEvent.change(screen.getByLabelText("Search organizations"), { target: { value: "data" } });
 
     expect(screen.getByText("data-eng")).toBeInTheDocument();
     expect(screen.queryByText("acme-platform")).not.toBeInTheDocument();
