@@ -1,4 +1,4 @@
-issuer: https://terrakube-dex.platform.local/dex
+issuer: https://terrakube-dex.localhost/dex
 
 storage:
   type: memory
@@ -17,7 +17,7 @@ connectors:
       # The following configurations seem to work with OpenLDAP:
       #
       # 1) Plain LDAP, without TLS:
-      host: terrakube-ldap-service:389
+      host: ldap-service:389
       insecureNoSSL: true
       insecureSkipVerify: true
       #
@@ -66,9 +66,9 @@ connectors:
 staticClients:
   - id: terrakube-app
     redirectURIs:
-      - "https://terrakube.platform.local"
-      - "https://terrakube-api.platform.local"
-      - "https://terrakube-dex.platform.local"
+      - "https://terrakube.localhost"
+      - "https://terrakube-api.localhost"
+      - "https://terrakube-dex.localhost"
       - "/device/callback"
       - "http://localhost:10000/login"
       - "http://localhost:10001/login"

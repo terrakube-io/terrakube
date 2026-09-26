@@ -1,65 +1,46 @@
 # Terrakube Docker Compose
 
-## Local Domains
+This is the standalone full-stack Compose environment. For source development,
+prefer the repository's Dev Container; it supplies debuggers and development
+tooling.
 
-We will be using following domains to run Terrakube with docker compose:
+## Prerequisites
 
-```shell
-terrakube.platform.local
-terrakube-api.platform.local
-terrakube-registry.platform.local
-terrakube-dex.platform.local
-```
+- Docker Engine or Docker Desktop with the Compose plugin
+- mkcert on the host
 
-## HTTPS Local Certificates
+No custom Docker subnet, DNS server, or hosts-file entries are required. The
+stack uses the loopback-reserved `*.localhost` names.
 
-Install [mkcert](https://github.com/FiloSottile/mkcert#installation) to generate the local certificates.
+## Start
 
-## Generate local CA certificate
+Trust mkcert's local CA once on the host:
 
-```shell
+```sh
 mkcert -install
-Created a new local CA 💥
-The local CA is now installed in the system trust store! ⚡️
-The local CA is now installed in the Firefox trust store (requires browser restart)! 🦊
 ```
 
-## Create Docker Network
+Generate the local certificate from this directory:
 
-```bash
-docker network create terrakube-network -d bridge --subnet 10.25.25.0/24 --gateway 10.25.25.254
+```sh
+mkcert -key-file privkey.pem -cert-file fullchain.pem \
+  localhost terrakube.localhost terrakube-api.localhost \
+  terrakube-registry.localhost terrakube-executor.localhost \
+  terrakube-dex.localhost
+cp "$(mkcert -CAROOT)/rootCA.pem" rootCA.pem
+docker compose up -d
 ```
 
-We will be using `10.25.25.253` for our the traefik gateway
+Restart the browser after the one-time CA installation, then open
+<https://terrakube.localhost> and sign in with `admin@example.com` / `admin`.
 
-## Local DNS entries
+If organisation policy blocks `mkcert -install`, use the organisation's
+approved process for trusting a development CA.
 
-Update the /etc/hosts file adding the following entries:
+The generated certificate, private key, and root CA are local development
+files and must not be committed.
 
-```bash
-10.25.25.253 terrakube.platform.local
-10.25.25.253 terrakube-api.platform.local
-10.25.25.253 terrakube-registry.platform.local
-10.25.25.253 terrakube-dex.platform.local
-```
+## Storage backend
 
-## Running Terrakube Locally with HTTPS
-
-```bash
-git clone https://github.com/AzBuilder/terrakube.git
-cd terrakube/docker-compose
-mkcert -key-file key.pem -cert-file cert.pem platform.local *.platform.local
-CAROOT=$(mkcert -CAROOT)/rootCA.pem
-cp $CAROOT rootCA.pem
-docker-compose up -d --force-recreate
-```
-
-Terrakube will be available in the following URL:
-
-* https://terrakube.platform.local
-  * Username: admin@example.com
-  * Password: admin 
-
-## Storage Backend Note
-
-> **Note:** The local S3-compatible storage service (`pgsty/silo`) configured in this Docker Compose file is intended as an example for local development and demonstration purposes. In production environments, you should configure your desired storage backend (such as AWS S3, Azure Blob Storage, or Google Cloud Storage) based on your organization's infrastructure and compliance requirements.
+The bundled S3-compatible storage service is intended for local development
+and demonstrations. Configure an appropriate storage backend for production.

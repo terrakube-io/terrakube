@@ -4,7 +4,7 @@
     {
       "label": "docker-compose-up",
       "type": "shell",
-      "command": "docker-compose up -d",
+      "command": "docker compose up -d",
       "options": {
         "cwd": "${workspaceFolder}/scripts/setup/devcontainer"
       }
@@ -44,7 +44,7 @@
     {
       "label": "yarn-install",
       "type": "shell",
-      "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 && corepack enable && yarn install && cd ..; fi"
+      "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/terrakube-extra-ca-bundle.pem && corepack enable && yarn install && cd ..; fi"
     }
   ]
 }

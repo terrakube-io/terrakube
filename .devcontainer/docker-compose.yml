@@ -201,7 +201,7 @@ x-traefik_dev_labels: &traefik_dev_labels
   ## Allow CORs from Terrakube UI
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowmethods: GET, PATCH, PUT, POST, DELETE, HEAD, OPTIONS
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowheaders: Content-Type, Accept, Authorization, X-Requested-With, Origin, *
-  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolalloworiginlist: https://terrakube.platform.local
+  traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolalloworiginlist: https://terrakube.${DOMAIN}
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowcredentials: true
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders: Cache-Control, Content-Language, Content-Length, Content-Type, Expires, Last-Modified, Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolmaxage: 86400
@@ -211,28 +211,25 @@ x-traefik_dev_labels: &traefik_dev_labels
 services:
   traefik:
     image: traefik:v2
-    container_name: terrakube-traefik
     networks:
       terrakube-network:
         aliases:
-        - terrakube-api.platform.local
-        - terrakube-executor.platform.local
-        - terrakube.platform.local
-        - terrakube-registry.platform.local
-        - terrakube-dex.platform.local
+        - terrakube-api.${DOMAIN}
+        - terrakube-executor.${DOMAIN}
+        - terrakube.${DOMAIN}
+        - terrakube-registry.${DOMAIN}
+        - terrakube-dex.${DOMAIN}
     environment: *traefik_env
     dns: *terrakube_dns
     ports:
-      - $TRAEFIK_HTTP_PORT:80
-      - $TRAEFIK_HTTPS_PORT:443
+      - ${TRAEFIK_HTTP_PORT:-80}:80
+      - ${TRAEFIK_HTTPS_PORT:-443}:443
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik_dynamic.yml:/etc/traefik_dynamic.yml
-      - ./key.pem:/letsencrypt/privkey.pem:ro
-      - ./cert.pem:/letsencrypt/fullchain.pem:ro
+      - ./tls:/letsencrypt:ro
     restart: unless-stopped
   terrakube-dev:
-    platform: linux/amd64
     dns: *terrakube_dns
     #extra_hosts: *terrakube_hosts
     labels: *traefik_dev_labels
@@ -242,28 +239,29 @@ services:
       - 8090
       - 3000
       - 5556
-    container_name: terrakube-dev
     privileged: true
+    user: root
     build:
       context: .
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces/terrakube:cached
       - 'maven_data:/home/vscode/.m2'
+      - ./tls/rootCA.pem:/var/run/terrakube-mkcert/rootCA.pem:ro
     networks:
       - terrakube-network
   minio:
-    container_name: terrakube-minio
     image: pgsty/silo:${TK_MINIO_VERSION}
     command: server /data --console-address ":9001"
     environment: *minio_env
     volumes:
       - 'minio_data:/data'
     networks:
-      - terrakube-network
+      terrakube-network:
+        aliases:
+          - terrakube-minio
   minio-init:
     image: pgsty/silo:${TK_MINIO_VERSION}
-    container_name: terrakube-minio-init
     depends_on:
       - minio
     entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 ${TK_OUTPUT_ACCESS_KEY} ${TK_OUTPUT_SECRET_KEY}; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/${TK_OUTPUT_BUCKET_NAME}; exit 0;"]
@@ -271,7 +269,6 @@ services:
       - terrakube-network
   redis-service:
     image: docker.io/valkey/valkey:${TK_REDIS_VERSION}
-    container_name: ${TK_REDIS_CONTAINER_NAME}
     command:
       - valkey-server
       - --requirepass
@@ -285,10 +282,11 @@ services:
     volumes:
       - 'redis_data:/data'
     networks:
-      - terrakube-network
+      terrakube-network:
+        aliases:
+          - ${TK_REDIS_CONTAINER_NAME}
   postgresql-service:
     image: postgres:${TK_POSTGRESQL_VERSION}
-    container_name: postgresql-service
     environment:
       - POSTGRES_USER=${TK_POSTGRESQL_USERNAME}
       - POSTGRES_PASSWORD=${TK_POSTGRESQL_PASSWORD}

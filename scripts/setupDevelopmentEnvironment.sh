@@ -26,10 +26,10 @@ function generateApiVars() {
 		TerrakubeUiURL="https://$CODESPACE_NAME-3000.app.github.dev"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
 	elif [ "$USER" = "vscode" ]; then
-		TerrakubeHostname="terrakube-api.platform.local"
+		TerrakubeHostname="terrakube-api.localhost"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
-		DexIssuerUri="https://terrakube-dex.platform.local/dex"
-		TerrakubeUiURL="https://terrakube.platform.local"
+		DexIssuerUri="https://terrakube-dex.localhost/dex"
+		TerrakubeUiURL="https://terrakube.localhost"
 	else
 		TerrakubeHostname="localhost:8080"
 		AzBuilderExecutorUrl="http://localhost:8090/api/v1/terraform-rs"
@@ -128,9 +128,9 @@ function generateExecutorVars() {
     TerrakubeRegistryDomain=$(echo "https://$CODESPACE_NAME-8075.app.github.dev" | sed "s+https://++g")
     TerrakubeApiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
   elif [ "$USER" = "vscode" ]; then
-		AzBuilderApiUrl="https://terrakube-api.platform.local"
-		TerrakubeRegistryDomain="terrakube-registry.platform.local"
-		TerrakubeApiUrl="https://terrakube-api.platform.local"
+		AzBuilderApiUrl="https://terrakube-api.localhost"
+		TerrakubeRegistryDomain="terrakube-registry.localhost"
+		TerrakubeApiUrl="https://terrakube-api.localhost"
 	else
 		AzBuilderApiUrl="http://localhost:8080"
 		TerrakubeRegistryDomain="localhost:8075"
@@ -163,9 +163,6 @@ function generateExecutorVars() {
 	ExecutorFlagDisableAcknowledge=false
 	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
-
-	# Use unique JMX port for executor (45557) to avoid conflicts with other Java apps
-	JAVA_TOOL_OPTIONS="-Xmx512m -Xms256m -Dcom.sun.management.jmxremote.port=45557 -Dcom.sun.management.jmxremote.rmi.port=45557 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false"
 
 	rm -f .envExecutor
 
@@ -211,7 +208,6 @@ function generateExecutorVars() {
 	echo "TerrakubeRedisSSL=false" >>.envExecutor
 	echo "TerrakubeRedisUsername=default" >>.envExecutor
 	echo "TerrakubeRedisPassword=password123456" >>.envExecutor
-	echo "JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS" >>.envExecutor
 }
 
 function generateRegistryVars() {
@@ -223,11 +219,11 @@ function generateRegistryVars() {
 		TerrakubeUiURL="https://$CODESPACE_NAME-3000.app.github.dev"
 		AppIssuerUri="https://$CODESPACE_NAME-5556.app.github.dev/dex"
 	elif [ "$USER" = "vscode" ]; then
-		AzBuilderRegistry="https://terrakube-registry.platform.local"
-		AzBuilderApiUrl="https://terrakube-api.platform.local"
-		DexIssuerUri="https://terrakube-dex.platform.local/dex"
-		TerrakubeUiURL="https://terrakube.platform.local"
-		AppIssuerUri="https://terrakube-dex.platform.local/dex"
+		AzBuilderRegistry="https://terrakube-registry.localhost"
+		AzBuilderApiUrl="https://terrakube-api.localhost"
+		DexIssuerUri="https://terrakube-dex.localhost/dex"
+		TerrakubeUiURL="https://terrakube.localhost"
+		AppIssuerUri="https://terrakube-dex.localhost/dex"
 	else
 		AzBuilderRegistry="http://localhost:8075"
 		AzBuilderApiUrl="http://localhost:8080"
@@ -253,9 +249,6 @@ function generateRegistryVars() {
 	InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
 	AppClientId=example-app
 
-	# Use unique JMX port for registry (45558) to avoid conflicts with other Java apps
-	JAVA_TOOL_OPTIONS="-Xmx256m -Xms128m -Dcom.sun.management.jmxremote.port=45558 -Dcom.sun.management.jmxremote.rmi.port=45558 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false"
-
 	rm -f .envRegistry
 
 	echo "AzBuilderRegistry=$AzBuilderRegistry" >>.envRegistry
@@ -278,7 +271,6 @@ function generateRegistryVars() {
 	echo "AzureAccountKey=$AzureAccountKey" >>.envRegistry
 	echo "AzureConnectionString=$AzureConnectionString" >>.envRegistry
 	echo "AzureCustomConnectionString=true" >>.envRegistry
-	echo "JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS" >>.envRegistry
 }
 
 function generateUiVars() {
@@ -289,10 +281,10 @@ function generateUiVars() {
 		REACT_CONFIG_REGISTRY_URI="https://$CODESPACE_NAME-8075.app.github.dev"
 		REACT_CONFIG_AUTHORITY="https://$CODESPACE_NAME-5556.app.github.dev/dex"
 	else
-		REACT_CONFIG_TERRAKUBE_URL="https://terrakube-api.platform.local/api/v1/"
-		REACT_CONFIG_REDIRECT="https://terrakube.platform.local"
-		REACT_CONFIG_REGISTRY_URI="https://terrakube-registry.platform.local"
-		REACT_CONFIG_AUTHORITY="https://terrakube-dex.platform.local/dex"
+		REACT_CONFIG_TERRAKUBE_URL="https://terrakube-api.localhost/api/v1/"
+		REACT_CONFIG_REDIRECT="https://terrakube.localhost"
+		REACT_CONFIG_REGISTRY_URI="https://terrakube-registry.localhost"
+		REACT_CONFIG_AUTHORITY="https://terrakube-dex.localhost/dex"
 	fi
 
 	REACT_CONFIG_CLIENT_ID="example-app"
@@ -360,8 +352,8 @@ function generateDexConfiguration() {
 		uiRedirect="https://$CODESPACE_NAME-3000.app.github.dev"
 	elif [ "$USER" = "vscode" ]; then
 	  echo "Echo using local devcontainer"
-		jwtIssuer="https://terrakube-dex.platform.local"
-		uiRedirect="https://terrakube.platform.local"
+		jwtIssuer="https://terrakube-dex.localhost"
+		uiRedirect="https://terrakube.localhost"
 	fi
 
 	sed -i "s+TEMPLATE_DEVCONTAINER_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/devcontainer/config-ldap.yaml
@@ -393,6 +385,9 @@ function generateWorkspaceInformation() {
 
 function importCACertificateDevContainer() {
 	if [ "$CODESPACES" != "true" ] && [ "$USER" == "vscode" ]; then
+	  if [ ! -f /workspaces/terrakube/.devcontainer/rootCA.pem ]; then
+	    return
+	  fi
 	  echo "Importing custom rootCA"
   	openssl x509 -outform der -in /workspaces/terrakube/.devcontainer/rootCA.pem -out /workspaces/terrakube/.devcontainer/rootCA.der
 

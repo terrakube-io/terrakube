@@ -9,6 +9,11 @@ services:
 
   ldap-service:
     image: osixia/openldap:1.5.0
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /bootstrap-source/config-ldap.ldif /container/service/slapd/assets/config/bootstrap/ldif/custom/
+        exec /container/tool/run
     environment:
       LDAP_ORGANISATION: "Example, Inc"
       LDAP_DOMAIN: "example.org"
@@ -16,7 +21,9 @@ services:
       LDAP_TLS: "false"
       LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
+      # OpenLDAP rewrites LDIF files while importing them. Copy the tracked
+      # source into the container instead of allowing it to modify the worktree.
+      - ./ldif/config-ldap.ldif:/bootstrap-source/config-ldap.ldif:ro
     ports:
       - 389:389
 
