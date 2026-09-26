@@ -17,6 +17,7 @@ import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -115,6 +116,12 @@ public class ModuleServiceImpl implements ModuleService {
         return terrakubeClient.searchOrganizationModules(query).getData().getOrganization().getEdges().stream()
                 .flatMap(organizationEdge -> organizationEdge.getNode().getModule().getEdges().stream())
                 .anyMatch(moduleEdge -> !moduleEdge.getNode().getVersion().getEdges().isEmpty());
+    }
+
+    @CacheEvict(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
+    @Override
+    public void evictAvailableVersions(String organizationName, String moduleName, String providerName) {
+        log.info("Evicting cached versions of module {}/{} in organization {}", moduleName, providerName, organizationName);
     }
 
     @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")

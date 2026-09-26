@@ -14,6 +14,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -102,5 +103,7 @@ class ModuleWebServiceImplTest {
                 .andExpect(status().isNotFound());
         verify(moduleService, never()).getModuleVersionPath(anyString(), anyString(), anyString(), anyString());
         verifyNoMoreInteractions(storageService);
+        // Terraform only asks for a removed version when this replica's cached list still offers it.
+        verify(moduleService, times(2)).evictAvailableVersions("org", "module", "aws");
     }
 }
