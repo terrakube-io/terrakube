@@ -12,14 +12,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* The sidebar (menu, org selector, help and user menus) styles its own links; keep the page rule off it. */
-[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *)) {
+/* The sidebar and its menus style their own links; the help and user menus render in a portal, so name them too. */
+[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)) {
   color: var(--tk-link);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
-[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *)):hover {
+[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)):hover {
   color: var(--tk-link-hover);
   text-decoration: underline;
 }
@@ -341,6 +341,12 @@
 
 [data-theme="dark"] .ant-tag {
   border-radius: 2em; /* Pill shape */
+}
+
+/* antd 6 tags default to the filled variant with a transparent border, which vanishes on dark surfaces.
+   Colour-specific rules below and inline tag colours still override it. */
+[data-theme="dark"] .ant-tag-filled {
+  border-color: var(--tk-border-primary);
 }
 
 [data-theme="dark"] .ant-tag-default,

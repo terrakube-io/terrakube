@@ -1,12 +1,11 @@
 import isLightColor from "./isLightColor";
 import stringToDeterministicColor from "./stringToDeterministicColor";
 
-export default function (baseHex: string) {
-  const isLight = isLightColor(baseHex);
-  const color = stringToDeterministicColor(baseHex);
+export default function (seed: string) {
+  const color = stringToDeterministicColor(seed);
 
   return {
-    color: isLight ? "#ffffff" : "#000000",
+    color: isLightColor(color) ? "#000000" : "#ffffff",
     background: color,
   };
 }

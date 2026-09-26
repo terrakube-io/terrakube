@@ -8,9 +8,9 @@ describe("WorkspaceStatusTag", () => {
     const { container } = render(<WorkspaceStatusTag status={JobStatus.Failed} />);
     const tag = container.querySelector(".ant-tag") as HTMLElement;
 
-    // A color prop would make Ant paint the tag itself and bypass the contrast-safe CSS.
+    // A color prop would make Ant paint the tag inline and bypass the contrast-safe CSS.
     expect(tag).toHaveClass("tk-status-tag");
-    expect(tag).not.toHaveClass("ant-tag-has-color");
+    expect(tag.style.backgroundColor).toBe("");
     expect(tag.style.getPropertyValue("--status-color")).toBe(statusColors[JobStatus.Failed]);
     expect(screen.getByText(/failed/i)).toBeInTheDocument();
   });
