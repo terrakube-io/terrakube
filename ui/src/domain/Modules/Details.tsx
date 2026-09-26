@@ -21,7 +21,6 @@ import {
   theme,
   Typography,
 } from "antd";
-import { Buffer } from "buffer";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
@@ -140,7 +139,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
     setMarkdown("loading...");
     setVersion(e.key);
     if (module) {
-      loadReadme(module.attributes.registryPath, e.key);
       loadModuleDetails(module.attributes.registryPath, e.key);
     } else {
       setMarkdown("Failed to load module");
@@ -159,7 +157,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
     setSubmodule("");
     setSubmodulePath("");
     loadModuleDetails(module!.attributes.registryPath, version, "");
-    loadReadme(module!.attributes.registryPath, version);
   };
 
   const onDelete = (id: string) => {
@@ -174,15 +171,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       });
   };
 
-  async function loadReadmeFile(text: string) {
-    if (text != null) {
-      const textReadme = Buffer.from(text, "base64").toString();
-      setMarkdown(textReadme);
-    } else {
-      setMarkdown("");
-    }
-  }
-
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -194,7 +182,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         setModuleName(response.data.data.attributes.name);
         const latestVersion = response.data.data.attributes.latestVersion;
         setVersion(latestVersion);
-        loadReadme(response.data.data.attributes.registryPath, latestVersion);
         loadModuleDetails(response.data.data.attributes.registryPath, latestVersion);
         setModuleInclude(response.data.included, setVCSProvider, setAllVersions);
       })
@@ -220,7 +207,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         const data = resp.data;
         setDetails(data);
         if (submodule === "") setSubmodules(data.submodules);
-        else setMarkdown(data.readme ?? "");
+        setMarkdown(data.readme ?? "");
         setInputs(data.variables.length ? `Inputs (${data.variables.length})` : "Inputs");
         setOutputs(data.outputs.length ? `Outputs (${data.outputs.length})` : "Outputs");
         setResources(data.resources.length ? `Resources (${data.resources.length})` : "Resources");
@@ -230,20 +217,10 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       })
       .catch((err) => {
         console.error("Error loading module details:", err);
+        setMarkdown("");
         setLoadingInputs("Failed to load");
         setLoadingOutputs("Failed to load");
         setLoadingResources("Failed to load");
-      });
-  };
-
-  const loadReadme = (path: string, version: string) => {
-    axiosInstance
-      .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/readme/v1/${path}/${version}/download`)
-      .then((resp) => {
-        loadReadmeFile(resp.data.content);
-      })
-      .catch(() => {
-        setMarkdown("");
       });
   };
 

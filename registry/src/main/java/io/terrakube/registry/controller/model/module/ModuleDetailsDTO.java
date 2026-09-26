@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * What the UI shows on a module's detail page: the inputs, outputs and resources declared by the
- * module's own .tf files, the names of its submodules, and (for a submodule) its README.
+ * module's own .tf files, the names of its submodules, and its README (null when there is none).
  */
 public record ModuleDetailsDTO(
         List<String> submodules,

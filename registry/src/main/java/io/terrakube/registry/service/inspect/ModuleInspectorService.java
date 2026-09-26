@@ -7,7 +7,9 @@ import io.terrakube.registry.service.module.ModuleService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -31,6 +33,10 @@ import java.util.zip.ZipInputStream;
 public class ModuleInspectorService {
 
     private static final String SUBMODULES_DIR = "modules/";
+    private static final String README = "README.md";
+    // Only the extracted text is held in memory, so these bound a request's heap on a huge or crafted archive.
+    private static final int MAX_FILE_BYTES = 4 * 1024 * 1024;
+    private static final long MAX_TOTAL_BYTES = 32L * 1024 * 1024;
 
     private final ModuleService moduleService;
     private final StorageService storageService;
@@ -47,6 +53,7 @@ public class ModuleInspectorService {
         TreeSet<String> submodules = new TreeSet<>();
         StringBuilder hcl = new StringBuilder();
         String readme = null;
+        long totalBytes = 0;
 
         try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(zip))) {
             ZipEntry entry;
@@ -61,17 +68,28 @@ public class ModuleInspectorService {
                         submodules.add(parts[1]);
                     }
                 }
-                boolean isTerraform = name.endsWith(".tf");
-                if (prefix.isEmpty()) {
-                    if (isTerraform && !name.contains("/")) {
-                        hcl.append('\n').append(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-                    }
-                } else if (name.startsWith(prefix)) {
-                    if (isTerraform) {
-                        hcl.append('\n').append(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-                    } else if (name.equals(prefix + "README.md")) {
-                        readme = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                    }
+                // The root module is only its top-level .tf files, as Terraform reads it. A submodule takes
+                // everything under modules/<name>/, nested directories included, to match the old UI.
+                if (!name.startsWith(prefix) || (prefix.isEmpty() && name.contains("/"))) {
+                    continue;
+                }
+                String file = name.substring(prefix.length());
+                boolean isTerraform = file.endsWith(".tf");
+                boolean isReadme = file.equalsIgnoreCase(README);
+                if (!isTerraform && !isReadme) {
+                    continue;
+                }
+                byte[] bytes = in.readNBytes(MAX_FILE_BYTES + 1);
+                totalBytes += bytes.length;
+                if (bytes.length > MAX_FILE_BYTES || totalBytes > MAX_TOTAL_BYTES) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                            "Module archive is too large to inspect: " + name);
+                }
+                String text = new String(bytes, StandardCharsets.UTF_8);
+                if (isTerraform) {
+                    hcl.append('\n').append(text);
+                } else {
+                    readme = text;
                 }
             }
         } catch (IOException e) {

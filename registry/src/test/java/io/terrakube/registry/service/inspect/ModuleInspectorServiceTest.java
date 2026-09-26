@@ -4,15 +4,19 @@ import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.module.ModuleService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,7 +57,7 @@ class ModuleInspectorServiceTest {
         assertThat(details.variables()).containsExactly(new ModuleDetailsDTO.Variable("cidr", "string", "VPC CIDR", "\"10.0.0.0/16\""));
         assertThat(details.outputs()).containsExactly(new ModuleDetailsDTO.Output("vpc_id", "The VPC id"));
         assertThat(details.resources()).containsExactly(new ModuleDetailsDTO.Resource("aws_vpc", "main"));
-        assertThat(details.readme()).isNull();
+        assertThat(details.readme()).isEqualTo("# root");
     }
 
     @Test
@@ -76,5 +80,34 @@ class ModuleInspectorServiceTest {
 
         verify(moduleService).getModuleVersionPath("org", "vpc", "aws", "1.0.0");
         assertThat(details.variables()).hasSize(1);
+    }
+
+    @Test
+    void readmeMatchesAnyCaseAndIsNullWhenMissing() throws IOException {
+        byte[] archive = zip(Map.of(
+                "Readme.md", "# root",
+                "modules/a/readme.md", "# a",
+                "modules/a/docs/README.md", "# not the submodule readme",
+                "modules/b/main.tf", ""));
+
+        assertThat(service.inspect(archive, "").readme()).isEqualTo("# root");
+        assertThat(service.inspect(archive, "a").readme()).isEqualTo("# a");
+        assertThat(service.inspect(archive, "b").readme()).isNull();
+    }
+
+    @Test
+    void rejectsArchivesWhoseExtractedTextIsTooLarge() throws IOException {
+        byte[] oversizedFile = zip(Map.of("main.tf", " ".repeat(4 * 1024 * 1024 + 1)));
+        Map<String, String> manyFiles = new HashMap<>();
+        for (int i = 0; i < 9; i++) {
+            manyFiles.put("f" + i + ".tf", " ".repeat(4 * 1024 * 1024));
+        }
+
+        assertThatThrownBy(() -> service.inspect(oversizedFile, ""))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));
+        assertThatThrownBy(() -> service.inspect(zip(manyFiles), "")).isInstanceOf(ResponseStatusException.class);
+        // Files outside the inspected module are never read, whatever their size.
+        assertThat(service.inspect(oversizedFile, "other").variables()).isEmpty();
     }
 }
