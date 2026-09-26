@@ -95,8 +95,14 @@ public class JobManageHook implements LifeCycleHook<Job> {
 
     private void updateWorkspaceStatus(Job job) {
         log.info("Updating last status for workspace {} to {}", job.getWorkspace().getName(), job.getStatus());
-        job.getWorkspace().setLastJobStatus(job.getStatus());
-        job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
-        workspaceRepository.save(job.getWorkspace());
+        try {
+            job.getWorkspace().setLastJobStatus(job.getStatus());
+            job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
+            workspaceRepository.save(job.getWorkspace());
+        } catch (RuntimeException e) {
+            // On CREATE this runs before createJobContext: failing the hook here would leave
+            // the committed job in pending forever, with no Quartz context to ever pick it up.
+            log.error("Failed to update workspace status for job {}: {}", job.getId(), e.getMessage());
+        }
     }
 }
