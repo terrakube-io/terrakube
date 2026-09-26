@@ -73,14 +73,16 @@ export default function PolicyStatusTag({
 
   const tag = (
     <Tag
-      color={color}
       icon={icon}
-      className={className}
-      style={{
-        cursor: isInteractive ? "pointer" : "default",
-        marginInlineEnd: 0,
-        ...style,
-      }}
+      className={className ? `tk-status-tag ${className}` : "tk-status-tag"}
+      style={
+        {
+          "--status-color": color,
+          cursor: isInteractive ? "pointer" : "default",
+          marginInlineEnd: 0,
+          ...style,
+        } as React.CSSProperties
+      }
       data-testid={`policy-status-tag-${testIdKey}`}
     >
       {label}
@@ -93,7 +95,13 @@ export default function PolicyStatusTag({
         <Link
           to={`/organizations/${organizationId}/workspaces/${workspaceId}/settings/policies`}
           onClick={(e) => e.stopPropagation()}
-          style={{ display: "inline-flex", textDecoration: "none", verticalAlign: "middle", position: "relative", zIndex: 2 }}
+          style={{
+            display: "inline-flex",
+            textDecoration: "none",
+            verticalAlign: "middle",
+            position: "relative",
+            zIndex: 2,
+          }}
           aria-label={`Policy compliance: ${label}`}
         >
           {tag}

@@ -108,6 +108,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
           {organizations.length > SEARCH_THRESHOLD && (
             <Input
               className="org-selector-search"
+              aria-label="Search organizations"
               placeholder="Search organizations..."
               prefix={<SearchOutlined />}
               value={searchTerm}

@@ -4,13 +4,6 @@
   overflow: visible;
 }
 
-/* Defensive: antd's internal Sider wrapper doesn't always carry an explicit
-   height, which breaks the height:100% chain below it and can push the
-   footer (org switcher) out of view on tall nested menus. */
-.app-sidebar .ant-layout-sider-children {
-  height: 100%;
-}
-
 .app-sidebar-inner {
   display: flex;
   flex-direction: column;
@@ -94,8 +87,8 @@
 }
 
 .app-sidebar-collapse-trigger {
-  background-color: #2e2e2e;
-  border: 1px solid #3d3d3d;
+  background-color: var(--tk-sidebar-control-bg);
+  border: 1px solid var(--tk-sidebar-control-border);
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   padding: 4px 8px;
@@ -106,12 +99,15 @@
   flex-shrink: 0;
   height: 32px;
   font-size: 13px;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .app-sidebar-collapse-trigger:hover {
-  background-color: #3d3d3d;
-  border-color: #4d4d4d;
+  background-color: var(--tk-sidebar-control-bg-hover);
+  border-color: var(--tk-sidebar-control-border-hover);
   color: #fff;
 }
 
@@ -175,4 +171,11 @@
   padding: 12px;
   border-top: 1px solid var(--tk-sidebar-border);
   flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar-home-link:hover .app-sidebar-logo,
+  .app-sidebar-menu {
+    animation: none;
+  }
 }
