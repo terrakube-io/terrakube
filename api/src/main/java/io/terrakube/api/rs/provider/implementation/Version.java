@@ -1,6 +1,9 @@
 package io.terrakube.api.rs.provider.implementation;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -13,6 +16,9 @@ import java.util.List;
 import java.util.UUID;
 
 @Include(rootLevel = false)
+@CreatePermission(expression = "team manage provider version")
+@UpdatePermission(expression = "team manage provider version")
+@DeletePermission(expression = "team manage provider version")
 @Getter
 @Setter
 @Entity(name = "version")

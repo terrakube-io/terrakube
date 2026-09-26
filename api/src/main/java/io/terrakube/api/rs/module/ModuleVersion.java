@@ -5,7 +5,10 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.UpdatePermission;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -21,6 +24,9 @@ import lombok.Setter;
 @Setter
 @Entity(name = "module_version")
 @Include(rootLevel = false)
+@CreatePermission(expression = "team manage module version")
+@UpdatePermission(expression = "team manage module version OR user is a super service")
+@DeletePermission(expression = "team manage module version")
 public class ModuleVersion {
     @Id
     @JdbcTypeCode(Types.VARCHAR)
