@@ -781,8 +781,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         Thread.sleep(5000);
 
-        if (Boolean.TRUE.equals(showRawState)) {
-            terraformJob.setRawState(rawStateJSON.toString());
+        log.info("Terraform show returned {} chars, state pull {} chars", jsonState.length(), rawTfState.length());
+        // stderr shares the buffer, so only a failed command's output is logged: it is the error text.
+        if (!Boolean.TRUE.equals(showJsonState)) {
+            log.warn("Terraform show failed for job {}: {}", terraformJob.getJobId(), jsonState);
+        }
+        if (!Boolean.TRUE.equals(showRawState)) {
+            log.warn("Terraform state pull failed for job {}: {}", terraformJob.getJobId(), rawTfState);
         }
 
         if (Boolean.TRUE.equals(showJsonState)) {
@@ -794,10 +799,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             log.info("Checking terraform output json");
             Boolean showOutput = terraformClient.output(terraformProcessData, terraformJsonOutput, terraformJsonOutput).get();
+            log.info("Terraform output returned {} chars", jsonOutput.length());
             if (Boolean.TRUE.equals(showOutput)) {
                 terraformJob.setTerraformOutput(jsonOutput.toString());
                 terraformOutputsService.publishOutputs(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jsonOutput.toString());
+            } else {
+                log.warn("Terraform output failed for job {}: {}", terraformJob.getJobId(), jsonOutput);
             }
 
         }
@@ -1103,11 +1111,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return parameters != null ? parameters : new HashMap<>();
     }
 
+    // show, state pull and output print the state and output values in plain text, secrets included,
+    // so they are only buffered, never logged.
     private Consumer<String> getStringConsumer(TextStringBuilder terraformOutput) {
-        return responseOutput -> {
-            log.info(responseOutput);
-            terraformOutput.appendln(responseOutput);
-        };
+        return terraformOutput::appendln;
     }
 
     private void initBanner(TerraformJob terraformJob, Consumer<String> output) {

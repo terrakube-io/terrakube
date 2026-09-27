@@ -1,5 +1,8 @@
 package io.terrakube.executor.service.terraform;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
@@ -17,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
+import org.mockito.stubbing.Answer;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
 
@@ -262,6 +267,48 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         assertTrue(result.getOutputLog().contains("Outputs:"));
         assertTrue(result.getOutputLog().contains("foo = \"bar\""));
+    }
+
+    @Test
+    void keepsStateAndOutputsOutOfTheExecutorLog() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        String secretLine = "{\"password\":\"secret-marker-7f3a\"," + "x".repeat(10_000) + "}";
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        Answer<CompletableFuture<Boolean>> emitsSecrets = invocation -> {
+            Consumer<String> consumer = invocation.getArgument(1);
+            for (int i = 0; i < 1_000; i++) {
+                consumer.accept(secretLine);
+            }
+            return CompletableFuture.completedFuture(true);
+        };
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(emitsSecrets);
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(emitsSecrets);
+        when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(emitsSecrets);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(TerraformExecutorServiceImpl.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            subject.apply(terraformJob, tempDir.toFile());
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().noneMatch(event -> event.getFormattedMessage().contains("secret-marker-7f3a")));
+        int loggedChars = appender.list.stream().mapToInt(event -> event.getFormattedMessage().length()).sum();
+        assertTrue(loggedChars < 10_000, "logged " + loggedChars + " chars");
+        verify(terraformState).saveStateJson(eq(terraformJob),
+                argThat(json -> json.length() > 10_000_000), argThat(raw -> raw.length() > 10_000_000));
     }
 
     // Real `terraform apply <planfile>` reprints the plan's classic HCL diff before executing it -
