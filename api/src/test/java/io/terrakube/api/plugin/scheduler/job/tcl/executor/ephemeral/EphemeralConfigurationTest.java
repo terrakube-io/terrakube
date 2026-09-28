@@ -47,6 +47,20 @@ public class EphemeralConfigurationTest {
     }
 
     @Test
+    public void emptyStringKeepsTheFieldDefaultWhereOneExists() {
+        // A value that renders to "" (e.g. a Helm value ExecutorEphemeralTtlSecondsAfterFinished="")
+        // must not become withTtlSecondsAfterFinished(null), which would leave finished Jobs uncollected.
+        Map<String, String> properties = new LinkedHashMap<>();
+        properties.put("io.terrakube.executor.ephemeral.ttlSecondsAfterFinished", "");
+        properties.put("io.terrakube.executor.ephemeral.terminationGracePeriodSeconds", "");
+
+        EphemeralConfiguration config = bind(properties);
+
+        assertEquals(30, config.getTtlSecondsAfterFinished());
+        assertEquals(60L, config.getTerminationGracePeriodSeconds());
+    }
+
+    @Test
     public void unboundTerminationGracePeriodDefaultsToSixty() {
         EphemeralConfiguration config = bind(new LinkedHashMap<>());
 
