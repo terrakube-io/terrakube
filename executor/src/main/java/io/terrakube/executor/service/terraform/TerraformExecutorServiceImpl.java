@@ -18,6 +18,7 @@ import io.terrakube.executor.service.terraform.structured.StructuredOutputPersis
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
@@ -43,6 +44,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -83,6 +86,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     MeterRegistry meterRegistry;
     OpaExecutorService opaExecutorService;
     BinaryCacheRecoveryService binaryCacheRecoveryService;
+    // The per-call JSON clients below are not Spring beans, so on SIGTERM Spring only closes the
+    // shared terraformClient - which has no live process at that point. Tracked here so
+    // closeLiveJsonClients() can terminate the running terraform (letting it release its state
+    // lock) inside terminationGracePeriodSeconds, instead of the JVM exiting out from under it.
+    private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
 
     public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
         this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
@@ -233,20 +241,24 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         }
                     };
 
-                    TerraformClient jsonPlanClient = buildJsonEnabledPlanClient();
+                    TerraformClient jsonPlanClient = track(buildJsonEnabledPlanClient());
                     Consumer<String> guardedJsonLineConsumer = guardConsumer(jsonLineConsumer);
 
-                    if (isDestroy) {
-                        log.warn("Executor running a plan to destroy resources...");
-                        exitCode = jsonPlanClient.planDestroyDetailExitCode(
-                                getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
-                                guardedJsonLineConsumer,
-                                null).get();
-                    } else {
-                        exitCode = jsonPlanClient.planDetailExitCode(
-                                getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
-                                guardedJsonLineConsumer,
-                                null).get();
+                    try {
+                        if (isDestroy) {
+                            log.warn("Executor running a plan to destroy resources...");
+                            exitCode = jsonPlanClient.planDestroyDetailExitCode(
+                                    getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
+                                    guardedJsonLineConsumer,
+                                    null).get();
+                        } else {
+                            exitCode = jsonPlanClient.planDetailExitCode(
+                                    getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
+                                    guardedJsonLineConsumer,
+                                    null).get();
+                        }
+                    } finally {
+                        release(jsonPlanClient);
                     }
 
                     // Unconditional final snapshot - the periodic flush above only fires when a json
@@ -522,9 +534,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
         };
 
-        TerraformClient jsonApplyClient = buildJsonEnabledApplyClient();
+        TerraformClient jsonApplyClient = track(buildJsonEnabledApplyClient());
 
-        boolean execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        boolean execution;
+        try {
+            execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } finally {
+            release(jsonApplyClient);
+        }
 
         String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
         if (stateJson != null) {
@@ -568,9 +585,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
         };
 
-        TerraformClient jsonDestroyClient = buildJsonEnabledDestroyClient();
+        TerraformClient jsonDestroyClient = track(buildJsonEnabledDestroyClient());
 
-        boolean execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        boolean execution;
+        try {
+            execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } finally {
+            release(jsonDestroyClient);
+        }
 
         applyStructuredOutputService.publishFinalApplySnapshot(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
@@ -584,6 +606,40 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     private static void acceptConsoleLines(Consumer<String> output, String message) {
         for (String line : message.split("\n", -1)) {
             output.accept(line);
+        }
+    }
+
+    // Package-private (not private) so tests can exercise closeLiveJsonClients() against a client
+    // that was never released by a job thread - the in-flight case @PreDestroy exists for.
+    TerraformClient track(TerraformClient client) {
+        liveJsonClients.add(client);
+        return client;
+    }
+
+    private void release(TerraformClient client) {
+        // close() before remove(): the job thread's @Async executor is destroyed by Spring before
+        // this bean (creation-order reverse), so shutdownNow() can interrupt this thread and race
+        // closeLiveJsonClients() on the shutdown-hook thread. Removing first would let that race
+        // find an empty set and return without ever calling close() - i.e. the JVM could exit
+        // while this thread is still inside close(). Closing first means whichever thread gets
+        // here first blocks the other one on the same (idempotent) close() call instead.
+        try {
+            client.close();
+        } catch (Exception e) {
+            log.warn("Unable to close terraform client: {}", e.getMessage());
+        } finally {
+            liveJsonClients.remove(client);
+        }
+    }
+
+    // Fires on SIGTERM via Spring Boot's shutdown hook, on the hook thread itself, so the JVM
+    // stays up while close() signals terraform and waits for it to exit. Double-closing a client
+    // whose job thread reaches release() concurrently is harmless.
+    @PreDestroy
+    void closeLiveJsonClients() {
+        for (TerraformClient client : liveJsonClients) {
+            log.warn("Executor shutting down with a terraform process in flight, terminating it");
+            release(client);
         }
     }
 

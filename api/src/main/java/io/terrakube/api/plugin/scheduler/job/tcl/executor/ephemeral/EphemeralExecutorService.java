@@ -329,24 +329,13 @@ public class EphemeralExecutorService {
                 .withResources(hasResources ? resourceBuilder.build() : null)
                 .endContainer()
                 .withRestartPolicy("Never")
+                .withTerminationGracePeriodSeconds(ephemeralConfiguration.getTerminationGracePeriodSeconds())
                 .endSpec()
                 .endTemplate()
                 .withTtlSecondsAfterFinished(ephemeralConfiguration.getTtlSecondsAfterFinished())
+                .withActiveDeadlineSeconds(ephemeralConfiguration.getActiveDeadlineSeconds())
+                .withBackoffLimit(ephemeralConfiguration.getBackoffLimit())
                 .endSpec();
-
-        if (ephemeralConfiguration.getActiveDeadlineSeconds() != null) {
-            jobBuilder.editSpec().withActiveDeadlineSeconds(ephemeralConfiguration.getActiveDeadlineSeconds()).endSpec();
-        }
-
-        if (ephemeralConfiguration.getBackoffLimit() != null) {
-            jobBuilder.editSpec().withBackoffLimit(ephemeralConfiguration.getBackoffLimit()).endSpec();
-        }
-
-        if (ephemeralConfiguration.getTerminationGracePeriodSeconds() != null) {
-            jobBuilder.editSpec().editTemplate().editSpec()
-                    .withTerminationGracePeriodSeconds(ephemeralConfiguration.getTerminationGracePeriodSeconds())
-                    .endSpec().endTemplate().endSpec();
-        }
 
         if (!podAnnotations.isEmpty()) {
             jobBuilder.editSpec().editTemplate().editOrNewMetadata()
