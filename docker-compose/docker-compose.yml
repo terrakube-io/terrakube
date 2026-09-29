@@ -1,5 +1,3 @@
-version: "3.8"
-
 ### DNS ####
 
 x-terrakube_dns: &terrakube_dns
@@ -8,11 +6,13 @@ x-terrakube_dns: &terrakube_dns
 #### Extra Hosts #####
 
 x-terrakube_hosts: &terrakube_hosts
-  - "terrakube-api.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-dex.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-executor.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube.${DOMAIN}:${HOST_GATEWAY}"
-  - "terrakube-registry.${DOMAIN}:${HOST_GATEWAY}"
+  # Containers resolve *.localhost to their own loopback address. Route public
+  # Terrakube names through the host-published Traefik ports instead.
+  - "terrakube-api.${DOMAIN}:host-gateway"
+  - "terrakube-dex.${DOMAIN}:host-gateway"
+  - "terrakube-executor.${DOMAIN}:host-gateway"
+  - "terrakube.${DOMAIN}:host-gateway"
+  - "terrakube-registry.${DOMAIN}:host-gateway"
 
 #### Container Environment Variables #####
 
@@ -219,11 +219,6 @@ x-traefik_registry_labels: &traefik_registry_labels
 services:
   traefik:
     image: traefik:v2
-    container_name: terrakube-traefik
-    # Give Traefik a reserved IP address in your external network, pick something towards the end of the network to avoid conflicts
-    networks:
-      default:
-        ipv4_address: $TRAEFIK_IPV4_ADDRESS
     environment: *traefik_env
     dns: *terrakube_dns
     ports:
@@ -237,7 +232,6 @@ services:
     restart: unless-stopped
   terrakube-api:
     image: azbuilder/api-server:${TK_VERSION}
-    container_name: terrakube-api
     environment:
       <<: [*api_env]
     volumes:
@@ -249,7 +243,6 @@ services:
       - postgresql-service
   terrakube-ui:
     image: azbuilder/terrakube-ui:${TK_VERSION}
-    container_name: terrakube-ui
     extra_hosts: *terrakube_hosts
     labels: *traefik_ui_labels
     volumes:
@@ -262,7 +255,6 @@ services:
     image: azbuilder/executor:${TK_VERSION}
     labels: *traefik_executor_labels
     extra_hosts: *terrakube_hosts
-    container_name: terrakube-executor
     volumes:
       - ./rootCA.pem:/mnt/platform/bindings/ca-certificates/rootCA.pem:ro
       - ./type:/mnt/platform/bindings/ca-certificates/type:ro
@@ -273,7 +265,6 @@ services:
     image: azbuilder/open-registry:${TK_VERSION}
     labels: *traefik_registry_labels
     extra_hosts: *terrakube_hosts
-    container_name: terrakube-registry
     volumes:
       - ./rootCA.pem:/mnt/platform/bindings/ca-certificates/rootCA.pem:ro
       - ./type:/mnt/platform/bindings/ca-certificates/type:ro
@@ -283,17 +274,19 @@ services:
     image: ghcr.io/dexidp/dex:${TK_DEX_VERSION}
     extra_hosts: *terrakube_hosts
     labels: *traefik_dex_labels
-    container_name: terrakube-dex
     volumes:
       - ./config-ldap.yaml:/etc/dex/config.docker.yaml
   ldap-service:
     image: osixia/openldap:${TK_LDAP_VERSION}
-    container_name: terrakube-ldap-service
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /bootstrap-source/config-ldap.ldif /container/service/slapd/assets/config/bootstrap/ldif/custom/
+        exec /container/tool/run
     environment: *ldap_env
     volumes:
-      - ./ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
+      - ./ldif/config-ldap.ldif:/bootstrap-source/config-ldap.ldif:ro
   minio:
-    container_name: terrakube-minio
     image: pgsty/silo:${TK_MINIO_VERSION}
     command: server /data --console-address ":9001"
     environment: *minio_env
@@ -301,13 +294,11 @@ services:
       - 'minio_data:/data'
   minio-init:
     image: pgsty/silo:${TK_MINIO_VERSION}
-    container_name: terrakube-minio-init
     depends_on:
       - minio
     entrypoint: ["/bin/sh","-c","until /usr/bin/mc alias set tk http://minio:9000 ${TK_OUTPUT_ACCESS_KEY} ${TK_OUTPUT_SECRET_KEY}; do echo 'waiting for minio'; sleep 2; done; /usr/bin/mc mb --ignore-existing tk/${TK_OUTPUT_BUCKET_NAME}; exit 0;"]
   redis-service:
     image: valkey/valkey:${TK_REDIS_VERSION}
-    container_name: ${TK_REDIS_CONTAINER_NAME}
     command:
       - valkey-server
       - --requirepass
@@ -322,7 +313,6 @@ services:
       - 'redis_data:/data'
   postgresql-service:
     image: postgres:${TK_POSTGRESQL_VERSION}
-    container_name: postgresql-service
     environment:
       - POSTGRES_USER=${TK_POSTGRESQL_USERNAME}
       - POSTGRES_PASSWORD=${TK_POSTGRESQL_PASSWORD}
@@ -335,8 +325,3 @@ volumes:
   redis_data:
   postgresql_data:
     driver: local
-# External network is required, import its name below
-networks:
-  default:
-    name: $EXTERNAL_NETWORK_NAME
-    external: true
