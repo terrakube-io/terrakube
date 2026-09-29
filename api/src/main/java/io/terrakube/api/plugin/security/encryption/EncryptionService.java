@@ -7,11 +7,11 @@ import org.springframework.stereotype.Service;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Random;
 
 @Service
@@ -48,12 +48,10 @@ public class EncryptionService {
             // Perform encryption
             byte[] encryptedBytes = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
 
-            // Encode IV and encrypted data in Base64, and return as "IV:EncryptedData"
-            //String ivBase64 = Base64.getUrlEncoder().encodeToString(iv);
-            //String encryptedBase64 = Base64.getUrlEncoder().encodeToString(encryptedBytes);
-            String ivBase64 = new BigInteger(iv).toString(36);
-            String encryptedBase64 = new BigInteger(encryptedBytes).toString(36);
-            return ivBase64 + "/" + encryptedBase64;
+            // Encode IV and encrypted data in URL-safe Base64 (no "/"), and return as "IV/EncryptedData".
+            // A BigInteger round trip is not used because it drops leading 0x00/0xFF bytes.
+            Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+            return encoder.encodeToString(iv) + "/" + encoder.encodeToString(encryptedBytes);
         } catch (Exception e) {
             log.error("Error during AES encryption: {}", e.getMessage(), e);
             throw new RuntimeException("Encryption failed", e);
@@ -77,8 +75,8 @@ public class EncryptionService {
             String encryptedBase64 = parts[1];
 
             // Decode IV and encrypted data from Base64
-            byte[] iv = new BigInteger(ivBase64, 36).toByteArray();
-            byte[] encryptedBytes = new BigInteger(encryptedBase64, 36).toByteArray();
+            byte[] iv = Base64.getUrlDecoder().decode(ivBase64);
+            byte[] encryptedBytes = Base64.getUrlDecoder().decode(encryptedBase64);
 
             // Create SecretKeySpec and IvParameterSpec for decryption
             SecretKeySpec keySpec = new SecretKeySpec(generateHashFromToken(internalToken), "AES");
