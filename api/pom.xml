@@ -39,7 +39,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.16</maven-artifact.version>
         <commons-io.version>2.22.0</commons-io.version>
-        <kubernetes-client.version>7.9.0</kubernetes-client.version>
+        <kubernetes-client.version>8.0.0</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.64</buildpack.builder>
