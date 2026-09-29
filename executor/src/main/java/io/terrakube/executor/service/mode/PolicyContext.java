@@ -23,7 +23,9 @@ public class PolicyContext {
     private String overrideTeam;
     private String vcsType;
     private String connectionType;
+    @ToString.Exclude
     private String accessToken;
+    @ToString.Exclude
     private String moduleSshKey;
     private String repository;
     private String branch;

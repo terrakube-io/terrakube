@@ -25,6 +25,7 @@ public class TerraformJob {
     private String branch;
     private String folder;
     private String vcsType;
+    @ToString.Exclude
     private String accessToken;
     private String connectionType;
     @ToString.Exclude
@@ -33,11 +34,14 @@ public class TerraformJob {
     private boolean refresh;
     private boolean refreshOnly;
     private boolean ignoreError;
+    @ToString.Exclude
     private String moduleSshKey;
     private String commitId;
     private boolean tofu;
     private String agentUrl;
+    @ToString.Exclude
     private HashMap<String, String> environmentVariables;
+    @ToString.Exclude
     private HashMap<String, String> variables;
     private List<Map<String, Object>> liveChanges;
     private List<Map<String, Object>> jobDiagnostics;
