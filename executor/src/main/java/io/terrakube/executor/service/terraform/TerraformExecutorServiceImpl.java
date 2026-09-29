@@ -771,23 +771,25 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.info("Running Terraform show");
         TextStringBuilder jsonState = new TextStringBuilder();
         TextStringBuilder rawTfState = new TextStringBuilder();
-        Consumer<String> applyJSON = getStringConsumer(jsonState);
-        Consumer<String> rawStateJSON = getStringConsumer(rawTfState);
+        TextStringBuilder showError = new TextStringBuilder();
+        TextStringBuilder statePullError = new TextStringBuilder();
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDirectory, executorTempDirectory);
         terraformProcessData.setTerraformVariables(new HashMap());
         terraformProcessData.setTerraformEnvironmentVariables(new HashMap());
-        Boolean showJsonState = terraformClient.show(terraformProcessData, applyJSON, applyJSON).get();
-        Boolean showRawState = terraformClient.statePull(terraformProcessData, rawStateJSON, rawStateJSON).get();
+        Boolean showJsonState = terraformClient.show(terraformProcessData,
+                getStringConsumer(jsonState), getStringConsumer(showError)).get();
+        Boolean showRawState = terraformClient.statePull(terraformProcessData,
+                getStringConsumer(rawTfState), getStringConsumer(statePullError)).get();
 
         Thread.sleep(5000);
 
         log.info("Terraform show returned {} chars, state pull {} chars", jsonState.length(), rawTfState.length());
-        // stderr shares the buffer, so only a failed command's output is logged: it is the error text.
+        // Only stderr is logged on failure: stdout may already hold part of the state.
         if (!Boolean.TRUE.equals(showJsonState)) {
-            log.warn("Terraform show failed for job {}: {}", terraformJob.getJobId(), jsonState);
+            log.warn("Terraform show failed for job {}: {}", terraformJob.getJobId(), showError);
         }
         if (!Boolean.TRUE.equals(showRawState)) {
-            log.warn("Terraform state pull failed for job {}: {}", terraformJob.getJobId(), rawTfState);
+            log.warn("Terraform state pull failed for job {}: {}", terraformJob.getJobId(), statePullError);
         }
 
         if (Boolean.TRUE.equals(showJsonState)) {
@@ -795,17 +797,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             terraformState.saveStateJson(terraformJob, jsonState.toString(), rawTfState.toString());
 
             TextStringBuilder jsonOutput = new TextStringBuilder();
-            Consumer<String> terraformJsonOutput = getStringConsumer(jsonOutput);
+            TextStringBuilder outputError = new TextStringBuilder();
 
             log.info("Checking terraform output json");
-            Boolean showOutput = terraformClient.output(terraformProcessData, terraformJsonOutput, terraformJsonOutput).get();
+            Boolean showOutput = terraformClient.output(terraformProcessData,
+                    getStringConsumer(jsonOutput), getStringConsumer(outputError)).get();
             log.info("Terraform output returned {} chars", jsonOutput.length());
             if (Boolean.TRUE.equals(showOutput)) {
                 terraformJob.setTerraformOutput(jsonOutput.toString());
                 terraformOutputsService.publishOutputs(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jsonOutput.toString());
             } else {
-                log.warn("Terraform output failed for job {}: {}", terraformJob.getJobId(), jsonOutput);
+                log.warn("Terraform output failed for job {}: {}", terraformJob.getJobId(), outputError);
             }
 
         }

@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.terraform;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -275,11 +276,7 @@ class TerraformExecutorServiceImplTest {
         TerraformJob terraformJob = createJob();
         String secretLine = "{\"password\":\"secret-marker-7f3a\"," + "x".repeat(10_000) + "}";
 
-        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
-        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(true));
-        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(true));
+        stubSuccessfulApply();
         Answer<CompletableFuture<Boolean>> emitsSecrets = invocation -> {
             Consumer<String> consumer = invocation.getArgument(1);
             for (int i = 0; i < 1_000; i++) {
@@ -294,6 +291,74 @@ class TerraformExecutorServiceImplTest {
         when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
                 .thenAnswer(emitsSecrets);
 
+        List<ILoggingEvent> events = applyCapturingLogs(subject, terraformJob);
+
+        assertTrue(events.stream().noneMatch(event -> event.getFormattedMessage().contains("secret-marker-7f3a")));
+        int loggedChars = events.stream().mapToInt(event -> event.getFormattedMessage().length()).sum();
+        assertTrue(loggedChars < 10_000, "logged " + loggedChars + " chars");
+        verify(terraformState).saveStateJson(eq(terraformJob),
+                argThat(json -> json.length() > 10_000_000), argThat(raw -> raw.length() > 10_000_000));
+    }
+
+    @Test
+    void logsOnlyStderrWhenShowAndStatePullFail() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        stubSuccessfulApply();
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(failsWith("Error: show failed"));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(failsWith("Error: state pull failed"));
+
+        List<ILoggingEvent> events = applyCapturingLogs(subject, terraformJob);
+
+        assertTrue(hasWarn(events, "Terraform show failed for job 42: Error: show failed"));
+        assertTrue(hasWarn(events, "Terraform state pull failed for job 42: Error: state pull failed"));
+        assertTrue(events.stream().noneMatch(event -> event.getFormattedMessage().contains("secret-marker-7f3a")));
+        verify(terraformState, never()).saveStateJson(any(), anyString(), anyString());
+    }
+
+    @Test
+    void logsOnlyStderrWhenOutputFails() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        stubSuccessfulApply();
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenAnswer(failsWith("Error: output failed"));
+
+        List<ILoggingEvent> events = applyCapturingLogs(subject, terraformJob);
+
+        assertTrue(hasWarn(events, "Terraform output failed for job 42: Error: output failed"));
+        assertTrue(events.stream().noneMatch(event -> event.getFormattedMessage().contains("secret-marker-7f3a")));
+        verify(terraformOutputsService, never()).publishOutputs(any(), any(), any(), any());
+    }
+
+    private void stubSuccessfulApply() throws Exception {
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+    }
+
+    // A command that printed part of the state to stdout before failing with an error on stderr.
+    private Answer<CompletableFuture<Boolean>> failsWith(String error) {
+        return invocation -> {
+            Consumer<String> stdout = invocation.getArgument(1);
+            Consumer<String> stderr = invocation.getArgument(2);
+            stdout.accept("{\"password\":\"secret-marker-7f3a\"");
+            stderr.accept(error);
+            return CompletableFuture.completedFuture(false);
+        };
+    }
+
+    private List<ILoggingEvent> applyCapturingLogs(TerraformExecutorServiceImpl subject, TerraformJob terraformJob) {
         Logger logger = (Logger) LoggerFactory.getLogger(TerraformExecutorServiceImpl.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -303,12 +368,12 @@ class TerraformExecutorServiceImplTest {
         } finally {
             logger.detachAppender(appender);
         }
+        return appender.list;
+    }
 
-        assertTrue(appender.list.stream().noneMatch(event -> event.getFormattedMessage().contains("secret-marker-7f3a")));
-        int loggedChars = appender.list.stream().mapToInt(event -> event.getFormattedMessage().length()).sum();
-        assertTrue(loggedChars < 10_000, "logged " + loggedChars + " chars");
-        verify(terraformState).saveStateJson(eq(terraformJob),
-                argThat(json -> json.length() > 10_000_000), argThat(raw -> raw.length() > 10_000_000));
+    private boolean hasWarn(List<ILoggingEvent> events, String message) {
+        return events.stream().anyMatch(event ->
+                event.getLevel() == Level.WARN && event.getFormattedMessage().strip().equals(message));
     }
 
     // Real `terraform apply <planfile>` reprints the plan's classic HCL diff before executing it -

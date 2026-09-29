@@ -27,6 +27,7 @@ public class TerraformJob {
     private String vcsType;
     private String accessToken;
     private String connectionType;
+    @ToString.Exclude
     private String terraformOutput;
     private boolean showHeader;
     private boolean refresh;
