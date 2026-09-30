@@ -1,6 +1,9 @@
 package io.terrakube.registry.service.module;
 
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.graphql.GraphQLResponse;
+import io.terrakube.client.model.graphql.queries.search.module.OrganizationConnection;
+import io.terrakube.client.model.graphql.queries.search.module.SearchOrganizationModuleResponse;
 import io.terrakube.client.model.organization.module.Module;
 import io.terrakube.client.model.organization.module.ModuleAttributes;
 import io.terrakube.client.model.organization.module.Relationships;
@@ -299,5 +302,28 @@ class ModuleServiceImplCacheTest {
 
         assertEquals("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip", result);
         org.junit.jupiter.api.Assertions.assertNull(captor.getValue().gitTag());
+    }
+
+    @Test
+    void evictingTheVersionListMakesTheNextLookupAskTheApiAgain() {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+
+        OrganizationConnection organizations = new OrganizationConnection();
+        organizations.setEdges(List.of());
+        SearchOrganizationModuleResponse search = new SearchOrganizationModuleResponse();
+        search.setOrganization(organizations);
+        GraphQLResponse<SearchOrganizationModuleResponse> response = new GraphQLResponse<>();
+        response.setData(search);
+        when(terrakubeClient.searchOrganizationModules(any())).thenReturn(response);
+
+        moduleService.getAvailableVersions("org", "module", "aws");
+        moduleService.getAvailableVersions("org", "module", "aws");
+        verify(terrakubeClient, times(1)).searchOrganizationModules(any());
+
+        moduleService.evictAvailableVersions("org", "module", "aws");
+        moduleService.getAvailableVersions("org", "module", "aws");
+        verify(terrakubeClient, times(2)).searchOrganizationModules(any());
     }
 }
