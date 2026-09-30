@@ -12,6 +12,8 @@ import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
@@ -80,13 +82,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     StructuredOutputProperties structuredOutputProperties;
     MeterRegistry meterRegistry;
     OpaExecutorService opaExecutorService;
+    BinaryCacheRecoveryService binaryCacheRecoveryService;
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry) {
-        this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, null);
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
+        this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
     }
 
     @Autowired
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, @Autowired(required = false) OpaExecutorService opaExecutorService) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -102,6 +105,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.executorFlagsProperties = executorFlagsProperties;
         this.structuredOutputProperties = structuredOutputProperties;
         this.meterRegistry = meterRegistry;
+        this.binaryCacheRecoveryService = binaryCacheRecoveryService;
         this.opaExecutorService = opaExecutorService;
     }
 
@@ -1043,14 +1047,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     /**
-     * Ensure the terraform/tofu binary is available locally, restoring it from
-     * cloud storage if possible. This avoids downloading from HashiCorp/GitHub
-     * when a fresh executor pod starts.
+     * Ensure the terraform/tofu binary is available locally, restoring it from cloud storage if
+     * needed, and self-healing an invalid local cache (see {@link BinaryCacheRecoveryService}).
      *
-     * @return true if the binary was already cached (locally or in storage),
-     *         false if it needs to be downloaded by the library and then cached.
+     * @return true if the binary is already cached and ready to use, false if the library still
+     *         needs to download it.
+     * @throws BinaryCacheRecoveryException an invalid artifact couldn't be removed; fail the job
+     *         here rather than let {@code init} run against a cache still known to be broken.
      */
-    private boolean ensureBinaryCached(TerraformJob terraformJob) {
+    private boolean ensureBinaryCached(TerraformJob terraformJob) throws BinaryCacheRecoveryException {
         try {
             TerraformDownloader downloader = terraformClient.createTerraformDownloader();
             boolean tofu = terraformJob.isTofu();
@@ -1058,26 +1063,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     ? downloader.resolveTofuVersion(terraformJob.getTerraformVersion())
                     : downloader.resolveTerraformVersion(terraformJob.getTerraformVersion());
 
-            String binaryPath = downloader.getTerraformBinaryPath(resolvedVersion, tofu);
-            File binaryFile = new File(binaryPath);
-
-            // 1. Binary already exists locally (e.g. previous job with same version on this pod)
-            if (binaryFile.exists()) {
-                log.info("Binary already exists locally at {}, skipping cache check", binaryPath);
-                return true;
-            }
-
-            // 2. Try restoring from cloud storage
-            log.info("Binary not found locally, attempting to restore from cloud storage for version {}", resolvedVersion);
-            boolean restored = terraformState.downloadTerraformBinary(resolvedVersion, tofu, binaryFile);
-            if (restored) {
-                log.info("Successfully restored binary from cloud storage to {}", binaryPath);
-                return true;
-            }
-
-            // 3. Not in storage either — let the library download it, then we'll cache it after init
-            log.info("Binary not found in cloud storage, will be downloaded by terraform client library");
-            return false;
+            BinaryCacheRecoveryService.Resolution resolution = binaryCacheRecoveryService.resolve(resolvedVersion, tofu);
+            return resolution.alreadyAvailable();
+        } catch (BinaryCacheRecoveryException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Binary cache check failed, falling back to normal download: {}", e.getMessage());
             return false;
@@ -1099,11 +1088,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             String binaryPath = downloader.getTerraformBinaryPath(resolvedVersion, tofu);
             File binaryFile = new File(binaryPath);
 
-            if (binaryFile.exists()) {
+            // Only ever cache a binary that actually passes the same check a restore would have
+            // to pass - an incomplete extraction must not be uploaded and handed to every other pod.
+            if (binaryCacheRecoveryService.isValidExecutable(binaryFile)) {
                 log.info("Caching binary to cloud storage: {} version {}", tofu ? "tofu" : "terraform", resolvedVersion);
                 terraformState.saveTerraformBinary(resolvedVersion, tofu, binaryFile);
             } else {
-                log.warn("Binary file not found at {} after init, cannot cache to storage", binaryPath);
+                log.warn("Binary file not valid at {} after init, cannot cache to storage", binaryPath);
             }
         } catch (Exception e) {
             log.warn("Failed to cache binary to cloud storage: {}", e.getMessage());

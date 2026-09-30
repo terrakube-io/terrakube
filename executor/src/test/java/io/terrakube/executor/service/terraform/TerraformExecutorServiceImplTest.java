@@ -13,6 +13,8 @@ import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
@@ -38,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -67,6 +70,7 @@ class TerraformExecutorServiceImplTest {
     private final ExecutorFlagsProperties executorFlagsProperties = new ExecutorFlagsProperties();
     private final StructuredOutputProperties structuredOutputProperties = new StructuredOutputProperties();
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final BinaryCacheRecoveryService binaryCacheRecoveryService = Mockito.mock(BinaryCacheRecoveryService.class);
 
     private TerraformExecutorServiceImpl subject() {
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
@@ -90,7 +94,8 @@ class TerraformExecutorServiceImplTest {
                 structuredOutputPersistenceQueue,
                 executorFlagsProperties,
                 structuredOutputProperties,
-                meterRegistry);
+                meterRegistry,
+                binaryCacheRecoveryService);
     }
 
     private TerraformJob createJob() {
@@ -181,6 +186,46 @@ class TerraformExecutorServiceImplTest {
         subject.resolveTerraformVersion(terraformJob);
 
         assertEquals(">= 99.0.0", terraformJob.getTerraformVersion());
+    }
+
+    @Test
+    void skipsUploadingToCloudStorageWhenTheRecoveryServiceReportsTheBinaryAlreadyAvailable() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(new File(tempDir.toFile(), "terraform"), true, "s3"));
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        // A binary the recovery service already validated (existing-local or a restored S3 copy)
+        // was never freshly downloaded by the library, so there is nothing new to upload.
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), any(File.class));
+    }
+
+    @Test
+    void aBinaryCacheRecoveryFailureFailsTheJobBeforeRunningTerraformInit() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(binaryCacheRecoveryService.resolve("1.9.0", false))
+                .thenThrow(new BinaryCacheRecoveryException("Could not remove the invalid terraform 1.9.0 archive cache"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        // A cache that is known to be broken must never reach the shell invocation that produces
+        // the opaque "No such file or directory" failure the whole feature exists to avoid.
+        verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
     }
 
     @Test
