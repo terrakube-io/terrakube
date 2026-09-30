@@ -1,6 +1,7 @@
 // Shared
 
 import { AuditFieldBase } from "@/modules/types";
+import type { VersionStatusValue } from "@/components/modals/VersionStatusModal";
 
 export type RelationshipItem = {
   data: { type: string; id: string };
@@ -311,6 +312,8 @@ export type ModuleAttributes = {
 export type ModuleVersionAttributes = {
   version: string;
   commit: string;
+  status?: VersionStatusValue;
+  deprecationMessage?: string | null;
 };
 
 export type FlatModule = {
