@@ -55,7 +55,7 @@ The key features of Terrakube are:
 - [Install Terrakube using Docker Compose](https://docs.terrakube.io/getting-started/docker-compose)
 - [Test Terrakube using minikube](https://docs.terrakube.io/getting-started/deployment/minikube-+-https)
 - [Test Terrakube using Gitpod](https://docs.terrakube.io/getting-started/getting-started)
-- [Develop Terrakube using VS Code Dev Containers](.devcontainer/README.md)
+- [Develop Terrakube locally using Dev Containers](.devcontainer/README.md)
 
 ### Documentation
 To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/) 

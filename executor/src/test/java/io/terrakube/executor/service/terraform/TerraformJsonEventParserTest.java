@@ -507,4 +507,19 @@ class TerraformJsonEventParserTest {
 
         assertEquals("update", changes.get(0).get("action"));
     }
+
+    @Test
+    void reportsWhetherAnyTerraformEventWasSeen() {
+        TerraformJsonEventParser parser = subject();
+        List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        parser.parseLine("Terraform will perform the following actions:", changes, jobDiagnostics);
+        parser.parseLine("Plan: 0 to add, 1 to change, 0 to destroy.", changes, jobDiagnostics);
+        assertFalse(parser.hasSeenTerraformEvents());
+
+        parser.parseLine("{\"@level\":\"info\",\"@message\":\"Terraform 1.16.4\",\"type\":\"version\"}",
+                changes, jobDiagnostics);
+        assertTrue(parser.hasSeenTerraformEvents());
+    }
 }

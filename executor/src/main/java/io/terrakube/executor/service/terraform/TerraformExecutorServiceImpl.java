@@ -175,6 +175,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         // structured snapshot carrying whatever changes/diagnostics were parsed before it broke.
         List<Map<String, Object>> liveChanges = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
             boolean executionPlan = false;
@@ -201,7 +202,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 if (scriptBeforeSuccessPlan) {
                     planCommandExecuted = true;
-                    TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
                     // Starting at 0 (not now()) guarantees the very first json line always
                     // passes the "now - lastFlush > interval" check below and flushes
                     // immediately - otherwise the structured panel stayed on console-only for
@@ -219,8 +219,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         // Cheap pre-filter only: the persistence queue coalesces per step, so this
                         // just bounds how often we build a snapshot copy on the reader thread. The
                         // GET/merge/POST and the SSE push happen on the queue worker, never here.
+                        // Until a real -json event arrives the (empty) lists say nothing, and
+                        // persisting them would render as "no changes" once the step finishes.
                         long now = System.currentTimeMillis();
-                        if (now - lastFlush.get() > APPLY_PROGRESS_FLUSH_INTERVAL_MS) {
+                        if (eventParser.hasSeenTerraformEvents() && now - lastFlush.get() > APPLY_PROGRESS_FLUSH_INTERVAL_MS) {
                             lastFlush.set(now);
                             planStructuredOutputService.publishPlanProgress(
                                     terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), liveChanges, jobDiagnostics);
@@ -248,9 +250,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     // a plan whose lines all land in a single burst (typical for small/fast plans)
                     // would otherwise exit having enqueued nothing. Attempted even when the plan
                     // failed, so a diagnostic (e.g. an unset required variable) is the last word on
-                    // this step rather than stale/empty progress data.
-                    planStructuredOutputService.publishFinalPlanSnapshot(
-                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), liveChanges, jobDiagnostics);
+                    // this step rather than stale/empty progress data. Skipped when the command never
+                    // streamed -json (e.g. #3601): an empty snapshot plus the noChangePlan marker
+                    // would claim "no changes" for a plan we never saw; the show -json summary
+                    // below is then the only structured result for this step.
+                    publishFinalPlanSnapshotIfStreamed(terraformJob, eventParser, liveChanges, jobDiagnostics);
 
                     terraformJob.setLiveChanges(liveChanges);
                     terraformJob.setJobDiagnostics(jobDiagnostics);
@@ -325,6 +329,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
+            // The show -json summary is the authoritative structured result for this step. Publish
+            // it before draining so its write goes through the retrying queue while the job is still
+            // running - context writes are refused once it is not, so a single failed POST after
+            // the drain used to leave a stale (often empty, "no changes") snapshot in place.
+            if (executionPlan) {
+                planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
+
             waitForStreamCompletion(terraformJob.getJobId(), 300);
             drainStructuredOutputQueue(terraformJob.getJobId());
 
@@ -332,9 +344,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
                     : "");
-            if (executionPlan) {
-                planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
-            }
             result.setPlan(true);
             result.setExitCode(exitCode);
             result.setHasSoftMandatoryViolations(executionPlan && hasSoftViolations);
@@ -343,9 +352,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // A stream-drain failure or late exception must not swallow the plan diagnostics the
             // UI needs - publish what was parsed before it broke, then let it drain.
             try {
-                planStructuredOutputService.publishFinalPlanSnapshot(
-                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
-                        liveChanges, jobDiagnostics);
+                publishFinalPlanSnapshotIfStreamed(terraformJob, eventParser, liveChanges, jobDiagnostics);
                 drainStructuredOutputQueue(terraformJob.getJobId());
             } catch (Exception e) {
                 log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
@@ -355,6 +362,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setExitCode(1);
         }
         return result;
+    }
+
+    private void publishFinalPlanSnapshotIfStreamed(TerraformJob terraformJob, TerraformJsonEventParser eventParser,
+                                                    List<Map<String, Object>> liveChanges,
+                                                    List<Map<String, Object>> jobDiagnostics) {
+        if (!eventParser.hasSeenTerraformEvents()) {
+            log.warn("Plan for job {} step {} produced no -json events; skipping the live structured snapshot",
+                    terraformJob.getJobId(), terraformJob.getStepId());
+            return;
+        }
+        planStructuredOutputService.publishFinalPlanSnapshot(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
+                liveChanges, jobDiagnostics);
     }
 
     // Give the async structured-output queue a bounded window to finish persisting before the job
@@ -751,18 +771,25 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.info("Running Terraform show");
         TextStringBuilder jsonState = new TextStringBuilder();
         TextStringBuilder rawTfState = new TextStringBuilder();
-        Consumer<String> applyJSON = getStringConsumer(jsonState);
-        Consumer<String> rawStateJSON = getStringConsumer(rawTfState);
+        TextStringBuilder showError = new TextStringBuilder();
+        TextStringBuilder statePullError = new TextStringBuilder();
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDirectory, executorTempDirectory);
         terraformProcessData.setTerraformVariables(new HashMap());
         terraformProcessData.setTerraformEnvironmentVariables(new HashMap());
-        Boolean showJsonState = terraformClient.show(terraformProcessData, applyJSON, applyJSON).get();
-        Boolean showRawState = terraformClient.statePull(terraformProcessData, rawStateJSON, rawStateJSON).get();
+        Boolean showJsonState = terraformClient.show(terraformProcessData,
+                getStringConsumer(jsonState), getStringConsumer(showError)).get();
+        Boolean showRawState = terraformClient.statePull(terraformProcessData,
+                getStringConsumer(rawTfState), getStringConsumer(statePullError)).get();
 
         Thread.sleep(5000);
 
-        if (Boolean.TRUE.equals(showRawState)) {
-            terraformJob.setRawState(rawStateJSON.toString());
+        log.info("Terraform show returned {} chars, state pull {} chars", jsonState.length(), rawTfState.length());
+        // Only stderr is logged on failure: stdout may already hold part of the state.
+        if (!Boolean.TRUE.equals(showJsonState)) {
+            log.warn("Terraform show failed for job {}: {}", terraformJob.getJobId(), showError);
+        }
+        if (!Boolean.TRUE.equals(showRawState)) {
+            log.warn("Terraform state pull failed for job {}: {}", terraformJob.getJobId(), statePullError);
         }
 
         if (Boolean.TRUE.equals(showJsonState)) {
@@ -770,14 +797,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             terraformState.saveStateJson(terraformJob, jsonState.toString(), rawTfState.toString());
 
             TextStringBuilder jsonOutput = new TextStringBuilder();
-            Consumer<String> terraformJsonOutput = getStringConsumer(jsonOutput);
+            TextStringBuilder outputError = new TextStringBuilder();
 
             log.info("Checking terraform output json");
-            Boolean showOutput = terraformClient.output(terraformProcessData, terraformJsonOutput, terraformJsonOutput).get();
+            Boolean showOutput = terraformClient.output(terraformProcessData,
+                    getStringConsumer(jsonOutput), getStringConsumer(outputError)).get();
+            log.info("Terraform output returned {} chars", jsonOutput.length());
             if (Boolean.TRUE.equals(showOutput)) {
                 terraformJob.setTerraformOutput(jsonOutput.toString());
                 terraformOutputsService.publishOutputs(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jsonOutput.toString());
+            } else {
+                log.warn("Terraform output failed for job {}: {}", terraformJob.getJobId(), outputError);
             }
 
         }
@@ -924,6 +955,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     private boolean prepareTerraformOperation(TerraformJob terraformJob, File executorTempDirectory, File terraformWorkingDirectory, Consumer<String> output)
             throws IOException, ExecutionException, InterruptedException {
         terraformClient.setRedirectErrorStream(true);
+        resolveTerraformVersion(terraformJob);
 
         if (!executePreInitScripts(terraformJob, terraformWorkingDirectory, output)) {
             log.warn("Skipping terraform init because before-init scripts failed for Job {}", terraformJob.getJobId());
@@ -976,6 +1008,38 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         Thread.sleep(5000);
         return initSuccessful;
+    }
+
+    /**
+     * Replace a workspace version constraint (e.g. {@code >= 1.3.0}, {@code ~> 1.9}) on the job
+     * with the concrete version it resolves to, so every process built for this job afterwards
+     * sees a real version. terraform-client only resolves the constraint for the download and
+     * gates {@code -json} on the raw string, where any constraint compares below 0.15.2 - plan,
+     * apply and destroy then silently ran without {@code -json} and produced no structured output.
+     * Scripts also get the concrete version in {@code terraformVersion} and on their PATH.
+     * If resolution fails the job keeps its original value and the library behaves as before.
+     */
+    void resolveTerraformVersion(TerraformJob terraformJob) {
+        String requestedVersion = terraformJob.getTerraformVersion();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return;
+        }
+
+        try {
+            TerraformDownloader downloader = terraformClient.createTerraformDownloader();
+            String resolvedVersion = terraformJob.isTofu()
+                    ? downloader.resolveTofuVersion(requestedVersion)
+                    : downloader.resolveTerraformVersion(requestedVersion);
+
+            if (resolvedVersion != null && !resolvedVersion.isBlank() && !resolvedVersion.equals(requestedVersion)) {
+                log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
+                        resolvedVersion, terraformJob.getJobId());
+                terraformJob.setTerraformVersion(resolvedVersion);
+            }
+        } catch (Exception e) {
+            log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),
+                    requestedVersion, terraformJob.getJobId(), e.getMessage());
+        }
     }
 
     /**
@@ -1050,11 +1114,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return parameters != null ? parameters : new HashMap<>();
     }
 
+    // show, state pull and output print the state and output values in plain text, secrets included,
+    // so they are only buffered, never logged.
     private Consumer<String> getStringConsumer(TextStringBuilder terraformOutput) {
-        return responseOutput -> {
-            log.info(responseOutput);
-            terraformOutput.appendln(responseOutput);
-        };
+        return terraformOutput::appendln;
     }
 
     private void initBanner(TerraformJob terraformJob, Consumer<String> output) {

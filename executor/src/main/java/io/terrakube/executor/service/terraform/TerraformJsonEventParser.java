@@ -14,9 +14,19 @@ import java.util.Map;
 public class TerraformJsonEventParser {
 
     private final ObjectMapper objectMapper;
+    private volatile boolean sawTerraformEvent;
 
     public TerraformJsonEventParser(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Whether any line so far was a Terraform/OpenTofu machine-readable UI event. When this is
+     * false the command was not actually streaming {@code -json}, so an empty {@code changes} list
+     * means "unknown", not "no changes".
+     */
+    public boolean hasSeenTerraformEvents() {
+        return sawTerraformEvent;
     }
 
     /**
@@ -39,6 +49,9 @@ public class TerraformJsonEventParser {
 
         Object message = event.get("@message");
         String type = String.valueOf(event.get("type"));
+        if (event.containsKey("type")) {
+            sawTerraformEvent = true;
+        }
 
         switch (type) {
             case "apply_start" -> updateStatus(changes, resourceAddress(event), "applying");
