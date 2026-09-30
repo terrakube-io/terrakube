@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -71,30 +72,36 @@ public class EncryptionService {
             if (parts.length != 2) {
                 throw new IllegalArgumentException("Invalid encrypted string format. Expected 'IV:EncryptedData'");
             }
-            String ivBase64 = parts[0];
-            String encryptedBase64 = parts[1];
-
-            // Decode IV and encrypted data from Base64
-            byte[] iv = Base64.getUrlDecoder().decode(ivBase64);
-            byte[] encryptedBytes = Base64.getUrlDecoder().decode(encryptedBase64);
-
-            // Create SecretKeySpec and IvParameterSpec for decryption
-            SecretKeySpec keySpec = new SecretKeySpec(generateHashFromToken(internalToken), "AES");
-            GCMParameterSpec ivSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-
-            // Configure Cipher for decryption
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
-
-            // Perform decryption
-            byte[] originalBytes = cipher.doFinal(encryptedBytes);
-
-            // Return the plaintext string
-            return new String(originalBytes, StandardCharsets.UTF_8);
+            try {
+                return decryptAesGcm(Base64.getUrlDecoder().decode(parts[0]), Base64.getUrlDecoder().decode(parts[1]));
+            } catch (Exception e) {
+                // Fallback: values encrypted before the switch to URL-safe Base64 (e.g. a log-read-url held by a
+                // Terraform CLI run during a rolling upgrade) are Base-36 encoded. Base-36 digits are valid
+                // URL-safe Base64 too, so such a value usually decodes above and is rejected by the GCM tag check.
+                try {
+                    return decryptAesGcm(new BigInteger(parts[0], 36).toByteArray(), new BigInteger(parts[1], 36).toByteArray());
+                } catch (Exception legacyException) {
+                    e.addSuppressed(legacyException);
+                    throw e;
+                }
+            }
         } catch (Exception e) {
             log.error("Error during AES decryption: {}", e.getMessage(), e);
             throw new RuntimeException("Decryption failed", e);
         }
+    }
+
+    private String decryptAesGcm(byte[] iv, byte[] encryptedBytes) throws Exception {
+        // Create SecretKeySpec and IvParameterSpec for decryption
+        SecretKeySpec keySpec = new SecretKeySpec(generateHashFromToken(internalToken), "AES");
+        GCMParameterSpec ivSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+
+        // Configure Cipher for decryption
+        Cipher cipher = Cipher.getInstance(ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
+
+        // Perform decryption and return the plaintext string
+        return new String(cipher.doFinal(encryptedBytes), StandardCharsets.UTF_8);
     }
 
     /**
