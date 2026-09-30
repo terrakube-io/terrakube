@@ -66,6 +66,7 @@ staticClients:
 - id: example-app
   redirectURIs:
   - 'https://terrakube.localhost'
+  - 'https://terrakube-api.localhost/oauth/callback'
   - '/device/callback'
   - 'http://localhost:10000/login'
   - 'http://localhost:10001/login'

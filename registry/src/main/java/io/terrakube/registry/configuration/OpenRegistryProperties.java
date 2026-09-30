@@ -19,6 +19,11 @@ public class OpenRegistryProperties {
     private String clientId;
     private String issuerUri;
 
+    /** When true, .well-known login.v1 points at the Terrakube API OAuth broker instead of Dex. */
+    private boolean loginBrokerEnabled = false;
+    /** Absolute base URL of the Terrakube API; required when loginBrokerEnabled is true. */
+    private String loginApiUrl;
+
     private long federatedCacheExpireAfterWrite = 10;
     private long federatedCacheMaximumSize = 1000;
     private long providerManagerCacheExpireAfterWrite = 60;
@@ -33,6 +38,13 @@ public class OpenRegistryProperties {
         if (moduleVersionsCacheTtlSeconds <= 0) {
             throw new IllegalStateException("io.terrakube.registry.moduleVersionsCacheTtlSeconds must be at least 1, "
                     + "got " + moduleVersionsCacheTtlSeconds);
+        }
+        if (loginBrokerEnabled && (loginApiUrl == null || loginApiUrl.isBlank())) {
+            throw new IllegalStateException("io.terrakube.registry.login-broker-enabled=true requires "
+                    + "io.terrakube.registry.login-api-url");
+        }
+        if (loginApiUrl != null && loginApiUrl.endsWith("/")) {
+            loginApiUrl = loginApiUrl.substring(0, loginApiUrl.length() - 1);
         }
     }
 }

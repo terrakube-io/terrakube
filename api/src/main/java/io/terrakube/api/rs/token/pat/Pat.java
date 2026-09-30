@@ -22,4 +22,10 @@ public class Pat extends GenericAuditFields {
     private int days;
     private boolean deleted;
     private String description;
+
+    @Column(nullable = false)
+    private String source = "API";
+
+    @Column(name = "last_used_at")
+    private java.util.Date lastUsedAt;
 }
