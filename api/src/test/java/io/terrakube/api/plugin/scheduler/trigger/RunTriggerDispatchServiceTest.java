@@ -326,7 +326,7 @@ class RunTriggerDispatchServiceTest {
     }
 
     @Test
-    void applyWithNoHistoryRecordDispatchesNothing() {
+    void applyWithNoHistoryRecordFallsBackAndDispatches() {
         Job completed = completedJob(0);
         stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
         triggersFromSource(trigger(workspace("consumer", "template-default"), null));
@@ -337,7 +337,8 @@ class RunTriggerDispatchServiceTest {
 
         subject.dispatchFor(COMPLETED_JOB_ID);
 
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(runTriggerDispatchMetrics).stateIdentityFallback();
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
     }
 
     @Test

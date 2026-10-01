@@ -177,8 +177,9 @@ public class RunTriggerDispatchService {
                         job.getWorkspace(), String.valueOf(job.getId()));
 
         if (jobHistory.isEmpty()) {
-            log.debug("Job {} completed state-changing flow but no history record was found", job.getId());
-            return false;
+            runTriggerDispatchMetrics.stateIdentityFallback();
+            log.debug("Job {} completed state-changing flow but no history record was found, falling back to true", job.getId());
+            return true;
         }
 
         Optional<History> baseline = historyRepository
