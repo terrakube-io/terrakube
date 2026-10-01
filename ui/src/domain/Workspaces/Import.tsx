@@ -878,7 +878,7 @@ export const ImportWorkspace = () => {
                           padding: "6px",
                           height: item.height,
                         }}
-                        alt="example"
+                        alt={item.name}
                         src={item.icon}
                       />
                     </Space>

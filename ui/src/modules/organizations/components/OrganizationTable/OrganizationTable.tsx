@@ -205,6 +205,7 @@ export default function OrganizationTable({ organizations }: Props) {
   return (
     <div>
       <Input.Search
+        aria-label="Search organizations"
         placeholder="Search organizations..."
         allowClear
         onChange={(e) => setSearchTerm(e.target.value)}

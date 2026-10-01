@@ -60,7 +60,7 @@ describe("PolicySetParameters", () => {
     expect(await screen.findByText("max_deletions")).toBeInTheDocument();
     expect(screen.getByText("allowed_regions")).toBeInTheDocument();
 
-    const searchInput = screen.getByPlaceholderText("Search parameters by key or description...");
+    const searchInput = screen.getByLabelText("Search parameters by key or description");
     fireEvent.change(searchInput, { target: { value: "max" } });
 
     expect(screen.getByText("max_deletions")).toBeInTheDocument();
