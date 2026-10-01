@@ -4,6 +4,7 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
@@ -14,6 +15,7 @@ import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,11 +52,13 @@ class RunTriggerDispatchServiceTest {
     JobRepository jobRepository;
     StepRepository stepRepository;
     WorkspaceRunTriggerRepository triggerRepository;
+    HistoryRepository historyRepository;
     TclService tclService;
     RunTriggerJobWriter jobWriter;
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
     RunTriggerProperties properties;
+    RunTriggerDispatchMetrics runTriggerDispatchMetrics;
     RunTriggerDispatchService subject;
 
     private int nextJobId;
@@ -63,11 +68,25 @@ class RunTriggerDispatchServiceTest {
         jobRepository = mock(JobRepository.class);
         stepRepository = mock(StepRepository.class);
         triggerRepository = mock(WorkspaceRunTriggerRepository.class);
+        historyRepository = mock(HistoryRepository.class);
         tclService = mock(TclService.class);
         jobNotificationTrigger = mock(JobNotificationTrigger.class);
         scheduleJobService = mock(ScheduleJobService.class);
         properties = new RunTriggerProperties();
+        runTriggerDispatchMetrics = mock(RunTriggerDispatchMetrics.class);
         nextJobId = 1000;
+
+        Date now = new Date();
+        Date earlier = new Date(now.getTime() - 60_000);
+        History currentHistory = history(2, "md5-new", now, String.valueOf(COMPLETED_JOB_ID));
+        History baselineHistory = history(1, "md5-old", earlier, "899");
+
+        lenient().doReturn(Optional.of(currentHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+        lenient().doReturn(Optional.of(baselineHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
 
         // The writer owns the shape of the job and its transaction boundary, both covered by
         // RunTriggerJobWriterTest. Here it stands in for a committed row, so the assertions can
@@ -81,7 +100,8 @@ class RunTriggerDispatchServiceTest {
         }).when(jobWriter).persist(any(), any(), any(), anyInt());
 
         subject = new RunTriggerDispatchService(jobRepository, stepRepository, triggerRepository,
-                tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties);
+                historyRepository, tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties,
+                runTriggerDispatchMetrics);
     }
 
     // ---------------------------------------------------------------- fixtures
@@ -134,6 +154,17 @@ class RunTriggerDispatchServiceTest {
     private void triggersFromSource(WorkspaceRunTrigger... triggers) {
         doReturn(new ArrayList<>(List.of(triggers)))
                 .when(triggerRepository).findEnabledBySourceWorkspaceId(SOURCE_ID);
+    }
+
+    private History history(int serial, String md5, Date createdDate, String jobReference) {
+        History history = new History();
+        history.setId(UUID.randomUUID());
+        history.setSerial(serial);
+        history.setMd5(md5);
+        history.setLineage("lineage-1");
+        history.setCreatedDate(createdDate);
+        history.setJobReference(jobReference);
+        return history;
     }
 
     // ---------------------------------------------------------------- qualification
@@ -224,6 +255,115 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void applyWithUnchangedStateDispatchesNothing() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        Date now = new Date();
+        Date earlier = new Date(now.getTime() - 60_000);
+        History currentHistory = history(1, "md5-same", now, String.valueOf(COMPLETED_JOB_ID));
+        History baselineHistory = history(1, "md5-same", earlier, "899");
+
+        doReturn(Optional.of(currentHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+        doReturn(Optional.of(baselineHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void applyWithFirstStateDispatches() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        Date now = new Date();
+        History currentHistory = history(1, "md5-initial", now, String.valueOf(COMPLETED_JOB_ID));
+
+        doReturn(Optional.of(currentHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+        doReturn(Optional.empty())
+                .when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void applyWithLegacyStateFallsBackAndDispatches() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        Date now = new Date();
+        Date earlier = new Date(now.getTime() - 60_000);
+        History currentHistory = history(1, "0", now, String.valueOf(COMPLETED_JOB_ID));
+        History baselineHistory = history(1, "0", earlier, "899");
+
+        doReturn(Optional.of(currentHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+        doReturn(Optional.of(baselineHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(runTriggerDispatchMetrics).stateIdentityFallback();
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void applyWithNoHistoryRecordDispatchesNothing() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        doReturn(Optional.empty())
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void queuedJobsEvaluateAgainstCorrectBaseline() {
+        // Job 900 was queued earlier, but executed at t2 (jobHistory.createdDate = t2).
+        // Baseline query must check < t2, properly evaluating against intervening state changes.
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        Date t2 = new Date(200000);
+        Date t1 = new Date(150000);
+        History currentHistory = history(2, "md5-new", t2, String.valueOf(COMPLETED_JOB_ID));
+        History interveningHistory = history(1, "md5-old", t1, "899");
+
+        doReturn(Optional.of(currentHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
+        doReturn(Optional.of(interveningHistory))
+                .when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), eq(t2));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(historyRepository).findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), eq(t2));
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
     }
 
     // ---------------------------------------------------------------- bounds

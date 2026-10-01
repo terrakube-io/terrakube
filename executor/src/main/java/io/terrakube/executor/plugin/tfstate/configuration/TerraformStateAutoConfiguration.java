@@ -9,6 +9,7 @@ import com.google.cloud.storage.StorageOptions;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
@@ -50,7 +51,7 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService) {
+    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, TerraformStateMetadataService terraformStateMetadataService) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -72,6 +73,7 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStatePathService(terraformStatePathService)
+                            .terraformStateMetadataService(terraformStateMetadataService)
                             .build();
                     break;
                 case AwsTerraformStateImpl:
@@ -123,6 +125,7 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
+                            .terraformStateMetadataService(terraformStateMetadataService)
                             .build();
                     break;
                 case GcpTerraformStateImpl:
@@ -145,6 +148,7 @@ public class TerraformStateAutoConfiguration {
                                 .bucketName(gcpTerraformStateProperties.getBucketName())
                                 .credentials(gcpTerraformStateProperties.getCredentials())
                                 .terrakubeClient(terrakubeClient)
+                                .terraformStateMetadataService(terraformStateMetadataService)
                                 .build();
                     } catch (IOException e) {
                         log.error(e.getMessage());
@@ -155,12 +159,14 @@ public class TerraformStateAutoConfiguration {
                             .terrakubeClient(terrakubeClient)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
+                            .terraformStateMetadataService(terraformStateMetadataService)
                             .build();
             }
         else
             terraformState = LocalTerraformStateImpl.builder()
                     .terrakubeClient(terrakubeClient)
                     .terraformStatePathService(terraformStatePathService)
+                    .terraformStateMetadataService(terraformStateMetadataService)
                     .build();
         return terraformState;
     }
