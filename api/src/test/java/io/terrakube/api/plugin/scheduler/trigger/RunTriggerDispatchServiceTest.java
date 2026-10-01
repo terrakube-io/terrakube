@@ -4,6 +4,7 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
@@ -14,6 +15,7 @@ import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,12 +50,14 @@ class RunTriggerDispatchServiceTest {
 
     JobRepository jobRepository;
     StepRepository stepRepository;
+    HistoryRepository historyRepository;
     WorkspaceRunTriggerRepository triggerRepository;
     TclService tclService;
     RunTriggerJobWriter jobWriter;
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
     RunTriggerProperties properties;
+    RunTriggerDispatchMetrics metrics;
     RunTriggerDispatchService subject;
 
     private int nextJobId;
@@ -62,12 +66,22 @@ class RunTriggerDispatchServiceTest {
     void setup() throws Exception {
         jobRepository = mock(JobRepository.class);
         stepRepository = mock(StepRepository.class);
+        historyRepository = mock(HistoryRepository.class);
         triggerRepository = mock(WorkspaceRunTriggerRepository.class);
         tclService = mock(TclService.class);
         jobNotificationTrigger = mock(JobNotificationTrigger.class);
         scheduleJobService = mock(ScheduleJobService.class);
         properties = new RunTriggerProperties();
+        metrics = mock(RunTriggerDispatchMetrics.class);
         nextJobId = 1000;
+
+        // No recorded state history by default: every pre-existing test below exercises the
+        // step/flow-type fallback exactly as it did before state-identity comparison existed.
+        // Tests that care about the state-identity path stub historyRepository explicitly.
+        lenient().doReturn(Optional.empty()).when(historyRepository)
+                .findFirstByWorkspaceOrderByCreatedDateDesc(any());
+        lenient().doReturn(Optional.empty()).when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
 
         // The writer owns the shape of the job and its transaction boundary, both covered by
         // RunTriggerJobWriterTest. Here it stands in for a committed row, so the assertions can
@@ -80,8 +94,8 @@ class RunTriggerDispatchServiceTest {
             return saved;
         }).when(jobWriter).persist(any(), any(), any(), anyInt());
 
-        subject = new RunTriggerDispatchService(jobRepository, stepRepository, triggerRepository,
-                tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties);
+        subject = new RunTriggerDispatchService(jobRepository, stepRepository, historyRepository, triggerRepository,
+                tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties, metrics);
     }
 
     // ---------------------------------------------------------------- fixtures
@@ -224,6 +238,82 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    // ---------------------------------------------------------------- state identity
+
+    private History historyRow(Workspace workspace) {
+        History history = new History();
+        history.setId(UUID.randomUUID());
+        history.setWorkspace(workspace);
+        return history;
+    }
+
+    /** A no-change apply writes no new state version, so "before" and "after" are the same row. */
+    @Test
+    void noChangeApplyDispatchesNothing() {
+        Job completed = completedJob(0);
+        completed.setCreatedDate(new java.util.Date());
+        History unchanged = historyRow(completed.getWorkspace());
+        doReturn(Optional.of(unchanged)).when(historyRepository)
+                .findFirstByWorkspaceOrderByCreatedDateDesc(completed.getWorkspace());
+        doReturn(Optional.of(unchanged)).when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(
+                        completed.getWorkspace(), completed.getCreatedDate());
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(stepRepository, never()).findByJobId(anyInt());
+    }
+
+    /** A real apply writes a new, different state version: the common case that must dispatch. */
+    @Test
+    void applyThatChangedStateDispatchesWithoutConsultingFlowType() {
+        Job completed = completedJob(0);
+        completed.setCreatedDate(new java.util.Date());
+        History before = historyRow(completed.getWorkspace());
+        History after = historyRow(completed.getWorkspace());
+        doReturn(Optional.of(after)).when(historyRepository)
+                .findFirstByWorkspaceOrderByCreatedDateDesc(completed.getWorkspace());
+        doReturn(Optional.of(before)).when(historyRepository)
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(
+                        completed.getWorkspace(), completed.getCreatedDate());
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
+        verify(stepRepository, never()).findByJobId(anyInt());
+    }
+
+    /** The very first state ever recorded for a workspace: unambiguously a change. */
+    @Test
+    void firstEverStateVersionDispatches() {
+        Job completed = completedJob(0);
+        completed.setCreatedDate(new java.util.Date());
+        History first = historyRow(completed.getWorkspace());
+        doReturn(Optional.of(first)).when(historyRepository)
+                .findFirstByWorkspaceOrderByCreatedDateDesc(completed.getWorkspace());
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
+    }
+
+    /** No recorded state falls back to the flow-type heuristic, and the fallback is counted. */
+    @Test
+    void workspaceWithNoHistoryFallsBackToFlowTypeAndRecordsMetric() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(any(), any(), any(), anyInt());
+        verify(metrics).stateIdentityFallback();
     }
 
     // ---------------------------------------------------------------- bounds

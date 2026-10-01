@@ -4,6 +4,7 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
@@ -11,6 +12,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -58,12 +61,14 @@ public class RunTriggerDispatchService {
 
     private final JobRepository jobRepository;
     private final StepRepository stepRepository;
+    private final HistoryRepository historyRepository;
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
     private final TclService tclService;
     private final RunTriggerJobWriter jobWriter;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
     private final RunTriggerProperties properties;
+    private final RunTriggerDispatchMetrics metrics;
 
     /**
      * Fans out from a job that has just completed. Takes the id rather than the entity because
@@ -128,11 +133,31 @@ public class RunTriggerDispatchService {
     }
 
     /**
-     * True when at least one step that actually ran changed remote state. Steps are checked
-     * individually rather than trusting the job status: a plan/apply template whose apply was
-     * never executed still finishes as completed, and has nothing downstream to react to.
+     * True when the workspace's state identity actually changed while this job ran. Compares
+     * the latest {@link History} row against the one current when the job was created; workspace
+     * run serialization guarantees nothing else could have written a competing row in between.
      */
     private boolean changedState(Job job) {
+        Optional<History> latest = historyRepository.findFirstByWorkspaceOrderByCreatedDateDesc(job.getWorkspace());
+        if (latest.isEmpty()) {
+            // No recorded state yet - fall back rather than suppress a new workspace's first trigger.
+            metrics.stateIdentityFallback();
+            return changedStateByFlowType(job);
+        }
+
+        Optional<History> baseline = historyRepository
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(job.getWorkspace(),
+                        job.getCreatedDate());
+        if (baseline.isEmpty()) {
+            return true; // first state ever recorded: unambiguously a change
+        }
+
+        // Same row before and after means nothing was written - a no-change apply.
+        return !latest.get().getId().equals(baseline.get().getId());
+    }
+
+    /** Compatibility fallback: true when a step that actually ran changed remote state, by flow type. */
+    private boolean changedStateByFlowType(Job job) {
         List<Step> steps = stepRepository.findByJobId(job.getId());
         for (Step step : steps) {
             if (step.getStatus() != JobStatus.completed) {
