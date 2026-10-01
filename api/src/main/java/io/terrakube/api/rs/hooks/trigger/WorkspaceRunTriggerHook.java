@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 /**
- * Rejects a run trigger that would close a loop in the organization's graph.
+ * Rejects a run trigger that would close a loop in the organization's graph, or that would push
+ * its source workspace's outbound fan-out past the configured limit.
  *
  * Runs at PRECOMMIT: the row is already flushed by then, so the validation excludes the edge
  * being written and aborts the transaction when it finds a path back. Deriving the
@@ -44,5 +45,12 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
                 trigger.getId(),
                 trigger.getSourceWorkspace().getId(),
                 trigger.getDestinationWorkspace().getId());
+
+        // Create-only - see WorkspaceGraphValidationService.validateFanOutLimit for why.
+        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+            graphValidationService.validateFanOutLimit(
+                    trigger.getSourceWorkspace().getId(),
+                    trigger.isEnabled());
+        }
     }
 }

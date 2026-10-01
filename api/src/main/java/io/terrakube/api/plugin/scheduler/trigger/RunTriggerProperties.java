@@ -28,8 +28,10 @@ public class RunTriggerProperties {
     private int maxCascadeDepth = 10;
 
     /**
-     * How many dependents a single apply may fan out to. Beyond this the extra dependents
-     * are skipped with a warning naming them, rather than the whole fan-out being dropped.
+     * How many enabled outbound edges a single workspace may have. Enforced by
+     * {@link WorkspaceGraphValidationService#validateFanOutLimit} at edge creation, not by
+     * dispatch (which applies no cap of its own). Name kept for configuration compatibility -
+     * this number used to bound dispatch instead of creation.
      */
     private int maxDependentsPerApply = 20;
 }

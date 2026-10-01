@@ -1,6 +1,8 @@
 package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.trigger.CyclicDependencyException;
+import io.terrakube.api.plugin.scheduler.trigger.FanOutLimitExceededException;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerProperties;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
@@ -18,11 +20,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Cycle detection over the run trigger graph. Uses ids only, so no database is needed.
+ * Cycle detection and the outbound fan-out limit over the run trigger graph. Uses ids only, so
+ * no database is needed.
  */
 class WorkspaceGraphValidationServiceTests {
 
     private WorkspaceRunTriggerRepository repository;
+    private RunTriggerProperties properties;
     private WorkspaceGraphValidationService service;
 
     private final UUID org = UUID.randomUUID();
@@ -34,7 +38,8 @@ class WorkspaceGraphValidationServiceTests {
     @BeforeEach
     void setUp() {
         repository = mock(WorkspaceRunTriggerRepository.class);
-        service = new WorkspaceGraphValidationService(repository);
+        properties = new RunTriggerProperties();
+        service = new WorkspaceGraphValidationService(repository, properties);
     }
 
     private TriggerEdge edge(UUID id, UUID source, UUID destination) {
@@ -145,5 +150,49 @@ class WorkspaceGraphValidationServiceTests {
         assertDoesNotThrow(() -> service.validateAcyclic(null, null, a, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, null, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, null));
+    }
+
+    // ---------------------------------------------------------------- fan-out limit
+
+    private void enabledCount(UUID source, long count) {
+        when(repository.countBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(source))
+                .thenReturn(count);
+    }
+
+    @Test
+    void acceptsAnEnabledEdgeUnderTheLimit() {
+        properties.setMaxDependentsPerApply(5);
+        enabledCount(a, 3);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+    }
+
+    /** The edge that fills the limit, not one past it, must be accepted. */
+    @Test
+    void acceptsAnEnabledEdgeExactlyAtTheLimit() {
+        properties.setMaxDependentsPerApply(5);
+        enabledCount(a, 5);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+    }
+
+    @Test
+    void rejectsAnEnabledEdgeOneOverTheLimit() {
+        properties.setMaxDependentsPerApply(5);
+        enabledCount(a, 6);
+        FanOutLimitExceededException thrown = assertThrows(FanOutLimitExceededException.class,
+                () -> service.validateFanOutLimit(a, true));
+        assertTrue(thrown.getMessage().contains("5"), thrown.getMessage());
+    }
+
+    /** A disabled edge never contributes to dispatch, so it is never limited. */
+    @Test
+    void neverLimitsADisabledEdgeEvenOverTheCount() {
+        properties.setMaxDependentsPerApply(5);
+        enabledCount(a, 50);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, false));
+    }
+
+    @Test
+    void ignoresAMissingSourceForTheFanOutCheck() {
+        assertDoesNotThrow(() -> service.validateFanOutLimit(null, true));
     }
 }

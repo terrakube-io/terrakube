@@ -29,6 +29,39 @@ import java.util.UUID;
 public class WorkspaceGraphValidationService {
 
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
+    private final RunTriggerProperties properties;
+
+    /**
+     * Rejects a new enabled edge once its source workspace is already at the outbound fan-out
+     * limit. Create-only: a workspace already over the limit keeps every existing edge
+     * dispatching (dispatch itself no longer truncates) and just can't add more. Re-enabling a
+     * disabled edge isn't checked - PRECOMMIT only sees the row already flushed to its new
+     * value, with no cheap way to tell "always enabled" apart from "just flipped on".
+     *
+     * @param enabled whether the edge being created will dispatch at all; disabled edges are never limited
+     */
+    public void validateFanOutLimit(UUID sourceId, boolean enabled) {
+        if (sourceId == null || !enabled) {
+            return;
+        }
+
+        int limit = properties.getMaxDependentsPerApply();
+        // The row under validation is already flushed by PRECOMMIT and counted here, so compare
+        // directly against the limit rather than adding one.
+        long currentlyEnabled = workspaceRunTriggerRepository
+                .countBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(sourceId);
+
+        if (currentlyEnabled > limit) {
+            log.warn("Rejecting run trigger: source workspace {} would have {} enabled outbound "
+                            + "edges, above the limit of {}",
+                    sourceId, currentlyEnabled, limit);
+            throw new FanOutLimitExceededException(String.format(
+                    "This workspace already has %d enabled run trigger(s), at the configured limit of %d. "
+                            + "Disable or delete an existing one, or raise io.terrakube.run-trigger.max-dependents-per-apply, "
+                            + "before adding another.",
+                    currentlyEnabled - 1, limit));
+        }
+    }
 
     /**
      * Rejects an edge that would close a loop.
