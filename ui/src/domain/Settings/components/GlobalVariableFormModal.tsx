@@ -8,12 +8,21 @@ type Props = {
   open: boolean;
   mode: "create" | "edit";
   variableKey?: string;
+  existingKeys?: string[];
   form: FormInstance<CreateVariableForm>;
   onCancel: () => void;
   onSubmit: (values: CreateVariableForm) => void;
 };
 
-export default function GlobalVariableFormModal({ open, mode, variableKey, form, onCancel, onSubmit }: Props) {
+export default function GlobalVariableFormModal({
+  open,
+  mode,
+  variableKey,
+  existingKeys,
+  form,
+  onCancel,
+  onSubmit,
+}: Props) {
   return (
     <CrudFormModal<CreateVariableForm>
       open={open}
@@ -24,7 +33,26 @@ export default function GlobalVariableFormModal({ open, mode, variableKey, form,
       onCancel={onCancel}
       onSubmit={onSubmit}
     >
-      <Form.Item name="key" label="Key" rules={[{ required: true }]}>
+      <Form.Item
+        name="key"
+        label="Key"
+        rules={[
+          { required: true, message: "Please enter a key" },
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              const trimmed = value.trim();
+              if (mode === "create" && existingKeys?.includes(trimmed)) {
+                return Promise.reject(new Error("A global variable with this key already exists"));
+              }
+              if (mode === "edit" && trimmed !== variableKey && existingKeys?.includes(trimmed)) {
+                return Promise.reject(new Error("A global variable with this key already exists"));
+              }
+              return Promise.resolve();
+            },
+          },
+        ]}
+      >
         <Input />
       </Form.Item>
       <Form.Item name="value" label="Value" rules={[{ required: true }]}>

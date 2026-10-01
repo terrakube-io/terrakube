@@ -4,6 +4,7 @@ import com.yahoo.elide.annotation.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import io.terrakube.api.rs.hooks.globalvar.GlobalvarManageHook;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.parameters.Category;
 
@@ -15,6 +16,8 @@ import java.util.UUID;
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = GlobalvarManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = GlobalvarManageHook.class)
 @Include(rootLevel = false)
 @Getter
 @Setter
