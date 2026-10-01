@@ -113,7 +113,7 @@ describe("WorkspaceFilter", () => {
 
   it("legacy mode commits search on Enter, not on every keystroke", () => {
     render(<WorkspaceFilter {...baseProps} />);
-    const input = screen.getByPlaceholderText("Search by name...");
+    const input = screen.getByLabelText("Search workspaces by name");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
@@ -122,7 +122,7 @@ describe("WorkspaceFilter", () => {
 
   it("compact mode filters live as you type, without needing Enter", () => {
     render(<WorkspaceFilter {...baseProps} compact />);
-    const input = screen.getByPlaceholderText("Search by name...");
+    const input = screen.getByLabelText("Search workspaces by name");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
   });

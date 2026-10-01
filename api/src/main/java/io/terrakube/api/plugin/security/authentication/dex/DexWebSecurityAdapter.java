@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.authentication.dex;
 
+import io.terrakube.api.plugin.token.login.TerraformLoginProperties;
 import io.terrakube.api.repository.FederatedRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +43,31 @@ public class DexWebSecurityAdapter {
 
         @Bean
         @Order(1)
+        public SecurityFilterChain filterChainOauthBroker(HttpSecurity http,
+                                                          TerraformLoginProperties loginProperties) throws Exception {
+                // No .cors() here on purpose: the broker is a server-rendered browser flow
+                // (top-level redirects + a same-origin form POST), not an XHR API. A CorsFilter
+                // would reject the consent POST's Origin header before the controller's own
+                // Origin/Referer check runs.
+                http.securityMatcher("/oauth/**")
+                                .csrf(csrf -> csrf.disable());
+                if (loginProperties.isEnabled()) {
+                        // The broker endpoints authenticate themselves via the signed session
+                        // cookie / PKCE / auth code; no Spring Security auth is applied here.
+                        http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+                } else {
+                        // Feature off: the whole /oauth/** tree is invisible (404), not 401/403.
+                        http.authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+                                .exceptionHandling(ex -> {
+                                        ex.authenticationEntryPoint((req, res, e) -> res.setStatus(404));
+                                        ex.accessDeniedHandler((req, res, e) -> res.setStatus(404));
+                                });
+                }
+                return http.build();
+        }
+
+        @Bean
+        @Order(2)
         public SecurityFilterChain filterChain(HttpSecurity http,
                                                @Value("${io.terrakube.token.issuer-uri}") String issuerUri,
                                                @Value("${io.terrakube.token.pat}") String patJwtSecret,

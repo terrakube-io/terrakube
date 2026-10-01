@@ -22,15 +22,15 @@
         <msal4j.version>1.26.0</msal4j.version>
         <lombok.version>1.18.48</lombok.version>
         <semver4j.version>6.0.0</semver4j.version>
-        <wiremock.version>4.2.3</wiremock.version>
+        <wiremock.version>4.4.2</wiremock.version>
         <jgit.version>7.8.0.202609011348-r</jgit.version>
         <bouncy.castle>1.86</bouncy.castle>
         <rest-assured.version>6.0.1</rest-assured.version>
         <postgresql.version>42.7.13</postgresql.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.54.17</aws-sdk.version>
-        <gcp-libraries-bom.version>26.88.1</gcp-libraries-bom.version>
+        <aws-sdk.version>2.55.6</aws-sdk.version>
+        <gcp-libraries-bom.version>26.89.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <jedis.version>8.0.1</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
@@ -39,7 +39,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <maven-artifact.version>3.9.16</maven-artifact.version>
         <commons-io.version>2.22.0</commons-io.version>
-        <kubernetes-client.version>7.9.0</kubernetes-client.version>
+        <kubernetes-client.version>8.0.0</kubernetes-client.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!--BUILDPACK DATA-->
         <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.64</buildpack.builder>
@@ -351,7 +351,7 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>10.9.1</version>
+            <version>10.10</version>
             <scope>compile</scope>
         </dependency>
         <dependency>

@@ -22,6 +22,7 @@ import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,23 @@ class ExecutorServiceTest {
         Flow flow = new Flow();
         flow.setType(type.name());
         return flow;
+    }
+
+    @Test
+    void shouldUsePersistentExecutorWhenEphemeralExecutorFlagIsMissing() {
+        assertThat(ExecutorService.isEphemeralExecutorEnabled(Map.of())).isFalse();
+    }
+
+    @Test
+    void shouldUseEphemeralExecutorWhenEphemeralExecutorFlagIsEnabled() {
+        assertThat(ExecutorService.isEphemeralExecutorEnabled(
+                Map.of("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR", "1"))).isTrue();
+    }
+
+    @Test
+    void shouldUsePersistentExecutorWhenEphemeralExecutorFlagIsDisabled() {
+        assertThat(ExecutorService.isEphemeralExecutorEnabled(
+                Map.of("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR", "0"))).isFalse();
     }
 
     @Test
@@ -376,4 +394,3 @@ class ExecutorServiceTest {
         assertThat(result.getEnvironmentVariables()).containsEntry("TF_CLI_ARGS_plan", "-existing-flag");
     }
 }
-

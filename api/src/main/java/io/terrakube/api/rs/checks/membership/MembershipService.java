@@ -12,6 +12,7 @@ import io.terrakube.api.rs.workspace.access.Access;
 
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 @Service
 @Slf4j
@@ -85,4 +86,17 @@ public class MembershipService {
         return false;
     }
 
+    /** True when the user (or service account) belongs to one of the teams and that team passes the permission check. */
+    public boolean checkTeamPermission(User user, List<Team> teamList, Predicate<Team> permissionCheck) {
+        boolean isServiceAccount = authenticatedUser.isServiceAccount(user);
+        for (Team team : teamList) {
+            boolean isMember = isServiceAccount
+                    ? groupService.isServiceMember(user, team.getName())
+                    : groupService.isMember(user, team.getName());
+            if (isMember && permissionCheck.test(team)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

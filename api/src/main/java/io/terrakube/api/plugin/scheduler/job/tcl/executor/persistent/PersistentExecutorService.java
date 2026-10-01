@@ -16,13 +16,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import io.netty.channel.ChannelOption;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
@@ -30,7 +29,6 @@ import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
 import lombok.extern.slf4j.Slf4j;
-import reactor.netty.http.client.HttpClient;
 
 import javax.crypto.SecretKey;
 
@@ -62,18 +60,12 @@ public class PersistentExecutorService {
             this.base64KeyInternal = internalJwtSecret;
     }
 
-    private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
-        HttpClient httpClient = HttpClient.create()
-                .proxyWithSystemProperties()
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MS)
-                .responseTimeout(RESPONSE_TIMEOUT);
-
         WebClient webClient = webClientBuilder
                 .clone()
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .clientConnector(ReactorNettyWebClientFactory.connector(RESPONSE_TIMEOUT))
                 .build();
 
         String executorUrlForRequest;
@@ -97,7 +89,7 @@ public class PersistentExecutorService {
                     .bodyValue(executorContext)
                     .retrieve()
                     .toBodilessEntity()
-                    .block();
+                    .block(RESPONSE_TIMEOUT);
         } catch (Exception ex) {
             if (ex instanceof WebClientRequestException) {
                 // No response was ever received: connection refused, timed out, or (in Kubernetes,

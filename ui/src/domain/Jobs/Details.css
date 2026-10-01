@@ -1,0 +1,44 @@
+.job-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.job-headline-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.job-headline-meta {
+  font-weight: 500;
+  color: var(--tk-text-secondary);
+}
+
+/* Stays under the headline while the operator scrolls the plan, so the decision is never below the fold. */
+.job-action-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  box-shadow: var(--tk-shadow-sm);
+}
+
+.job-action-bar-text {
+  color: var(--tk-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.job-action-bar-summary {
+  font-variant-numeric: tabular-nums;
+}

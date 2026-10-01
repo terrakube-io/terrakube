@@ -222,3 +222,10 @@ ul.disc-list {
   border-color: var(--role-accent, var(--tk-accent));
   background-color: var(--role-accent, var(--tk-accent));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .ant-card.template-card:hover,
+  .vcs-provider-card:hover {
+    transform: none;
+  }
+}

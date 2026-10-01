@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Workspace.lastJobStatus was originally persisted as a JPA enum ordinal even
+      though workspace.last_job_status is varchar. Convert existing ordinal text
+      values before the field is mapped as EnumType.STRING.
+    -->
+    <changeSet id="2-34-0-workspace-last-status-enum" author="terrakube">
+        <update tableName="workspace"><column name="last_job_status" value="pending"/><where>last_job_status = '0'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="waitingApproval"/><where>last_job_status = '1'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="approved"/><where>last_job_status = '2'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="queue"/><where>last_job_status = '3'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="running"/><where>last_job_status = '4'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="completed"/><where>last_job_status = '5'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="noChanges"/><where>last_job_status = '6'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="notExecuted"/><where>last_job_status = '7'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="rejected"/><where>last_job_status = '8'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="cancelled"/><where>last_job_status = '9'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="failed"/><where>last_job_status = '10'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="unknown"/><where>last_job_status = '11'</where></update>
+        <update tableName="workspace"><column name="last_job_status" value="NeverExecuted"/><where>last_job_status = '12'</where></update>
+    </changeSet>
+</databaseChangeLog>

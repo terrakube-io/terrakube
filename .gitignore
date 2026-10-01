@@ -43,6 +43,8 @@ scripts/setup/dex/config-ldap.yaml
 DEVCONTAINER.md
 CHE.md
 .devcontainer/.env-dex
+.devcontainer/certs/*.crt
+.devcontainer/certs/*.pem
 
 terrakubeDemo1.key
 terrakubeDemo2.key

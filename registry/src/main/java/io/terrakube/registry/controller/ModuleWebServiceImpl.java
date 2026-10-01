@@ -51,6 +51,11 @@ public class ModuleWebServiceImpl {
 
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
     public ResponseEntity<ModuleDTO> getModuleVersionPath(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version) {
+        if (moduleService.isVersionRemoved(organization, module, provider, version)) {
+            // Terraform picked it from this replica's cached list; refresh the list so the next run picks another.
+            moduleService.evictAvailableVersions(organization, module, provider);
+            return ResponseEntity.notFound().build();
+        }
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.set(
                 "X-Terraform-Get",
@@ -67,11 +72,19 @@ public class ModuleWebServiceImpl {
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/details", produces = "application/json")
     public ResponseEntity<ModuleDetailsDTO> getModuleDetails(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version,
                                                              @RequestParam(required = false, defaultValue = "") String submodule) {
+        if (moduleService.isVersionRemoved(organization, module, provider, version)) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok(moduleInspectorService.details(organization, module, provider, version, submodule));
     }
 
     @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")
     public ResponseEntity<byte[]> getModuleZip(@PathVariable String organizationName, @PathVariable String moduleName, @PathVariable String providerName, @PathVariable String version) {
+        if (moduleService.isVersionRemoved(organizationName, moduleName, providerName, version)) {
+            // Terraform picked it from this replica's cached list; refresh the list so the next run picks another.
+            moduleService.evictAvailableVersions(organizationName, moduleName, providerName);
+            return ResponseEntity.notFound().build();
+        }
         Optional<URI> presignedDownloadUrl = storageService.getPresignedDownloadUrl(organizationName, moduleName, providerName, version);
         if (presignedDownloadUrl.isPresent()) {
             return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get()).build();

@@ -16,6 +16,8 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -40,6 +42,7 @@ class ModuleWebServiceImplTest {
         moduleService = mock(ModuleService.class);
         storageService = mock(StorageService.class);
         moduleInspectorService = mock(ModuleInspectorService.class);
+        when(moduleService.isVersionRemoved("org", "module", "aws", "2.0.0")).thenReturn(true);
 
         ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
@@ -106,5 +109,31 @@ class ModuleWebServiceImplTest {
                 .andExpect(jsonPath("$.resources[0].type").value("aws_vpc"));
 
         verify(moduleInspectorService).details("org", "vpc", "aws", "1.0.0", "");
+    }
+
+    // Only removed versions are refused: a version this replica has not cached yet (just published) is served.
+    @Test
+    void servesDownloadPathForAvailableVersion() throws Exception {
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0")).thenReturn("s3::path");
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "s3::path"));
+        verify(moduleService, never()).getAvailableVersions(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void removedVersionIsNotDownloadable() throws Exception {
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/2.0.0/download"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/terraform/modules/v1/download/org/module/aws/2.0.0/module.zip"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/2.0.0/details"))
+                .andExpect(status().isNotFound());
+        verifyNoMoreInteractions(moduleInspectorService);
+        verify(moduleService, never()).getModuleVersionPath(anyString(), anyString(), anyString(), anyString());
+        verifyNoMoreInteractions(storageService);
+        // Terraform only asks for a removed version when this replica's cached list still offers it.
+        verify(moduleService, times(2)).evictAvailableVersions("org", "module", "aws");
     }
 }

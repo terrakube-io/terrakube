@@ -79,6 +79,15 @@ public class PlanStructuredOutputService {
             List<Map<String, Object>> changes = liveChanges != null && !liveChanges.isEmpty()
                     ? mergeShowJsonDiff(liveChanges, planJson)
                     : buildChangesFromPlanJson(planJson);
+
+            // Same retrying queue as the live snapshots, as the newest final snapshot for this
+            // step - it supersedes any live snapshot still pending or retained for recovery.
+            if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
+                publishFinalPlanSnapshot(terraformJob.getOrganizationId(), terraformJob.getJobId(),
+                        terraformJob.getStepId(), changes, jobDiagnostics);
+                return;
+            }
+
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
             applyNoChangePlanMarker(updatedContext, terraformJob.getStepId(), changes);

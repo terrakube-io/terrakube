@@ -168,7 +168,7 @@ describe("PolicySet Components", () => {
         />
       );
 
-      const searchInput = screen.getByTestId("policy-set-search-input");
+      const searchInput = screen.getByLabelText("Search policy sets by name or description");
       fireEvent.change(searchInput, { target: { value: "new-query" } });
       expect(onSearchChange).toHaveBeenCalledWith("new-query");
 

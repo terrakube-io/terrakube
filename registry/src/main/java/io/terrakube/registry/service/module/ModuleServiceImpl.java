@@ -17,6 +17,7 @@ import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 @AllArgsConstructor
 @Slf4j
@@ -50,7 +52,7 @@ public class ModuleServiceImpl implements ModuleService {
                       id
                       name
                       provider
-                      version {
+                      version(filter: "status!=removed") {
                         edges {
                           node {
                             id
@@ -66,6 +68,61 @@ public class ModuleServiceImpl implements ModuleService {
           }
         }
         """;
+
+    // Keeps the version inside the RSQL filter a single value; real versions never need other characters.
+    private static final Pattern VERSION_PATTERN = Pattern.compile("[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}");
+
+    public static final String SEARCH_REMOVED_MODULE_VERSION = """
+        {
+          organization(filter: "name==%s") {
+            edges {
+              node {
+                id
+                name
+                module(filter: "name==%s;provider==%s") {
+                  edges {
+                    node {
+                      id
+                      name
+                      provider
+                      version(filter: "version==%s;status==removed") {
+                        edges {
+                          node {
+                            id
+                            version
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    // A denylist of removed versions rather than an allowlist of the cached version list: with several
+    // replicas, a new version must be downloadable even where /versions is still cached without it.
+    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_REMOVED_CACHE},
+            key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version")
+    @Override
+    public boolean isVersionRemoved(String organizationName, String moduleName, String providerName, String version) {
+        if (!VERSION_PATTERN.matcher(version).matches()) {
+            return true;
+        }
+        GraphQLRequest query = new GraphQLRequest();
+        query.setQuery(String.format(SEARCH_REMOVED_MODULE_VERSION, organizationName, moduleName, providerName, version));
+        return terrakubeClient.searchOrganizationModules(query).getData().getOrganization().getEdges().stream()
+                .flatMap(organizationEdge -> organizationEdge.getNode().getModule().getEdges().stream())
+                .anyMatch(moduleEdge -> !moduleEdge.getNode().getVersion().getEdges().isEmpty());
+    }
+
+    @CacheEvict(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
+    @Override
+    public void evictAvailableVersions(String organizationName, String moduleName, String providerName) {
+        log.info("Evicting cached versions of module {}/{} in organization {}", moduleName, providerName, organizationName);
+    }
 
     @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
     @Override

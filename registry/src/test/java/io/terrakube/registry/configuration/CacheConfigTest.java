@@ -16,15 +16,16 @@ class CacheConfigTest {
 
     /** A cache the @Cacheable annotations ask for but the configuration misses fails at first call. */
     @Test
-    void bothCachesTheServiceAnnotationsAskForExist() {
+    void everyCacheTheServiceAnnotationsAskForExists() {
         CacheManager cacheManager = new CacheConfig().cacheManager(properties(600));
 
-        assertThat(cacheManager.getCache(CacheConfig.MODULE_VERSIONS_CACHE)).isNotNull();
-        assertThat(cacheManager.getCache(CacheConfig.MODULE_VERSION_PATH_CACHE)).isNotNull();
-        assertThat(cacheManager.getCache(CacheConfig.MODULE_DETAILS_CACHE)).isNotNull();
-        assertThat(cacheManager.getCacheNames())
-                .containsExactlyInAnyOrder(CacheConfig.MODULE_VERSIONS_CACHE, CacheConfig.MODULE_VERSION_PATH_CACHE,
-                        CacheConfig.MODULE_DETAILS_CACHE);
+        assertThat(cacheManager.getCacheNames()).containsExactlyInAnyOrder(
+                CacheConfig.MODULE_VERSIONS_CACHE,
+                CacheConfig.MODULE_VERSION_PATH_CACHE,
+                CacheConfig.MODULE_VERSION_REMOVED_CACHE,
+                CacheConfig.PROVIDER_WARNINGS_CACHE,
+                CacheConfig.MODULE_DETAILS_CACHE);
+        cacheManager.getCacheNames().forEach(name -> assertThat(cacheManager.getCache(name)).isNotNull());
     }
 
     @Test

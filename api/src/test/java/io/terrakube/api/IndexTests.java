@@ -5,8 +5,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
+import java.io.File;
+
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 public class IndexTests extends ServerApplicationTests {
@@ -50,10 +55,28 @@ public class IndexTests extends ServerApplicationTests {
     }
 
     @Test
-    void tofuIndexReturnsServiceUnavailableWhenGithubApiFailsAndNoCacheExists() {
-        // Simulate: TTL-based cache key absent, stale key absent, GitHub API unreachable
+    void tofuIndexReturnsStaleCacheWhenReleaseDownloadFails() {
+        when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
+        when(valueOperations.get("tofuReleasesResponseStale")).thenReturn("{\"stale\": true}");
+        doThrow(new IllegalStateException("release download timed out"))
+                .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tofu/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value())
+                .body(equalTo("{\"stale\": true}"));
+    }
+
+    @Test
+    void tofuIndexReturnsServiceUnavailableWhenReleaseDownloadFailsAndNoCacheExists() {
         when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
         when(valueOperations.get(anyString())).thenReturn(null);
+        doThrow(new IllegalStateException("release download timed out"))
+                .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
 
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))

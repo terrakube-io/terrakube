@@ -1,10 +1,12 @@
 package io.terrakube.api.rs.job;
 
 import java.util.List;
+import java.util.Date;
 
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
+import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.step.Step;
@@ -53,10 +55,21 @@ public class Job extends GenericAuditFields {
     private String comments;
 
     @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service")
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobApprovalHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobNotificationHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobNotificationHook.class)
     @Enumerated(EnumType.STRING)
     private JobStatus status = JobStatus.pending;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "approved_by")
+    private String approvedBy;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "approved_at")
+    private Date approvedAt;
 
     @Column(name = "output")
     private String output;
@@ -175,4 +188,3 @@ public class Job extends GenericAuditFields {
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<io.terrakube.api.rs.policy.PolicyEvaluation> policyEvaluation;
 }
-

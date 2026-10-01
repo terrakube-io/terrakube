@@ -20,6 +20,15 @@ public class CacheConfig {
     /** Resolved download path of one module version. The version is part of the key. */
     public static final String MODULE_VERSION_PATH_CACHE = "getModuleVersionPath";
 
+    /**
+     * Whether one module version was removed. Short-lived: a removal has to take effect quickly on every
+     * replica, and a version missing from the cache is served, so a brand-new version never gets a 404.
+     */
+    public static final String MODULE_VERSION_REMOVED_CACHE = "isModuleVersionRemoved";
+
+    /** The deprecation warning of one provider, sent with every /versions response. */
+    public static final String PROVIDER_WARNINGS_CACHE = "getProviderWarnings";
+
     /** Parsed inputs/outputs/resources of one module version (and submodule). Immutable per version. */
     public static final String MODULE_DETAILS_CACHE = "getModuleDetails";
 
@@ -30,7 +39,7 @@ public class CacheConfig {
 
         // Naming the caches keeps the manager static: an unknown @Cacheable name then fails loudly.
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(MODULE_VERSIONS_CACHE,
-                MODULE_VERSION_PATH_CACHE, MODULE_DETAILS_CACHE);
+                MODULE_VERSION_PATH_CACHE, MODULE_VERSION_REMOVED_CACHE, PROVIDER_WARNINGS_CACHE, MODULE_DETAILS_CACHE);
         cacheManager.setCaffeine(Caffeine.newBuilder().recordStats()
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .maximumSize(1000));
@@ -39,6 +48,10 @@ public class CacheConfig {
         cacheManager.registerCustomCache(MODULE_VERSIONS_CACHE, Caffeine.newBuilder().recordStats()
                 .expireAfterWrite(versionsTtl)
                 .maximumSize(1000)
+                .build());
+        cacheManager.registerCustomCache(MODULE_VERSION_REMOVED_CACHE, Caffeine.newBuilder().recordStats()
+                .expireAfterWrite(30, TimeUnit.SECONDS)
+                .maximumSize(10000)
                 .build());
         return cacheManager;
     }
