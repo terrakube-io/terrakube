@@ -55,7 +55,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   const onDelete = (id: string) => {
     axiosInstance
       .delete(`organization/${orgid}/tag/${id}`)
-      .then((response) => {
+      .then(() => {
         loadTags();
       })
       .catch((err) => {
@@ -79,7 +79,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
         loadTags();
         setVisible(false);
         form.resetFields();
@@ -163,10 +163,17 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
             <List
               itemLayout="horizontal"
               dataSource={tags}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                pageSizeOptions: ["10", "20", "50"],
+                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} tags`,
+              }}
               renderItem={(item) => (
                 <List.Item
                   actions={[
                     <Button
+                      key="edit"
                       onClick={() => {
                         onEdit(item.id);
                       }}
@@ -177,6 +184,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
                       Edit
                     </Button>,
                     <Button
+                      key="delete"
                       icon={<DeleteOutlined />}
                       type="link"
                       danger

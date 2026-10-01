@@ -12,6 +12,7 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include(rootLevel = false)
 @Getter
 @Setter
