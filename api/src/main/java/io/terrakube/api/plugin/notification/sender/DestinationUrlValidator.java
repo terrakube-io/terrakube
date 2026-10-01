@@ -37,7 +37,7 @@ public class DestinationUrlValidator {
         this.blockPrivateDestinations = blockPrivateDestinations;
     }
 
-    void validate(String channelLabel, String rawUrl) {
+    public void validate(String channelLabel, String rawUrl) {
         URI uri;
         try {
             uri = new URI(rawUrl);

@@ -1,12 +1,14 @@
 package io.terrakube.api.plugin.proxy;
 
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/proxy/v1")
+@PreAuthorize("@notificationConfigurationAccessService.hasManagePermissionForWorkspace(authentication, #workspaceId.toString())")
 public class ProxyController {
 
     private final ProxyService proxyService;

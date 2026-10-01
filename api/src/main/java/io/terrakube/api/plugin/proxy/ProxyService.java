@@ -3,11 +3,14 @@ package io.terrakube.api.plugin.proxy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import io.terrakube.api.plugin.notification.sender.DestinationUrlValidator;
+import io.terrakube.api.plugin.notification.sender.NotificationDeliveryException;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -31,13 +34,14 @@ public class ProxyService {
     private final WorkspaceRepository workspaceRepository;
     private final VariableRepository variableRepository;
     private final GlobalVarRepository globalVarRepository;
+    private final DestinationUrlValidator destinationUrlValidator;
 
-    public static final Map<String, String> VARS = new HashMap<>();
-
-    public ProxyService(WorkspaceRepository workspaceRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository) {
+    public ProxyService(WorkspaceRepository workspaceRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository,
+                        @Value("${io.terrakube.proxy.ssrf.blockPrivateNetworks:true}") boolean blockPrivateNetworks) {
         this.workspaceRepository = workspaceRepository;
         this.variableRepository = variableRepository;
         this.globalVarRepository = globalVarRepository;
+        this.destinationUrlValidator = new DestinationUrlValidator(blockPrivateNetworks);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -46,16 +50,21 @@ public class ProxyService {
         HttpHeaders headers = new HttpHeaders();
 
         // Fetch workspace and variables
-        fetchWorkspaceVars(workspaceId);
+        Map<String, String> vars = fetchWorkspaceVars(workspaceId);
 
         // Replace variables in targetUrl
-        targetUrl = replaceVars(targetUrl);
+        String resolvedUrl = replaceVars(targetUrl, vars);
+        try {
+            destinationUrlValidator.validate("Proxy", resolvedUrl);
+        } catch (NotificationDeliveryException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
 
         // Add custom headers
         if (proxyHeadersJson != null) {
             try {
                 Map<String, String> customHeaders = objectMapper.readValue(proxyHeadersJson, Map.class);
-                customHeaders.forEach((key, value) -> headers.set(key, replaceVars(value)));
+                customHeaders.forEach((key, value) -> headers.set(key, replaceVars(value, vars)));
             } catch (Exception e) {
                 log.error("Error parsing proxyheaders JSON: ", e);
             }
@@ -73,7 +82,7 @@ public class ProxyService {
                 if (proxyBodyNode != null) {
                     String proxyBodyString = proxyBodyNode.asText();
                     // Replace variables in the proxy body
-                    String replacedBody = replaceVars(proxyBodyString);
+                    String replacedBody = replaceVars(proxyBodyString, vars);
 
                     // Reassign the processed body
                     body = replacedBody;
@@ -83,15 +92,10 @@ public class ProxyService {
             }
         }
 
-        // Log headers and body for debugging
-        log.info("Request Headers: {}", headers);
-        log.info("Request Body: {}", body);
-        log.info("Target URL: {}", targetUrl);
-
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
 
         try {
-            ResponseEntity<String> response = restTemplate.exchange(targetUrl, method, entity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(resolvedUrl, method, entity, String.class);
             return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
         } catch (Exception e) {
             log.error("Error forwarding request to {}: ", targetUrl, e);
@@ -100,19 +104,20 @@ public class ProxyService {
     }
 
     @Transactional
-    public void fetchWorkspaceVars(UUID workspaceId) {
-        VARS.clear();
+    public Map<String, String> fetchWorkspaceVars(UUID workspaceId) {
+        Map<String, String> vars = new HashMap<>();
         Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow(() -> new IllegalArgumentException("Invalid workspace ID"));
         Organization organization = workspace.getOrganization();
 
         List<Globalvar> globalVariables = globalVarRepository.findByOrganization(organization);
-        globalVariables.forEach(globalvar -> VARS.put(globalvar.getKey(), globalvar.getValue()));
+        globalVariables.forEach(globalvar -> vars.put(globalvar.getKey(), globalvar.getValue()));
 
         List<Variable> variables = variableRepository.findByWorkspace(workspace).orElse(new ArrayList<>());
-        variables.forEach(variable -> VARS.put(variable.getKey(), variable.getValue()));
+        variables.forEach(variable -> vars.put(variable.getKey(), variable.getValue()));
+        return vars;
     }
 
-    public String replaceVars(String input) {
+    public String replaceVars(String input, Map<String, String> vars) {
         if (input == null) {
             return null;
         }
@@ -122,8 +127,8 @@ public class ProxyService {
         StringBuffer buffer = new StringBuffer();
 
         while (matcher.find()) {
-            String replacement = VARS.getOrDefault(matcher.group(1), matcher.group(0));
-            matcher.appendReplacement(buffer, replacement);
+            String replacement = vars.getOrDefault(matcher.group(1), matcher.group(0));
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(buffer);
         return buffer.toString();
