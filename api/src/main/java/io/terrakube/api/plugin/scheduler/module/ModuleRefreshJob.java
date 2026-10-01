@@ -1,7 +1,6 @@
 package io.terrakube.api.plugin.scheduler.module;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import org.semver4j.Semver;
 import io.terrakube.api.plugin.ssh.TerrakubeSshdSessionFactory;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
@@ -54,6 +53,8 @@ public class ModuleRefreshJob implements Job {
     private AzDevOpsTokenService azDevOpsTokenService;
     @Autowired
     private ModuleRefreshProperties moduleRefreshProperties;
+    @Autowired
+    private ModuleLatestVersion moduleLatestVersion;
 
     @Override
     @Transactional
@@ -132,7 +133,7 @@ public class ModuleRefreshJob implements Job {
             moduleVersionRepository.saveAll(newModuleVersions);
         }
 
-        calculateLatestModuleVersion(module, organizationName);
+        moduleLatestVersion.recalculate(module);
         return true;
     }
 
@@ -179,21 +180,6 @@ public class ModuleRefreshJob implements Job {
             }
         });
         return canonicalVersions;
-    }
-
-    private void calculateLatestModuleVersion(Module module, String organizationName) {
-        try {
-            module.setLatestVersion(moduleVersionRepository.findAllByModuleId(module.getId()).stream()
-                    .map(ModuleVersion::getVersion)
-                    .filter(Semver::isValid)
-                    .max(Comparator.comparing(Semver::parse))
-                    .orElse("Version pending"));
-            log.info("Latest module {}/{} version {}", organizationName, module.getName(), module.getLatestVersion());
-            moduleRepository.save(module);
-        } catch (Exception e) {
-            // Broad catch is intentional: a bad version string must not stop the whole refresh job.
-            log.error("Failed to calculate latest module version {}/{}", organizationName, module.getName());
-        }
     }
 
     private void deleteModuleTask(String moduleId, String reason) {

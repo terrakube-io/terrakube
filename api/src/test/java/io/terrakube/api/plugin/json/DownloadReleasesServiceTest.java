@@ -12,16 +12,21 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DownloadReleasesServiceTest {
 
     private HttpServer server;
     private final List<List<String>> receivedUserAgents = new ArrayList<>();
+    private final CountDownLatch stalledResponseLatch = new CountDownLatch(1);
     private Path tempDir;
 
     @BeforeEach
@@ -37,11 +42,21 @@ class DownloadReleasesServiceTest {
             exchange.getResponseBody().write(body);
             exchange.close();
         });
+        server.createContext("/stalled", exchange -> {
+            try {
+                stalledResponseLatch.await(Duration.ofSeconds(5).toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
         server.start();
     }
 
     @AfterEach
     void stopServer() {
+        stalledResponseLatch.countDown();
         server.stop(0);
     }
 
@@ -69,5 +84,20 @@ class DownloadReleasesServiceTest {
             assertTrue(userAgents.get(0).equals("releases-downloader"),
                     "unexpected User-Agent: " + userAgents.get(0));
         }
+    }
+
+    @Test
+    void stalledResponseMustTimeOut() {
+        DownloadReleasesService service = new DownloadReleasesService(
+                WebClient.builder(), Duration.ofMillis(100), Duration.ofMillis(200));
+        String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/stalled";
+
+        long startedAt = System.nanoTime();
+        assertThrows(RuntimeException.class,
+                () -> service.downloadReleasesToFile(url, new File(tempDir.toFile(), "stalled.json")));
+        long elapsedMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+
+        assertTrue(elapsedMillis < Duration.ofSeconds(2).toMillis(),
+                "stalled release request was not bounded: " + elapsedMillis + "ms");
     }
 }

@@ -12,6 +12,9 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
+@CreatePermission(expression = "user is a superuser OR team manage workspace tag")
+@UpdatePermission(expression = "user is a superuser OR team manage workspace tag")
+@DeletePermission(expression = "user is a superuser OR team manage workspace tag")
 @Include(rootLevel = false)
 @Getter
 @Setter
@@ -24,6 +27,9 @@ public class WorkspaceTag extends GenericAuditFields {
 
     @Column(name = "tag_id")
     private String tagId;
+
+    @Column(name = "tag_value")
+    private String value;
 
     @ManyToOne
     @JoinColumn(name = "workspace_id")

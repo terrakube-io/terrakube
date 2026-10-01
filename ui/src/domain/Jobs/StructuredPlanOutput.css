@@ -3,7 +3,7 @@
 }
 
 .structured-plan-shell {
-  color: #1f2937;
+  color: var(--tk-text-primary);
 }
 
 .structured-plan-summaryArea {
@@ -60,10 +60,10 @@
 
 .structured-plan-summaryEmpty {
   align-items: center;
-  background: #f8fafc;
+  background: var(--tk-fill-primary);
   border: 1px solid #e7ebf0;
   border-radius: 8px;
-  color: #526171;
+  color: var(--tk-text-secondary);
   display: flex;
   min-height: 36px;
   padding: 0 12px;
@@ -72,7 +72,7 @@
 }
 
 .structured-plan-summaryMeta {
-  color: #526171;
+  color: var(--tk-text-secondary);
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -99,10 +99,10 @@
 }
 
 .structured-plan-searchInput {
-  background: #ffffff;
+  background: var(--tk-bg-base);
   border: 1px solid #cfd6df;
   border-radius: 6px;
-  color: #1f2937;
+  color: var(--tk-text-primary);
   font-size: 13px;
   min-width: 220px;
   padding: 7px 10px;
@@ -110,16 +110,16 @@
 
 .structured-plan-searchInput:focus {
   border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px #2563eb;
   outline: none;
 }
 
 .structured-plan-selectWrap {
   align-items: center;
-  background: #ffffff;
+  background: var(--tk-bg-base);
   border: 1px solid #cfd6df;
   border-radius: 6px;
-  color: #526171;
+  color: var(--tk-text-secondary);
   cursor: pointer;
   display: inline-flex;
   gap: 6px;
@@ -142,7 +142,7 @@
   appearance: none;
   background: transparent;
   border: none;
-  color: #1f2937;
+  color: var(--tk-text-primary);
   cursor: pointer;
   font-size: 13px;
   min-width: 138px;
@@ -151,6 +151,11 @@
 
 .structured-plan-select:focus {
   outline: none;
+}
+
+.structured-plan-select:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #2563eb;
 }
 
 .structured-plan-checkbox {
@@ -169,7 +174,7 @@
 
 .structured-plan-toolbarMeta {
   align-items: center;
-  color: #526171;
+  color: var(--tk-text-secondary);
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -179,10 +184,10 @@
 
 .structured-plan-toolbarButton {
   align-items: center;
-  background: #ffffff;
+  background: var(--tk-bg-elevated);
   border: 1px solid #cfd6df;
   border-radius: 6px;
-  color: #1f2937;
+  color: var(--tk-text-primary);
   cursor: pointer;
   display: inline-flex;
   gap: 6px;
@@ -191,11 +196,11 @@
 }
 
 .structured-plan-toolbarButton:hover {
-  background: #f8fafc;
+  background: var(--tk-fill-primary);
 }
 
 .structured-plan-toolbarButton:focus-visible {
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px #2563eb;
   outline: none;
 }
 
@@ -231,18 +236,18 @@
 }
 
 .structured-plan-rowToggle:hover {
-  background: #f8fafc;
+  background: var(--tk-fill-primary);
 }
 
 .structured-plan-rowToggle:focus-visible {
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16);
+  background: var(--tk-fill-primary);
+  box-shadow: inset 0 0 0 2px #2563eb;
   outline: none;
 }
 
 .structured-plan-chevron {
   align-items: center;
-  color: #5b6573;
+  color: var(--tk-text-secondary);
   display: inline-flex;
   flex-shrink: 0;
   justify-content: center;
@@ -281,9 +286,9 @@
 }
 
 .structured-plan-actionIcon--replace {
-  background: #f4f5f7;
-  border-color: #d7dce3;
-  color: #55606e;
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
 }
 
 .structured-plan-actionIcon--delete {
@@ -294,8 +299,8 @@
 
 .structured-plan-actionIcon--read,
 .structured-plan-actionIcon--unknown {
-  background: #f8fafc;
-  border-color: #dce3eb;
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
   color: #64748b;
 }
 
@@ -313,7 +318,7 @@
 
 .structured-plan-providerBadge {
   align-items: center;
-  background: #f4f6f9;
+  background: var(--tk-fill-primary);
   border: 1px solid #dce3eb;
   border-radius: 5px;
   color: #354052;
@@ -332,11 +337,11 @@
 }
 
 .structured-plan-providerBadgeIcon--generic {
-  color: #8a96a8;
+  color: var(--tk-text-tertiary);
 }
 
 .structured-plan-address {
-  color: #1d2433;
+  color: var(--tk-text-primary);
   flex: 1 1 auto;
   font-size: 13px;
   font-weight: 600;
@@ -359,18 +364,18 @@
 }
 
 .structured-plan-copyButton:hover {
-  background: #f8fafc;
-  color: #1f2937;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
 }
 
 .structured-plan-copyButton:focus-visible {
   background: #f8fafc;
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16);
+  box-shadow: inset 0 0 0 2px #2563eb;
   outline: none;
 }
 
 .structured-plan-rowBody {
-  background: #ffffff;
+  background: var(--tk-bg-container);
   padding: 0 12px 12px 50px;
 }
 
@@ -420,9 +425,9 @@
 }
 
 .structured-plan-actionPill--replace {
-  background: #f4f5f7;
-  border-color: #d7dce3;
-  color: #55606e;
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
 }
 
 .structured-plan-actionPill--delete {
@@ -433,8 +438,8 @@
 
 .structured-plan-actionPill--read,
 .structured-plan-actionPill--unknown {
-  background: #f8fafc;
-  border-color: #dce3eb;
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
   color: #64748b;
 }
 
@@ -452,14 +457,14 @@
 }
 
 .structured-plan-metaPill {
-  background: #f8fafc;
-  border-color: #dce3eb;
-  color: #526171;
+  background: var(--tk-fill-primary);
+  border-color: var(--tk-border-primary);
+  color: var(--tk-text-secondary);
   font-weight: 500;
 }
 
 .structured-plan-rowCounts {
-  color: #526171;
+  color: var(--tk-text-secondary);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -480,7 +485,7 @@
 
 .structured-plan-diffGroupLabel {
   align-items: baseline;
-  color: #253041;
+  color: var(--tk-text-primary);
   display: flex;
   font-size: 12px;
   font-weight: 600;
@@ -488,7 +493,7 @@
 }
 
 .structured-plan-jsonWrap {
-  color: #9199a6;
+  color: var(--tk-text-tertiary);
   font-family: "SFMono-Regular", Consolas, Monaco, monospace;
   font-size: 11px;
   font-weight: 400;
@@ -527,7 +532,7 @@
 
 .structured-plan-diffLabel {
   align-items: center;
-  color: #253041;
+  color: var(--tk-text-primary);
   display: flex;
   gap: 8px;
   min-width: 0;
@@ -600,10 +605,10 @@
 
 .structured-plan-valueToken {
   align-items: center;
-  background: #ffffff;
+  background: var(--tk-bg-elevated);
   border: 1px solid #d8dde6;
   border-radius: 5px;
-  color: #1f2937;
+  color: var(--tk-text-primary);
   display: inline-flex;
   font-family: "SFMono-Regular", Consolas, Monaco, monospace;
   font-size: 11px;
@@ -676,6 +681,10 @@
   outline: none;
 }
 
+.structured-plan-hiddenCountToggle:focus-visible {
+  box-shadow: 0 0 0 2px #2563eb;
+}
+
 .structured-plan-hiddenCountChevron {
   font-size: 10px;
 }
@@ -696,7 +705,7 @@
 }
 
 .structured-plan-valueToken--unchanged {
-  border-color: #e5e7eb;
+  border-color: var(--tk-border-primary);
   color: #4b5563;
 }
 
@@ -706,7 +715,6 @@
 }
 
 [data-theme="dark"] .structured-plan-valueToken--unchanged {
-  border-color: var(--tk-border-primary);
   color: var(--tk-text-tertiary);
 }
 
@@ -719,7 +727,7 @@
 }
 
 .structured-plan-actionFilterPanel {
-  background: #ffffff;
+  background: var(--tk-bg-elevated);
   border: 1px solid #cfd6df;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
@@ -735,7 +743,6 @@
 }
 
 [data-theme="dark"] .structured-plan-actionFilterPanel {
-  background: var(--tk-bg-elevated);
   border-color: var(--tk-border-primary);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
@@ -809,8 +816,8 @@
   /* Neutral slate, same family as "pending" - the destroy+create story is told by the two small
      dots (.structured-plan-applyStatusDot) rendered inside the badge instead of by the badge's
      own background color, so it doesn't need a 7th hue in the palette. */
-  background: #eef0f3;
-  color: #43505f;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
 }
 
 .structured-plan-applyStatus--imported {
@@ -861,11 +868,6 @@
 [data-theme="dark"] .structured-plan-applyStatus--destroyed {
   background: rgba(248, 81, 73, 0.15);
   color: #f85149;
-}
-
-[data-theme="dark"] .structured-plan-applyStatus--replaced {
-  background: var(--tk-fill-primary);
-  color: var(--tk-text-secondary);
 }
 
 [data-theme="dark"] .structured-plan-applyStatusDot--destroy {
@@ -1054,22 +1056,12 @@
    Dark Mode Overrides
    ========================================================================== */
 
-[data-theme="dark"] .structured-plan-shell {
-  color: var(--tk-text-primary);
-}
-
 [data-theme="dark"] .structured-plan-summaryArea {
   border-bottom-color: var(--tk-border-primary);
 }
 
 [data-theme="dark"] .structured-plan-summaryEmpty {
-  background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
-  color: var(--tk-text-secondary);
-}
-
-[data-theme="dark"] .structured-plan-summaryMeta {
-  color: var(--tk-text-secondary);
 }
 
 [data-theme="dark"] .structured-plan-toolbar {
@@ -1077,9 +1069,7 @@
 }
 
 [data-theme="dark"] .structured-plan-searchInput {
-  background: var(--tk-bg-base);
   border-color: var(--tk-border-primary);
-  color: var(--tk-text-primary);
 }
 
 [data-theme="dark"] .structured-plan-searchInput:focus {
@@ -1092,9 +1082,7 @@
 }
 
 [data-theme="dark"] .structured-plan-selectWrap {
-  background: var(--tk-bg-base);
   border-color: var(--tk-border-primary);
-  color: var(--tk-text-secondary);
 }
 
 [data-theme="dark"] .structured-plan-selectWrap:focus-within {
@@ -1107,43 +1095,20 @@
   color: var(--tk-text-tertiary);
 }
 
-[data-theme="dark"] .structured-plan-select {
-  color: var(--tk-text-primary);
-}
-
 [data-theme="dark"] .structured-plan-checkbox {
   color: var(--tk-text-secondary);
 }
 
-[data-theme="dark"] .structured-plan-toolbarMeta {
-  color: var(--tk-text-secondary);
-}
-
 [data-theme="dark"] .structured-plan-toolbarButton {
-  background: var(--tk-bg-elevated);
   border-color: var(--tk-border-primary);
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .structured-plan-toolbarButton:hover {
-  background: var(--tk-fill-primary);
 }
 
 [data-theme="dark"] .structured-plan-row {
   border-bottom-color: var(--tk-border-secondary);
 }
 
-[data-theme="dark"] .structured-plan-rowToggle:hover {
-  background: var(--tk-fill-primary);
-}
-
 [data-theme="dark"] .structured-plan-rowToggle:focus-visible {
-  background: var(--tk-fill-primary);
   box-shadow: inset 0 0 0 2px rgba(88, 166, 255, 0.2);
-}
-
-[data-theme="dark"] .structured-plan-chevron {
-  color: var(--tk-text-secondary);
 }
 
 /* Action icons — dark mode: darker pastel variants */
@@ -1159,12 +1124,6 @@
   color: #58a6ff;
 }
 
-[data-theme="dark"] .structured-plan-actionIcon--replace {
-  background: var(--tk-fill-primary);
-  border-color: var(--tk-border-primary);
-  color: var(--tk-text-secondary);
-}
-
 [data-theme="dark"] .structured-plan-actionIcon--delete {
   background: rgba(248, 81, 73, 0.15);
   border-color: rgba(248, 81, 73, 0.3);
@@ -1173,8 +1132,6 @@
 
 [data-theme="dark"] .structured-plan-actionIcon--read,
 [data-theme="dark"] .structured-plan-actionIcon--unknown {
-  background: var(--tk-fill-primary);
-  border-color: var(--tk-border-primary);
   color: var(--tk-text-tertiary);
 }
 
@@ -1191,17 +1148,8 @@
 }
 
 [data-theme="dark"] .structured-plan-providerBadge {
-  background: var(--tk-fill-primary);
   border-color: var(--tk-border-primary);
   color: var(--tk-text-secondary);
-}
-
-[data-theme="dark"] .structured-plan-providerBadgeIcon--generic {
-  color: var(--tk-text-tertiary);
-}
-
-[data-theme="dark"] .structured-plan-address {
-  color: var(--tk-text-primary);
 }
 
 [data-theme="dark"] .structured-plan-copyButton {
@@ -1209,29 +1157,8 @@
   color: var(--tk-text-tertiary);
 }
 
-[data-theme="dark"] .structured-plan-copyButton:hover {
-  background: var(--tk-fill-primary);
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .structured-plan-rowBody {
-  background: var(--tk-bg-container);
-}
-
 [data-theme="dark"] .structured-plan-rowBodyInner {
   border-left-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .structured-plan-rowCounts {
-  color: var(--tk-text-secondary);
-}
-
-[data-theme="dark"] .structured-plan-diffGroupLabel {
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .structured-plan-jsonWrap {
-  color: var(--tk-text-tertiary);
 }
 
 [data-theme="dark"] .structured-plan-diffGroupChildren {
@@ -1245,10 +1172,6 @@
 /* Diff rows — dark mode */
 [data-theme="dark"] .structured-plan-diffRow {
   border-bottom-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .structured-plan-diffLabel {
-  color: var(--tk-text-primary);
 }
 
 /* Diff markers — dark mode */
@@ -1283,9 +1206,7 @@
 
 /* Value tokens — dark mode */
 [data-theme="dark"] .structured-plan-valueToken {
-  background: var(--tk-bg-elevated);
   border-color: var(--tk-border-primary);
-  color: var(--tk-text-primary);
 }
 
 [data-theme="dark"] .structured-plan-valueToken--added {
@@ -1326,12 +1247,6 @@
   color: #58a6ff;
 }
 
-[data-theme="dark"] .structured-plan-actionPill--replace {
-  background: var(--tk-fill-primary);
-  border-color: var(--tk-border-primary);
-  color: var(--tk-text-secondary);
-}
-
 [data-theme="dark"] .structured-plan-actionPill--delete {
   background: rgba(248, 81, 73, 0.15);
   border-color: rgba(248, 81, 73, 0.3);
@@ -1340,8 +1255,6 @@
 
 [data-theme="dark"] .structured-plan-actionPill--read,
 [data-theme="dark"] .structured-plan-actionPill--unknown {
-  background: var(--tk-fill-primary);
-  border-color: var(--tk-border-primary);
   color: var(--tk-text-tertiary);
 }
 
@@ -1355,12 +1268,6 @@
   background: rgba(56, 189, 248, 0.15);
   border-color: rgba(56, 189, 248, 0.3);
   color: #38bdf8;
-}
-
-[data-theme="dark"] .structured-plan-metaPill {
-  background: var(--tk-fill-primary);
-  border-color: var(--tk-border-primary);
-  color: var(--tk-text-secondary);
 }
 
 .structured-plan-outputs {
@@ -1382,15 +1289,16 @@
 }
 
 .structured-plan-outputsToggle:hover {
-  color: #1f2937;
+  color: var(--tk-text-primary);
 }
 
 .structured-plan-outputsToggle:focus-visible {
+  box-shadow: 0 0 0 2px #2563eb;
   outline: none;
 }
 
 .structured-plan-outputsHeader {
-  color: #253041;
+  color: var(--tk-text-primary);
   font-size: 13px;
   font-weight: 700;
 }
@@ -1421,7 +1329,7 @@
 }
 
 .structured-plan-outputName {
-  color: #253041;
+  color: var(--tk-text-primary);
   font-family: "SFMono-Regular", Consolas, Monaco, monospace;
   font-size: 12px;
   word-break: break-word;
@@ -1450,10 +1358,11 @@
 }
 
 .structured-plan-outputGroupToggle:hover {
-  color: #1f2937;
+  color: var(--tk-text-primary);
 }
 
 .structured-plan-outputGroupToggle:focus-visible {
+  box-shadow: 0 0 0 2px #2563eb;
   outline: none;
 }
 
@@ -1470,7 +1379,7 @@
 }
 
 .structured-plan-outputLeafLabel {
-  color: #253041;
+  color: var(--tk-text-primary);
   font-family: "SFMono-Regular", Consolas, Monaco, monospace;
   font-size: 11px;
   word-break: break-word;
@@ -1490,28 +1399,12 @@
   border-top-color: var(--tk-border-primary);
 }
 
-[data-theme="dark"] .structured-plan-outputsHeader {
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .structured-plan-outputsToggle:hover {
-  color: var(--tk-text-primary);
-}
-
 [data-theme="dark"] .structured-plan-outputsCount {
   color: var(--tk-text-tertiary);
 }
 
 [data-theme="dark"] .structured-plan-outputGroup {
   border-bottom-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .structured-plan-outputGroupToggle:hover {
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .structured-plan-outputLeafLabel {
-  color: var(--tk-text-primary);
 }
 
 [data-theme="dark"] .structured-plan-outputLeafValue {
@@ -1522,6 +1415,17 @@
   border-bottom-color: var(--tk-border-primary);
 }
 
-[data-theme="dark"] .structured-plan-outputName {
-  color: var(--tk-text-primary);
+/* Focus rings on graphite: #2563eb only reaches 2.9:1 there, so the dark theme uses the lighter blue. */
+[data-theme="dark"] .structured-plan-searchInput:focus,
+[data-theme="dark"] .structured-plan-select:focus-visible,
+[data-theme="dark"] .structured-plan-toolbarButton:focus-visible,
+[data-theme="dark"] .structured-plan-hiddenCountToggle:focus-visible,
+[data-theme="dark"] .structured-plan-outputsToggle:focus-visible,
+[data-theme="dark"] .structured-plan-outputGroupToggle:focus-visible {
+  box-shadow: 0 0 0 2px #58a6ff;
+}
+
+[data-theme="dark"] .structured-plan-rowToggle:focus-visible,
+[data-theme="dark"] .structured-plan-copyButton:focus-visible {
+  box-shadow: inset 0 0 0 2px #58a6ff;
 }

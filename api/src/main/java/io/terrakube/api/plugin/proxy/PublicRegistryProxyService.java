@@ -4,21 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.netty.http.client.HttpClient;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import io.netty.channel.ChannelOption;
-import io.netty.handler.timeout.ReadTimeoutHandler;
-import io.netty.handler.timeout.WriteTimeoutHandler;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -32,18 +27,10 @@ public class PublicRegistryProxyService {
     public PublicRegistryProxyService(WebClient.Builder webClientBuilder) {
         this.objectMapper = new ObjectMapper();
 
-        HttpClient httpClient = HttpClient.create()
-                .compress(true)
-                .proxyWithSystemProperties()
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
-                .responseTimeout(Duration.ofSeconds(30))
-                .doOnConnected(conn -> conn
-                        .addHandlerLast(new ReadTimeoutHandler(30, TimeUnit.SECONDS))
-                        .addHandlerLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS)));
-
         this.webClient = webClientBuilder
+                .clone()
                 .baseUrl(TERRAFORM_REGISTRY_BASE_URL)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .clientConnector(ReactorNettyWebClientFactory.compressedConnector(Duration.ofSeconds(30)))
                 .codecs(configurer -> configurer
                         .defaultCodecs()
                         .maxInMemorySize(16 * 1024 * 1024)) // 16MB buffer for large provider responses

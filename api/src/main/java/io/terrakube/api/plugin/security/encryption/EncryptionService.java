@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Random;
 
 @Service
@@ -48,12 +49,10 @@ public class EncryptionService {
             // Perform encryption
             byte[] encryptedBytes = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
 
-            // Encode IV and encrypted data in Base64, and return as "IV:EncryptedData"
-            //String ivBase64 = Base64.getUrlEncoder().encodeToString(iv);
-            //String encryptedBase64 = Base64.getUrlEncoder().encodeToString(encryptedBytes);
-            String ivBase64 = new BigInteger(iv).toString(36);
-            String encryptedBase64 = new BigInteger(encryptedBytes).toString(36);
-            return ivBase64 + "/" + encryptedBase64;
+            // Encode IV and encrypted data in URL-safe Base64 (no "/"), and return as "IV/EncryptedData".
+            // A BigInteger round trip is not used because it drops leading 0x00/0xFF bytes.
+            Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+            return encoder.encodeToString(iv) + "/" + encoder.encodeToString(encryptedBytes);
         } catch (Exception e) {
             log.error("Error during AES encryption: {}", e.getMessage(), e);
             throw new RuntimeException("Encryption failed", e);
@@ -73,30 +72,36 @@ public class EncryptionService {
             if (parts.length != 2) {
                 throw new IllegalArgumentException("Invalid encrypted string format. Expected 'IV:EncryptedData'");
             }
-            String ivBase64 = parts[0];
-            String encryptedBase64 = parts[1];
-
-            // Decode IV and encrypted data from Base64
-            byte[] iv = new BigInteger(ivBase64, 36).toByteArray();
-            byte[] encryptedBytes = new BigInteger(encryptedBase64, 36).toByteArray();
-
-            // Create SecretKeySpec and IvParameterSpec for decryption
-            SecretKeySpec keySpec = new SecretKeySpec(generateHashFromToken(internalToken), "AES");
-            GCMParameterSpec ivSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-
-            // Configure Cipher for decryption
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
-
-            // Perform decryption
-            byte[] originalBytes = cipher.doFinal(encryptedBytes);
-
-            // Return the plaintext string
-            return new String(originalBytes, StandardCharsets.UTF_8);
+            try {
+                return decryptAesGcm(Base64.getUrlDecoder().decode(parts[0]), Base64.getUrlDecoder().decode(parts[1]));
+            } catch (Exception e) {
+                // Fallback: values encrypted before the switch to URL-safe Base64 (e.g. a log-read-url held by a
+                // Terraform CLI run during a rolling upgrade) are Base-36 encoded. Base-36 digits are valid
+                // URL-safe Base64 too, so such a value usually decodes above and is rejected by the GCM tag check.
+                try {
+                    return decryptAesGcm(new BigInteger(parts[0], 36).toByteArray(), new BigInteger(parts[1], 36).toByteArray());
+                } catch (Exception legacyException) {
+                    e.addSuppressed(legacyException);
+                    throw e;
+                }
+            }
         } catch (Exception e) {
             log.error("Error during AES decryption: {}", e.getMessage(), e);
             throw new RuntimeException("Decryption failed", e);
         }
+    }
+
+    private String decryptAesGcm(byte[] iv, byte[] encryptedBytes) throws Exception {
+        // Create SecretKeySpec and IvParameterSpec for decryption
+        SecretKeySpec keySpec = new SecretKeySpec(generateHashFromToken(internalToken), "AES");
+        GCMParameterSpec ivSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+
+        // Configure Cipher for decryption
+        Cipher cipher = Cipher.getInstance(ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
+
+        // Perform decryption and return the plaintext string
+        return new String(cipher.doFinal(encryptedBytes), StandardCharsets.UTF_8);
     }
 
     /**

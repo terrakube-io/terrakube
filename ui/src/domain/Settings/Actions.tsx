@@ -8,22 +8,7 @@ import {
 } from "@ant-design/icons";
 import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
-import {
-  Alert,
-  Button,
-  Col,
-  Flex,
-  Form,
-  Input,
-  message,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Tooltip,
-} from "antd";
+import { Alert, Button, Col, Flex, Form, Input, message, Row, Select, Space, Switch, Table, Tag, Tooltip } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -35,6 +20,7 @@ import "./Settings.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Loading } from "@/components/feedback/Loading";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { validateActionSyntax } from "./validateActionSyntax";
 
 const validateMessages: any = {
   required: "${label} is required!",
@@ -81,6 +67,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   const actionId = editorId;
   const closeEditor = () => navigate(`/organizations/${orgid}/settings/actions`);
   const [actionContent, setActionContent] = useState<string>("");
+  const [syntaxError, setSyntaxError] = useState<string | null>(null);
   const [form] = Form.useForm();
   const editorRef = useRef<IStandaloneCodeEditor>(null);
 
@@ -153,6 +140,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   };
 
   useEffect(() => {
+    setSyntaxError(null);
     if (editorMode === "new") {
       form.resetFields();
       setActionContent("");
@@ -196,8 +184,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       });
   };
 
-  const onCreate = (values: CreateActionForm) => {
-    const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
+  const onCreate = (values: CreateActionForm, editorValue: string) => {
     const actionEncoded = Buffer.from(editorValue).toString("base64");
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
@@ -224,8 +211,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
       });
   };
 
-  const onUpdate = (values: EditActionForm) => {
-    const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
+  const onUpdate = (values: EditActionForm, editorValue: string) => {
     const actionEncoded = Buffer.from(editorValue).toString("base64");
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
@@ -339,8 +325,15 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
             form={form}
             layout="vertical"
             onFinish={(values) => {
-              if (mode === "create") onCreate(values);
-              else onUpdate(values);
+              const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
+              const error = validateActionSyntax(editorValue);
+              setSyntaxError(error);
+              if (error) {
+                editorRef.current?.focus();
+                return;
+              }
+              if (mode === "create") onCreate(values, editorValue);
+              else onUpdate(values, editorValue);
             }}
             validateMessages={validateMessages}
           >
@@ -544,6 +537,15 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
               description="A JavaScript function equivalent to a React component. It receives a context object whose content varies by type, please check the docs."
             >
               <CodeEditor height="40vh" onMount={handleEditorDidMount} defaultLanguage="javascript" />
+              {syntaxError && (
+                <Alert
+                  type="error"
+                  showIcon
+                  role="alert"
+                  title="Fix the action code before saving"
+                  description={syntaxError}
+                />
+              )}
             </SettingsSection>
 
             <Flex justify="flex-end" style={{ maxWidth: 960 }}>

@@ -25,6 +25,11 @@ public class ReadMeWebServiceImpl {
 
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
     public ResponseEntity<ReadMe> getModuleVersionPath(@PathVariable String organization, @PathVariable String module, @PathVariable String provider, @PathVariable String version) {
+        if (moduleService.isVersionRemoved(organization, module, provider, version)) {
+            // Terraform picked it from this replica's cached list; refresh the list so the next run picks another.
+            moduleService.evictAvailableVersions(organization, module, provider);
+            return ResponseEntity.notFound().build();
+        }
         ReadMe readMe = new ReadMe();
         String moduleURL = moduleService.getModuleVersionPath(organization, module, provider, version);
         readMe.setUrl(moduleURL);

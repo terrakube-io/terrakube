@@ -1,6 +1,7 @@
 // Shared
 
 import { AuditFieldBase } from "@/modules/types";
+import type { VersionStatusValue } from "@/components/modals/VersionStatusModal";
 
 export type RelationshipItem = {
   data: { type: string; id: string };
@@ -172,6 +173,8 @@ export type JobAttributes = {
   via: JobVia;
   output: string;
   approvalTeam: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
   commitId: string;
   prNumber?: number;
   prCommentError?: string;
@@ -196,6 +199,8 @@ export type FlatJob = {
   latestChange: string;
   commitId?: string;
   createdBy: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
   via?: JobVia;
   prNumber?: number;
   prCommentError?: string;
@@ -307,6 +312,8 @@ export type ModuleAttributes = {
 export type ModuleVersionAttributes = {
   version: string;
   commit: string;
+  status?: VersionStatusValue;
+  deprecationMessage?: string | null;
 };
 
 export type FlatModule = {

@@ -1,11 +1,15 @@
 package io.terrakube.registry;
 
 import org.apache.http.HttpStatus;
+import io.terrakube.registry.service.module.ModuleService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ModuleTests extends OpenRegistryApplicationTests{
     private static final String GRAPHQL_ENDPOINT="/graphql/api/v1";
@@ -87,4 +91,30 @@ public class ModuleTests extends OpenRegistryApplicationTests{
                 .log().all()
                 .statusCode(HttpStatus.SC_OK);
     }
+
+    @Autowired
+    ModuleService moduleService;
+
+    @Test
+    void onlyVersionsFlaggedAsRemovedAreRemoved() {
+        wireMockServer.resetAll();
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("version==3.3.0;status==removed"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(MODULE_SEARCH_BODY)));
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("version==3.4.0;status==removed"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(MODULE_WITHOUT_VERSIONS_BODY)));
+
+        assertTrue(moduleService.isVersionRemoved("aws", "vpc", "aws", "3.3.0"));
+        assertFalse(moduleService.isVersionRemoved("aws", "vpc", "aws", "3.4.0"));
+        // Anything that could change the RSQL filter is refused without asking the API.
+        assertTrue(moduleService.isVersionRemoved("aws", "vpc", "aws", "3.3.0;status==active,version==x"));
+        wireMockServer.verify(2, postRequestedFor(urlPathEqualTo(GRAPHQL_ENDPOINT)));
+    }
+
+    private static final String MODULE_WITHOUT_VERSIONS_BODY = """
+            {"data":{"organization":{"edges":[{"node":{"id":"3a130a1c-d96f-4f99-83b8-58d472567e3a","name":"aws","module":{"edges":[
+              {"node":{"id":"25778e8a-6989-4792-9f38-17bb3f09543b","name":"vpc","provider":"aws","version":{"edges":[]}}}
+            ]}}}]}}}
+            """;
 }

@@ -37,7 +37,10 @@
 .policy-pill--clickable {
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s ease-in-out;
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out,
+    filter 0.2s ease-in-out;
 }
 
 .policy-pill--clickable:hover {
@@ -101,7 +104,9 @@
   border-radius: 8px;
   padding: 16px;
   background: var(--ant-color-bg-elevated, #fafafa);
-  transition: all 0.2s ease-in-out;
+  transition:
+    border-color 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
 }
 
 .policy-rule-card:hover {
@@ -110,23 +115,23 @@
 }
 
 .policy-rule-card--hard {
-  border-left: 4px solid #ff4d4f;
+  border-color: rgba(255, 77, 79, 0.45);
 }
 
 .policy-rule-card--soft {
-  border-left: 4px solid #fa8c16;
+  border-color: rgba(250, 140, 22, 0.45);
 }
 
 .policy-rule-card--exempted {
-  border-left: 4px solid #722ed1;
+  border-color: rgba(114, 46, 209, 0.45);
 }
 
 .policy-rule-card--warning {
-  border-left: 4px solid #faad14;
+  border-color: rgba(250, 173, 20, 0.45);
 }
 
 .policy-rule-card--passed {
-  border-left: 4px solid #52c41a;
+  border-color: rgba(82, 196, 26, 0.45);
 }
 
 .policy-rule-header {
@@ -200,7 +205,7 @@
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;
-  border-left: 3px solid #1890ff;
+  border: 1px solid var(--ant-color-border-secondary, #e8e8e8);
 }
 
 .highlight-resource {
@@ -236,4 +241,77 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Dark theme */
+[data-theme="dark"] .policy-pill--passed {
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+  border-color: rgba(46, 160, 67, 0.4);
+}
+
+[data-theme="dark"] .policy-pill--exempted {
+  background: rgba(163, 113, 247, 0.15);
+  color: #b37feb;
+  border-color: rgba(163, 113, 247, 0.4);
+}
+
+[data-theme="dark"] .policy-pill--warning {
+  background: rgba(210, 153, 34, 0.15);
+  color: #e3b341;
+  border-color: rgba(210, 153, 34, 0.4);
+}
+
+[data-theme="dark"] .policy-pill--soft {
+  background: rgba(219, 109, 40, 0.15);
+  color: #f0883e;
+  border-color: rgba(219, 109, 40, 0.4);
+}
+
+[data-theme="dark"] .policy-pill--hard {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
+[data-theme="dark"] .policy-pill--clickable:hover {
+  box-shadow: var(--tk-shadow-md);
+}
+
+[data-theme="dark"] .policy-rule-card:hover {
+  box-shadow: var(--tk-shadow-md);
+}
+
+[data-theme="dark"] .policy-resource-address {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .policy-exemption-box {
+  background: rgba(163, 113, 247, 0.08);
+  border-color: rgba(163, 113, 247, 0.4);
+}
+
+[data-theme="dark"] .policy-exemption-title {
+  color: #b37feb;
+}
+
+[data-theme="dark"] .policy-exemption-details {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .policy-suggested-fix {
+  background: var(--tk-bg-base);
+  border-color: var(--tk-border-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .highlight-resource {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.5);
+  }
+
+  .policy-pill--clickable:hover,
+  .policy-pill--active {
+    transform: none;
+  }
 }

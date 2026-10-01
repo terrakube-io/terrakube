@@ -1,5 +1,5 @@
 # dev-17-bookworm
-FROM mcr.microsoft.com/devcontainers/java:dev-25-bookworm@sha256:ff47093302b9305bb7d4b99f126c312bba1400faf32ca22cfb2436569e50750f
+FROM mcr.microsoft.com/devcontainers/java:dev-25-bookworm@sha256:4281845aba4545b849c71beaec541fa7c4e76d91a500bcd88217a4ad0c73d68a
 
 # Install necessary packages
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
@@ -17,6 +17,25 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     maven \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Dev Container Features are installed after this Dockerfile. Trust optional
+# local corporate CA files now so feature installers can reach HTTPS package
+# repositories behind an inspection proxy. The directory always exists because
+# its README is tracked; certificate files themselves are Git-ignored.
+COPY certs/ /tmp/terrakube-corporate-certs/
+RUN set -eu; \
+    certificate_number=0; \
+    node_extra_ca_bundle=/usr/local/share/ca-certificates/terrakube-extra-ca-bundle.pem; \
+    : > "$node_extra_ca_bundle"; \
+    for certificate in /tmp/terrakube-corporate-certs/*.crt /tmp/terrakube-corporate-certs/*.pem; do \
+      [ -f "$certificate" ] || continue; \
+      cp "$certificate" "/usr/local/share/ca-certificates/terrakube-corporate-${certificate_number}.crt"; \
+      cat "$certificate" >> "$node_extra_ca_bundle"; \
+      printf '\n' >> "$node_extra_ca_bundle"; \
+      certificate_number=$((certificate_number + 1)); \
+    done; \
+    update-ca-certificates; \
+    rm -rf /tmp/terrakube-corporate-certs
 
 ENV ACCEPT_EULA=Y
 
@@ -46,10 +65,13 @@ RUN ARCH=$(dpkg --print-architecture) && \
     dpkg -i bao_2.2.2_linux_${BAO_ARCH}.deb && \
     rm bao_2.2.2_linux_${BAO_ARCH}.deb
 
-COPY rootCA.pem* /usr/local/share/ca-certificates/root.crt
-
-RUN update-ca-certificates
-
 RUN mkdir -p /home/vscode/.m2 && chown -R vscode:vscode /home/vscode/.m2
 
-ENTRYPOINT ["sleep", "infinity"]
+COPY setup-trusted-dev-ca.sh /usr/local/bin/setup-trusted-dev-ca
+# The compose file bind-mounts rootCA.pem at this path. Create its parent in the
+# image so Docker treats the target as a file mount, rather than creating a
+# directory named rootCA.pem when the dev container is first created.
+RUN chmod +x /usr/local/bin/setup-trusted-dev-ca \
+    && mkdir -p /var/run/terrakube-mkcert
+
+ENTRYPOINT ["/usr/local/bin/setup-trusted-dev-ca"]

@@ -71,6 +71,8 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
               ) : (
                 <Tag color="blue">Never expires</Tag>
               )}
+
+              {token.source === "CLI_LOGIN" && <Tag color="geekblue">CLI login</Tag>}
             </Flex>
           </Flex>
 
@@ -103,7 +105,7 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
 
         <Flex gap="small" align="center">
           <SyncOutlined />
-          <span>Token has not been used</span>
+          <span>{token.lastUsedAt ? `Last used ${relativeTime(token.lastUsedAt) ?? "recently"}` : "Never used"}</span>
         </Flex>
       </div>
     </div>
