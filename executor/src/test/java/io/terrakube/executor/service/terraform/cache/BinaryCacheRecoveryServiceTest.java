@@ -279,4 +279,46 @@ class BinaryCacheRecoveryServiceTest {
 
         assertEquals(1, maxConcurrent.get(), "the per-version lock must stop two resolutions of the same version overlapping");
     }
+
+    // --- 10. isValidExecutable self-heals a missing executable bit -----------------------------
+
+    @Test
+    void isValidExecutableSelfHealsAFileThatIsOtherwiseValidButNotExecutable() throws Exception {
+        File binary = binaryFile("1.9.0", false);
+        writeBytes(binary, "#!/bin/sh\necho terraform".getBytes());
+        assertTrue(binary.setExecutable(false, false), "precondition: the binary must start non-executable");
+        assertFalse(binary.canExecute());
+
+        assertTrue(subject.isValidExecutable(binary));
+
+        assertTrue(binary.canExecute(), "a restore (zip extraction, S3 download) does not always carry the bit over");
+    }
+
+    @Test
+    void isValidExecutableStillRejectsNullMissingOrEmptyFiles() throws Exception {
+        assertFalse(subject.isValidExecutable(null));
+
+        File missing = binaryFile("1.9.0", false);
+        assertFalse(subject.isValidExecutable(missing));
+
+        File empty = binaryFile("v1.13.0", true);
+        writeZeroByteFile(empty);
+        assertFalse(subject.isValidExecutable(empty));
+    }
+
+    /** End to end: a cached binary missing only its executable bit must not be treated as an invalid cache. */
+    @Test
+    void resolveTreatsALocalBinaryMissingOnlyItsExecutableBitAsValid() throws Exception {
+        File binary = binaryFile("1.9.0", false);
+        writeBytes(binary, "#!/bin/sh\necho terraform".getBytes());
+        assertTrue(binary.setExecutable(false, false));
+
+        BinaryCacheRecoveryService.Resolution resolution = subject.resolve("1.9.0", false);
+
+        assertTrue(resolution.alreadyAvailable());
+        assertEquals("existing-local", resolution.source());
+        assertTrue(binary.canExecute());
+        verify(terraformState, never()).downloadTerraformBinary(anyString(), anyBoolean(), any());
+        assertEquals(0, meterRegistry.find("terrakube.executor.binary.cache.invalid").counters().size());
+    }
 }

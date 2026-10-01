@@ -120,9 +120,20 @@ public class BinaryCacheRecoveryService {
         }
     }
 
-    /** True when {@code file} is a regular, non-empty file - used for local binaries, S3 restores and before an S3 upload. */
+    /**
+     * True when {@code file} is a regular, non-empty, executable file - used for local binaries,
+     * S3 restores and before an S3 upload. A restore (zip extraction, S3 download) does not
+     * always carry the executable bit over, so a file that is otherwise valid but missing it is
+     * self-healed here rather than treated as another invalid-cache case to delete and redownload.
+     */
     public boolean isValidExecutable(File file) {
-        return file != null && file.isFile() && file.length() > 0;
+        if (file == null || !file.isFile() || file.length() == 0) {
+            return false;
+        }
+        if (!file.canExecute()) {
+            file.setExecutable(true, true);
+        }
+        return file.canExecute();
     }
 
     /**
