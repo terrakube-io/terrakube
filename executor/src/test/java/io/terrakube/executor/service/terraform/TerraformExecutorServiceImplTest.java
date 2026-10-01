@@ -228,6 +228,7 @@ class TerraformExecutorServiceImplTest {
 
         verify(applyStructuredOutputService, Mockito.atLeastOnce()).publishApplyProgress(
                 eq("org"), eq("42"), eq("1"), eq(List.of(seededChange)), any());
+        verify(jsonApplyClient).close();
     }
 
     // apply -json's event stream only ever forwards terse per-resource one-liners plus the final
@@ -545,6 +546,69 @@ class TerraformExecutorServiceImplTest {
                         && "delete".equals(changes.get(0).get("action"))
                         && "applied".equals(changes.get(0).get("status"))),
                 any());
+    }
+
+    // The per-call JSON clients are not Spring beans: nothing but this class can close them, and
+    // a client left open past its operation is one closeLiveJsonClients() would re-terminate on
+    // shutdown for no reason.
+    @Test
+    void closesJsonDestroyClientWhenTheOperationFinishes() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        TerraformClient jsonDestroyClient = Mockito.mock(TerraformClient.class);
+        when(jsonDestroyClient.destroy(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("terraform died")));
+        doReturn(jsonDestroyClient).when(subject).buildJsonEnabledDestroyClient();
+
+        subject.destroy(terraformJob, tempDir.toFile());
+
+        verify(jsonDestroyClient).close();
+        subject.closeLiveJsonClients();
+        verify(jsonDestroyClient, Mockito.times(1)).close();
+    }
+
+    // The scenario @PreDestroy exists for: a job thread never reached its finally (still running,
+    // or interrupted before release() ran), so the client is still tracked when shutdown happens.
+    @Test
+    void closeLiveJsonClientsClosesAnInFlightClientNoJobThreadEverReleased() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformClient inFlightClient = Mockito.mock(TerraformClient.class);
+
+        subject.track(inFlightClient);
+        subject.closeLiveJsonClients();
+
+        verify(inFlightClient).close();
+
+        // Removed after closing, so a second shutdown pass (or a racing job-thread release())
+        // doesn't close it again.
+        subject.closeLiveJsonClients();
+        verify(inFlightClient, Mockito.times(1)).close();
+    }
+
+    @Test
+    void closesJsonPlanClientWhenTheOperationFinishes() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(jsonPlanClient).close();
     }
 
     @Test
