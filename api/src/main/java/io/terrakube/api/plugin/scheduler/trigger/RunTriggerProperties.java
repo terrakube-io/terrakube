@@ -32,4 +32,32 @@ public class RunTriggerProperties {
      * are skipped with a warning naming them, rather than the whole fan-out being dropped.
      */
     private int maxDependentsPerApply = 20;
+
+    /**
+     * Kill switch for just the event worker, independent of {@link #enabled}. With this false,
+     * events still get written but nothing claims them - unlike {@link #enabled}, which stops
+     * new events from being written at all.
+     */
+    private boolean eventWorkerEnabled = true;
+
+    /** How many claimed attempts a RunTriggerEvent gets before it is marked FAILED for good. */
+    private int eventMaxAttempts = 10;
+
+    /**
+     * How long a claimed (PROCESSING) event may run before the stuck-row sweep assumes the
+     * claiming replica died mid-dispatch and reclaims it.
+     */
+    private int eventLeaseSeconds = 60;
+
+    /** First retry delay for a failed event, before exponential backoff and jitter are applied. */
+    private int eventBackoffInitialSeconds = 5;
+
+    /** Ceiling on the backoff delay between retries, however many attempts have been made. */
+    private int eventBackoffMaxSeconds = 900;
+
+    /** How many due events the poller claims and dispatches in one tick. */
+    private int eventPollerBatchSize = 200;
+
+    /** How long a terminal (PROCESSED/FAILED) event row is kept before the retention sweep deletes it. */
+    private int eventRetentionDays = 90;
 }
