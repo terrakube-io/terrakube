@@ -1,7 +1,9 @@
 package io.terrakube.api;
 
 import io.terrakube.api.repository.HistoryRepository;
+import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.History;
 import org.junit.jupiter.api.Test;
@@ -20,10 +22,21 @@ class HistoryRepositoryTest extends ServerApplicationTests {
     @Autowired
     WorkspaceRepository workspaceRepository;
 
+    @Autowired
+    OrganizationRepository organizationRepository;
+
     @Test
     void findsJobHistoryAndBaselineBeforeTimestamp() throws Exception {
-        Workspace workspace = workspaceRepository
-                .findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Organization organization = organizationRepository
+                .findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+
+        Workspace workspace = new Workspace();
+        workspace.setName("test-history-" + UUID.randomUUID());
+        workspace.setSource("https://github.com/AzBuilder/terrakube-docker-compose.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.5.0");
+        workspace.setOrganization(organization);
+        workspace = workspaceRepository.save(workspace);
 
         History h1 = new History();
         h1.setWorkspace(workspace);
