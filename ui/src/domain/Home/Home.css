@@ -24,6 +24,13 @@
   overflow-y: auto;
 }
 
+/* Narrow viewports: leave a row for the fixed drawer trigger so it never covers the breadcrumb or title. */
+@media (max-width: 767px) {
+  .app-content-scroll {
+    padding-top: 44px;
+  }
+}
+
 .avatar-hover-effect {
   cursor: pointer;
   color: rgba(255, 255, 255, 0.65);
