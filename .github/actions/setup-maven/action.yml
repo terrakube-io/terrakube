@@ -1,0 +1,29 @@
+name: Set up JDK and Maven
+description: Liberica JDK 25 with the Maven dependency cache and the Maven build cache (.mvn/maven-build-cache-config.xml).
+
+inputs:
+  cache:
+    description: Restore and save the Maven caches. Release builds turn this off so they never use a cache that pull requests can write.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 25
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        java-version: '25'
+        distribution: 'liberica'
+        cache: ${{ inputs.cache == 'true' && 'maven' || '' }}
+
+    # Module outputs from the latest build on main; the build itself decides which modules are still
+    # valid. Saved by the calling workflow (actions/cache/save) on pushes to main only: an entry is
+    # ~0.5 GB of Spring Boot jars and saving per pull request push would evict the dependency cache.
+    - name: Restore Maven build outputs
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ~/.m2/build-cache
+        key: ${{ runner.os }}-maven-build-cache-${{ github.sha }}
+        restore-keys: ${{ runner.os }}-maven-build-cache-
