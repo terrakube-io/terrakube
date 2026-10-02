@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.repository.RepoWebhookDeliveryRepository;
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.RepoWebhookDelivery;
 import io.terrakube.api.rs.webhook.RepoWebhookDeliveryStatus;
@@ -49,6 +50,23 @@ public class RepoWebhookDeliveryTransactions {
         return delivery.getId();
     }
 
+    // GitHub App deliveries also record the receiving VCS and their dedupe key. saveAndFlush so a
+    // repeated key (idx_repo_webhook_delivery_dedupe_key) fails here as DataIntegrityViolationException,
+    // not later at commit, and RepoWebhookService.acceptGitHubAppWebhook can drop it.
+    @Transactional
+    public UUID enqueue(RepoWebhook repoWebhook, String payload, String headers, Vcs vcs, String dedupeKey) {
+        RepoWebhookDelivery delivery = new RepoWebhookDelivery();
+        delivery.setId(UUID.randomUUID());
+        delivery.setRepoWebhook(repoWebhook);
+        delivery.setVcs(vcs);
+        delivery.setDedupeKey(dedupeKey);
+        delivery.setPayload(payload);
+        delivery.setHeaders(headers);
+        delivery.setStatus(RepoWebhookDeliveryStatus.PENDING);
+        repoWebhookDeliveryRepository.saveAndFlush(delivery);
+        return delivery.getId();
+    }
+
     // Atomic conditional UPDATE, not a pessimistic-lock read: only one concurrent caller's UPDATE
     // can match "id = :deliveryId AND status = PENDING", so only one ever sees rows == 1 and
     // proceeds past this method. The other sees 0 and returns immediately - no blocking, no lock
@@ -65,6 +83,15 @@ public class RepoWebhookDeliveryTransactions {
         if (delivery == null) {
             return null;
         }
+        // An App delivery is only ever fanned out through its own VCS, re-checked here at processing
+        // time. Without it (gone, or no longer in App mode) it is dropped, never processed as a
+        // repo-hook delivery, which would reach every workspace on the repository.
+        if (delivery.getDedupeKey() != null && !RepoWebhookService.isAppWebhookMode(delivery.getVcs())) {
+            log.warn("Dropping GitHub App delivery {}: its VCS is gone or no longer in App webhook mode", deliveryId);
+            delivery.setStatus(RepoWebhookDeliveryStatus.PROCESSED);
+            delivery.setLastError("VCS is gone or no longer in GitHub App webhook mode");
+            return null;
+        }
         // The fan-out happens after this transaction (and its Hibernate session) has closed, so a
         // still-lazy repoWebhook (and its vcs) proxy would blow up with a
         // LazyInitializationException the moment RepoWebhookService reads a field off it. Force
@@ -73,8 +100,11 @@ public class RepoWebhookDeliveryTransactions {
         if (delivery.getRepoWebhook().getVcs() != null) {
             Hibernate.initialize(delivery.getRepoWebhook().getVcs());
         }
-        return new ClaimedDelivery(delivery.getRepoWebhook(), delivery.getPayload(), delivery.getHeaders(),
-                delivery.getAttemptCount(), delivery.getLastAttemptAt());
+        if (delivery.getVcs() != null) {
+            Hibernate.initialize(delivery.getVcs());
+        }
+        return new ClaimedDelivery(delivery.getRepoWebhook(), delivery.getVcs(), delivery.getPayload(),
+                delivery.getHeaders(), delivery.getAttemptCount(), delivery.getLastAttemptAt());
     }
 
     // Keyed on the exact lastAttemptAt observed at claim time, not just id+PROCESSING: if this row

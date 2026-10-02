@@ -11,6 +11,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.terrakube.api.repository.RepoWebhookDeliveryRepository;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
+import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.RepoWebhookDelivery;
 import io.terrakube.api.rs.webhook.RepoWebhookDeliveryStatus;
@@ -84,6 +87,30 @@ class RepoWebhookDeliveryTransactionsTest {
         assertThat(claimed.payload()).isEqualTo("{}");
         assertThat(claimed.attemptCount()).isEqualTo(1);
         assertThat(claimed.lastAttemptAt()).isEqualTo(lastAttemptAt);
+    }
+
+    @Test
+    void claimDropsAnAppDeliveryWhoseVcsIsGoneOrNoLongerInAppMode() {
+        Vcs flagOff = new Vcs();
+        flagOff.setVcsType(VcsType.GITHUB);
+        flagOff.setConnectionType(VcsConnectionType.STANDALONE);
+        flagOff.setWebhookSecret("app-secret");
+        for (Vcs vcs : java.util.Arrays.asList(null, flagOff)) {
+            UUID id = UUID.randomUUID();
+            RepoWebhookDelivery row = new RepoWebhookDelivery();
+            row.setId(id);
+            row.setRepoWebhook(new RepoWebhook());
+            row.setVcs(vcs);
+            row.setDedupeKey("sha256=abc");
+            row.setStatus(RepoWebhookDeliveryStatus.PROCESSING);
+            when(repoWebhookDeliveryRepository.claimForDelivery(eq(id), eq(RepoWebhookDeliveryStatus.PENDING),
+                    eq(RepoWebhookDeliveryStatus.PROCESSING), any())).thenReturn(1);
+            when(repoWebhookDeliveryRepository.findById(id)).thenReturn(Optional.of(row));
+
+            assertThat(subject.claim(id)).isNull();
+            assertThat(row.getStatus()).isEqualTo(RepoWebhookDeliveryStatus.PROCESSED);
+            assertThat(row.getLastError()).isNotBlank();
+        }
     }
 
     @Test

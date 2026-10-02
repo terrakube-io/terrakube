@@ -8,6 +8,7 @@ import java.util.UUID;
 import com.yahoo.elide.annotation.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.hooks.vcs.VcsManageHook;
 import io.terrakube.api.rs.Organization;
 
 import jakarta.persistence.Column;
@@ -74,6 +75,17 @@ public class Vcs extends GenericAuditFields {
     @Column(name = "connection_type")
     @Enumerated(EnumType.STRING)
     private VcsConnectionType connectionType = VcsConnectionType.OAUTH;
+
+    // GitHub App (STANDALONE) only: receive events through the App's own webhook
+    // (/webhook/github-app/{id}) instead of per-repository hooks.
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = VcsManageHook.class)
+    @Column(name = "app_webhook_enabled")
+    private boolean appWebhookEnabled = false;
+
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = VcsManageHook.class)
+    @ReadPermission(expression = "read vcs secret")
+    @Column(name = "webhook_secret")
+    private String webhookSecret;
    
     @UpdatePermission(expression = "user is a super service")
     @Enumerated(EnumType.STRING)
