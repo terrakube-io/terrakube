@@ -31,6 +31,7 @@ public class ExecutorContext {
     private boolean refreshOnly;
     private boolean showHeader;
     private boolean ignoreError;
+    private boolean requireSavedPlan;
     private String accessToken;
     private String moduleSshKey;
     private String commitId;

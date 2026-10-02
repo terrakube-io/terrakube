@@ -429,6 +429,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     boolean planFileDownloaded = terraformState.downloadTerraformPlan(terraformJob.getOrganizationId(),
                             terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(),
                             terraformWorkingDir);
+                    if (terraformJob.isRequireSavedPlan()) {
+                        Path savedPlan = terraformWorkingDir.toPath().resolve("terraformLibrary.tfPlan");
+                        if (!planFileDownloaded || !Files.isRegularFile(savedPlan) || Files.size(savedPlan) == 0) {
+                            throw new IOException("requireSavedPlan is enabled, but the saved plan could not be downloaded "
+                                    + "or terraformLibrary.tfPlan is missing, empty, or not a regular file. "
+                                    + "Run a new plan before applying.");
+                        }
+                    }
                     terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
