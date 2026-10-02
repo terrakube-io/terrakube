@@ -22,6 +22,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Bounded, coalescing, retrying hand-off between the Terraform/OpenTofu process-output reader
@@ -69,16 +70,16 @@ public class StructuredOutputPersistenceQueue {
 
     /** One snapshot held for delayed recovery after its normal retry budget was spent. */
     private static final class RetainedSnapshot {
-        private volatile StructuredSnapshot snapshot;
+        private final AtomicReference<StructuredSnapshot> snapshot;
         private final long firstRetainedAtEpochMs;
-        private volatile long nextAttemptAtEpochMs;
-        private volatile long currentDelayMs;
+        private final AtomicLong nextAttemptAtEpochMs;
+        private final AtomicLong currentDelayMs;
 
         RetainedSnapshot(StructuredSnapshot snapshot, long now, long initialDelayMs) {
-            this.snapshot = snapshot;
+            this.snapshot = new AtomicReference<>(snapshot);
             this.firstRetainedAtEpochMs = now;
-            this.currentDelayMs = initialDelayMs;
-            this.nextAttemptAtEpochMs = now + jitter(initialDelayMs);
+            this.currentDelayMs = new AtomicLong(initialDelayMs);
+            this.nextAttemptAtEpochMs = new AtomicLong(now + jitter(initialDelayMs));
         }
     }
 
@@ -166,9 +167,9 @@ public class StructuredOutputPersistenceQueue {
             Key key = snapshot.key();
             // A newer snapshot supersedes anything retained for delayed recovery for this key.
             RetainedSnapshot alreadyRetained = retained.get(key);
-            if (alreadyRetained != null && snapshot.getSequence() > alreadyRetained.snapshot.getSequence()) {
-                alreadyRetained.snapshot = snapshot;
-                alreadyRetained.nextAttemptAtEpochMs = System.currentTimeMillis();
+            if (alreadyRetained != null && snapshot.getSequence() > alreadyRetained.snapshot.get().getSequence()) {
+                alreadyRetained.snapshot.set(snapshot);
+                alreadyRetained.nextAttemptAtEpochMs.set(System.currentTimeMillis());
             }
             if (!pending.containsKey(key) && pending.size() >= capacity) {
                 evictOne(key);
@@ -320,8 +321,8 @@ public class StructuredOutputPersistenceQueue {
         Key key = snapshot.key();
         RetainedSnapshot existing = retained.get(key);
         if (existing != null) {
-            if (snapshot.getSequence() >= existing.snapshot.getSequence()) {
-                existing.snapshot = snapshot;
+            if (snapshot.getSequence() >= existing.snapshot.get().getSequence()) {
+                existing.snapshot.set(snapshot);
             }
             return;
         }
@@ -338,13 +339,13 @@ public class StructuredOutputPersistenceQueue {
         retained.entrySet().stream()
                 // prefer evicting non-final (rank 1) over final (rank 0), then the oldest
                 .min(Comparator
-                        .<Map.Entry<Key, RetainedSnapshot>>comparingInt(e -> e.getValue().snapshot.isFinalSnapshot() ? 1 : 0)
+                        .<Map.Entry<Key, RetainedSnapshot>>comparingInt(e -> e.getValue().snapshot.get().isFinalSnapshot() ? 1 : 0)
                         .thenComparingLong(e -> e.getValue().firstRetainedAtEpochMs))
                 .ifPresent(victim -> {
                     if (retained.remove(victim.getKey(), victim.getValue())) {
                         meterRegistry.counter("terrakube.executor.structured.output.recovery.evictions").increment();
                         log.warn("Recovery retention full ({}); evicted a {} snapshot for job {} step {}",
-                                recoveryMaxRetained, victim.getValue().snapshot.isFinalSnapshot() ? "final" : "progress",
+                                recoveryMaxRetained, victim.getValue().snapshot.get().isFinalSnapshot() ? "final" : "progress",
                                 victim.getKey().jobId(), victim.getKey().stepId());
                     }
                 });
@@ -352,7 +353,7 @@ public class StructuredOutputPersistenceQueue {
 
     private void supersedeRetained(StructuredSnapshot persisted) {
         RetainedSnapshot existing = retained.get(persisted.key());
-        if (existing != null && persisted.getSequence() >= existing.snapshot.getSequence()) {
+        if (existing != null && persisted.getSequence() >= existing.snapshot.get().getSequence()) {
             retained.remove(persisted.key(), existing);
         }
     }
@@ -362,7 +363,7 @@ public class StructuredOutputPersistenceQueue {
         long now = System.currentTimeMillis();
         for (Map.Entry<Key, RetainedSnapshot> entry : new ArrayList<>(retained.entrySet())) {
             RetainedSnapshot held = entry.getValue();
-            if (now < held.nextAttemptAtEpochMs) {
+            if (now < held.nextAttemptAtEpochMs.get()) {
                 continue;
             }
             if (now - held.firstRetainedAtEpochMs >= recoveryRetentionMs) {
@@ -379,7 +380,7 @@ public class StructuredOutputPersistenceQueue {
     }
 
     private void attemptRecovery(Key key, RetainedSnapshot held, long now) {
-        StructuredSnapshot snapshot = held.snapshot;
+        StructuredSnapshot snapshot = held.snapshot.get();
         String phase = snapshot.getPhase() == StructuredSnapshot.Phase.PLAN ? "plan" : "apply";
         meterRegistry.counter("terrakube.executor.structured.output.recovery.attempts").increment();
         boolean ok;
@@ -397,8 +398,9 @@ public class StructuredOutputPersistenceQueue {
                     snapshot.getCreatedAtEpochMs());
             return;
         }
-        held.currentDelayMs = Math.min(recoveryMaxDelayMs, held.currentDelayMs * 2);
-        held.nextAttemptAtEpochMs = now + jitter(held.currentDelayMs);
+        long newDelay = Math.min(recoveryMaxDelayMs, held.currentDelayMs.get() * 2);
+        held.currentDelayMs.set(newDelay);
+        held.nextAttemptAtEpochMs.set(now + jitter(newDelay));
     }
 
     private void drainRetainedOnce(Duration budget) {
@@ -408,7 +410,7 @@ public class StructuredOutputPersistenceQueue {
                 return;
             }
             try {
-                if (persister.persist(entry.getValue().snapshot)) {
+                if (persister.persist(entry.getValue().snapshot.get())) {
                     retained.remove(entry.getKey(), entry.getValue());
                 }
             } catch (Throwable t) {
