@@ -41,6 +41,9 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     @Query("SELECT w FROM workspace w JOIN w.webhook wh WHERE wh.migratedV2 = true")
     List<Workspace> findAllWithMigratedWebhook();
 
+    @Query("SELECT w FROM workspace w JOIN w.webhook wh WHERE wh.migratedV2 = true AND w.vcs.id = :vcsId")
+    List<Workspace> findMigratedByVcsId(@Param("vcsId") UUID vcsId);
+
     default List<Workspace> findByNormalizedSourceWithMigratedWebhook(String normalizedSource) {
         if (normalizedSource == null) {
             return List.of();

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-34-0-github-app-webhook-1" author="terrakube">
+        <addColumn tableName="vcs">
+            <column name="app_webhook_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false" />
+            </column>
+            <column name="webhook_secret" type="varchar(255)" />
+        </addColumn>
+        <addColumn tableName="repo_webhook_delivery">
+            <column name="vcs_id" type="varchar(36)" />
+            <column name="dedupe_key" type="varchar(80)" />
+        </addColumn>
+        <!-- CASCADE, not SET NULL: an App delivery that lost its VCS must never turn into an
+             unscoped repo-hook (v2) delivery. -->
+        <addForeignKeyConstraint baseTableName="repo_webhook_delivery" baseColumnNames="vcs_id"
+            constraintName="fk_repo_webhook_delivery_vcs_id" referencedTableName="vcs"
+            referencedColumnNames="id" onDelete="CASCADE" />
+    </changeSet>
+    <!-- dedupe_key (the verified X-Hub-Signature-256) is only set for GitHub App deliveries; every
+         other row keeps it NULL.
+         SQL Server treats NULLs as equal in a plain unique index, so it needs a filtered one. -->
+    <changeSet id="2-34-0-github-app-webhook-2" author="terrakube" dbms="!mssql">
+        <createIndex tableName="repo_webhook_delivery" indexName="idx_repo_webhook_delivery_dedupe_key" unique="true">
+            <column name="dedupe_key" />
+        </createIndex>
+    </changeSet>
+    <changeSet id="2-34-0-github-app-webhook-2-mssql" author="terrakube" dbms="mssql">
+        <sql>CREATE UNIQUE INDEX idx_repo_webhook_delivery_dedupe_key ON repo_webhook_delivery (dedupe_key) WHERE dedupe_key IS NOT NULL</sql>
+    </changeSet>
+</databaseChangeLog>

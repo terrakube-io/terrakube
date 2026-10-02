@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.RepoWebhookDeliveryStatus;
 
@@ -39,7 +40,7 @@ class RepoWebhookDispatchServiceTest {
     }
 
     private ClaimedDelivery claimedDelivery(RepoWebhook repoWebhook, int attemptCount) {
-        return new ClaimedDelivery(repoWebhook, "{}", "{\"x-github-event\":\"push\"}", attemptCount, new Date());
+        return new ClaimedDelivery(repoWebhook, null, "{}", "{\"x-github-event\":\"push\"}", attemptCount, new Date());
     }
 
     @Test
@@ -64,10 +65,23 @@ class RepoWebhookDispatchServiceTest {
         subject.attemptDelivery(deliveryId);
 
         ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(repoWebhookService).processClaimedDelivery(eq(repoWebhook), eq("{}"), headersCaptor.capture());
+        verify(repoWebhookService).processClaimedDelivery(eq(repoWebhook), isNull(), eq("{}"), headersCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(headersCaptor.getValue()).containsEntry("x-github-event", "push");
         verify(repoWebhookDeliveryTransactions).recordResult(eq(deliveryId), eq(claimed.lastAttemptAt()),
                 eq(RepoWebhookDeliveryStatus.PROCESSED), isNull(), isNull());
+    }
+
+    @Test
+    void passesTheGitHubAppDeliveryVcsToTheFanOut() {
+        UUID deliveryId = UUID.randomUUID();
+        RepoWebhook repoWebhook = new RepoWebhook();
+        Vcs appVcs = new Vcs();
+        ClaimedDelivery claimed = new ClaimedDelivery(repoWebhook, appVcs, "{}", "{}", 1, new Date());
+        when(repoWebhookDeliveryTransactions.claim(deliveryId)).thenReturn(claimed);
+
+        subject.attemptDelivery(deliveryId);
+
+        verify(repoWebhookService).processClaimedDelivery(eq(repoWebhook), same(appVcs), eq("{}"), anyMap());
     }
 
     @Test
@@ -77,7 +91,7 @@ class RepoWebhookDispatchServiceTest {
         ClaimedDelivery claimed = claimedDelivery(repoWebhook, 1);
         when(repoWebhookDeliveryTransactions.claim(deliveryId)).thenReturn(claimed);
         doThrow(new RuntimeException("boom")).when(repoWebhookService)
-                .processClaimedDelivery(eq(repoWebhook), any(), anyMap());
+                .processClaimedDelivery(eq(repoWebhook), any(), any(), anyMap());
 
         subject.attemptDelivery(deliveryId);
 
@@ -92,7 +106,7 @@ class RepoWebhookDispatchServiceTest {
         ClaimedDelivery claimed = claimedDelivery(repoWebhook, RepoWebhookDispatchService.MAX_ATTEMPTS);
         when(repoWebhookDeliveryTransactions.claim(deliveryId)).thenReturn(claimed);
         doThrow(new RuntimeException("boom")).when(repoWebhookService)
-                .processClaimedDelivery(eq(repoWebhook), any(), anyMap());
+                .processClaimedDelivery(eq(repoWebhook), any(), any(), anyMap());
 
         subject.attemptDelivery(deliveryId);
 

@@ -1,14 +1,17 @@
 package io.terrakube.api.plugin.vcs;
 
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -19,8 +22,11 @@ import javax.crypto.spec.SecretKeySpec;
 
 import org.quartz.SchedulerException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.server.ResponseStatusException;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -28,11 +34,14 @@ import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.RepoWebhookRepository;
+import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -40,6 +49,7 @@ import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.AllArgsConstructor;
@@ -62,6 +72,27 @@ public class RepoWebhookService {
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
+    VcsRepository vcsRepository;
+
+    // Events the GitHub App endpoint enqueues; everything else (ping, installation, ...) is acknowledged and dropped.
+    private static final Set<String> GITHUB_APP_EVENTS = Set.of("push", "pull_request", "issue_comment", "release");
+
+    // A GitHub App VCS that receives events through the App's own webhook: such workspaces never get
+    // per-repository hooks, and repo-hook (v2) deliveries skip them so an event never fires twice.
+    // Without a secret nothing can be verified, so the VCS stays on repository hooks.
+    public static boolean isAppWebhookMode(Vcs vcs) {
+        return vcs != null && vcs.getVcsType() == VcsType.GITHUB
+                && vcs.getConnectionType() == VcsConnectionType.STANDALONE && vcs.isAppWebhookEnabled()
+                && vcs.getWebhookSecret() != null && !vcs.getWebhookSecret().isBlank();
+    }
+
+    // GitHub, GitLab and Azure DevOps (AZURE_SP_MI / AZURE_DEVOPS) participate in the shared,
+    // repository-level (v2) webhook flow reconciled asynchronously by RepoWebhookSyncJob.
+    public static boolean isSharedWebhookProvider(Vcs vcs) {
+        VcsType vcsType = vcs != null ? vcs.getVcsType() : null;
+        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI
+                || vcsType == VcsType.AZURE_DEVOPS;
+    }
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -119,10 +150,49 @@ public class RepoWebhookService {
     public void createOrUpdateSharedWebhook(RepoWebhook repoWebhook) {
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
+        List<Workspace> repoHookWorkspaces = workspaces.stream()
+                .filter(ws -> !isAppWebhookMode(ws.getVcs()))
+                .toList();
+
+        // Every workspace on this repo gets its events through a GitHub App webhook: the repo-level
+        // hook is no longer needed. The RepoWebhook row stays, the App endpoint looks it up by URL.
+        if (!workspaces.isEmpty() && repoHookWorkspaces.isEmpty()) {
+            if (repoWebhook.getRemoteHookId() != null && !repoWebhook.getRemoteHookId().isEmpty()) {
+                try {
+                    if (!gitHubWebhookService.deleteRepoWebhook(repoWebhook)) {
+                        throw new IllegalStateException("Could not delete repo webhook " + repoWebhook.getId()
+                                + " for " + repoWebhook.getRepositoryUrl() + ", keeping its remote hook id");
+                    }
+                } catch (HttpClientErrorException e) {
+                    // 404: the hook is already gone. 403: the App may lack "Webhooks" permission and the hook
+                    // still exists, so keep its id for a VCS that can update or delete it later; meanwhile its
+                    // deliveries skip App-mode workspaces. Anything else is rethrown so the sync job retries.
+                    int status = e.getStatusCode().value();
+                    if (status == HttpStatus.FORBIDDEN.value()) {
+                        log.warn("Could not delete repo webhook {} for {} (403), keeping its remote hook id",
+                                repoWebhook.getId(), repoWebhook.getRepositoryUrl());
+                        return;
+                    }
+                    if (status != HttpStatus.NOT_FOUND.value()) {
+                        throw e;
+                    }
+                }
+                repoWebhook.setRemoteHookId(null);
+                repoWebhookRepository.save(repoWebhook);
+            }
+            return;
+        }
+
+        // The row may have been seeded by an App-mode VCS, whose credentials may not manage
+        // repository hooks: the repo hook is for the repo-hook workspaces, so use one of theirs.
+        if (isAppWebhookMode(repoWebhook.getVcs())) {
+            repoHookWorkspaces.stream().map(Workspace::getVcs).filter(Objects::nonNull).findFirst()
+                    .ifPresent(repoWebhook::setVcs);
+        }
 
         Set<WebhookEventType> eventTypes = new HashSet<>();
         boolean hasPrWorkflow = false;
-        for (Workspace ws : workspaces) {
+        for (Workspace ws : repoHookWorkspaces) {
             if (ws.getWebhook() != null && ws.getWebhook().getEvents() != null) {
                 for (WebhookEvent event : ws.getWebhook().getEvents()) {
                     eventTypes.add(event.getEvent());
@@ -200,19 +270,82 @@ public class RepoWebhookService {
             throw new SecurityException("HMAC signature verification failed");
         }
 
-        String headersJson;
+        return repoWebhookDeliveryTransactions.enqueue(repoWebhook, jsonPayload, serializeHeaders(headers));
+    }
+
+    // The single webhook of a GitHub App, signed with Vcs.webhookSecret over the raw request body.
+    // Returns the enqueued delivery id, or null when the event was accepted but there is nothing to
+    // dispatch (ignored event type, unknown repository, already received).
+    // Not @Transactional: nothing below reads a lazy association, and enqueue() must commit or fail
+    // on its own so a repeated dedupe key can be caught here instead of rolling back a caller.
+    public UUID acceptGitHubAppWebhook(String vcsId, byte[] rawBody, Map<String, String> headers)
+            throws GeneralSecurityException {
+        headers = WebhookHeaders.caseInsensitive(headers);
+        Vcs vcs = vcsRepository.findById(UUID.fromString(vcsId))
+                .orElseThrow(() -> new IllegalArgumentException("VCS not found: " + vcsId));
+        if (!isAppWebhookMode(vcs)) {
+            throw new SecurityException("GitHub App webhook is not enabled for VCS " + vcsId);
+        }
+        String signature = headers.get("x-hub-signature-256");
+        if (signature == null || !MessageDigest.isEqual(signature.getBytes(StandardCharsets.UTF_8),
+                hmacSha256Signature(vcs.getWebhookSecret(), rawBody).getBytes(StandardCharsets.UTF_8))) {
+            throw new SecurityException("HMAC signature verification failed for VCS " + vcsId);
+        }
+        String rawPayload = new String(rawBody, StandardCharsets.UTF_8);
+
+        String event = headers.get("x-github-event");
+        if (event == null || event.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing X-GitHub-Event header");
+        }
+        if (!GITHUB_APP_EVENTS.contains(event)) {
+            log.info("Ignoring GitHub App event {} for VCS {}", event, vcsId);
+            return null;
+        }
+
+        JsonNode repository;
         try {
-            headersJson = objectMapper.writeValueAsString(headers);
+            repository = objectMapper.readTree(rawPayload).path("repository");
+        } catch (JsonProcessingException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed GitHub App webhook payload");
+        }
+        String normalizedUrl = RepoUrlNormalizer.normalize(
+                repository.path("clone_url").asText(repository.path("html_url").asText(null)));
+        RepoWebhook repoWebhook = normalizedUrl == null ? null
+                : repoWebhookRepository.findByRepositoryUrl(normalizedUrl).orElse(null);
+        if (repoWebhook == null) {
+            // Rows are created by RepoWebhookSyncJob for repos with migrated workspaces; never here.
+            log.info("No repo webhook for {}, dropping GitHub App {} event", normalizedUrl, event);
+            return null;
+        }
+
+        // Keyed on the verified signature, not X-GitHub-Delivery: it binds to the body, so a replay
+        // under a fresh delivery guid is dropped like a GitHub redelivery.
+        try {
+            return repoWebhookDeliveryTransactions.enqueue(repoWebhook, rawPayload, serializeHeaders(headers), vcs,
+                    signature);
+        } catch (DataIntegrityViolationException e) {
+            log.info("GitHub App delivery {} for VCS {} not enqueued: already received, or its VCS or repo "
+                    + "webhook is gone", headers.get("x-github-delivery"), vcsId);
+            return null;
+        }
+    }
+
+    private String serializeHeaders(Map<String, String> headers) {
+        try {
+            return objectMapper.writeValueAsString(headers);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize webhook headers", e);
         }
-        return repoWebhookDeliveryTransactions.enqueue(repoWebhook, jsonPayload, headersJson);
     }
 
-    public void processClaimedDelivery(RepoWebhook repoWebhook, String jsonPayload, Map<String, String> headers) {
+    // deliveryVcs is the VCS whose GitHub App webhook received this delivery, or null for a
+    // repo-hook (v2) delivery.
+    public void processClaimedDelivery(RepoWebhook repoWebhook, Vcs deliveryVcs, String jsonPayload,
+            Map<String, String> headers) {
         headers = WebhookHeaders.caseInsensitive(headers);
-        boolean azureDevOps = isAzureDevOps(repoWebhook);
-        boolean gitlab = isGitLab(repoWebhook);
+        // A GitHub App delivery is always a GitHub payload, whatever VCS the RepoWebhook row was seeded with.
+        boolean azureDevOps = deliveryVcs == null && isAzureDevOps(repoWebhook);
+        boolean gitlab = deliveryVcs == null && isGitLab(repoWebhook);
 
         WebhookResult webhookResult;
         if (azureDevOps) {
@@ -235,6 +368,22 @@ public class RepoWebhookService {
 
         String normalizedUrl = repoWebhook.getRepositoryUrl();
 
+        // The App secret is shared by every installation of the App, so a payload URL is never trusted
+        // with a token: rebuild the PR URLs from the VCS API URL and the matched repository.
+        // Without one (not a plain owner/repo URL) the PR files are not fetched, and a PR comment, whose
+        // head commit cannot then be resolved, is dropped.
+        if (deliveryVcs != null && webhookResult.getPrFilesUrl() != null) {
+            String prUrl = gitHubWebhookService.pullRequestApiUrl(deliveryVcs, normalizedUrl,
+                    webhookResult.getPrNumber().intValue());
+            if (prUrl == null && webhookResult.isPrComment()) {
+                return;
+            }
+            webhookResult.setPrFilesUrl(prUrl == null ? null : prUrl + "/files");
+            if (webhookResult.getPrDetailsUrl() != null) {
+                webhookResult.setPrDetailsUrl(prUrl);
+            }
+        }
+
         // GitHub/GitLab PR file changes are a repo-level fact (which files a PR touched doesn't
         // depend on whose credentials asked), but processWorkspaceWebhook used to fetch them fresh
         // per workspace - on a shared webhook with N workspaces, that's N redundant paginated API
@@ -245,17 +394,24 @@ public class RepoWebhookService {
         // with its own working credentials still gets a chance). Azure DevOps is deliberately
         // excluded: per-workspace credentials there aren't just a fallback, see the comment in
         // processWorkspaceWebhook.
-        if (!azureDevOps && webhookResult.getPrFilesUrl() != null && repoWebhook.getVcs() != null) {
+        // A GitHub App delivery prefetches with the App's own installation token.
+        Vcs prefetchVcs = deliveryVcs != null ? deliveryVcs : repoWebhook.getVcs();
+        if (!azureDevOps && webhookResult.getPrFilesUrl() != null && prefetchVcs != null) {
             List<String> prFiles = gitlab
-                    ? gitLabWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                    ? gitLabWebhookService.fetchPrFileChanges(prefetchVcs, normalizedUrl,
                             webhookResult.getPrFilesUrl())
-                    : gitHubWebhookService.fetchPrFileChanges(repoWebhook.getVcs(), normalizedUrl,
+                    : gitHubWebhookService.fetchPrFileChanges(prefetchVcs, normalizedUrl,
                             webhookResult.getPrFilesUrl());
             webhookResult.setFileChanges(prFiles);
         }
 
+        Set<UUID> appVcsIds = deliveryVcs != null ? appWebhookVcsIds(deliveryVcs) : null;
         List<Workspace> workspaces = workspaceRepository
-                .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
+                .findByNormalizedSourceWithMigratedWebhook(normalizedUrl).stream()
+                .filter(ws -> appVcsIds != null
+                        ? ws.getVcs() != null && appVcsIds.contains(ws.getVcs().getId())
+                        : !isAppWebhookMode(ws.getVcs()))
+                .toList();
 
         log.info("Processing v2 webhook for {} workspaces on repo {}", workspaces.size(), normalizedUrl);
 
@@ -277,6 +433,27 @@ public class RepoWebhookService {
                 }, workspaceFanoutExecutor))
                 .toList();
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
+    }
+
+    // The VCS rows a GitHub App delivery may reach: the same App (clientId holds the App ID) on the
+    // same GitHub host, in App webhook mode, with the same secret - i.e. every row whose secret
+    // would have verified this signature. Several organizations can register the same App.
+    // deliveryVcs is in App webhook mode (checked when the delivery was claimed), so its secret is set.
+    private Set<UUID> appWebhookVcsIds(Vcs deliveryVcs) {
+        if (deliveryVcs.getClientId() == null) {
+            return Set.of(deliveryVcs.getId());
+        }
+        String apiUrl = GitHubWebhookService.normalizeApiUrl(deliveryVcs.getApiUrl());
+        byte[] secret = deliveryVcs.getWebhookSecret().getBytes(StandardCharsets.UTF_8);
+        Set<UUID> ids = new HashSet<>();
+        for (Vcs vcs : vcsRepository.findByClientId(deliveryVcs.getClientId())) {
+            // isAppWebhookMode also skips rows with a blank secret.
+            if (isAppWebhookMode(vcs) && apiUrl.equals(GitHubWebhookService.normalizeApiUrl(vcs.getApiUrl()))
+                    && MessageDigest.isEqual(secret, vcs.getWebhookSecret().getBytes(StandardCharsets.UTF_8))) {
+                ids.add(vcs.getId());
+            }
+        }
+        return ids;
     }
 
     private void processWorkspaceWebhook(Workspace workspace, WebhookResult webhookResult) {
@@ -472,20 +649,7 @@ public class RepoWebhookService {
                 log.error("x-hub-signature-256 header is missing!");
                 return false;
             }
-            Mac mac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec secretKeySpec = new SecretKeySpec(
-                    secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            mac.init(secretKeySpec);
-            byte[] computedHash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hexString = new StringBuilder(2 * computedHash.length);
-            for (byte b : computedHash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) {
-                    hexString.append('0');
-                }
-                hexString.append(hex);
-            }
-            String expectedSignature = "sha256=" + hexString.toString();
+            String expectedSignature = hmacSha256Signature(secret, payload.getBytes(StandardCharsets.UTF_8));
             if (!MessageDigest.isEqual(
                     signatureHeader.getBytes(StandardCharsets.UTF_8),
                     expectedSignature.getBytes(StandardCharsets.UTF_8))) {
@@ -500,6 +664,13 @@ public class RepoWebhookService {
             log.error("Error parsing the secret", e);
             return false;
         }
+    }
+
+    private static String hmacSha256Signature(String secret, byte[] payload)
+            throws NoSuchAlgorithmException, InvalidKeyException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return "sha256=" + HexFormat.of().formatHex(mac.doFinal(payload));
     }
 
     private boolean verifyAzDevOpsToken(Map<String, String> headers, String secret) {
