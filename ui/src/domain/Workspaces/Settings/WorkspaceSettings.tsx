@@ -15,6 +15,7 @@ type Props = {
   manageWorkspace: boolean;
   planJob?: boolean;
   vcsProvider?: VcsType;
+  vcsAppWebhook?: boolean;
   onWorkspaceUpdate?: () => void;
   activeSection: string;
 };
@@ -25,6 +26,7 @@ export const WorkspaceSettings = ({
   manageWorkspace,
   planJob = false,
   vcsProvider,
+  vcsAppWebhook,
   onWorkspaceUpdate,
   activeSection,
 }: Props) => {
@@ -65,6 +67,7 @@ export const WorkspaceSettings = ({
         <WorkspaceWebhook
           workspace={workspace}
           vcsProvider={vcsProvider}
+          vcsAppWebhook={vcsAppWebhook}
           orgTemplates={orgTemplates}
           manageWorkspace={manageWorkspace}
           onWorkspaceUpdate={handleWorkspaceUpdate}

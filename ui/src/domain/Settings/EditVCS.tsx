@@ -1,4 +1,4 @@
-import { Button, Col, Flex, Form, Input, Row, Space, Spin, message } from "antd";
+import { Alert, Button, Col, Flex, Form, Input, Row, Space, Spin, Switch, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -20,6 +20,8 @@ type EditVcsForm = {
   clientId: string;
   clientSecret: string;
   privateKey: string;
+  appWebhookEnabled: boolean;
+  webhookSecret: string;
 };
 
 const DEFAULT_ENDPOINTS: Partial<Record<VcsType, string>> = {
@@ -197,6 +199,8 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   const [loading, setLoading] = useState(true);
   const [vcsTypeExtended, setVcsTypeExtended] = useState<VcsTypeExtended>(VcsTypeExtended.GITHUB);
   const [connectionType, setConnectionType] = useState<VcsConnectionType>(VcsConnectionType.OAUTH);
+  // A VCS that was already in App webhook mode has a stored secret, so a blank field keeps it.
+  const [appWebhookInitiallyEnabled, setAppWebhookInitiallyEnabled] = useState(false);
   const [form] = Form.useForm<EditVcsForm>();
 
   useEffect(() => {
@@ -208,6 +212,7 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
         const extended = getVcsTypeExtended(attrs.vcsType, attrs.connectionType, attrs.endpoint);
         setVcsTypeExtended(extended);
         setConnectionType(attrs.connectionType);
+        setAppWebhookInitiallyEnabled(!!attrs.appWebhookEnabled);
         form.setFieldsValue({
           name: attrs.name,
           endpoint: attrs.endpoint ?? "",
@@ -215,6 +220,8 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
           clientId: attrs.clientId,
           clientSecret: "",
           privateKey: "",
+          appWebhookEnabled: !!attrs.appWebhookEnabled,
+          webhookSecret: "",
         });
       })
       .catch((err) => {
@@ -236,6 +243,12 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
     if (connectionType === VcsConnectionType.STANDALONE && values.privateKey) {
       attributes.privateKey = values.privateKey;
     }
+    if (isGithubApp) {
+      attributes.appWebhookEnabled = !!values.appWebhookEnabled;
+      if (values.webhookSecret) {
+        attributes.webhookSecret = values.webhookSecret;
+      }
+    }
 
     try {
       await axiosInstance.patch(
@@ -250,6 +263,9 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
       message.error(getErrorMessage(err));
     }
   };
+
+  const isGithubApp = connectionType === VcsConnectionType.STANDALONE;
+  const appWebhookEnabled = Form.useWatch("appWebhookEnabled", form);
 
   const onCancel = () => {
     form.resetFields();
@@ -342,6 +358,43 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
             >
               <Input.TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
             </Form.Item>
+            {isGithubApp && (
+              <>
+                <Form.Item
+                  name="appWebhookEnabled"
+                  label="Receive events via the GitHub App webhook"
+                  valuePropName="checked"
+                  style={{ marginTop: 24 }}
+                >
+                  <Switch />
+                </Form.Item>
+                {appWebhookInitiallyEnabled && !appWebhookEnabled && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    title='Turning this off re-creates repository webhooks. Grant the GitHub App "Webhooks: Read and write" first.'
+                  />
+                )}
+                {appWebhookEnabled && (
+                  <>
+                    <Form.Item label="Webhook URL">
+                      <Typography.Text copyable>
+                        {`${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/webhook/github-app/${vcsId}`}
+                      </Typography.Text>
+                    </Form.Item>
+                    <Form.Item
+                      name="webhookSecret"
+                      label="Webhook secret"
+                      extra={appWebhookInitiallyEnabled ? "Leave blank to keep the existing secret" : undefined}
+                      rules={[{ required: !appWebhookInitiallyEnabled }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input.Password />
+                    </Form.Item>
+                  </>
+                )}
+              </>
+            )}
           </SettingsSection>
           <Flex justify="flex-end" style={{ maxWidth: 960 }}>
             <Space>

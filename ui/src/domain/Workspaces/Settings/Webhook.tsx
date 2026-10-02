@@ -64,12 +64,14 @@ type Props = {
   manageWorkspace: boolean;
   orgTemplates: Template[];
   vcsProvider?: VcsType;
+  vcsAppWebhook?: boolean;
   onWorkspaceUpdate?: () => void;
 };
 
 export const WorkspaceWebhook = ({
   workspace,
   vcsProvider,
+  vcsAppWebhook = false,
   orgTemplates,
   manageWorkspace,
   onWorkspaceUpdate,
@@ -600,13 +602,25 @@ export const WorkspaceWebhook = ({
               </Col>
               <Col xs={24} md={12}>
                 <Form.Item hidden={!webhookEnabled} label={<VcsLogo type={vcsProvider!} />}>
-                  {migratedV2 ? <Typography.Text type="success">Shared</Typography.Text> : remoteHookId}
+                  {vcsAppWebhook && migratedV2 ? (
+                    <Typography.Text type="success">Delivered via GitHub App</Typography.Text>
+                  ) : migratedV2 ? (
+                    <Typography.Text type="success">Shared</Typography.Text>
+                  ) : (
+                    <Space>
+                      {remoteHookId}
+                      {vcsAppWebhook && (
+                        <Typography.Text type="secondary">Save to switch to GitHub App delivery</Typography.Text>
+                      )}
+                    </Space>
+                  )}
                 </Form.Item>
               </Col>
             </Row>
             <Row
               hidden={
                 !webhookEnabled ||
+                vcsAppWebhook ||
                 (vcsProvider !== "GITHUB" && vcsProvider !== "GITLAB" && vcsProvider !== "AZURE_SP_MI") ||
                 migratedV2
               }
