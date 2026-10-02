@@ -1,5 +1,5 @@
 import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Button, Flex, Form, Input, Radio, Typography, message } from "antd";
+import { Button, Flex, Form, Input, Radio, Switch, Typography, message } from "antd";
 import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
 import { SiBitbucket } from "react-icons/si";
@@ -55,6 +55,8 @@ type CreateVcsForm = {
   privateKey: string;
   endpoint: string;
   apiUrl: string;
+  appWebhookEnabled?: boolean;
+  webhookSecret?: string;
 };
 
 type Choice = { vcs: VcsTypeExtended; connectionType: VcsConnectionType; label: string; help?: string };
@@ -218,6 +220,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
   const isGithubFamily = getVcsType(vcsType) === VcsType.GITHUB;
   const oauth = connectionType === OAUTH;
   const showSecret = oauth && vcsType !== VcsTypeExtended.AZURE_DEVOPS;
+  const githubApp = isGithubFamily && !oauth;
+  const [form] = Form.useForm<CreateVcsForm>();
+  const appWebhookEnabled = Form.useWatch("appWebhookEnabled", form);
+  const showAppWebhook = githubApp && !!appWebhookEnabled;
 
   const choose = (choice: Choice) => {
     setVcsType(choice.vcs);
@@ -330,13 +336,27 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
             <IdField id="vcs-app-name" label="Application name" value={terrakubeAppName} />
             <IdField id="vcs-homepage-url" label="Homepage URL" value={getApiOrigin()} />
             <IdField id="vcs-callback-url" label="Authorization callback URL" value={callbackUrl} />
-            <Form.Item label="Webhook">Leave Active unchecked.</Form.Item>
+            <Form.Item label="Webhook">
+              {showAppWebhook
+                ? "Leave Active unchecked for now. After you add this provider, open its edit page, copy the webhook URL and the same secret into the App's webhook settings, and check Active."
+                : "Leave Active unchecked."}
+            </Form.Item>
+            {showAppWebhook && (
+              <Form.Item label="Subscribe to events">Push, Pull request, Issue comment, Release</Form.Item>
+            )}
             <Form.Item label="Repository permissions">
               <ul className="vcs-guide-list">
                 <li>Contents: Read-only</li>
                 <li>Metadata: Read-only</li>
                 <li>Commit statuses: Read and write, for workspaces that run on VCS webhooks</li>
-                <li>Webhooks: Read and write, for workspaces that run on VCS webhooks</li>
+                {showAppWebhook ? (
+                  <>
+                    <li>Issues: Read-only, for Issue comment events</li>
+                    <li>Webhooks: Read and write, only if you later turn off GitHub App delivery</li>
+                  </>
+                ) : (
+                  <li>Webhooks: Read and write, for workspaces that run on VCS webhooks</li>
+                )}
                 <li>Pull requests: Read and write, for webhooks and to comment plans on pull requests</li>
               </ul>
             </Form.Item>
@@ -373,6 +393,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           clientId: values.clientId,
           clientSecret: getVcsType(vcsType) != "AZURE_SP_MI" ? values.clientSecret : "12345",
           privateKey: values.privateKey,
+          ...(githubApp && {
+            appWebhookEnabled: !!values.appWebhookEnabled,
+            webhookSecret: values.appWebhookEnabled ? values.webhookSecret : undefined,
+          }),
           callback: uuid,
           endpoint: values.endpoint,
           apiUrl: values.apiUrl,
@@ -455,6 +479,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       )}
       {current == 1 && (
         <SettingsForm
+          form={form}
           onFinish={onFinish}
           validateMessages={validateMessages}
           name="create-vcs"
@@ -521,7 +546,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                 <Input.Password className="resource-mono" autoComplete="off" />
               </Form.Item>
             )}
-            {isGithubFamily && !oauth && (
+            {githubApp && (
               <Form.Item
                 name="privateKey"
                 label={getSecretIdName(vcsType, connectionType)}
@@ -534,6 +559,20 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                 rules={[{ required: true }, { validator: validatePrivateKeyFormat }]}
               >
                 <Input.TextArea className="resource-mono" placeholder="-----BEGIN PRIVATE KEY-----" rows={8} />
+              </Form.Item>
+            )}
+            {githubApp && (
+              <Form.Item
+                name="appWebhookEnabled"
+                label="Receive events via the GitHub App webhook"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+            )}
+            {showAppWebhook && (
+              <Form.Item name="webhookSecret" label="Webhook secret" rules={[{ required: true }]}>
+                <Input.Password className="resource-mono" autoComplete="off" />
               </Form.Item>
             )}
           </SettingsSection>

@@ -249,6 +249,8 @@ export type VcsAttributes = {
   apiUrl: string;
   connectionType: VcsConnectionType;
   status: VcsStatus;
+  appWebhookEnabled?: boolean;
+  webhookSecret?: string;
 } & AuditFieldBase;
 export enum VcsConnectionType {
   OAUTH = "OAUTH",
