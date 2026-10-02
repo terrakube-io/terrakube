@@ -1,11 +1,14 @@
 package io.terrakube.registry.service.inspect;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HclBlockScannerTest {
 
@@ -162,5 +165,25 @@ class HclBlockScannerTest {
         assertThat(HclBlockScanner.unquote("\"a\\tb\\r\\nc\"")).isEqualTo("a\tb\r\nc");
         assertThat(HclBlockScanner.unquote("\"\\u00e9 \\U0001F600\"")).isEqualTo("\u00e9 \uD83D\uDE00");
         assertThat(HclBlockScanner.unquote("\"\\u+0e9 \\x \\\"")).isEqualTo("\\u+0e9 \\x \\");
+    }
+
+    @Test
+    void quotedHeredocMarkerStillEndsTheHeredoc() {
+        String source = "variable \"a\" {\n  description = <<-\"EOT\"\n    text\n  EOT\n}\nvariable \"b\" {}\n";
+
+        assertThat(HclBlockScanner.topLevelBlocks(source)).extracting(b -> b.label(0)).containsExactly("a", "b");
+    }
+
+    @Test
+    void deepNestingIsRejectedInsteadOfOverflowingTheStack() {
+        String blocks = "a {".repeat(20_000);
+        String templates = "x = \"" + "${\"".repeat(20_000);
+
+        for (String source : new String[]{blocks, templates}) {
+            assertThatThrownBy(() -> HclBlockScanner.topLevelBlocks(source))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));
+        }
+        assertThat(HclBlockScanner.topLevelBlocks("a {".repeat(64) + "}".repeat(64))).hasSize(1);
     }
 }

@@ -97,7 +97,7 @@ class ModuleInspectorServiceTest {
 
     @Test
     void rejectsArchivesWhoseExtractedTextIsTooLarge() throws IOException {
-        byte[] oversizedFile = zip(Map.of("main.tf", " ".repeat(4 * 1024 * 1024 + 1)));
+        byte[] oversizedFile = zip(Map.of("main.tf", " ".repeat(4 * 1024 * 1024 + 1), "modules/other/main.tf", ""));
         Map<String, String> manyFiles = new HashMap<>();
         for (int i = 0; i < 9; i++) {
             manyFiles.put("f" + i + ".tf", " ".repeat(4 * 1024 * 1024));
@@ -109,5 +109,17 @@ class ModuleInspectorServiceTest {
         assertThatThrownBy(() -> service.inspect(zip(manyFiles), "")).isInstanceOf(ResponseStatusException.class);
         // Files outside the inspected module are never read, whatever their size.
         assertThat(service.inspect(oversizedFile, "other").variables()).isEmpty();
+    }
+
+    @Test
+    void unknownSubmoduleIsNotFoundAndDotSegmentsAreNotSubmodules() throws IOException {
+        byte[] archive = zip(Map.of("modules/./main.tf", "", "modules/../main.tf", "", "modules/ok/main.tf", ""));
+
+        assertThat(service.inspect(archive, "").submodules()).containsExactly("ok");
+        for (String submodule : new String[]{"missing", "..", "ok/../ok", "ok/"}) {
+            assertThatThrownBy(() -> service.inspect(archive, submodule))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+        }
     }
 }

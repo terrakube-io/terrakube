@@ -1,5 +1,8 @@
 package io.terrakube.registry.service.inspect;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,6 +16,9 @@ import java.util.Map;
  * comments are skipped as opaque text so braces inside them do not confuse the nesting.
  */
 final class HclBlockScanner {
+
+    // Real modules nest a handful of levels; the cap keeps a crafted file from overflowing the stack.
+    private static final int MAX_NESTING_DEPTH = 64;
 
     record Block(String type, List<String> labels, String body) {
         String label(int index) {
@@ -166,7 +172,9 @@ final class HclBlockScanner {
             if (!c.eof() && c.peek() == '{') {
                 c.i++;
                 int bodyStart = c.i;
+                c.enter();
                 parseItems(c, true, new LinkedHashMap<>(), new ArrayList<>());
+                c.depth--;
                 int bodyEnd = c.eof() ? c.s.length() : c.i - 1;
                 blocks.add(new Block(identifier, labels, c.s.substring(bodyStart, Math.max(bodyStart, bodyEnd))));
                 continue;
@@ -178,6 +186,7 @@ final class HclBlockScanner {
     private static final class Cursor {
         final String s;
         int i;
+        int depth;
 
         Cursor(String s) {
             this.s = s;
@@ -189,6 +198,12 @@ final class HclBlockScanner {
 
         char peek() {
             return s.charAt(i);
+        }
+
+        void enter() {
+            if (++depth > MAX_NESTING_DEPTH) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "HCL nesting too deep");
+            }
         }
 
         boolean at(String token) {
@@ -239,7 +254,9 @@ final class HclBlockScanner {
                     i += 3;
                 } else if (at("${") || at("%{")) {
                     i += 2;
+                    enter();
                     expression(true);
+                    depth--;
                     if (!eof() && peek() == '}') {
                         i++;
                     }
@@ -261,6 +278,9 @@ final class HclBlockScanner {
                 i++;
             }
             String marker = s.substring(markerStart, i).trim();
+            if (marker.length() >= 2 && marker.startsWith("\"") && marker.endsWith("\"")) {
+                marker = marker.substring(1, marker.length() - 1);
+            }
             skipToEol();
             while (!eof()) {
                 i++;

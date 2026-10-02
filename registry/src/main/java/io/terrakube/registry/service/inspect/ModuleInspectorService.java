@@ -64,7 +64,7 @@ public class ModuleInspectorService {
                 String name = entry.getName();
                 if (name.startsWith(SUBMODULES_DIR)) {
                     String[] parts = name.split("/");
-                    if (parts.length > 2 && !parts[1].isEmpty()) {
+                    if (parts.length > 2 && !parts[1].isEmpty() && !parts[1].equals(".") && !parts[1].equals("..")) {
                         submodules.add(parts[1]);
                     }
                 }
@@ -94,6 +94,11 @@ public class ModuleInspectorService {
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Module archive could not be read", e);
+        }
+
+        // A 404 here also keeps arbitrary ?submodule= values out of the details cache: exceptions are not cached.
+        if (!prefix.isEmpty() && !submodules.contains(submodule)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Submodule not found: " + submodule);
         }
 
         Map<String, ModuleDetailsDTO.Variable> variables = new LinkedHashMap<>();
