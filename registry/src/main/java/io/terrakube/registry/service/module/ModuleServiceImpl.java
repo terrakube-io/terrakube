@@ -104,8 +104,9 @@ public class ModuleServiceImpl implements ModuleService {
 
     // A denylist of removed versions rather than an allowlist of the cached version list: with several
     // replicas, a new version must be downloadable even where /versions is still cached without it.
-    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_REMOVED_CACHE},
-            key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version")
+    // Caches here use the default key of all parameters: names joined with '-' collided across
+    // organizations, e.g. org "a-b" module "c" and org "a" module "b-c".
+    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_REMOVED_CACHE})
     @Override
     public boolean isVersionRemoved(String organizationName, String moduleName, String providerName, String version) {
         if (!VERSION_PATTERN.matcher(version).matches()) {
@@ -118,17 +119,16 @@ public class ModuleServiceImpl implements ModuleService {
                 .anyMatch(moduleEdge -> !moduleEdge.getNode().getVersion().getEdges().isEmpty());
     }
 
-    @CacheEvict(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
+    @CacheEvict(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE})
     @Override
     public void evictAvailableVersions(String organizationName, String moduleName, String providerName) {
         log.info("Evicting cached versions of module {}/{} in organization {}", moduleName, providerName, organizationName);
     }
 
-    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, key = "#organizationName + '-' + #moduleName + '-' + #providerName")
+    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, sync = true)
     @Override
     public List<String> getAvailableVersions(String organizationName, String moduleName, String providerName) {
-        String organizationId = commonSearchService.getOrganizationId(organizationName);
-        log.info("Search Module versions {}/{} in Organization {} with OrgId {}", moduleName, providerName, organizationName, organizationId);
+        log.info("Search Module versions {}/{} in Organization {}", moduleName, providerName, organizationName);
 
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_ORGANIZATION_MODULE_VERSION, organizationName, moduleName, providerName));
@@ -153,10 +153,7 @@ public class ModuleServiceImpl implements ModuleService {
     // sync = true coalesces concurrent cache misses for the same key into a single resolution -
     // without it, a burst of `terraform init` calls that all miss the cache at once would each
     // independently repeat the Terrakube API/VCS calls and the S3 HeadObject below.
-    @Cacheable(
-            cacheNames = {CacheConfig.MODULE_VERSION_PATH_CACHE},
-            key = "#organizationName + '-' + #moduleName + '-' + #providerName + '-' + #version",
-            sync = true)
+    @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_PATH_CACHE}, sync = true)
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
         String moduleVersionPath = "";

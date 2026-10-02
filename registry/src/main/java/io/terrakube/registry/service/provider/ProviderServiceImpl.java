@@ -161,7 +161,7 @@ public class ProviderServiceImpl implements ProviderService {
 
     // The protocol's warnings belong to the provider, not a version, and every user sees them on each
     // lookup. So there is one summary line however many versions are deprecated; the messages stay in the UI.
-    @Cacheable(cacheNames = CacheConfig.PROVIDER_WARNINGS_CACHE, key = "#organization + '-' + #provider")
+    @Cacheable(cacheNames = CacheConfig.PROVIDER_WARNINGS_CACHE)
     @Override
     public List<String> getWarnings(String organization, String provider) {
         GraphQLRequest query = new GraphQLRequest();
