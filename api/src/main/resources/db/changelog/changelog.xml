@@ -134,4 +134,5 @@
     <include file="/db/changelog/local/changelog-2.34.0-workspace-tag-value.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-registry-version-deprecation.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-cli-auth-session.xml"/>
+    <include file="/db/changelog/local/changelog-2.34.0-run-trigger-event.xml" />
 </databaseChangeLog>

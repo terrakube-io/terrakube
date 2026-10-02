@@ -1,12 +1,15 @@
 package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventDispatchService;
+import io.terrakube.api.repository.RunTriggerEventRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerEvent;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,6 +34,11 @@ import static org.mockito.Mockito.when;
  * completed, so calling it directly exercises everything the engine depends on - the entity
  * graph on the dispatch query, the TCL flow lookup, the foreign keys of the created job - in
  * milliseconds and with no Kubernetes or HTTP anywhere.
+ *
+ * <p>Since the durable event worker (#3628), {@code reconcile} only writes the
+ * {@code RunTriggerEvent} row; {@link #reconcileAndProcess} processes it immediately afterwards
+ * so this test stays about the dispatch decision, not the poller cadence -
+ * {@link RunTriggerEventIntegrationTest} covers the durability layer itself.
  *
  * <p>The unit tests cover the branches. This one covers the wiring, which is what mocks cannot
  * tell you: that the query really loads what the engine reads, and that the row it writes is
@@ -51,6 +60,12 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
 
     @Autowired
     private WorkspaceRunTriggerRepository triggerRepository;
+
+    @Autowired
+    private RunTriggerEventRepository runTriggerEventRepository;
+
+    @Autowired
+    private RunTriggerEventDispatchService runTriggerEventDispatchService;
 
     private Set<Integer> jobsBefore;
     private Set<UUID> triggersBefore;
@@ -133,6 +148,13 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
         stepRepository.save(step);
     }
 
+    /** Reconciles the job, then processes the RunTriggerEvent it wrote, if any. */
+    private void reconcileAndProcess(int jobId) {
+        jobReconciliationService.reconcile(jobId, false);
+        Optional<RunTriggerEvent> event = runTriggerEventRepository.findByJob_Id(jobId);
+        event.ifPresent(e -> runTriggerEventDispatchService.process(e.getId()));
+    }
+
     private List<Job> triggeredJobsOn(Workspace destination) {
         return jobRepository.findAll().stream()
                 .filter(j -> j.getWorkspace() != null
@@ -151,7 +173,7 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
 
         Job upstream = runningJob(source, JobStatus.completed);
 
-        jobReconciliationService.reconcile(upstream.getId(), false);
+        reconcileAndProcess(upstream.getId());
 
         List<Job> triggered = triggeredJobsOn(destination);
         assertThat(triggered).hasSize(1);
@@ -180,7 +202,7 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
 
         Job upstream = runningJob(source, JobStatus.notExecuted);
 
-        jobReconciliationService.reconcile(upstream.getId(), false);
+        reconcileAndProcess(upstream.getId());
 
         assertThat(triggeredJobsOn(destination)).isEmpty();
     }
@@ -206,7 +228,7 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
     /** Completes an apply on the given seeded workspace and returns the upstream job. */
     private Job applyOn(String workspaceId) {
         Job upstream = runningJob(workspace(workspaceId), JobStatus.completed);
-        jobReconciliationService.reconcile(upstream.getId(), false);
+        reconcileAndProcess(upstream.getId());
         return upstream;
     }
 
@@ -272,7 +294,7 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
 
         Job upstream = runningJob(source, JobStatus.completed);
 
-        jobReconciliationService.reconcile(upstream.getId(), false);
+        reconcileAndProcess(upstream.getId());
 
         assertThat(triggeredJobsOn(destination)).isEmpty();
     }

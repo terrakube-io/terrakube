@@ -83,7 +83,11 @@ public class RunTriggerDispatchService {
         }
     }
 
-    private void dispatchInternal(int completedJobId) {
+    /**
+     * Package-private so the event worker can call it directly and let a failure propagate for
+     * it to record and retry, instead of being swallowed as {@link #dispatchFor}'s callers see.
+     */
+    void dispatchInternal(int completedJobId) {
         if (!properties.isEnabled()) {
             return;
         }
