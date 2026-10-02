@@ -996,8 +996,12 @@ public class RemoteTfeService {
     }
 
     WorkspaceData updateWorkspace(String workspaceId, WorkspaceData workspaceData, JwtAuthenticationToken currentUser) {
-        Optional<Workspace> workspace = Optional
-                .ofNullable(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
+        Optional<Workspace> workspace = workspaceRepository.findById(UUID.fromString(workspaceId));
+
+        if (workspace.isEmpty()) {
+            log.warn("Workspace {} not found for update", workspaceId);
+            return null;
+        }
 
         log.info("Updating existing workspace {} in {}", workspace.get().getName(),
                 workspace.get().getOrganization().getName());
