@@ -2,19 +2,27 @@ package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.trigger.CyclicDependencyException;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
+import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
+import io.terrakube.api.rs.Organization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -23,6 +31,7 @@ import static org.mockito.Mockito.when;
 class WorkspaceGraphValidationServiceTests {
 
     private WorkspaceRunTriggerRepository repository;
+    private OrganizationRepository organizationRepository;
     private WorkspaceGraphValidationService service;
 
     private final UUID org = UUID.randomUUID();
@@ -34,7 +43,11 @@ class WorkspaceGraphValidationServiceTests {
     @BeforeEach
     void setUp() {
         repository = mock(WorkspaceRunTriggerRepository.class);
-        service = new WorkspaceGraphValidationService(repository);
+        organizationRepository = mock(OrganizationRepository.class);
+        // The lock is granted by default; the one test that cares about a missing organization
+        // overrides this.
+        lenient().when(organizationRepository.lockForUpdate(any())).thenReturn(Optional.of(new Organization()));
+        service = new WorkspaceGraphValidationService(repository, organizationRepository);
     }
 
     private TriggerEdge edge(UUID id, UUID source, UUID destination) {
@@ -145,5 +158,33 @@ class WorkspaceGraphValidationServiceTests {
         assertDoesNotThrow(() -> service.validateAcyclic(null, null, a, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, null, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, null));
+    }
+
+    // ---------------------------------------------------------------- organization lock
+
+    /** The lock must be acquired before the graph is read - ordering only; real contention is WorkspaceGraphLockConcurrencyTest. */
+    @Test
+    void acquiresTheOrganizationLockBeforeReadingTheGraph() {
+        graph();
+        assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, b));
+
+        InOrder ordered = inOrder(organizationRepository, repository);
+        ordered.verify(organizationRepository).lockForUpdate(org);
+        ordered.verify(repository).findEdgesByOrganizationId(org);
+    }
+
+    /** A self-reference is rejected without ever touching the database. */
+    @Test
+    void rejectsASelfTriggerWithoutTakingTheLock() {
+        assertThrows(CyclicDependencyException.class, () -> service.validateAcyclic(org, null, a, a));
+        verify(organizationRepository, never()).lockForUpdate(any());
+    }
+
+    /** A concurrently deleted organization has nothing left to lock or validate against. */
+    @Test
+    void ignoresAnOrganizationThatNoLongerExists() {
+        when(organizationRepository.lockForUpdate(org)).thenReturn(Optional.empty());
+        assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, b));
+        verify(repository, never()).findEdgesByOrganizationId(any());
     }
 }

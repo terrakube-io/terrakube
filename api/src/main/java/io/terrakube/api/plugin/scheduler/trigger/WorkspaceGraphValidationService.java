@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.trigger;
 
+import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
 import lombok.RequiredArgsConstructor;
@@ -29,9 +30,15 @@ import java.util.UUID;
 public class WorkspaceGraphValidationService {
 
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
+    private final OrganizationRepository organizationRepository;
 
     /**
      * Rejects an edge that would close a loop.
+     *
+     * <p>Locks the organization's row before reading the graph, so two concurrent edge
+     * mutations in the same organization can't each validate against a graph the other hasn't
+     * committed yet and together close a cycle neither saw. Independent organizations never
+     * block each other.
      *
      * @param organizationId owner of the graph
      * @param triggerId      the edge being written, excluded from the graph so an update is
@@ -44,11 +51,16 @@ public class WorkspaceGraphValidationService {
             return;
         }
 
-        // Caught earlier by the security check and by a database constraint; repeated here so
-        // the service is correct on its own rather than by arrangement with its callers.
+        // Repeated here (also caught by the security check and a DB constraint) so the service
+        // is correct on its own. Checked before the lock: it never depends on the rest of the graph.
         if (sourceId.equals(destinationId)) {
             throw new CyclicDependencyException(
                     "A workspace cannot trigger itself.");
+        }
+
+        // Empty only if the organization was deleted concurrently; nothing left to validate.
+        if (organizationRepository.lockForUpdate(organizationId).isEmpty()) {
+            return;
         }
 
         Map<UUID, Set<UUID>> adjacency = loadGraphExcluding(organizationId, triggerId);
