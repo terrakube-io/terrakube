@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.HttpClientErrorException;
 import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
 import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
+import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -48,14 +49,36 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
             case UPDATE:
                 switch (phase) {
                     case PRECOMMIT:
+                        // A GitHub App VCS in App webhook mode receives events through the App's
+                        // own webhook, which only reaches migrated workspaces: never create a v1 hook.
+                        boolean appWebhookMode = RepoWebhookService.isAppWebhookMode(elideEntity.getWorkspace().getVcs());
+                        if (appWebhookMode) {
+                            elideEntity.setMigratedV2(true);
+                        }
                         try {
                             if (isMigratedV2Shared(elideEntity)) {
                                 // Delete the old per-workspace hook, if any — this is
                                 // workspace-specific cleanup, not the shared-repo setup
                                 // that used to race, so it stays inline here.
                                 if (elideEntity.getRemoteHookId() != null && !elideEntity.getRemoteHookId().isEmpty()) {
-                                    deleteWorkspaceHook(elideEntity);
-                                    elideEntity.setRemoteHookId(null);
+                                    try {
+                                        deleteWorkspaceHook(elideEntity);
+                                        elideEntity.setRemoteHookId(null);
+                                    } catch (HttpClientErrorException e) {
+                                        // 404: the hook is already gone. 403: the App may lack "Webhooks" permission and
+                                        // the hook still exists, so keep its id for a later delete; its v1 deliveries are
+                                        // ignored once migrated.
+                                        int status = e.getStatusCode().value();
+                                        if (!appWebhookMode || (status != HttpStatus.SC_FORBIDDEN && status != HttpStatus.SC_NOT_FOUND)) {
+                                            throw e;
+                                        }
+                                        if (status == HttpStatus.SC_NOT_FOUND) {
+                                            elideEntity.setRemoteHookId(null);
+                                        } else {
+                                            log.warn("Could not delete v1 webhook {} of workspace {} (403), keeping its id",
+                                                    elideEntity.getRemoteHookId(), elideEntity.getWorkspace().getId());
+                                        }
+                                    }
                                 }
                             } else {
                                 webhookService.createOrUpdateWorkspaceWebhook(elideEntity);
@@ -123,12 +146,8 @@ public class WebhookManageHook implements LifeCycleHook<Webhook> {
         return elideEntity.isMigratedV2() && isSharedWebhookProvider(elideEntity);
     }
 
-    // GitHub, GitLab and Azure DevOps (AZURE_SP_MI / AZURE_DEVOPS) participate in the shared,
-    // repository-level (v2) webhook flow reconciled asynchronously by
-    // RepoWebhookSyncJob.
     private boolean isSharedWebhookProvider(Webhook elideEntity) {
-        VcsType vcsType = vcsType(elideEntity);
-        return vcsType == VcsType.GITHUB || vcsType == VcsType.GITLAB || vcsType == VcsType.AZURE_SP_MI || vcsType == VcsType.AZURE_DEVOPS;
+        return RepoWebhookService.isSharedWebhookProvider(elideEntity.getWorkspace().getVcs());
     }
 
     private VcsType vcsType(Webhook elideEntity) {

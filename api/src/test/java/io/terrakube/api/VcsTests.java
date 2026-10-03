@@ -8,7 +8,11 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
+import java.util.List;
+import java.util.UUID;
+
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.when;
@@ -123,6 +127,57 @@ class VcsTests extends ServerApplicationTests{
                 .log()
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void readVcsNeverReturnsTheGitHubAppWebhookSecret() {
+        String vcsId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {
+                          "data": {
+                            "type": "vcs",
+                            "attributes": {
+                              "name": "githubAppConnection",
+                              "description": "GitHub App with app-level webhook",
+                              "vcsType": "GITHUB",
+                              "connectionType": "STANDALONE",
+                              "clientId": "12345",
+                              "appWebhookEnabled": true,
+                              "webhookSecret": "app-webhook-secret"
+                            }
+                          }
+                        }
+                        """)
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/vcs")
+                .then()
+                .assertThat()
+                .body("data.attributes", not(hasKey("webhookSecret")))
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        assertThat(vcsRepository.findById(UUID.fromString(vcsId)).orElseThrow().getWebhookSecret())
+                .isEqualTo("app-webhook-secret");
+
+        for (String token : List.of(generatePAT("TERRAKUBE_DEVELOPERS"), generatePAT("TERRAKUBE_ADMIN"),
+                generateSystemToken())) {
+            given()
+                    .headers("Authorization", "Bearer " + token)
+                    .when()
+                    .get("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/vcs/" + vcsId)
+                    .then()
+                    .assertThat()
+                    .body("data.attributes", not(hasKey("webhookSecret")))
+                    .body("data.attributes.appWebhookEnabled", IsEqual.equalTo(true))
+                    .statusCode(HttpStatus.OK.value());
+        }
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/vcs/" + vcsId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
     }
 
     @Test

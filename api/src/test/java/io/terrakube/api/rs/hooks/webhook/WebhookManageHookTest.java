@@ -6,6 +6,7 @@ import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -312,4 +313,73 @@ class WebhookManageHookTest {
         assertEquals(424, exception.getStatus());
         assertTrue(exception.getMessage().contains("'Pull requests: write' permission"));
     }
+
+    private Workspace appModeWorkspace() {
+        Workspace workspace = new Workspace();
+        workspace.setSource("https://github.com/owner/repo");
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITHUB);
+        vcs.setConnectionType(VcsConnectionType.STANDALONE);
+        vcs.setAppWebhookEnabled(true);
+        vcs.setWebhookSecret("app-secret");
+        workspace.setVcs(vcs);
+        return workspace;
+    }
+
+    @Test
+    void execute_appWebhookMode_precommitForcesMigratedV2AndNeverCreatesARepoHook() {
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(appModeWorkspace());
+        webhook.setMigratedV2(false);
+
+        subject.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
+
+        assertTrue(webhook.isMigratedV2());
+        assertNull(webhook.getRemoteHookId());
+        verifyNoInteractions(webhookService, gitHubWebhookService, repoWebhookSyncScheduler);
+    }
+
+    private Webhook appModeWebhookWithV1Hook(HttpStatus deleteStatus) {
+        Workspace workspace = appModeWorkspace();
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspace);
+        webhook.setMigratedV2(false);
+        webhook.setRemoteHookId("v1-hook-id");
+        doThrow(new HttpClientErrorException(deleteStatus))
+                .when(gitHubWebhookService).deleteWebhook(workspace, "v1-hook-id");
+        return webhook;
+    }
+
+    @Test
+    void execute_appWebhookMode_precommitKeepsTheV1HookIdWhenItsDeleteIsForbidden() {
+        Webhook webhook = appModeWebhookWithV1Hook(HttpStatus.FORBIDDEN);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
+
+        assertTrue(webhook.isMigratedV2());
+        assertEquals("v1-hook-id", webhook.getRemoteHookId());
+        verifyNoInteractions(webhookService);
+    }
+
+    @Test
+    void execute_appWebhookMode_precommitForgetsTheV1HookWhenItIsAlreadyGone() {
+        Webhook webhook = appModeWebhookWithV1Hook(HttpStatus.NOT_FOUND);
+
+        subject.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty());
+
+        assertTrue(webhook.isMigratedV2());
+        assertNull(webhook.getRemoteHookId());
+        verifyNoInteractions(webhookService);
+    }
+
+    @Test
+    void execute_appWebhookMode_precommitFailsOnOtherV1HookDeleteErrors() {
+        Webhook webhook = appModeWebhookWithV1Hook(HttpStatus.UNAUTHORIZED);
+
+        assertThrows(WebhookManagementException.class, () -> subject.execute(Operation.UPDATE,
+                TransactionPhase.PRECOMMIT, webhook, requestScope, Optional.empty()));
+
+        assertEquals("v1-hook-id", webhook.getRemoteHookId());
+    }
+
 }

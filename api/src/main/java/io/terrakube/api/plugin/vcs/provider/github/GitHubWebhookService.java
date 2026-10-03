@@ -7,8 +7,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +42,8 @@ import lombok.extern.slf4j.Slf4j;
 public class GitHubWebhookService extends WebhookServiceBase {
 
     private static final String PATH_COMMENT = "comment";
+    private static final Pattern OWNER = Pattern.compile("[A-Za-z0-9-]+");
+    private static final Pattern REPO = Pattern.compile("[A-Za-z0-9._-]+");
 
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
@@ -509,6 +513,27 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return getPrFileChanges(vcs, ownerAndRepo, prFilesUrl);
     }
 
+    // The PR API URL of a GitHub App delivery, rebuilt from the VCS API URL and the matched repository:
+    // the App secret is shared by every installation of the App, so a payload URL is never trusted with
+    // a token. Null when the repository URL is not a plain owner/repo.
+    public String pullRequestApiUrl(Vcs vcs, String repoUrl, int prNumber) {
+        String[] ownerAndRepo = extractOwnerAndRepo(repoUrl);
+        if (ownerAndRepo == null || ownerAndRepo[0] == null || ownerAndRepo[1] == null
+                || !OWNER.matcher(ownerAndRepo[0]).matches() || !REPO.matcher(ownerAndRepo[1]).matches()
+                || ownerAndRepo[1].equals(".") || ownerAndRepo[1].equals("..")) {
+            log.warn("Not building a pull request URL for {}: not a plain owner/repo", repoUrl);
+            return null;
+        }
+        return normalizeApiUrl(vcs.getApiUrl()) + "/repos/" + ownerAndRepo[0] + "/" + ownerAndRepo[1] + "/pulls/"
+                + prNumber;
+    }
+
+    public static String normalizeApiUrl(String apiUrl) {
+        String url = apiUrl == null || apiUrl.isBlank() ? "https://api.github.com"
+                : apiUrl.trim().toLowerCase(Locale.ROOT);
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
     public boolean resolvePrDetails(Vcs vcs, String source, String prDetailsUrl, WebhookResult result) {
         String[] ownerAndRepo = extractOwnerAndRepo(source);
         ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prDetailsUrl, HttpMethod.GET);
@@ -572,10 +597,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return id;
     }
 
-    public void deleteRepoWebhook(RepoWebhook repoWebhook) {
+    // False when no request could be made (e.g. no access token); an error response throws.
+    public boolean deleteRepoWebhook(RepoWebhook repoWebhook) {
         if (repoWebhook.getRemoteHookId() == null || repoWebhook.getRemoteHookId().isEmpty()) {
             log.warn("No remote hook id found for repo webhook {}, skipping deletion", repoWebhook.getId());
-            return;
+            return true;
         }
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
         String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks/" + repoWebhook.getRemoteHookId();
@@ -583,7 +609,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, "", apiUrl, HttpMethod.DELETE);
         if (response == null) {
             log.error("Failed to delete repo webhook with remote hook id {}", repoWebhook.getRemoteHookId());
-            return;
+            return false;
         }
 
         if (response.getStatusCode().value() == 204) {
@@ -591,6 +617,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         } else {
             log.warn("Failed to delete repo webhook with remote hook id {}, message {}", repoWebhook.getRemoteHookId(), response.getBody());
         }
+        return true;
     }
 
     private ResponseEntity<String> callGitHubApi(Vcs vcs, String[] ownerAndRepo, String body, String apiUrl,

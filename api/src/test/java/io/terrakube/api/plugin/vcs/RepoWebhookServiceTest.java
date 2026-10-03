@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -30,6 +35,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -39,6 +47,7 @@ import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.RepoWebhookRepository;
+import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
@@ -46,6 +55,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.Webhook;
@@ -68,6 +78,7 @@ class RepoWebhookServiceTest {
     PrCommentService prCommentService;
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
+    VcsRepository vcsRepository;
 
     RepoWebhookService subject;
 
@@ -84,6 +95,7 @@ class RepoWebhookServiceTest {
         prCommentService = mock(PrCommentService.class);
         repoWebhookDeliveryTransactions = mock(RepoWebhookDeliveryTransactions.class);
         objectMapper = new ObjectMapper();
+        vcsRepository = mock(VcsRepository.class);
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -97,7 +109,8 @@ class RepoWebhookServiceTest {
                 prCommentService,
                 repoWebhookDeliveryTransactions,
                 objectMapper,
-                Runnable::run);
+                Runnable::run,
+                vcsRepository);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -524,7 +537,7 @@ class RepoWebhookServiceTest {
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pushResult);
 
             // Process webhook (V1 state) - should create 0 jobs
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
             verify(jobRepository, never()).save(any(Job.class));
 
             // 3. Migrate the configuration to version 2
@@ -564,7 +577,7 @@ class RepoWebhookServiceTest {
             });
 
             // 4. Create a webhook request using version 2 and validate jobs are created
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             // Verify a job was created for each workspace
             verify(jobRepository, times(2)).save(any(Job.class));
@@ -624,7 +637,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of("variables.tf"));
 
             // Process webhook (V1 state) - should create 0 jobs
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
             verify(jobRepository, never()).save(any(Job.class));
 
             // 3. Migrate the configuration to version 2
@@ -662,7 +675,7 @@ class RepoWebhookServiceTest {
             });
 
             // 4. Create a webhook request using version 2 and validate jobs are created
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             // Verify a job was created for each workspace
             verify(jobRepository, times(2)).save(any(Job.class));
@@ -736,7 +749,7 @@ class RepoWebhookServiceTest {
                 return j;
             });
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository).save(jobCaptor.capture());
@@ -817,7 +830,7 @@ class RepoWebhookServiceTest {
                 return j;
             });
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(gitHubWebhookService).resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9"), eq(commentResult));
@@ -860,7 +873,7 @@ class RepoWebhookServiceTest {
             commentResult.setPrDetailsUrl("https://api.github.com/repos/owner/repo/pulls/11");
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(gitHubWebhookService, never()).resolvePrDetails(any(), any(), any(), any());
             verify(jobRepository, never()).save(any(Job.class));
@@ -919,7 +932,7 @@ class RepoWebhookServiceTest {
 
             Map<String, String> headers = Map.of("x-github-event", "issue_comment");
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(prCommentService).acknowledgeReceipt(ws, "comment-1", 9);
         }
@@ -945,7 +958,7 @@ class RepoWebhookServiceTest {
 
             Map<String, String> headers = Map.of("x-github-event", "issue_comment");
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             assertThat(ws.isLocked()).isTrue();
             verify(workspaceRepository).save(ws);
@@ -977,7 +990,7 @@ class RepoWebhookServiceTest {
 
             Map<String, String> headers = Map.of("x-github-event", "issue_comment");
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             assertThat(ws.isLocked()).isFalse();
             verify(prCommentService).postApplyDisabledNotice(ws, 13);
@@ -1020,7 +1033,7 @@ class RepoWebhookServiceTest {
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(releaseResult);
 
             // Process webhook (V1 state) - should create 0 jobs
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
             verify(jobRepository, never()).save(any(Job.class));
 
             // 3. Migrate the configuration to version 2
@@ -1054,7 +1067,7 @@ class RepoWebhookServiceTest {
             });
 
             // 4. Create a webhook request using version 2 and validate jobs are created
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             // Verify a job was created for each workspace
             verify(jobRepository, times(2)).save(any(Job.class));
@@ -1090,7 +1103,7 @@ class RepoWebhookServiceTest {
             pingResult.setValid(true);
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(pingResult);
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(jobRepository, never()).save(any());
             verify(workspaceRepository, never()).findByNormalizedSourceWithMigratedWebhook(any());
@@ -1146,7 +1159,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event2));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository, times(2)).save(jobCaptor.capture());
@@ -1193,7 +1206,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event2));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             // ws1 skipped, ws2 should still create a job
             verify(jobRepository, times(1)).save(any(Job.class));
@@ -1211,7 +1224,7 @@ class RepoWebhookServiceTest {
             invalidResult.setValid(false);
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(invalidResult);
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(workspaceRepository, never()).findByNormalizedSourceWithMigratedWebhook(any());
             verify(jobRepository, never()).save(any());
@@ -1273,7 +1286,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event2));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(gitHubWebhookService, times(1)).fetchPrFileChanges(any(), any(), any());
             verify(gitHubWebhookService, never()).fetchPrFileChanges(eq(ws1.getVcs()), any(), any());
@@ -1416,7 +1429,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository).save(jobCaptor.capture());
@@ -1465,7 +1478,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(gitLabWebhookService).fetchPrFileChanges(any(), eq(repoUrl), eq("42"));
             verify(gitHubWebhookService, never()).fetchPrFileChanges(any(), any(), any());
@@ -1508,7 +1521,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository).save(jobCaptor.capture());
@@ -1682,7 +1695,7 @@ class RepoWebhookServiceTest {
             when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
                     .thenReturn(Collections.emptyList());
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(azDevOpsWebhookService).parseAzDevOpsPayload(eq(payload), any());
             verify(gitHubWebhookService, never()).parseGitHubPayload(any(), any());
@@ -1770,7 +1783,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event2));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(jobRepository, times(2)).save(any(Job.class));
             verify(azDevOpsWebhookService, times(2)).fetchPushFileChanges(any(), eq(repoUrl), eq(payload));
@@ -1819,7 +1832,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             verify(azDevOpsWebhookService).fetchPrFileChanges(any(), eq(repoUrl), eq(42));
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
@@ -1862,7 +1875,7 @@ class RepoWebhookServiceTest {
                     .thenReturn(List.of(event));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            subject.processClaimedDelivery(rw, payload, headers);
+            subject.processClaimedDelivery(rw, null, payload, headers);
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository).save(jobCaptor.capture());
@@ -1904,6 +1917,417 @@ class RepoWebhookServiceTest {
             verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
             verify(gitLabWebhookService, never()).deleteRepoWebhook(any());
             assertThat(webhook.getRemoteHookId()).isNull();
+        }
+    }
+
+    @Nested
+    class GitHubAppWebhook {
+
+        private static final String REPO_URL = "https://github.com/owner/repo";
+        private static final String PUSH_PAYLOAD =
+                "{\"ref\":\"refs/heads/main\",\"repository\":{\"clone_url\":\"https://github.com/Owner/Repo.git\"}}";
+        private static final byte[] PUSH_BODY = PUSH_PAYLOAD.getBytes(StandardCharsets.UTF_8);
+
+        private Vcs appVcs(String clientId, String secret) {
+            Vcs vcs = new Vcs();
+            vcs.setId(UUID.randomUUID());
+            vcs.setVcsType(VcsType.GITHUB);
+            vcs.setConnectionType(VcsConnectionType.STANDALONE);
+            vcs.setClientId(clientId);
+            vcs.setAppWebhookEnabled(true);
+            vcs.setWebhookSecret(secret);
+            return vcs;
+        }
+
+        private Map<String, String> signedHeaders(String secret, String payload, String event) throws Exception {
+            return Map.of("X-Hub-Signature-256", computeHmac(secret, payload), "X-GitHub-Event", event,
+                    "X-GitHub-Delivery", "guid-1");
+        }
+
+        private Workspace pushWorkspace(String name, Vcs vcs) {
+            Workspace ws = workspaceWithSource(REPO_URL);
+            ws.setName(name);
+            ws.setVcs(vcs);
+            Webhook wh = new Webhook();
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PUSH);
+            event.setBranch("main");
+            event.setPath("*");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("template-" + name);
+            wh.setEvents(List.of(event));
+            ws.setWebhook(wh);
+            return ws;
+        }
+
+        // pullRequestApiUrl's own validation, on top of the mocked service.
+        private void realPullRequestApiUrl() {
+            when(gitHubWebhookService.pullRequestApiUrl(any(), any(), anyInt())).thenCallRealMethod();
+            when(gitHubWebhookService.extractOwnerAndRepo(any())).thenCallRealMethod();
+        }
+
+        private void stubEvents(Workspace ws) {
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(ws.getWebhook(), WebhookEventType.PUSH))
+                    .thenReturn(ws.getWebhook().getEvents());
+        }
+
+        private WebhookResult pushResult() {
+            WebhookResult result = new WebhookResult();
+            result.setEvent("push");
+            result.setValid(true);
+            result.setBranch("main");
+            result.setVia(JobVia.GITHUB.getValue());
+            result.setCommit("abc123");
+            result.setFileChanges(List.of("main.tf"));
+            return result;
+        }
+
+        @Test
+        void enqueuesSignedPushWithVcsAndSignatureAsDedupeKey() throws Exception {
+            Vcs vcs = appVcs("123", "app-secret");
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            UUID deliveryId = UUID.randomUUID();
+            when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+            when(repoWebhookRepository.findByRepositoryUrl(REPO_URL)).thenReturn(Optional.of(rw));
+            when(repoWebhookDeliveryTransactions.enqueue(eq(rw), eq(PUSH_PAYLOAD), any(), eq(vcs),
+                    eq(computeHmac("app-secret", PUSH_PAYLOAD)))).thenReturn(deliveryId);
+
+            UUID result = subject.acceptGitHubAppWebhook(vcs.getId().toString(), PUSH_BODY,
+                    signedHeaders("app-secret", PUSH_PAYLOAD, "push"));
+
+            assertThat(result).isEqualTo(deliveryId);
+            verify(repoWebhookRepository, never()).save(any());
+            verify(repoWebhookRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void rejectsBadSignatureFlagOffNonStandaloneAndBlankSecret() throws Exception {
+            Vcs badSignature = appVcs("123", "app-secret");
+            Vcs flagOff = appVcs("123", "app-secret");
+            flagOff.setAppWebhookEnabled(false);
+            Vcs oauth = appVcs("123", "app-secret");
+            oauth.setConnectionType(VcsConnectionType.OAUTH);
+            Vcs blankSecret = appVcs("123", " ");
+            Vcs nullSecret = appVcs("123", null);
+            Map<String, String> headers = signedHeaders("app-secret", PUSH_PAYLOAD, "push");
+            for (Vcs vcs : List.of(flagOff, oauth, blankSecret, nullSecret)) {
+                when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+                assertThatThrownBy(() -> subject.acceptGitHubAppWebhook(vcs.getId().toString(), PUSH_BODY, headers))
+                        .isInstanceOf(SecurityException.class);
+            }
+            when(vcsRepository.findById(badSignature.getId())).thenReturn(Optional.of(badSignature));
+            assertThatThrownBy(() -> subject.acceptGitHubAppWebhook(badSignature.getId().toString(),
+                    PUSH_PAYLOAD.replace("main", "evil").getBytes(StandardCharsets.UTF_8), headers))
+                    .isInstanceOf(SecurityException.class);
+
+            UUID unknown = UUID.randomUUID();
+            when(vcsRepository.findById(unknown)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> subject.acceptGitHubAppWebhook(unknown.toString(), PUSH_BODY, headers))
+                    .isInstanceOf(IllegalArgumentException.class);
+
+            verify(repoWebhookDeliveryTransactions, never()).enqueue(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void missingEventHeaderIsBadRequest() throws Exception {
+            Vcs vcs = appVcs("123", "app-secret");
+            when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+
+            assertThatThrownBy(() -> subject.acceptGitHubAppWebhook(vcs.getId().toString(), PUSH_BODY,
+                    Map.of("x-hub-signature-256", computeHmac("app-secret", PUSH_PAYLOAD))))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+
+        @Test
+        void acknowledgesAppLifecycleEventsWithoutEnqueueing() throws Exception {
+            Vcs vcs = appVcs("123", "app-secret");
+            when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+            String payload = "{\"action\":\"created\",\"installation\":{\"id\":1}}";
+
+            for (String event : List.of("ping", "installation", "installation_repositories", "github_app_authorization",
+                    "check_run")) {
+                assertThat(subject.acceptGitHubAppWebhook(vcs.getId().toString(),
+                        payload.getBytes(StandardCharsets.UTF_8), signedHeaders("app-secret", payload, event))).isNull();
+            }
+
+            verify(repoWebhookRepository, never()).findByRepositoryUrl(any());
+            verify(repoWebhookDeliveryTransactions, never()).enqueue(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void dropsEventForRepositoryWithoutRepoWebhookRow() throws Exception {
+            Vcs vcs = appVcs("123", "app-secret");
+            when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+            when(repoWebhookRepository.findByRepositoryUrl(REPO_URL)).thenReturn(Optional.empty());
+
+            assertThat(subject.acceptGitHubAppWebhook(vcs.getId().toString(), PUSH_BODY,
+                    signedHeaders("app-secret", PUSH_PAYLOAD, "push"))).isNull();
+
+            verify(repoWebhookRepository, never()).save(any());
+            verify(repoWebhookRepository, never()).saveAndFlush(any());
+            verify(repoWebhookDeliveryTransactions, never()).enqueue(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void repeatedSignatureIsAcknowledgedWithoutNewDelivery() throws Exception {
+            Vcs vcs = appVcs("123", "app-secret");
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            when(vcsRepository.findById(vcs.getId())).thenReturn(Optional.of(vcs));
+            when(repoWebhookRepository.findByRepositoryUrl(REPO_URL)).thenReturn(Optional.of(rw));
+            when(repoWebhookDeliveryTransactions.enqueue(eq(rw), any(), any(), eq(vcs),
+                    eq(computeHmac("app-secret", PUSH_PAYLOAD))))
+                    .thenThrow(new DataIntegrityViolationException("duplicate"));
+
+            assertThat(subject.acceptGitHubAppWebhook(vcs.getId().toString(), PUSH_BODY,
+                    signedHeaders("app-secret", PUSH_PAYLOAD, "push"))).isNull();
+        }
+
+        @Test
+        void appDeliveryReachesOnlyWorkspacesOnVcsRowsSharingTheAppAndSecret() {
+            Vcs deliveryVcs = appVcs("123", "app-secret");
+            Vcs sameAppOtherOrg = appVcs("123", "app-secret");
+            sameAppOtherOrg.setApiUrl("https://api.github.com/");
+            Vcs sameAppOtherSecret = appVcs("123", "other-secret");
+            Vcs sameAppOtherHost = appVcs("123", "app-secret");
+            sameAppOtherHost.setApiUrl("https://ghe.example.com/api/v3");
+            Vcs plainGitHub = new Vcs();
+            plainGitHub.setId(UUID.randomUUID());
+            plainGitHub.setVcsType(VcsType.GITHUB);
+            when(vcsRepository.findByClientId("123"))
+                    .thenReturn(List.of(deliveryVcs, sameAppOtherOrg, sameAppOtherSecret, sameAppOtherHost));
+
+            Workspace onDeliveryVcs = pushWorkspace("on-delivery-vcs", deliveryVcs);
+            Workspace onOtherOrg = pushWorkspace("on-other-org", sameAppOtherOrg);
+            Workspace onOtherSecret = pushWorkspace("on-other-secret", sameAppOtherSecret);
+            Workspace onOtherHost = pushWorkspace("on-other-host", sameAppOtherHost);
+            Workspace onPlainGitHub = pushWorkspace("on-plain-github", plainGitHub);
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            when(gitHubWebhookService.parseGitHubPayload(eq(PUSH_PAYLOAD), any())).thenReturn(pushResult());
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(onDeliveryVcs, onOtherOrg, onOtherSecret, onOtherHost, onPlainGitHub));
+            stubEvents(onDeliveryVcs);
+            stubEvents(onOtherOrg);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processClaimedDelivery(rw, deliveryVcs, PUSH_PAYLOAD, Map.of("x-github-event", "push"));
+
+            ArgumentCaptor<Job> jobs = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository, times(2)).save(jobs.capture());
+            assertThat(jobs.getAllValues()).extracting(Job::getWorkspace)
+                    .containsExactlyInAnyOrder(onDeliveryVcs, onOtherOrg);
+        }
+
+        @Test
+        void appDeliveryPrefetchesPrFilesWithTheDeliveryVcsFromTheTrustedApiUrl() {
+            realPullRequestApiUrl();
+            Vcs deliveryVcs = appVcs("123", "app-secret");
+            deliveryVcs.setApiUrl("https://GHE.example.com/api/v3/");
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            WebhookResult prResult = pushResult();
+            prResult.setEvent("issue_comment");
+            prResult.setPrNumber(7);
+            prResult.setPrFilesUrl("https://evil.example.com/repos/owner/repo/pulls/7/files");
+            prResult.setPrDetailsUrl("https://evil.example.com/repos/owner/repo/pulls/7");
+            when(gitHubWebhookService.parseGitHubPayload(eq("{}"), any())).thenReturn(prResult);
+            when(vcsRepository.findByClientId("123")).thenReturn(List.of(deliveryVcs));
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL)).thenReturn(List.of());
+
+            subject.processClaimedDelivery(rw, deliveryVcs, "{}", Map.of("x-github-event", "issue_comment"));
+
+            verify(gitHubWebhookService).fetchPrFileChanges(same(deliveryVcs), eq(REPO_URL),
+                    eq("https://ghe.example.com/api/v3/repos/owner/repo/pulls/7/files"));
+            assertThat(prResult.getPrDetailsUrl()).isEqualTo("https://ghe.example.com/api/v3/repos/owner/repo/pulls/7");
+            verify(gitHubWebhookService, never()).fetchPrFileChanges(any(), any(), contains("evil.example.com"));
+        }
+
+        @Test
+        void appDeliveryMakesNoPrCallForAnEncodedDotDotRepositoryUrl() {
+            realPullRequestApiUrl();
+            String repoUrl = "https://github.com/owner/%2e%2e";
+            Vcs deliveryVcs = appVcs("123", "app-secret");
+            RepoWebhook rw = repoWebhookWith(repoUrl, "repo-secret");
+            Workspace workspace = pushWorkspace("app-mode", deliveryVcs);
+            WebhookResult prResult = pushResult();
+            prResult.setEvent("pull_request");
+            prResult.setPrNumber(7);
+            prResult.setFileChanges(List.of());
+            prResult.setPrFilesUrl("https://evil.example.com/repos/owner/repo/pulls/7/files");
+            WebhookResult commentResult = pushResult();
+            commentResult.setEvent("issue_comment");
+            commentResult.setPrComment(true);
+            commentResult.setCommit(null);
+            commentResult.setPrNumber(7);
+            commentResult.setPrFilesUrl("https://evil.example.com/repos/owner/repo/pulls/7/files");
+            commentResult.setPrDetailsUrl("https://evil.example.com/repos/owner/repo/pulls/7");
+            when(gitHubWebhookService.parseGitHubPayload(eq("{}"), any())).thenReturn(prResult, commentResult);
+            when(vcsRepository.findByClientId("123")).thenReturn(List.of(deliveryVcs));
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(workspace));
+
+            subject.processClaimedDelivery(rw, deliveryVcs, "{}", Map.of("x-github-event", "pull_request"));
+            subject.processClaimedDelivery(rw, deliveryVcs, "{}", Map.of("x-github-event", "issue_comment"));
+
+            assertThat(prResult.getPrFilesUrl()).isNull();
+            verify(gitHubWebhookService, never()).fetchPrFileChanges(any(), any(), any());
+            verify(gitHubWebhookService, never()).resolvePrDetails(any(), any(), any(), any());
+            verify(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repoUrl);
+            verifyNoInteractions(prCommentService, jobRepository);
+        }
+
+        @Test
+        void appDeliveryFanOutSkipsRowsWithABlankSecretAndNeedsAClientId() {
+            Vcs deliveryVcs = appVcs(null, "app-secret");
+            Vcs blankSecret = appVcs("123", " ");
+            Workspace onDeliveryVcs = pushWorkspace("on-delivery-vcs", deliveryVcs);
+            Workspace onBlankSecret = pushWorkspace("on-blank-secret", blankSecret);
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            when(gitHubWebhookService.parseGitHubPayload(eq(PUSH_PAYLOAD), any())).thenReturn(pushResult());
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(onDeliveryVcs, onBlankSecret));
+            stubEvents(onDeliveryVcs);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processClaimedDelivery(rw, deliveryVcs, PUSH_PAYLOAD, Map.of("x-github-event", "push"));
+
+            ArgumentCaptor<Job> jobs = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobs.capture());
+            assertThat(jobs.getValue().getWorkspace()).isSameAs(onDeliveryVcs);
+            verify(vcsRepository, never()).findByClientId(any());
+        }
+
+        @Test
+        void repoHookDeliverySkipsAppModeWorkspaces() {
+            Workspace appMode = pushWorkspace("app-mode", appVcs("123", "app-secret"));
+            Workspace repoHook = pushWorkspace("repo-hook", new Vcs());
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            when(gitHubWebhookService.parseGitHubPayload(eq(PUSH_PAYLOAD), any())).thenReturn(pushResult());
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(appMode, repoHook));
+            stubEvents(repoHook);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            subject.processClaimedDelivery(rw, null, PUSH_PAYLOAD, Map.of("x-github-event", "push"));
+
+            ArgumentCaptor<Job> jobs = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository).save(jobs.capture());
+            assertThat(jobs.getValue().getWorkspace()).isSameAs(repoHook);
+            verify(vcsRepository, never()).findByClientId(any());
+        }
+
+        @Test
+        void sharedSyncDeletesRemoteHookWhenAllWorkspacesAreAppModeButKeepsTheRow() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setRemoteHookId("777");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(pushWorkspace("app-mode", appVcs("123", "app-secret"))));
+
+            when(gitHubWebhookService.deleteRepoWebhook(rw)).thenReturn(true);
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            verify(gitHubWebhookService).deleteRepoWebhook(rw);
+            verify(gitHubWebhookService, never()).createOrUpdateRepoWebhook(any(), any(), anyBoolean());
+            assertThat(rw.getRemoteHookId()).isNull();
+            verify(repoWebhookRepository).save(rw);
+            verify(repoWebhookRepository, never()).delete(any());
+        }
+
+        @Test
+        void sharedSyncForgetsRemoteHookWhenItIsAlreadyGone() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setRemoteHookId("777");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(pushWorkspace("app-mode", appVcs("123", "app-secret"))));
+            doThrow(new HttpClientErrorException(HttpStatus.NOT_FOUND)).when(gitHubWebhookService).deleteRepoWebhook(rw);
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            assertThat(rw.getRemoteHookId()).isNull();
+            verify(repoWebhookRepository).save(rw);
+        }
+
+        @Test
+        void sharedSyncKeepsRemoteHookWithoutFailingWhenDeleteIsForbidden() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setRemoteHookId("777");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(pushWorkspace("app-mode", appVcs("123", "app-secret"))));
+            doThrow(new HttpClientErrorException(HttpStatus.FORBIDDEN)).when(gitHubWebhookService).deleteRepoWebhook(rw);
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            assertThat(rw.getRemoteHookId()).isEqualTo("777");
+            verify(repoWebhookRepository, never()).save(any());
+        }
+
+        @Test
+        void sharedSyncKeepsRemoteHookAndFailsWhenTheDeleteCallCannotBeMade() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setRemoteHookId("777");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(pushWorkspace("app-mode", appVcs("123", "app-secret"))));
+            when(gitHubWebhookService.deleteRepoWebhook(rw)).thenReturn(false);
+
+            assertThatThrownBy(() -> subject.createOrUpdateSharedWebhook(rw))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(rw.getRemoteHookId()).isEqualTo("777");
+            verify(repoWebhookRepository, never()).save(any());
+        }
+
+        @Test
+        void sharedSyncKeepsRemoteHookAndRethrowsOnOtherDeleteErrors() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setRemoteHookId("777");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(pushWorkspace("app-mode", appVcs("123", "app-secret"))));
+            doThrow(new HttpClientErrorException(HttpStatus.UNAUTHORIZED))
+                    .when(gitHubWebhookService).deleteRepoWebhook(rw);
+
+            assertThatThrownBy(() -> subject.createOrUpdateSharedWebhook(rw))
+                    .isInstanceOf(HttpClientErrorException.class);
+
+            assertThat(rw.getRemoteHookId()).isEqualTo("777");
+            verify(repoWebhookRepository, never()).save(any());
+        }
+
+        @Test
+        void sharedSyncReseedsARowSeededByAnAppModeVcsWithARepoHookWorkspaceVcs() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            rw.setVcs(appVcs("123", "app-secret"));
+            Vcs repoHookVcs = new Vcs();
+            repoHookVcs.setVcsType(VcsType.GITHUB);
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL)).thenReturn(List.of(
+                    pushWorkspace("app-mode", rw.getVcs()), pushWorkspace("repo-hook", repoHookVcs)));
+            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean())).thenAnswer(inv -> {
+                assertThat(((RepoWebhook) inv.getArgument(0)).getVcs()).isSameAs(repoHookVcs);
+                return "1";
+            });
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            assertThat(rw.getVcs()).isSameAs(repoHookVcs);
+            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean());
+            verify(repoWebhookRepository).save(rw);
+        }
+
+        @Test
+        void sharedSyncAggregatesOnlyRepoHookWorkspaces() {
+            RepoWebhook rw = repoWebhookWith(REPO_URL, "repo-secret");
+            Workspace appMode = pushWorkspace("app-mode", appVcs("123", "app-secret"));
+            appMode.getWebhook().getEvents().get(0).setEvent(WebhookEventType.RELEASE);
+            Workspace repoHook = pushWorkspace("repo-hook", new Vcs());
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(REPO_URL))
+                    .thenReturn(List.of(appMode, repoHook));
+            when(gitHubWebhookService.createOrUpdateRepoWebhook(eq(rw), any(), anyBoolean())).thenReturn("1");
+
+            subject.createOrUpdateSharedWebhook(rw);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<WebhookEventType>> captor = ArgumentCaptor.forClass(Set.class);
+            verify(gitHubWebhookService).createOrUpdateRepoWebhook(eq(rw), captor.capture(), eq(false));
+            assertThat(captor.getValue()).containsExactly(WebhookEventType.PUSH);
+            verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
         }
     }
 }

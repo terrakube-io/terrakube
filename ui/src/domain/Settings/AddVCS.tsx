@@ -5,7 +5,21 @@ import {
   InfoCircleOutlined,
   QuestionCircleOutlined,
 } from "@ant-design/icons";
-import { Button, Col, Descriptions, Dropdown, Flex, Form, Input, Row, Space, Steps, Typography, message } from "antd";
+import {
+  Button,
+  Col,
+  Descriptions,
+  Dropdown,
+  Flex,
+  Form,
+  Input,
+  Row,
+  Space,
+  Steps,
+  Switch,
+  Typography,
+  message,
+} from "antd";
 import TextArea from "antd/es/input/TextArea";
 import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -76,6 +90,8 @@ type CreateVcsForm = {
   apiUrl: string;
   redirectUrl: string;
   status: string;
+  appWebhookEnabled?: boolean;
+  webhookSecret?: string;
 };
 
 export const AddVCS = ({ setMode, loadVCS }: Props) => {
@@ -89,6 +105,9 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       : VcsConnectionType.OAUTH
   );
   const [uuid] = useState(uuidv1());
+  const [form] = Form.useForm<CreateVcsForm>();
+  const appWebhookEnabled = Form.useWatch("appWebhookEnabled", form);
+  const showAppWebhook = connectionType === "STANDALONE" && !!appWebhookEnabled;
 
   const validatePrivateKeyFormat = (_: any, value: string) => {
     if (!value) {
@@ -543,7 +562,15 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                   copyable: true,
                 },
                 { label: "Authorization callback URL", value: getCallBackUrl(), copyable: true },
-                { label: "Webhook", value: "Untick Active" },
+                {
+                  label: "Webhook",
+                  value: showAppWebhook
+                    ? "Untick Active for now. After creating this VCS, open its edit page, copy the webhook URL and the same secret into the App's webhook settings, and tick Active."
+                    : "Untick Active",
+                },
+                ...(showAppWebhook
+                  ? [{ label: "Subscribe to events", value: "Push, Pull request, Issue comment, Release" }]
+                  : []),
                 {
                   label: "Repository permissions",
                   value: (
@@ -555,7 +582,14 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                         Pull requests: Read and write (only if webhook is used on VCS workflow workspaces; write is
                         required to post plan/apply comments back on pull requests when PR Workflow is enabled)
                       </li>
-                      <li>Webhooks: Read and write (only if webhook is used on VCS workflow workspaces)</li>
+                      {showAppWebhook ? (
+                        <>
+                          <li>Issues: Read-only (needed for Issue comment events)</li>
+                          <li>Webhooks: Read and write is only needed if you later turn this off.</li>
+                        </>
+                      ) : (
+                        <li>Webhooks: Read and write (only if webhook is used on VCS workflow workspaces)</li>
+                      )}
                     </ul>
                   ),
                 },
@@ -640,6 +674,10 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
           clientId: values.clientId,
           clientSecret: getVcsType(vcsType) != "AZURE_SP_MI" ? values.clientSecret : "12345",
           privateKey: values.privateKey,
+          ...(connectionType === "STANDALONE" && {
+            appWebhookEnabled: !!values.appWebhookEnabled,
+            webhookSecret: values.appWebhookEnabled ? values.webhookSecret : undefined,
+          }),
           callback: uuid,
           endpoint: values.endpoint,
           apiUrl: values.apiUrl,
@@ -750,6 +788,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       )}
       {current == 1 && (
         <Form
+          form={form}
           onFinish={onFinish}
           validateMessages={validateMessages}
           name="create-vcs"
@@ -865,6 +904,22 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
                   >
                     <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
                   </Form.Item>
+                )}
+                {connectionType === "STANDALONE" && (
+                  <>
+                    <Form.Item
+                      name="appWebhookEnabled"
+                      label="Receive events via the GitHub App webhook"
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    {showAppWebhook && (
+                      <Form.Item name="webhookSecret" label="Webhook secret" rules={[{ required: true }]}>
+                        <Input.Password />
+                      </Form.Item>
+                    )}
+                  </>
                 )}
               </GuideStep>
             )}

@@ -57,7 +57,8 @@ public class RepoWebhookDispatchService {
         String lastError = null;
         try {
             Map<String, String> headers = deserializeHeaders(claimed.headers());
-            repoWebhookService.processClaimedDelivery(claimed.repoWebhook(), claimed.payload(), headers);
+            repoWebhookService.processClaimedDelivery(claimed.repoWebhook(), claimed.vcs(), claimed.payload(),
+                    headers);
             newStatus = RepoWebhookDeliveryStatus.PROCESSED;
         } catch (Exception e) {
             // Anything that reaches here failed BEFORE (or while establishing) the per-workspace

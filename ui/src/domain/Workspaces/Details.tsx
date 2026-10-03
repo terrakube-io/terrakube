@@ -159,6 +159,7 @@ export const WorkspaceDetails = ({
   const [agent, setAgent] = useState("...");
   const [orgTemplates, setOrgTemplates] = useState([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>(VcsType.UNKNOWN);
+  const [vcsAppWebhook, setVcsAppWebhook] = useState(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [outputs, setOutputs] = useState<StateOutputVariableWithName[]>([]);
   const [currentStateId, setCurrentStateId] = useState("");
@@ -447,6 +448,16 @@ export const WorkspaceDetails = ({
             if (_loadPermissionSet) loadPermissionSet();
 
             setWorkspace(response.data.data);
+            setVcsAppWebhook(
+              // Mirrors the server's App webhook mode; the secret is not readable here, so it is not checked.
+              !!response.data.included?.some(
+                (i: any) =>
+                  i.type === "vcs" &&
+                  i.attributes.vcsType === "GITHUB" &&
+                  i.attributes.connectionType === "STANDALONE" &&
+                  i.attributes.appWebhookEnabled === true
+              )
+            );
 
             if (response.data.included) {
               await setupWorkspaceIncludes(
@@ -757,6 +768,7 @@ export const WorkspaceDetails = ({
             <WorkspaceSettings
               workspace={workspace}
               vcsProvider={vcsProvider}
+              vcsAppWebhook={vcsAppWebhook}
               orgTemplates={orgTemplates}
               manageWorkspace={manageWorkspace}
               planJob={planJob}
