@@ -15,6 +15,7 @@ public class Flow {
     private String team;
     private String name;
     private boolean ignoreError = false;
+    private boolean requireSavedPlan = false;
     private String error;
     private int step;
     List<Command> commands;

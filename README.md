@@ -60,6 +60,8 @@ The key features of Terrakube are:
 ### Documentation
 To learn more about Terrakube [go to the complete documentation.](https://docs.terrakube.io/) 
 
+- [Require a saved plan in an apply template](docs/templates/require-saved-plan.md)
+
 ### Contributing 
 Terrakube welcomes any idea or feedback from the community. If you want to contribute to this project, please read our [Contribution Guide](CONTRIBUTING.md) for more details.
 
