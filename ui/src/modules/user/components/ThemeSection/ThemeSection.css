@@ -1,33 +1,161 @@
 .theme-section {
+  max-width: 640px;
   padding: 0;
 }
 
-.color-option {
+.theme-group {
+  margin: 0 0 28px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.theme-legend {
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tk-text-primary);
+}
+
+.theme-tiles {
+  display: grid;
+  /* Two columns when there is room for them, one otherwise; follows the content width, not the viewport. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* The whole tile is the hit area: the native radio covers it, invisible but focusable. */
+.theme-tile {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    background-color 150ms ease-out;
 }
 
-.color-box {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  display: inline-block;
+.theme-tile input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.theme-tile:hover {
+  border-color: var(--tk-text-tertiary);
+}
+
+.theme-tile[data-checked="true"] {
+  border-color: var(--tk-accent);
+  box-shadow: inset 0 0 0 1px var(--tk-accent);
+  background: var(--tk-accent-tint);
+}
+
+.theme-tile:has(input:focus-visible) {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.theme-tile-preview {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.theme-swatch {
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
+  border-radius: 6px;
 }
 
-/* Style for the selected item in the dropdown */
-.ant-select-selection-item .color-option {
-  padding: 0;
+/* Scheme tiles: swatch on the left spanning the title and note rows. */
+.theme-tile:not(.theme-tile-preview) {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
 }
 
-/* Style for the dropdown items */
-.ant-select-item-option-content .color-option {
-  padding: 0;
+.theme-tile:not(.theme-tile-preview) .theme-swatch {
+  grid-row: span 2;
 }
 
-[data-theme="dark"] .color-box {
-  border-color: rgba(255, 255, 255, 0.12);
+.theme-tile-title {
+  font-weight: 600;
+  color: var(--tk-text-primary);
+}
+
+.theme-tile-note {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--tk-text-secondary);
+}
+
+/* Miniature app: graphite sidebar plus a card, drawn in the mode's own colors. */
+.theme-preview {
+  display: flex;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--tk-border-primary);
+}
+
+.theme-preview-side {
+  width: 22%;
+  padding: 10% 6%;
+  background: #161b22;
+}
+
+.theme-preview-nav {
+  display: block;
+  height: 6px;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+.theme-preview-main {
+  flex: 1;
+  padding: 8%;
+}
+
+.theme-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 10%;
+  border: 1px solid;
+  border-radius: 4px;
+}
+
+.theme-preview-line {
+  display: block;
+  height: 5px;
+  width: 70%;
+  border-radius: 2px;
+  opacity: 0.55;
+}
+
+.theme-preview-line-short {
+  width: 45%;
+  opacity: 0.3;
+}
+
+.theme-preview-button {
+  display: block;
+  width: 38%;
+  height: 9px;
+  margin-top: auto;
+  border-radius: 3px;
 }

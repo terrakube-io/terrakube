@@ -1,10 +1,35 @@
 .create-pat-modal {
-  .ant-modal-content {
+  /* Header and footer as full-width bands. */
+  .ant-modal-container {
+    padding: 0;
+    overflow: hidden;
     border-radius: 8px;
   }
 
   .ant-modal-header {
-    margin-bottom: 20px;
+    margin-bottom: 0;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--tk-border-secondary);
+  }
+
+  .ant-modal-body {
+    padding: 24px 24px 4px;
+  }
+
+  .ant-modal-footer {
+    margin-top: 0;
+    padding: 16px 24px;
+    border-top: 1px solid var(--tk-border-secondary);
+    background: var(--tk-fill-secondary);
+  }
+
+  .field-hint {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .expiry-select {
+    width: 240px;
   }
 
   .required-badge {
@@ -14,13 +39,6 @@
     color: #666;
     font-size: 12px;
     border-radius: 4px;
-  }
-
-  .expiry-text {
-    display: block;
-    margin-top: -10px;
-    margin-bottom: 20px;
-    font-size: 13px;
   }
 
   .token-display {
@@ -78,4 +96,8 @@
   background: #21262d;
   border-color: #30363d;
   color: #8b949e;
+}
+
+[data-theme="dark"] .create-pat-modal .ant-modal-footer {
+  background: var(--tk-bg-container);
 }
