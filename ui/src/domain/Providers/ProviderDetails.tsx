@@ -1,23 +1,32 @@
-import { CopyOutlined, DeleteOutlined, DownOutlined, LinkOutlined, SettingOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Divider, Dropdown, message, Popconfirm, Row, Space, Typography } from "antd";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconContext } from "react-icons";
-import { RiFolderHistoryLine } from "react-icons/ri";
+import {
+  CloudServerOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  ExportOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
+import { Button, Dropdown, message, Select, Tooltip, Typography } from "antd";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { copyValue } from "@/components/settings/IdField/IdField";
 import { getErrorMessage } from "@/config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import VersionStatusModal, {
   recommendedVersion,
   VersionStatus,
   VersionStatusAlert,
-  versionMenuItems,
   versionStatusChangeMessage,
+  versionStatusSuffix,
 } from "@/components/modals/VersionStatusModal";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { parseProviderDescription, registryHostname } from "../Modules/registryHelpers";
 import { compareVersions } from "../Workspaces/Workspaces";
 import { getProvider, deleteProviderCascade, updateVersionStatus } from "./providerService";
 import { ProviderModel, ProviderVersionModel } from "./types";
+import "../Modules/Module.css";
 
 type Props = {
   organizationName: string;
@@ -41,7 +50,9 @@ export const ProviderDetails = ({ organizationName }: Props) => {
   const [versions, setVersions] = useState<VersionInfo[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [versionStatusOpen, setVersionStatusOpen] = useState(false);
   const { permissions } = useOrgPermissions();
 
@@ -51,6 +62,7 @@ export const ProviderDetails = ({ organizationName }: Props) => {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
 
     setLoading(true);
+    setError(undefined);
     getProvider(orgid, providerid)
       .then((response) => {
         setProvider(response.data);
@@ -73,51 +85,37 @@ export const ProviderDetails = ({ organizationName }: Props) => {
       })
       .catch((error) => {
         console.error("Error loading provider:", error);
-        message.error("Failed to load provider details");
+        setError("Failed to load provider details: " + getErrorMessage(error));
       })
       .finally(() => setLoading(false));
   }, [orgid, providerid]);
 
-  // Derive provider short name and namespace
   const providerName = provider?.attributes.name || "";
   const namespace = provider?.attributes.registryNamespace || "";
-  const shortName = providerName;
-
-  // Extract source URL from description (stored as "Source: https://...")
-  const sourceUrl = useMemo(() => {
-    const desc = provider?.attributes.description || "";
-    const match = desc.match(/https?:\/\/[^\s]+/);
-    return match ? match[0] : "";
-  }, [provider]);
-
-  // Derive short repo name for display (e.g., "goharbor/terraform-provider-harbor")
-  const sourceRepoName = useMemo(() => {
-    if (!sourceUrl) return "";
-    try {
-      const url = new URL(sourceUrl);
-      return url.pathname.replace(/^\//, "").replace(/\.git$/, "");
-    } catch {
-      return sourceUrl;
-    }
-  }, [sourceUrl]);
+  const { text: description, source } = parseProviderDescription(provider?.attributes.description);
 
   const handleDelete = useCallback(() => {
     if (!orgid || !providerid) return;
     setDeleting(true);
     deleteProviderCascade(orgid, providerid)
       .then(() => {
-        message.success("Provider deleted successfully");
-        navigate(`/organizations/${orgid}/registry`);
+        message.success(`Provider ${providerName} deleted`);
+        navigate(`/organizations/${orgid}/registry?tab=providers`);
       })
       .catch((error) => {
         console.error("Error deleting provider:", error);
         message.error("Failed to delete provider: " + (error?.message || "Unknown error"));
       })
       .finally(() => setDeleting(false));
-  }, [orgid, providerid, navigate]);
+  }, [orgid, providerid, providerName, navigate]);
 
   const selected = versions.find((v) => v.versionNumber === selectedVersion);
   const upgradeTo = recommendedVersion(versions)?.versionNumber;
+  // Removed versions go last, as in the version menus elsewhere.
+  const versionOptions = [
+    ...versions.filter((v) => v.status !== "removed"),
+    ...versions.filter((v) => v.status === "removed"),
+  ].map((v) => ({ value: v.versionNumber, label: v.versionNumber + versionStatusSuffix(v) }));
 
   const saveVersionStatus = async (status: Required<VersionStatus>) => {
     if (!orgid || !providerid || !selected) return;
@@ -131,239 +129,217 @@ export const ProviderDetails = ({ organizationName }: Props) => {
     }
   };
 
-  const registryHostname = useMemo(() => {
-    try {
-      return new URL(window._env_.REACT_APP_REGISTRY_URI).hostname;
-    } catch {
-      return "registry.example.com";
-    }
-  }, []);
-
-  const terraformSnippet = `terraform {
+  const address = `${registryHostname()}/${organizationName.toLowerCase()}/${providerName}`;
+  const snippet = `terraform {
   required_providers {
-    ${shortName} = {
-      source  = "${registryHostname}/${organizationName.toLowerCase()}/${providerName}"${selectedVersion ? `\n      version = "${selectedVersion}"` : ""}
+    ${providerName} = {
+      source  = "${address}"${selectedVersion ? `\n      version = "${selectedVersion}"` : ""}
     }
   }
 }`;
 
-  const handleCopySnippet = () => {
-    navigator.clipboard.writeText(terraformSnippet).then(() => {
-      message.success("Copied to clipboard");
-    });
-  };
+  const copy = (text: string, what: string) =>
+    copyValue(text).then(
+      () => message.success(`${what} copied`),
+      () => message.error(`Could not copy the ${what.toLowerCase()}`)
+    );
 
   return (
     <PageWrapper
-      title={shortName || "Provider"}
-      subTitle={
-        provider?.attributes.description
-          ?.replace(/https?:\/\/[^\s]+/g, "")
-          .replace(/Source:?\s*/i, "")
-          .trim() || undefined
-      }
+      title={providerName || "Provider"}
+      showTitle={false}
       loading={loading}
-      loadingText="Loading Provider..."
+      loadingText="Loading provider..."
+      error={error}
       breadcrumbs={[
         { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },
         { label: "Providers", path: `/organizations/${orgid}/registry?tab=providers` },
-        { label: shortName || "...", path: `/organizations/${orgid}/registry/providers/${providerid}` },
+        { label: providerName || "...", path: `/organizations/${orgid}/registry/providers/${providerid}` },
       ]}
       width="reading"
     >
       {provider && (
-        <div>
-          {/* Metadata row */}
-          <Space size="large" style={{ marginTop: 12, marginBottom: 24 }} wrap>
-            {namespace && (
-              <Typography.Text type="secondary">
-                By <strong>{namespace}</strong>
-              </Typography.Text>
-            )}
-            {selectedVersion && (
-              <Space size={4}>
-                <IconContext.Provider value={{ size: "1.1em" }}>
-                  <RiFolderHistoryLine />
-                </IconContext.Provider>
-                <Typography.Text type="secondary">Version </Typography.Text>
-                <Dropdown
-                  menu={{
-                    items: versionMenuItems(versions, (v) => v.versionNumber),
-                    onClick: ({ key }) => setSelectedVersion(key),
-                    selectedKeys: [selectedVersion],
-                  }}
-                  trigger={["click"]}
-                >
-                  <Typography.Link style={{ fontWeight: 600 }}>
-                    {selectedVersion} <DownOutlined style={{ fontSize: 10 }} />
-                  </Typography.Link>
-                </Dropdown>
-              </Space>
-            )}
-            {sourceUrl && (
-              <Space size={4}>
-                <LinkOutlined />
-                <Typography.Text type="secondary">
-                  Source{" "}
-                  <Typography.Link href={sourceUrl} target="_blank">
-                    {sourceRepoName} <LinkOutlined />
-                  </Typography.Link>
-                </Typography.Text>
-              </Space>
-            )}
-          </Space>
-
-          {selected && <VersionStatusAlert version={selected.versionNumber} status={selected} upgradeTo={upgradeTo} />}
-
-          {/* Overview content */}
-          <Row gutter={32} style={{ marginTop: 16 }}>
-            <Col span={16}>
-              <Typography.Title level={4}>Provider details</Typography.Title>
-              <Typography.Paragraph type="secondary">
-                Select a version from the metadata above and copy the configuration from the sidebar.
-              </Typography.Paragraph>
-            </Col>
-            <Col span={8}>
-              <Card
-                style={{ borderRadius: 12, border: "1px solid #e8e8e8" }}
-                styles={{ body: { padding: "20px 24px" } }}
+        <div className="registry-detail">
+          <header className="registry-detail-header">
+            <span className="registry-detail-logo" aria-hidden="true">
+              <CloudServerOutlined />
+            </span>
+            <div className="registry-detail-title">
+              <Typography.Title level={2}>{providerName}</Typography.Title>
+              <span className="registry-detail-address">
+                <code>{address}</code>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  aria-label="Copy provider address"
+                  onClick={() => copy(address, "Provider address")}
+                />
+              </span>
+            </div>
+            <div className="registry-detail-actions">
+              {versions.length > 0 && (
+                <Select
+                  aria-label="Version"
+                  className="registry-detail-version"
+                  value={selectedVersion}
+                  onChange={setSelectedVersion}
+                  options={versionOptions}
+                  showSearch
+                />
+              )}
+              <Dropdown
+                trigger={["click"]}
+                menu={{
+                  items: [
+                    ...(permissions.manageProvider && selected
+                      ? [
+                          {
+                            key: "versionStatus",
+                            label: `Change status of version ${selectedVersion}…`,
+                            onClick: () => setVersionStatusOpen(true),
+                          },
+                          { type: "divider" as const },
+                        ]
+                      : []),
+                    {
+                      key: "delete",
+                      danger: true,
+                      icon: <DeleteOutlined />,
+                      disabled: !permissions.manageProvider,
+                      label: permissions.manageProvider ? (
+                        "Delete provider"
+                      ) : (
+                        <Tooltip
+                          title="You need the Manage providers permission to delete this provider."
+                          placement="left"
+                        >
+                          <span>Delete provider</span>
+                        </Tooltip>
+                      ),
+                      onClick: () => setDeleteOpen(true),
+                    },
+                  ],
+                }}
               >
-                {/* Manage Provider dropdown */}
-                <Dropdown
-                  menu={{
-                    items: [
-                      ...(permissions.manageProvider && selected
-                        ? [
-                            {
-                              key: "versionStatus",
-                              label: `Change status of version ${selectedVersion}…`,
-                              onClick: () => setVersionStatusOpen(true),
-                            },
-                          ]
-                        : []),
-                      {
-                        key: "delete",
-                        label: (
-                          <Popconfirm
-                            okButtonProps={{ danger: true }}
-                            title={
-                              <p>
-                                Provider <b>{providerName}</b> and all its versions will be permanently deleted.
-                                <br />
-                                Are you sure?
-                              </p>
-                            }
-                            onConfirm={handleDelete}
-                            okText="Yes"
-                            cancelText="No"
-                            placement="left"
-                          >
-                            <Space>
-                              <DeleteOutlined style={{ color: "#ff4d4f" }} />
-                              <span style={{ color: "#ff4d4f" }}>Remove from organization</span>
-                            </Space>
-                          </Popconfirm>
-                        ),
-                      },
-                    ],
-                  }}
-                  trigger={["click"]}
-                >
-                  <Button style={{ width: "100%" }} icon={<SettingOutlined />} loading={deleting}>
-                    Manage Provider <DownOutlined />
-                  </Button>
-                </Dropdown>
+                <Button icon={<SettingOutlined />} loading={deleting}>
+                  Manage provider <DownOutlined />
+                </Button>
+              </Dropdown>
+            </div>
+          </header>
 
-                <Divider />
+          {description && (
+            <Typography.Paragraph type="secondary" className="registry-detail-description">
+              {description}
+            </Typography.Paragraph>
+          )}
 
-                {/* Usage Instructions */}
-                <Typography.Title level={5} style={{ marginTop: 0 }}>
-                  Usage Instructions
+          {selected && (
+            <div className="registry-detail-alert">
+              <VersionStatusAlert version={selected.versionNumber} status={selected} upgradeTo={upgradeTo} />
+            </div>
+          )}
+
+          <div className="registry-detail-layout">
+            <div className="registry-detail-main">
+              <section className="registry-section" aria-labelledby="provider-usage">
+                <Typography.Title level={3} id="provider-usage">
+                  Usage
                 </Typography.Title>
-                <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                  Copy and paste into your Terraform configuration and run{" "}
-                  <Typography.Text code style={{ fontSize: 12 }}>
-                    terraform init
-                  </Typography.Text>
-                  .
-                </Typography.Text>
-
                 {selected?.status === "removed" ? (
-                  <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 13 }}>
+                  <Typography.Paragraph type="secondary">
                     Version {selected.versionNumber} is no longer served by the registry.
                     {upgradeTo ? ` Use version ${upgradeTo} instead.` : ""}
                   </Typography.Paragraph>
                 ) : (
                   <>
-                    {selected?.status === "deprecated" && (
-                      <Typography.Paragraph type="warning" style={{ marginTop: 12, marginBottom: 0, fontSize: 13 }}>
-                        Version {selected.versionNumber} is deprecated.
-                        {upgradeTo && upgradeTo !== selected.versionNumber ? ` Consider version ${upgradeTo}.` : ""}
-                      </Typography.Paragraph>
-                    )}
-                    <pre
-                      style={{
-                        background: "#f5f5f5",
-                        border: "1px solid #e8e8e8",
-                        borderRadius: 6,
-                        padding: 12,
-                        marginTop: 12,
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                        overflow: "auto",
-                        color: "#333",
-                      }}
-                    >
-                      {terraformSnippet}
-                    </pre>
-
-                    <Button icon={<CopyOutlined />} onClick={handleCopySnippet} style={{ marginTop: 8 }}>
+                    <Typography.Paragraph type="secondary">
+                      Add this block to your configuration and run <code className="registry-mono">terraform init</code>
+                      .
+                      {selected?.status === "deprecated" && upgradeTo && upgradeTo !== selected.versionNumber
+                        ? ` Version ${selected.versionNumber} is deprecated; consider version ${upgradeTo}.`
+                        : ""}
+                    </Typography.Paragraph>
+                    <pre className="registry-snippet">{snippet}</pre>
+                    <Button type="primary" icon={<CopyOutlined />} onClick={() => copy(snippet, "Configuration")}>
                       Copy configuration
                     </Button>
                   </>
                 )}
+              </section>
+            </div>
 
-                <Divider />
-
-                {/* Helpful links */}
-                <Typography.Text strong style={{ fontSize: 13 }}>
+            <aside className="registry-rail" aria-label="Provider details">
+              <ul className="registry-rail-facts">
+                {selected && (
+                  <li>
+                    <span className="registry-rail-label">Version</span>
+                    <code>{selected.versionNumber}</code>
+                  </li>
+                )}
+                {selected?.protocols && (
+                  <li>
+                    <span className="registry-rail-label">Protocols</span>
+                    <code>{selected.protocols}</code>
+                  </li>
+                )}
+                {namespace && (
+                  <li>
+                    <span className="registry-rail-label">Namespace</span>
+                    <span>{namespace}</span>
+                  </li>
+                )}
+                {source && (
+                  <li>
+                    <span className="registry-rail-label">Source</span>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer">
+                      {source.label}
+                    </a>
+                  </li>
+                )}
+                <li>
+                  <span className="registry-rail-label">Versions</span>
+                  <span>{versions.length}</span>
+                </li>
+              </ul>
+              <section className="registry-rail-section" aria-labelledby="provider-links">
+                <Typography.Title level={3} id="provider-links">
                   Helpful links
-                </Typography.Text>
-                <div style={{ marginTop: 8 }}>
-                  <Space orientation="vertical" size={4}>
-                    {namespace && shortName && (
-                      <Typography.Link
-                        href={`https://registry.terraform.io/providers/${namespace}/${shortName}/latest/docs`}
+                </Typography.Title>
+                <ul className="registry-rail-links">
+                  {namespace && providerName && (
+                    <li>
+                      <a
+                        href={`https://registry.terraform.io/providers/${namespace}/${providerName}/latest/docs`}
                         target="_blank"
-                        style={{ fontSize: 13 }}
+                        rel="noopener noreferrer"
                       >
-                        Provider Documentation <LinkOutlined />
-                      </Typography.Link>
-                    )}
-                    <Typography.Link
+                        Provider documentation <ExportOutlined aria-label="opens in a new tab" />
+                      </a>
+                    </li>
+                  )}
+                  <li>
+                    <a
                       href="https://www.terraform.io/docs/language/providers/configuration.html"
                       target="_blank"
-                      style={{ fontSize: 13 }}
+                      rel="noopener noreferrer"
                     >
-                      Using Providers <LinkOutlined />
-                    </Typography.Link>
-                  </Space>
-                </div>
-                {sourceUrl && (
-                  <div style={{ marginTop: 12 }}>
-                    <Typography.Link
-                      href={`${sourceUrl}/issues`}
-                      target="_blank"
-                      style={{ color: "#ff4d4f", fontSize: 13 }}
-                    >
-                      Report an issue <LinkOutlined />
-                    </Typography.Link>
-                  </div>
-                )}
-              </Card>
-            </Col>
-          </Row>
+                      Using providers <ExportOutlined aria-label="opens in a new tab" />
+                    </a>
+                  </li>
+                  {source && (
+                    <li>
+                      <a href={`${source.url}/issues`} target="_blank" rel="noopener noreferrer">
+                        Report an issue <ExportOutlined aria-label="opens in a new tab" />
+                      </a>
+                    </li>
+                  )}
+                </ul>
+              </section>
+            </aside>
+          </div>
         </div>
       )}
       {selected && (
@@ -376,6 +352,26 @@ export const ProviderDetails = ({ organizationName }: Props) => {
           onSave={saveVersionStatus}
         />
       )}
+      <DeleteConfirmationModal
+        open={deleteOpen}
+        title="Delete provider"
+        okText="Delete provider"
+        confirmValue={providerName}
+        message={
+          <>
+            This permanently deletes <strong>{providerName}</strong> and all {versions.length} of its versions from the{" "}
+            {organizationName} registry. Configurations that require <code>{address}</code> fail on their next init.
+            {provider?.attributes.imported
+              ? " You can add it again from the public registry."
+              : " This cannot be undone."}
+          </>
+        }
+        onConfirm={() => {
+          setDeleteOpen(false);
+          handleDelete();
+        }}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </PageWrapper>
   );
 };

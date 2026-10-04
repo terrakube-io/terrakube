@@ -1,7 +1,6 @@
-import { DownloadOutlined } from "@ant-design/icons";
-import { Table, Typography } from "antd";
+import { Table } from "antd";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import formatVersion from "@/modules/utils/formatVersion";
+import { formatCount } from "@/modules/utils/formatCount";
 import { FlatModule } from "../../types";
 
 type Params = {
@@ -10,19 +9,11 @@ type Params = {
 
 type Props = {
   modules: FlatModule[];
-  searchFilter: string;
 };
 
-export default function ModuleTable({ modules, searchFilter }: Props) {
+export default function ModuleTable({ modules }: Props) {
   const { orgid } = useParams<Params>();
   const navigate = useNavigate();
-
-  const filteredModules = modules.filter(
-    (module) =>
-      searchFilter === "" ||
-      module.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      module.description?.toLowerCase().includes(searchFilter.toLowerCase())
-  );
 
   const columns = [
     {
@@ -31,14 +22,12 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       key: "name",
       sorter: (a: FlatModule, b: FlatModule) => a.name.localeCompare(b.name),
       render: (name: string, record: FlatModule) => (
-        <Link to={`/organizations/${orgid}/registry/${record.id}`} style={{ color: "inherit", display: "block" }}>
-          <Typography.Text strong>{name}</Typography.Text>
-          <div>
-            <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-              {record.description || "No description provided for this module"}
-            </Typography.Text>
-          </div>
-        </Link>
+        <>
+          <Link to={`/organizations/${orgid}/registry/${record.id}`} className="registry-table-name">
+            {name}
+          </Link>
+          {record.description && <span className="registry-table-description">{record.description}</span>}
+        </>
       ),
     },
     {
@@ -47,43 +36,40 @@ export default function ModuleTable({ modules, searchFilter }: Props) {
       key: "provider",
       width: 160,
       sorter: (a: FlatModule, b: FlatModule) => a.provider.localeCompare(b.provider),
+      render: (provider: string) => <code className="registry-mono">{provider}</code>,
     },
     {
       title: "Latest version",
       dataIndex: "latestVersion",
       key: "latestVersion",
       width: 140,
-      render: (version: string | undefined) => (version ? formatVersion(version) : "—"),
+      render: (version: string | undefined) => (version ? <code className="registry-mono">{version}</code> : "—"),
     },
     {
       title: "Downloads",
       dataIndex: "downloadQuantity",
       key: "downloadQuantity",
-      width: 140,
+      width: 150,
+      align: "right" as const,
       sorter: (a: FlatModule, b: FlatModule) => (a.downloadQuantity ?? 0) - (b.downloadQuantity ?? 0),
-      render: (count: number) => (
-        <span>
-          <DownloadOutlined style={{ marginRight: 6, color: "var(--ant-color-text-secondary)" }} />
-          {count ?? 0}
-        </span>
-      ),
+      render: (count: number) => formatCount(count ?? 0),
     },
   ];
 
   return (
     <Table
       rowKey="id"
-      dataSource={filteredModules}
+      dataSource={modules}
       columns={columns}
-      pagination={{ defaultPageSize: 10, showSizeChanger: true }}
+      tableLayout="fixed"
+      pagination={{ defaultPageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
+      rowClassName="registry-table-row"
       onRow={(record) => ({
         onClick: (event) => {
           if ((event.target as HTMLElement).closest("a")) return;
           navigate(`/organizations/${orgid}/registry/${record.id}`);
         },
-        style: { cursor: "pointer" },
       })}
-      locale={{ emptyText: "No modules match your search." }}
     />
   );
 }

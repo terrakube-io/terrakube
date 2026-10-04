@@ -33,6 +33,12 @@
   font-size: 28px;
 }
 
+.public-provider-card-logo img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
 .public-provider-card-body {
   display: flex;
   flex-direction: column;
@@ -70,5 +76,51 @@
 }
 
 .public-provider-card-imported .anticon {
-  color: #52c41a;
+  color: var(--ant-color-success);
+}
+
+.public-registry-search {
+  margin-top: 24px;
+}
+
+.public-registry-search > .ant-input-search {
+  margin-bottom: 24px;
+}
+
+.public-registry-item.ant-list-item {
+  padding: 6px 0;
+}
+
+/* Module results are not links: the Add button is the action. */
+.public-module-card:hover {
+  border-color: var(--tk-border-primary);
+}
+
+.public-module-card .public-provider-card-body {
+  flex: 1;
+}
+
+.public-module-card > .ant-btn {
+  flex-shrink: 0;
+}
+
+.public-module-card-logo {
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+  font-size: 20px;
+}
+
+.public-module-card-description {
+  color: var(--tk-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.public-provider-card-meta code {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }

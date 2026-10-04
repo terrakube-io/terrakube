@@ -1,26 +1,27 @@
-import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Select, Space, Steps, message } from "antd";
+import { Form, Input, Radio, Select, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { SiBitbucket, SiGit } from "react-icons/si";
-import { VscAzureDevops } from "react-icons/vsc";
-import { useNavigate, useParams } from "react-router-dom";
-import { LinkButton } from "@/components/navigation/LinkButton";
-import { ORGANIZATION_NAME } from "../../config/actionTypes";
+import { SiGit } from "react-icons/si";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import { SshKey, VcsModel, VcsType } from "../types";
+import { SshKey, VcsModel } from "../types";
 import { MODULE_SYSTEM_PATTERN } from "./moduleValidation";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import VcsLogo from "@/components/display/VcsLogo";
-import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import "../Settings/VCS.css";
+import "./Module.css";
+
 const validateMessages = {
-  required: "${label} is required!",
+  required: "${label} is required",
   types: {
-    url: "${label} is not a valid git url",
+    url: "${label} is not a valid Git URL",
   },
 };
 
-type CreateVcsForm = {
+type CreateModuleForm = {
+  connection: string;
   name: string;
   description: string;
   provider: string;
@@ -34,80 +35,44 @@ type Params = {
   orgid: string;
 };
 
+// Plain Git: no VCS connection; private repositories authenticate with an SSH key instead.
+const GIT = "git";
+
 export const CreateModule = () => {
   const { orgid } = useParams<Params>();
-  const [current, setCurrent] = useState(0);
-  const [step3Hidden, setStep3Hidden] = useState(true);
-  const [step2Hidden, setStep2Hidden] = useState(true);
+  const organizationName = useOrganizationName(orgid) ?? "";
+  const [form] = Form.useForm<CreateModuleForm>();
+  const connection = Form.useWatch("connection", form) ?? GIT;
   const [vcs, setVCS] = useState<VcsModel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const [vcsId, setVcsId] = useState("");
-  const [vcsButtonsVisible, setVCSButtonsVisible] = useState(true);
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
-  const [sshKeysVisible, setSSHKeysVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (orgid) {
-      loadSSHKeys();
-      loadVCSProviders();
-    }
-  }, []);
+    if (!orgid) return;
+    axiosInstance.get(`organization/${orgid}/ssh`).then((response) => setSSHKeys(response.data.data));
+    axiosInstance.get(`organization/${orgid}/vcs`).then((response) => setVCS(response.data.data));
+  }, [orgid]);
 
-  const handleGitClick = (id: string) => {
-    if (id === "git") {
-      setSSHKeysVisible(true);
-    } else {
-      setSSHKeysVisible(false);
-      setVcsId(id);
-    }
-    setCurrent(1);
-    setStep2Hidden(false);
+  // "terraform-aws-vpc.git" names the module "vpc" for the "aws" provider; fill in what is still empty.
+  const fillFromSource = () => {
+    const source: string | undefined = form.getFieldValue("source");
+    const providerValue = source?.match("terraform-(.*)-");
+    if (!source || !providerValue) return;
+    if (!form.getFieldValue("provider")) form.setFieldsValue({ provider: providerValue[1] });
+    const nameValue = source.match(providerValue[1] + "-(.*).git");
+    if (nameValue && !form.getFieldValue("name")) form.setFieldsValue({ name: nameValue[1] });
   };
 
-  const handleGitContinueClick = () => {
-    setCurrent(2);
-    setStep3Hidden(false);
-    setStep2Hidden(true);
-    const source = form.getFieldValue("source");
-
-    if (source != null) {
-      const providerValue = source.match("terraform-(.*)-");
-      if (providerValue != null && providerValue.length > 0) {
-        form.setFieldsValue({ provider: providerValue[1] });
-        const nameValue = source.match(providerValue[1] + "-(.*).git");
-        if (nameValue != null && nameValue.length > 0) {
-          form.setFieldsValue({ name: nameValue[1] });
-        }
-      }
-    }
-  };
-
-  const vcsLink = (vcsType: VcsType) => `/organizations/${orgid}/settings/vcs/new/${vcsType}`;
-
-  const handleDifferent = () => {
-    setVCSButtonsVisible(false);
-  };
-
-  const handleExisting = () => {
-    setVCSButtonsVisible(true);
-  };
-
-  const loadVCSProviders = () => {
-    axiosInstance.get(`organization/${orgid}/vcs`).then((response) => {
-      setVCS(response.data.data);
-      setLoading(false);
-    });
-  };
-
-  const loadSSHKeys = () => {
-    axiosInstance.get(`organization/${orgid}/ssh`).then((response) => {
-      setSSHKeys(response.data.data);
-    });
-  };
-
-  const onFinish = (values: CreateVcsForm) => {
-    let body: any = {
+  const onFinish = (values: CreateModuleForm) => {
+    const vcsId = values.connection !== GIT ? values.connection : "";
+    const sshKey = values.connection === GIT ? values.sshKey : undefined;
+    const relationships = vcsId
+      ? { vcs: { data: { type: "vcs", id: vcsId } } }
+      : sshKey
+        ? { ssh: { data: { type: "ssh", id: sshKey } } }
+        : undefined;
+    const body = {
       data: {
         type: "module",
         attributes: {
@@ -118,57 +83,11 @@ export const CreateModule = () => {
           folder: values.folder != null ? values.folder : null,
           tagPrefix: values.tagPrefix != null ? values.tagPrefix : null,
         },
+        ...(relationships && { relationships }),
       },
     };
 
-    if (vcsId !== "") {
-      body = {
-        data: {
-          type: "module",
-          attributes: {
-            name: values.name,
-            description: values.description,
-            provider: values.provider,
-            source: values.source,
-            folder: values.folder != null ? values.folder : null,
-            tagPrefix: values.tagPrefix != null ? values.tagPrefix : null,
-          },
-          relationships: {
-            vcs: {
-              data: {
-                type: "vcs",
-                id: vcsId,
-              },
-            },
-          },
-        },
-      };
-    }
-
-    if (values.sshKey) {
-      body = {
-        data: {
-          type: "module",
-          attributes: {
-            name: values.name,
-            description: values.description,
-            provider: values.provider,
-            source: values.source,
-            folder: values.folder != null ? values.folder : null,
-            tagPrefix: values.tagPrefix != null ? values.tagPrefix : null,
-          },
-          relationships: {
-            ssh: {
-              data: {
-                type: "ssh",
-                id: values.sshKey,
-              },
-            },
-          },
-        },
-      };
-    }
-
+    setSaving(true);
     axiosInstance
       .post(`organization/${orgid}/module`, body, {
         headers: {
@@ -186,214 +105,138 @@ export const CreateModule = () => {
         } else {
           message.error(getErrorMessage(error));
         }
-      });
+      })
+      .finally(() => setSaving(false));
   };
 
-  const [form] = Form.useForm<CreateVcsForm>();
-
-  const handleChange = (currentVal: number) => {
-    setCurrent(currentVal);
-    if (currentVal === 1) {
-      setStep2Hidden(false);
-      setStep3Hidden(true);
-    }
-
-    if (currentVal === 2) {
-      setStep3Hidden(false);
-      setStep2Hidden(true);
-    }
-  };
+  const selectedVcs = vcs.find((item) => item.id === connection);
 
   return (
     <PageWrapper
-      title="New Module"
-      subTitle={`This module will be created under the current organization, ${sessionStorage.getItem(ORGANIZATION_NAME)}.`}
+      title="Publish a module"
+      subTitle={`The module is added to the private registry of ${organizationName}.`}
       breadcrumbs={[
-        { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
+        { label: organizationName, path: "/" },
         { label: "Registry", path: `/organizations/${orgid}/registry` },
-        { label: "New" },
+        { label: "Publish module" },
       ]}
-      width="reading"
+      width="form"
     >
-      <Steps
-        direction="horizontal"
-        size="small"
-        current={current}
-        onChange={handleChange}
-        items={[{ title: "Connect to VCS" }, { title: "Choose a repository" }, { title: "Confirm selection" }]}
-      />
-
-      {current === 0 && (
-        <Space className="chooseType" orientation="vertical">
-          <h3>Connect to a version control provider</h3>
-          <div className="workflowDescription2 App-text">
-            Choose the version control provider that hosts your module source code.
-          </div>
-          {vcsButtonsVisible ? (
-            <div>
-              <Space orientation="horizontal">
-                <Button
-                  icon={<SiGit />}
-                  onClick={() => {
-                    handleGitClick("git");
-                  }}
-                  size="large"
-                >
-                  &nbsp;Git
-                </Button>
-                {loading ? (
-                  <LoadingFallback />
-                ) : (
-                  vcs.map(function (item) {
-                    return (
-                      <Button
-                        icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
-                        onClick={() => {
-                          handleGitClick(item.id);
-                        }}
-                        size="large"
-                        key={item.id}
-                      >
-                        &nbsp;{item.attributes.name}
-                      </Button>
-                    );
-                  })
-                )}
-              </Space>
-              <br />
-              <Button onClick={handleDifferent} className="link" type="link">
-                Connect to a different VCS
-              </Button>
-            </div>
-          ) : (
-            <div>
-              <Space orientation="horizontal">
-                <LinkButton to={vcsLink(VcsType.GITHUB)} icon={<GithubOutlined />} size="large">
-                  GitHub
-                </LinkButton>
-                <LinkButton to={vcsLink(VcsType.GITLAB)} icon={<GitlabOutlined />} size="large">
-                  GitLab
-                </LinkButton>
-                <LinkButton to={vcsLink(VcsType.BITBUCKET)} icon={<SiBitbucket />} size="large">
-                  Bitbucket
-                </LinkButton>
-                <LinkButton to={vcsLink(VcsType.AZURE_DEVOPS)} icon={<VscAzureDevops />} size="large">
-                  Azure DevOps
-                </LinkButton>
-              </Space>
-              <br />
-              <Button onClick={handleExisting} className="link" type="link">
-                Use an existing VCS connection
-              </Button>
-            </div>
-          )}
-        </Space>
-      )}
-
-      <Form form={form} name="create-module" layout="vertical" onFinish={onFinish} validateMessages={validateMessages}>
-        <Space hidden={step2Hidden} className="chooseType" orientation="vertical">
-          <h3>Choose a repository</h3>
-          <div className="workflowDescription2 App-text">
-            Choose the repository that hosts your module source code. The format of your repository name should be{" "}
-            <b>{"terraform-<PROVIDER>-<NAME>"}</b>.
-          </div>
+      <SettingsForm
+        form={form}
+        name="create-module"
+        onFinish={onFinish}
+        validateMessages={validateMessages}
+        initialValues={{ connection: GIT }}
+        saveLabel="Publish module"
+        saving={saving}
+      >
+        <Typography.Title level={2} className="registry-form-section">
+          Source
+        </Typography.Title>
+        <Form.Item
+          name="connection"
+          label="Connection"
+          extra={
+            <>
+              {selectedVcs
+                ? `Terrakube reads the repository through the ${selectedVcs.attributes.name} connection.`
+                : "Terrakube clones the repository directly. Private repositories need an SSH key."}{" "}
+              <Link to={`/organizations/${orgid}/settings/vcs/new`}>Connect a new VCS provider</Link>
+            </>
+          }
+        >
+          <Radio.Group className="vcs-provider-tiles">
+            <Radio value={GIT} className="vcs-provider-tile">
+              <span className="vcs-provider-tile-icon" aria-hidden="true">
+                <SiGit />
+              </span>
+              Git URL
+            </Radio>
+            {vcs.map((item) => (
+              <Radio key={item.id} value={item.id} className="vcs-provider-tile">
+                <span className="vcs-provider-tile-icon" aria-hidden="true">
+                  <VcsLogo type={item.attributes.vcsType} size={28} />
+                </span>
+                {item.attributes.name}
+              </Radio>
+            ))}
+          </Radio.Group>
+        </Form.Item>
+        {connection === GIT && (
           <Form.Item
-            name="source"
-            label="Git repo"
-            tooltip="e.g. https://github.com/Terrakube/terraform-sample-repository.git or git@github.com:AzBuilder/terraform-azurerm-webapp-sample.git"
-            extra=" Git repo must be a valid git url using either https or ssh protocol."
-            rules={[
-              {
-                required: true,
-                pattern: new RegExp("((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"),
-              },
-            ]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button onClick={handleGitContinueClick} type="primary">
-                Continue
-              </Button>
-            </div>
-          </Form.Item>
-        </Space>
-
-        <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
-          <h3>Confirm selection</h3>
-          <Form.Item
-            name="name"
-            label="Module Name"
-            rules={[
-              { required: true },
-              {
-                max: 32,
-                message: "Value should be less than 32 character",
-              },
-            ]}
-            extra="The name of your module generally names the abstraction that the module is intending to create."
-          >
-            <Input />
-          </Form.Item>
-
-          <Form.Item name="description" label="Module Description" rules={[{ required: true }]}>
-            <Input.TextArea placeholder="(description)" />
-          </Form.Item>
-          <Form.Item
-            name="provider"
-            tooltip="e.g. azurerm, aws, google"
-            label="Provider"
-            rules={[
-              { required: true },
-              {
-                pattern: MODULE_SYSTEM_PATTERN,
-                message: "Provider must contain only letters and digits (max 64 characters).",
-              },
-            ]}
-            extra="This is the OpenTofu/Terraform registry system — the last segment of the module address (letters and digits only, e.g. 'aws'). It is not derived from your repository name; for example use 'aws', not 'aws-ecs'."
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="tagPrefix"
-            label="Tag prefix for modules"
-            rules={[{ required: false }]}
-            extra="Leave the field empty unless you are using a monorepository configuration. Example vmlinux/"
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="folder"
-            label="Folder for the terraform module inside the repository"
-            rules={[{ required: false }]}
-            extra="Leave the field empty unless you are using a monorepository configuration"
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            hidden={!sshKeysVisible}
             name="sshKey"
-            label="SSH Key"
-            tooltip="Select an SSH Key that will be used to clone this repo."
-            extra="To use the SSH support in modules the source should be used like git@github.com:AzBuilder/terrakube-docker-compose.git"
-            rules={[{ required: false }]}
+            label="SSH key"
+            extra="Used to clone the repository. The repository URL must then use SSH, for example git@github.com:org/terraform-aws-vpc.git."
           >
-            <Select placeholder="select SSH Key" style={{ width: 250 }}>
-              {sshKeys.map(function (sshKey) {
-                return <Select.Option key={sshKey?.id}>{sshKey?.attributes?.name}</Select.Option>;
-              })}
-            </Select>
+            <Select
+              allowClear
+              placeholder="None, the repository is public"
+              options={sshKeys.map((key) => ({ value: key.id, label: key.attributes?.name }))}
+            />
           </Form.Item>
-          <Form.Item>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button type="primary" htmlType="submit">
-                Publish Module
-              </Button>
-            </div>
-          </Form.Item>
-        </Space>
-      </Form>
+        )}
+        <Form.Item
+          name="source"
+          label="Repository URL"
+          extra="An HTTPS or SSH Git URL. A repository named terraform-<provider>-<name> fills in the provider and name below."
+          rules={[
+            {
+              required: true,
+              pattern: new RegExp("((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?"),
+            },
+          ]}
+        >
+          <Input
+            className="registry-mono-input"
+            onBlur={fillFromSource}
+            placeholder="https://github.com/org/terraform-aws-vpc.git"
+          />
+        </Form.Item>
+
+        <Typography.Title level={2} className="registry-form-section">
+          Module
+        </Typography.Title>
+        <Form.Item
+          name="name"
+          label="Name"
+          rules={[{ required: true }, { max: 32, message: "Use at most 32 characters" }]}
+          extra="Usually what the module creates, for example vpc. It becomes part of the module address."
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item
+          name="provider"
+          label="Provider"
+          rules={[
+            { required: true },
+            {
+              pattern: MODULE_SYSTEM_PATTERN,
+              message: "Provider must contain only letters and digits (max 64 characters).",
+            },
+          ]}
+          extra="The last part of the module address, letters and digits only, for example aws (not aws-ecs). It is not taken from the repository name."
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+          <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+        </Form.Item>
+        <Form.Item
+          name="folder"
+          label="Folder (optional)"
+          extra="The module's folder inside the repository. Leave empty when the module is at the root."
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item
+          name="tagPrefix"
+          label="Tag prefix (optional)"
+          extra="Only tags that start with this prefix, for example vmlinux/, become versions. Leave empty unless the repository holds several modules."
+        >
+          <Input />
+        </Form.Item>
+      </SettingsForm>
     </PageWrapper>
   );
 };

@@ -1,8 +1,10 @@
 import { CheckCircleOutlined, CloudOutlined, CopyOutlined, ExportOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Modal, Select, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { LinkButton } from "@/components/navigation/LinkButton";
+import { copyValue } from "@/components/settings/IdField/IdField";
 import { relativeTime } from "@/modules/utils/dates";
 import { formatCount } from "@/modules/utils/formatCount";
 import { compareVersions } from "../Workspaces/Workspaces";
@@ -158,11 +160,12 @@ export const PublicProviderDetails = ({ organizationName }: Props) => {
               </Typography.Text>
             </div>
             {existingProviderId ? (
-              <Link to={`/organizations/${orgid}/registry/providers/${existingProviderId}`}>
-                <Button icon={<CheckCircleOutlined />} tabIndex={-1}>
-                  In your registry
-                </Button>
-              </Link>
+              <LinkButton
+                to={`/organizations/${orgid}/registry/providers/${existingProviderId}`}
+                icon={<CheckCircleOutlined />}
+              >
+                In your registry
+              </LinkButton>
             ) : (
               <Button
                 type="primary"
@@ -229,7 +232,12 @@ export const PublicProviderDetails = ({ organizationName }: Props) => {
             <pre className="public-provider-snippet">{snippet}</pre>
             <Button
               icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard.writeText(snippet).then(() => message.success("Copied to clipboard"))}
+              onClick={() =>
+                copyValue(snippet).then(
+                  () => message.success("Configuration copied"),
+                  () => message.error("Could not copy the configuration")
+                )
+              }
             >
               Copy configuration
             </Button>
