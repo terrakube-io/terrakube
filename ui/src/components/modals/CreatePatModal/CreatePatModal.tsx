@@ -1,6 +1,7 @@
 import { Modal, Space, Form, Input, Typography, Alert, Button, Flex, Select, Tag } from "antd";
 import { useState, useEffect } from "react";
 import { DateTime } from "luxon";
+import { formatOrdinalDate } from "@/modules/utils/dates";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ApiResponse } from "@/modules/api/types";
 import { CreateTokenForm, CreatedToken } from "@/modules/token/types";
@@ -19,6 +20,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
   const [tokenValue, setTokenValue] = useState<string>();
   const [expiryDate, setExpiryDate] = useState<string>("");
   const [selectedDays, setSelectedDays] = useState<number>(30);
+  const description = Form.useWatch("description", form);
 
   const { loading, execute, error } = useApiRequest({
     showErrorAsNotification: false,
@@ -37,8 +39,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
     if (selectedDays === 0) {
       setExpiryDate("Never expires");
     } else {
-      const date = DateTime.now().plus({ days: selectedDays });
-      setExpiryDate(`This token will expire on ${date.toFormat("MMMM d, yyyy")}`);
+      setExpiryDate(`This token will expire ${formatOrdinalDate(DateTime.now().plus({ days: selectedDays }))}`);
     }
   }, [selectedDays]);
 
@@ -63,17 +64,18 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
   return (
     <Modal
       className="create-pat-modal"
+      width={600}
       open={open}
       title="Creating a user token"
       destroyOnHidden
       onCancel={onCancel}
       footer={
         tokenValue === undefined ? (
-          <Flex justify="end" gap="small">
-            <Button onClick={onCancel}>Cancel</Button>
-            <Button type="primary" loading={loading} onClick={submitForm}>
+          <Flex justify="start" gap="small">
+            <Button type="primary" loading={loading} disabled={!description?.trim()} onClick={submitForm}>
               Generate token
             </Button>
+            <Button onClick={onCancel}>Cancel</Button>
           </Flex>
         ) : null
       }
@@ -83,32 +85,45 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
           {error && <Alert type="error" banner title={error?.message} />}
           <Form name="tokens" form={form} layout="vertical" disabled={loading} initialValues={{ description: "" }}>
             <Form.Item
-              name="description"
               label={
                 <span>
                   Description <Tag className="required-badge">Required</Tag>
                 </span>
               }
-              help="To help you identify this token later."
-              rules={[{ required: true, message: "Description is required" }]}
+              required={false}
             >
-              <Input placeholder="e.g. API testing" />
+              <Typography.Text type="secondary" className="field-hint">
+                To help you identify this token later.
+              </Typography.Text>
+              <Form.Item
+                name="description"
+                noStyle
+                rules={[{ required: true, whitespace: true, message: "Description is required" }]}
+              >
+                <Input.TextArea placeholder="e.g. API testing" rows={3} aria-label="Description" />
+              </Form.Item>
             </Form.Item>
 
-            <Form.Item label="Expiration" name="expiration" initialValue={30}>
-              <Select onChange={handleDaysChange} value={selectedDays}>
-                <Select.Option value={30}>30 days</Select.Option>
-                <Select.Option value={60}>60 days</Select.Option>
-                <Select.Option value={90}>90 days</Select.Option>
-                <Select.Option value={120}>120 days</Select.Option>
-                <Select.Option value={365}>1 year</Select.Option>
-                {!shortlivedTokens && <Select.Option value={0}>Never</Select.Option>}
-              </Select>
+            <Form.Item label="Expiration">
+              <Flex align="center" gap="middle" wrap>
+                <Form.Item name="expiration" initialValue={30} noStyle>
+                  <Select
+                    className="expiry-select"
+                    onChange={handleDaysChange}
+                    value={selectedDays}
+                    aria-label="Expiration"
+                  >
+                    <Select.Option value={30}>30 days</Select.Option>
+                    <Select.Option value={60}>60 days</Select.Option>
+                    <Select.Option value={90}>90 days</Select.Option>
+                    <Select.Option value={120}>120 days</Select.Option>
+                    <Select.Option value={365}>1 year</Select.Option>
+                    {!shortlivedTokens && <Select.Option value={0}>Never</Select.Option>}
+                  </Select>
+                </Form.Item>
+                <Typography.Text type="secondary">{expiryDate}</Typography.Text>
+              </Flex>
             </Form.Item>
-
-            <Typography.Text type="secondary" className="expiry-text">
-              {expiryDate}
-            </Typography.Text>
           </Form>
         </Space>
       )}

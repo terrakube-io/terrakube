@@ -1,15 +1,14 @@
 import {
   DeleteOutlined,
   ClockCircleOutlined,
-  UserOutlined,
+  ExclamationCircleOutlined,
   SafetyCertificateOutlined,
-  SyncOutlined,
-  HourglassOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { Button, Flex, Typography, Tag, theme } from "antd";
 import { DateTime } from "luxon";
 import { UserToken } from "@/modules/user/types";
-import { relativeTime } from "@/modules/utils/dates";
+import { formatOrdinalDate, relativeTime } from "@/modules/utils/dates";
 
 type Props = {
   token: UserToken;
@@ -24,90 +23,56 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
     token.createdDate && (token.days > 0 || token.hours > 0 || token.minutes > 0)
       ? DateTime.fromISO(token.createdDate).plus({ days: token.days, hours: token.hours, minutes: token.minutes })
       : null;
+  const expired = expiryDate !== null && expiryDate < DateTime.now();
+
+  // Drives the icon tile and status line colors in TokenList.css.
+  const status = expired ? "expired" : expiryDate ? "expiring" : "never";
 
   return (
     <div
       className="token-item"
+      data-status={status}
       style={{
-        border: `1px solid ${themeToken.colorBorderSecondary}`,
+        border: `1px solid ${themeToken.colorBorder}`,
         borderRadius: themeToken.borderRadiusLG,
-        padding: "16px",
         backgroundColor: themeToken.colorBgContainer,
       }}
     >
-      <Flex justify="space-between" align="start">
-        <Flex gap="middle" align="center" style={{ width: "100%" }}>
-          <div
-            style={{
-              backgroundColor: themeToken.colorFillTertiary,
-              padding: "8px",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <SafetyCertificateOutlined style={{ fontSize: "20px", color: themeToken.colorTextSecondary }} />
-          </div>
+      <span className="token-item-icon" aria-hidden="true">
+        {expired ? <ExclamationCircleOutlined /> : <SafetyCertificateOutlined />}
+      </span>
 
-          <Flex vertical gap={4} style={{ flex: 1 }}>
-            <Flex gap="small" align="center">
-              <Typography.Text strong style={{ fontSize: "16px" }}>
-                {token.description}
-              </Typography.Text>
-
-              {expiryDate ? (
-                <Tag
-                  icon={<HourglassOutlined />}
-                  style={{
-                    backgroundColor: "#fff7e6",
-                    borderColor: "#ffd591",
-                    color: "#d46b08",
-                    margin: 0,
-                  }}
-                >
-                  Expires {expiryDate.toFormat("MMMM d, yyyy")}
-                </Tag>
-              ) : (
-                <Tag color="blue">Never expires</Tag>
-              )}
-
-              {token.source === "CLI_LOGIN" && <Tag color="geekblue">CLI login</Tag>}
-            </Flex>
-          </Flex>
-
-          <Button type="text" icon={<DeleteOutlined />} danger loading={loading} onClick={() => onDelete(token.id)} />
+      <div className="token-item-body">
+        <Flex gap="small" align="center" wrap>
+          <Typography.Text className="token-item-name">{token.description}</Typography.Text>
+          {token.source === "CLI_LOGIN" && <Tag color="geekblue">CLI login</Tag>}
         </Flex>
-      </Flex>
 
-      <div
-        style={{
-          marginTop: "16px",
-          paddingTop: "16px",
-          borderTop: `1px solid ${themeToken.colorBorderSecondary}`,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          color: themeToken.colorTextSecondary,
-          fontSize: "13px",
-        }}
-      >
-        <Flex gap="middle" align="center">
-          <Flex gap="small" align="center">
+        <span className="token-item-status">
+          {expired
+            ? `This token expired ${formatOrdinalDate(expiryDate)}`
+            : expiryDate
+              ? `Expires ${formatOrdinalDate(expiryDate)}`
+              : "Never expires"}
+        </span>
+
+        <Flex className="token-item-meta" justify="space-between" align="center" gap="middle" wrap>
+          <Flex gap="small" align="center" wrap>
             <ClockCircleOutlined />
             <span>Created {relativeTime(token.createdDate) ?? "Unknown"} by user</span>
-          </Flex>
-          <Flex gap="small" align="center">
             <UserOutlined />
-            <Typography.Text type="secondary">{token.createdBy}</Typography.Text>
+            <span>{token.createdBy}</span>
           </Flex>
-        </Flex>
-
-        <Flex gap="small" align="center">
-          <SyncOutlined />
           <span>{token.lastUsedAt ? `Last used ${relativeTime(token.lastUsedAt) ?? "recently"}` : "Never used"}</span>
         </Flex>
       </div>
+
+      <Button
+        icon={<DeleteOutlined />}
+        loading={loading}
+        aria-label={`Delete token ${token.description}`}
+        onClick={() => onDelete(token.id)}
+      />
     </div>
   );
 }

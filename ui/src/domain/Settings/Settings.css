@@ -229,3 +229,54 @@ ul.disc-list {
     transform: none;
   }
 }
+
+/* Organization general settings: one column, HCP Terraform style. */
+.general-settings-column {
+  max-width: 680px;
+  margin-top: 24px;
+}
+
+.general-settings-id {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+.general-settings-id-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.general-settings .ant-form-item-label > label {
+  font-weight: 600;
+}
+
+h5.ant-typography.general-settings-subtitle {
+  margin: 32px 0 4px;
+}
+
+.general-settings-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.general-settings-mode-help {
+  display: block;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.general-settings-danger {
+  margin-top: 48px;
+}
+
+.general-settings-danger h3.ant-typography {
+  margin-bottom: 16px;
+}
+
+.general-settings-danger .ant-typography + .ant-typography {
+  margin-top: 4px;
+}

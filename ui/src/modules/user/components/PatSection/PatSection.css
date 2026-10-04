@@ -1,6 +1,11 @@
 .pat-section {
   padding-bottom: 40px;
 
+  .pat-intro {
+    margin-top: 16px;
+    max-width: 960px;
+  }
+
   .alert {
     margin-top: 10px;
   }

@@ -127,6 +127,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
                   key={org.id}
                   to={`/organizations/${org.id}/workspaces`}
                   className={org.id === selectedOrgId ? "org-selector-item selected" : "org-selector-item"}
+                  aria-current={org.id === selectedOrgId ? "true" : undefined}
                   onClick={() => handleOrganizationClick(org.id)}
                 >
                   <span className="org-selector-item-name">{org.name}</span>
