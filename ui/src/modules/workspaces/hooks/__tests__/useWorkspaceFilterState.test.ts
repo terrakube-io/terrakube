@@ -7,11 +7,11 @@ describe("useWorkspaceFilterState", () => {
     localStorage.clear();
   });
 
-  it("defaults status to 'All', search to '', tagIds to [], projectId to null, groupByProject to true", () => {
+  it("defaults status to 'All', search to '', tagFilters to [], projectId to null, groupByProject to true", () => {
     const { result } = renderHook(() => useWorkspaceFilterState());
     expect(result.current.status).toBe("All");
     expect(result.current.search).toBe("");
-    expect(result.current.tagIds).toEqual([]);
+    expect(result.current.tagFilters).toEqual([]);
     expect(result.current.projectId).toBeNull();
     expect(result.current.groupByProject).toBe(true);
   });
@@ -46,9 +46,9 @@ describe("useWorkspaceFilterState", () => {
     expect(localStorage.getItem("groupByProject")).toBe("false");
   });
 
-  it("setTagIds updates state", () => {
+  it("setTagFilters updates state", () => {
     const { result } = renderHook(() => useWorkspaceFilterState());
-    act(() => result.current.setTagIds(["tag-1", "tag-2"]));
-    expect(result.current.tagIds).toEqual(["tag-1", "tag-2"]);
+    act(() => result.current.setTagFilters([{ tagId: "tag-1", value: "prod" }, { tagId: "tag-2" }]));
+    expect(result.current.tagFilters).toEqual([{ tagId: "tag-1", value: "prod" }, { tagId: "tag-2" }]);
   });
 });

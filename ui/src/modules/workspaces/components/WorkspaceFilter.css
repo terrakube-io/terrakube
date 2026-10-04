@@ -187,6 +187,12 @@
   border-top: 1px solid var(--tk-border-secondary);
 }
 
+/* Clear sits apart from Cancel and Apply, since it takes effect at once */
+.filter-footer-clear {
+  margin-inline-end: auto;
+  padding-inline: 0;
+}
+
 /* Dark Mode Overrides */
 [data-theme="dark"] .workspace-filter-bar {
   background: var(--tk-bg-container);

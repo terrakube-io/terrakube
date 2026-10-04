@@ -13,6 +13,10 @@ import clsx from "classnames";
 import { useEffect, useMemo, useState } from "react";
 import organizationService from "@/modules/organizations/organizationService";
 import { TagModel } from "@/modules/organizations/types";
+import { WorkspaceTagFilter } from "@/modules/workspaces/types";
+import { formatWorkspaceTag } from "../utils/workspaceTags";
+import WorkspaceTagLabel from "./WorkspaceTagLabel";
+import { TAG_VALUE_MAX_LENGTH } from "../utils/tagLimits";
 import { WorkspaceSortOption, WORKSPACE_SORT_OPTIONS } from "../utils/workspaceSort";
 import { WorkspaceStatusFilter, PolicyComplianceFilter } from "../utils/workspaceFilter";
 import { WORKSPACE_STATUS_PALETTE } from "../utils/workspaceStatusPalette";
@@ -27,8 +31,8 @@ type Props = {
   policyCounts?: Record<string, number>;
   search: string;
   onSearchChange: (search: string) => void;
-  tagIds: string[];
-  onTagIdsChange: (tagIds: string[]) => void;
+  tagFilters: WorkspaceTagFilter[];
+  onTagFiltersChange: (tagFilters: WorkspaceTagFilter[]) => void;
   projectId: string | null;
   onProjectIdChange: (projectId: string | null) => void;
   groupByProject: boolean;
@@ -50,8 +54,8 @@ export default function WorkspaceFilter({
   policyCounts,
   search,
   onSearchChange,
-  tagIds,
-  onTagIdsChange,
+  tagFilters,
+  onTagFiltersChange,
   projectId,
   onProjectIdChange,
   groupByProject,
@@ -97,8 +101,8 @@ export default function WorkspaceFilter({
 
   const handleOpenChange = (newOpen: boolean) => {
     if (newOpen) {
-      if (tagIds.length > 0) {
-        setTempTagRows(tagIds.map((tagId) => ({ key: tagId, value: "" })));
+      if (tagFilters.length > 0) {
+        setTempTagRows(tagFilters.map((filter) => ({ key: filter.tagId, value: filter.value ?? "" })));
       } else {
         setTempTagRows([{ key: "", value: "" }]);
       }
@@ -107,8 +111,11 @@ export default function WorkspaceFilter({
   };
 
   const handleApplyTags = () => {
-    const validTags = tempTagRows.map((r) => r.key).filter((k) => k);
-    onTagIdsChange(validTags);
+    // A row without a value matches the key whatever value it carries.
+    const validTags = tempTagRows
+      .filter((row) => row.key)
+      .map((row) => ({ tagId: row.key, value: row.value.trim() || undefined }));
+    onTagFiltersChange(validTags);
     setIsTagsPopoverOpen(false);
   };
 
@@ -120,10 +127,15 @@ export default function WorkspaceFilter({
     setTempTagRows([...tempTagRows, { key: "", value: "" }]);
   };
 
+  const handleClearTags = () => {
+    onTagFiltersChange([]);
+    setIsTagsPopoverOpen(false);
+  };
+
+  // Removing the last row leaves an empty one, so the popover always has a row to fill in
   const removeFilterRow = (index: number) => {
-    const newRows = [...tempTagRows];
-    newRows.splice(index, 1);
-    setTempTagRows(newRows);
+    const newRows = tempTagRows.filter((_, current) => current !== index);
+    setTempTagRows(newRows.length > 0 ? newRows : [{ key: "", value: "" }]);
   };
 
   const updateFilterRow = (index: number, field: "key" | "value", val: string) => {
@@ -154,20 +166,28 @@ export default function WorkspaceFilter({
             style={{ width: "45%" }}
           />
           <Input
-            placeholder="Value"
+            placeholder="Any value"
             value={row.value}
+            maxLength={TAG_VALUE_MAX_LENGTH}
             onChange={(e) => updateFilterRow(index, "value", e.target.value)}
             style={{ width: "45%" }}
           />
-          {tempTagRows.length > 1 && (
-            <DeleteOutlined className="filter-row-remove" onClick={() => removeFilterRow(index)} />
-          )}
+          <DeleteOutlined
+            className="filter-row-remove"
+            aria-label="Remove this tag filter"
+            onClick={() => removeFilterRow(index)}
+          />
         </div>
       ))}
       <button type="button" className="add-filter-btn" onClick={addFilterRow}>
         <PlusOutlined /> Filter by another tag
       </button>
       <div className="filter-footer">
+        {tagFilters.length > 0 && (
+          <Button type="link" className="filter-footer-clear" onClick={handleClearTags}>
+            Clear
+          </Button>
+        )}
         <Button onClick={handleCancelTags}>Cancel</Button>
         <Button type="primary" onClick={handleApplyTags}>
           Apply Filter
@@ -181,14 +201,14 @@ export default function WorkspaceFilter({
   const hasActiveFilters =
     status !== WorkspaceStatusFilter.All ||
     (policyStatus && policyStatus !== PolicyComplianceFilter.All) ||
-    tagIds.length > 0 ||
+    tagFilters.length > 0 ||
     !!projectId;
   const handleClearFilters = () => {
     onStatusChange(WorkspaceStatusFilter.All);
     if (onPolicyStatusChange) {
       onPolicyStatusChange(PolicyComplianceFilter.All);
     }
-    onTagIdsChange([]);
+    onTagFiltersChange([]);
     onProjectIdChange(null);
   };
 
@@ -351,9 +371,9 @@ export default function WorkspaceFilter({
             placement="bottomRight"
             overlayClassName="workspace-filter-popover"
           >
-            <Button size={controlSize} className={`filter-button ${tagIds.length > 0 ? "active" : ""}`}>
+            <Button size={controlSize} className={`filter-button ${tagFilters.length > 0 ? "active" : ""}`}>
               Tags
-              {tagIds.length > 0 && <Badge count={tagIds.length} style={{ backgroundColor: "#52c41a" }} />}
+              {tagFilters.length > 0 && <Badge count={tagFilters.length} style={{ backgroundColor: "#52c41a" }} />}
               <DownOutlined />
             </Button>
           </Popover>
@@ -368,26 +388,24 @@ export default function WorkspaceFilter({
         </div>
       </div>
 
-      {compact && tagIds.length > 0 && (
+      {compact && tagFilters.length > 0 && (
         <Flex align="center" gap={6} wrap className="workspace-active-tags-row">
           <Typography.Text style={{ fontSize: 12 }} type="secondary">
             Filtering by tag:
           </Typography.Text>
-          {tagIds.map((tagId) => {
-            const name = tags.find((t) => t.id === tagId)?.name ?? tagId;
-            return (
-              <Tag
-                key={tagId}
-                closable
-                onClose={(e) => {
-                  e.preventDefault();
-                  onTagIdsChange(tagIds.filter((t) => t !== tagId));
-                }}
-              >
-                {name}
-              </Tag>
-            );
-          })}
+          {tagFilters.map((filter) => (
+            <Tag
+              key={`${filter.tagId}:${filter.value ?? ""}`}
+              title={formatWorkspaceTag(filter, tags)}
+              closable
+              onClose={(e) => {
+                e.preventDefault();
+                onTagFiltersChange(tagFilters.filter((current) => current !== filter));
+              }}
+            >
+              <WorkspaceTagLabel binding={filter} tags={tags} />
+            </Tag>
+          ))}
         </Flex>
       )}
     </div>

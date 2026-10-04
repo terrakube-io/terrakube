@@ -146,7 +146,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/organizations/tags"
             title="Tag Management"
-            description="Tags are used to help identify and group together workspaces.."
+            description="Tag keys are used to help identify and group together workspaces. Each workspace can give a key its own value."
             actions={
               <Button
                 type="primary"
@@ -155,7 +155,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
                 icon={<PlusOutlined />}
                 disabled={!managePermission}
               >
-                Create tag
+                Create tag key
               </Button>
             }
           />
