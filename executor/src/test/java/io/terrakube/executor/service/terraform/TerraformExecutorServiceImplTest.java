@@ -29,6 +29,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -38,6 +39,8 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -157,7 +160,7 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
-    void resolvesTofuVersionConstraintWithTheTofuReleaseList() {
+    void resolvesTofuVersionConstraintWithTheTofuReleaseList() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
         terraformJob.setTofu(true);
@@ -174,7 +177,7 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
-    void keepsTheRequestedVersionWhenResolutionFails() {
+    void keepsTheRequestedVersionWhenResolutionFails() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
         terraformJob.setTerraformVersion(">= 99.0.0");
@@ -189,8 +192,77 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
-    void skipsUploadingToCloudStorageWhenTheRecoveryServiceReportsTheBinaryAlreadyAvailable() throws Exception {
+    void planFailsWithAnActionableMessageWhenTheTofuReleaseListCannotBeFetched() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+
+        // What terraform-client's TerraformDownloader constructor throws after a failed (e.g. 403) fetch.
+        when(terraformClient.createTerraformDownloader()).thenThrow(
+                new NullPointerException("Cannot invoke \"java.util.List.size()\" because \"this.tofuReleases\" is null"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("Could not fetch the OpenTofu releases list from "
+                + TerraformDownloader.TOFU_RELEASES_URL), result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("GitHub may be rate limiting"), result.getOutputLog());
+        assertTrue(result.getOutputLog().contains("CustomTofuReleasesUrl"), result.getOutputLog());
+        verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
+    }
+
+    @Test
+    void namesTheConfiguredTerraformReleasesUrlWhenThatListCannotBeFetched() {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+
+        // A failed Terraform list fetch breaks OpenTofu jobs too - the downloader fetches both.
+        when(terraformClient.getTerraformReleasesUrl()).thenReturn("https://mirror.example/terraform/index.json");
+
+        NullPointerException libraryError = new NullPointerException(
+                "Cannot invoke \"io.terrakube.terraform.TerraformResponse.getVersions()\" because \"this.terraformReleases\" is null");
+        when(terraformClient.createTerraformDownloader()).thenThrow(libraryError);
+
+        IOException error = assertThrows(IOException.class, () -> subject.resolveTerraformVersion(terraformJob));
+
+        assertTrue(error.getMessage().contains(
+                "Could not fetch the Terraform releases list from https://mirror.example/terraform/index.json"), error.getMessage());
+        assertTrue(error.getMessage().contains("CustomTerraformReleasesUrl"), error.getMessage());
+        assertFalse(error.getMessage().contains("GitHub"), error.getMessage());
+        assertSame(libraryError, error.getCause());
+        assertEquals("1.9.0", terraformJob.getTerraformVersion());
+    }
+
+    @Test
+    void failsWithTheSameErrorWhenTheJobHasNoVersion() {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion("");
+        when(terraformClient.createTerraformDownloader()).thenThrow(
+                new NullPointerException("Cannot invoke \"java.util.List.size()\" because \"this.tofuReleases\" is null"));
+
+        IOException error = assertThrows(IOException.class, () -> subject.resolveTerraformVersion(terraformJob));
+
+        assertTrue(error.getMessage().contains("Could not fetch the OpenTofu releases list"), error.getMessage());
+    }
+
+    @Test
+    void rethrowsAnUnrelatedNullPointerExceptionUnchanged() {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        NullPointerException unrelated = new NullPointerException("Cannot invoke \"String.length()\" because \"path\" is null");
+        when(terraformClient.createTerraformDownloader()).thenThrow(unrelated);
+
+        NullPointerException error = assertThrows(NullPointerException.class, () -> subject.resolveTerraformVersion(terraformJob));
+
+        assertSame(unrelated, error);
+    }
+
+    @Test
+    void skipsUploadingToCloudStorageWhenTheRecoveryServiceReportsTheBinaryAlreadyAvailable() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
 
         TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
@@ -200,6 +272,11 @@ class TerraformExecutorServiceImplTest {
                 new BinaryCacheRecoveryService.Resolution(new File(tempDir.toFile(), "terraform"), true, "s3"));
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
+        // Without this, the real JSON plan client fetches the live release lists over the network.
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
 
         subject.plan(terraformJob, tempDir.toFile(), false);
 

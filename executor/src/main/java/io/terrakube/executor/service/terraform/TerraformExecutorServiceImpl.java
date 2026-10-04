@@ -1022,15 +1022,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
      * apply and destroy then silently ran without {@code -json} and produced no structured output.
      * Scripts also get the concrete version in {@code terraformVersion} and on their PATH.
      * If resolution fails the job keeps its original value and the library behaves as before.
+     * The downloader is built even without a version, so a release list that can't be fetched
+     * fails the job here with a clear error instead of a bare NullPointerException inside init.
+     *
+     * @throws IOException a release list couldn't be fetched (see {@link #createTerraformDownloader}).
      */
-    void resolveTerraformVersion(TerraformJob terraformJob) {
+    void resolveTerraformVersion(TerraformJob terraformJob) throws IOException {
+        TerraformDownloader downloader = createTerraformDownloader();
         String requestedVersion = terraformJob.getTerraformVersion();
         if (requestedVersion == null || requestedVersion.isBlank()) {
             return;
         }
 
         try {
-            TerraformDownloader downloader = terraformClient.createTerraformDownloader();
             String resolvedVersion = terraformJob.isTofu()
                     ? downloader.resolveTofuVersion(requestedVersion)
                     : downloader.resolveTerraformVersion(requestedVersion);
@@ -1043,6 +1047,41 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         } catch (Exception e) {
             log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),
                     requestedVersion, terraformJob.getJobId(), e.getMessage());
+        }
+    }
+
+    /**
+     * terraform-client's TerraformDownloader constructor fetches both release lists (Terraform and
+     * OpenTofu, whatever the job uses) and, when a fetch fails, only logs the HTTP error and then
+     * throws a NullPointerException on the missing list. Every init/plan/apply builds a new
+     * downloader, so a job hitting this would die with that bare NPE, and no cached binary can help
+     * because the library resolves the binary path from the list. That NPE (its message names
+     * {@code terraformReleases} or {@code tofuReleases}) becomes an IOException naming the list and
+     * the URL; any other NPE is a different bug and is rethrown unchanged.
+     */
+    private TerraformDownloader createTerraformDownloader() throws IOException {
+        try {
+            return terraformClient.createTerraformDownloader();
+        } catch (NullPointerException e) {
+            String message = String.valueOf(e.getMessage());
+            boolean tofu = message.contains("tofuReleases");
+            if (!tofu && !message.contains("terraformReleases")) {
+                throw e;
+            }
+            String configuredUrl = tofu ? terraformClient.getTofuReleasesUrl() : terraformClient.getTerraformReleasesUrl();
+            String url = configuredUrl != null && !configuredUrl.isBlank() ? configuredUrl
+                    : tofu ? TerraformDownloader.TOFU_RELEASES_URL : TerraformDownloader.TERRAFORM_RELEASES_URL;
+            String hint;
+            if (!tofu) {
+                hint = "Check that " + url + " is reachable from the executor, or point CustomTerraformReleasesUrl at a reachable releases index.";
+            } else if (url.contains("api.github.com")) {
+                hint = "GitHub may be rate limiting the executor; retry later, or point CustomTofuReleasesUrl at a reachable releases index "
+                        + "(the default, the Terrakube API's /tofu/index.json, caches the list).";
+            } else {
+                hint = "Check that " + url + " is reachable from the executor, or point CustomTofuReleasesUrl at a reachable releases index.";
+            }
+            throw new IOException(String.format("Could not fetch the %s releases list from %s. %s The HTTP error is in the executor log.",
+                    tofu ? "OpenTofu" : "Terraform", url, hint), e);
         }
     }
 
