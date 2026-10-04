@@ -63,6 +63,9 @@ const PublicRegistrySearch = lazy(() =>
 const ProviderDetails = lazy(() =>
   import("../Providers/ProviderDetails").then((module) => ({ default: module.ProviderDetails }))
 );
+const PublicProviderDetails = lazy(() =>
+  import("../Providers/PublicProviderDetails").then((module) => ({ default: module.PublicProviderDetails }))
+);
 const ModuleDetails = lazy(() => import("../Modules/Details").then((module) => ({ default: module.ModuleDetails })));
 
 // Settings
@@ -142,6 +145,11 @@ const RegistryRoute = () => {
 const PublicRegistrySearchRoute = () => {
   const { organizationName } = useAppRouteContext();
   return <PublicRegistrySearch organizationName={organizationName} />;
+};
+
+const PublicProviderDetailsRoute = () => {
+  const { organizationName } = useAppRouteContext();
+  return <PublicProviderDetails organizationName={organizationName} />;
 };
 
 const ProviderDetailsRoute = () => {
@@ -462,6 +470,10 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/registry/search",
           element: <PublicRegistrySearchRoute />,
+        },
+        {
+          path: "/organizations/:orgid/registry/public/providers/:namespace/:name",
+          element: <PublicProviderDetailsRoute />,
         },
         {
           path: "/organizations/:orgid/registry/create",

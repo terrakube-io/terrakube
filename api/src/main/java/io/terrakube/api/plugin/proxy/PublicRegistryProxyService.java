@@ -188,10 +188,50 @@ public class PublicRegistryProxyService {
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(response);
+        } catch (WebClientResponseException e) {
+            // Pass registry answers such as 404 through: a 5xx would show the UI's global API error screen.
+            log.warn("Registry returned {} for provider versions {}/{}", e.getStatusCode(), namespace, name);
+            return ResponseEntity.status(e.getStatusCode())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBodyAsString());
         } catch (Exception e) {
             log.error("Error getting provider versions: ", e);
             return ResponseEntity.internalServerError()
                     .body("{\"error\": \"Failed to get provider versions: " + e.getMessage() + "\"}");
+        }
+    }
+
+    /**
+     * Get provider details from Terraform Registry: the latest version when version is null.
+     * GET /v1/providers/{namespace}/{name}[/{version}]
+     */
+    public ResponseEntity<String> getProvider(String namespace, String name, String version) {
+        log.info("Getting provider details: namespace={}, name={}, version={}", namespace, name, version);
+
+        try {
+            WebClient.RequestHeadersSpec<?> request = version == null
+                    ? webClient.get().uri("/v1/providers/{namespace}/{name}", namespace, name)
+                    : webClient.get().uri("/v1/providers/{namespace}/{name}/{version}", namespace, name, version);
+            String response = request
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofMillis(500))
+                            .filter(throwable -> !(throwable instanceof WebClientResponseException.NotFound)))
+                    .block(Duration.ofSeconds(30));
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(response);
+        } catch (WebClientResponseException e) {
+            // Pass registry answers such as 404 through: a 5xx would show the UI's global API error screen.
+            log.warn("Registry returned {} for provider {}/{} {}", e.getStatusCode(), namespace, name, version);
+            return ResponseEntity.status(e.getStatusCode())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            log.error("Error getting provider details: ", e);
+            return ResponseEntity.internalServerError()
+                    .body("{\"error\": \"Failed to get provider details: " + e.getMessage() + "\"}");
         }
     }
 

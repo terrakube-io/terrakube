@@ -1,0 +1,74 @@
+/* Provider search result: a full-card link to the public provider page. */
+.public-provider-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  color: var(--tk-text-primary);
+  text-decoration: none;
+  transition: border-color 150ms ease-out;
+}
+
+.public-provider-card:hover {
+  border-color: var(--tk-accent);
+  color: var(--tk-text-primary);
+  text-decoration: none;
+}
+
+.public-provider-card:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.public-provider-card-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  font-size: 28px;
+}
+
+.public-provider-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.public-provider-card-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.public-provider-card-by {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.public-provider-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.public-provider-card-tier {
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.public-provider-card-imported {
+  color: var(--tk-text-primary);
+}
+
+.public-provider-card-imported .anticon {
+  color: #52c41a;
+}
