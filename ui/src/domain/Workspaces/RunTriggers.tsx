@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { RunTrigger, RunTriggerRow, Template, Workspace } from "../types";
+import "./Workspaces.css";
 
 type Props = {
   organizationId: string;
@@ -262,10 +263,10 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
 
   return (
     <div>
-      <Typography.Title level={2} style={{ margin: 0 }}>
-        Run Triggers
+      <Typography.Title level={2} className="workspace-flush-title">
+        Run triggers
       </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
+      <Typography.Paragraph type="secondary" className="run-triggers-intro">
         A run trigger starts a run on one workspace after another one changes state. Only runs that apply, destroy or
         execute custom scripts fire them - a plan on its own does not.
       </Typography.Paragraph>
@@ -274,7 +275,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
       <Typography.Paragraph type="secondary">
         <b>{workspaceName}</b> starts a run when any of these workspaces finishes changing state.
       </Typography.Paragraph>
-      <Space orientation="vertical" style={{ width: "100%" }}>
+      <Space orientation="vertical" className="run-triggers-incoming">
         <Button type="primary" icon={<PlusOutlined />} onClick={onAdd} disabled={!manageWorkspace}>
           Add source workspace
         </Button>
@@ -288,7 +289,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
         />
       </Space>
 
-      <Typography.Title level={4} style={{ marginTop: 32 }}>
+      <Typography.Title level={4} className="run-triggers-outgoing-title">
         Triggers
       </Typography.Title>
       <Typography.Paragraph type="secondary">
@@ -320,7 +321,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: 16 }}
+          className="run-triggers-modal-alert"
           description={
             <>
               <b>{workspaceName}</b> will start a run every time the workspace you pick finishes a run that changed

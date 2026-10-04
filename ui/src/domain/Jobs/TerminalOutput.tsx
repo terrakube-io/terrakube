@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAnsiLines } from "./ansiChunks";
 import { LogViewport } from "./LogViewport";
 import { stripAnsi } from "./stripAnsi";
+import "./runTokens.css";
 import "./TerminalOutput.css";
 
 type Props = {

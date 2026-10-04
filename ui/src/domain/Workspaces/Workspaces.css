@@ -45,7 +45,7 @@
 }
 
 .generalSettings .ant-form-item-extra {
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--tk-text-tertiary);
   font-size: 13px;
 }
 
@@ -66,7 +66,7 @@
   border-color: #d1d5db !important;
 }
 
-.generalSettings .ant-input:hover,
+.generalSettings .ant-input:not([readonly]):hover,
 .generalSettings .ant-input-affix-wrapper:hover,
 .generalSettings .ant-select-selector:hover {
   border-color: #9ca3af !important;
@@ -85,38 +85,6 @@
   clear: both;
 }
 
-.chooseType {
-  width: 100%;
-  margin-top: 30px;
-}
-
-.workflowType {
-  margin-left: 10px;
-  font-weight: 500;
-}
-
-.workflowDescription {
-  margin-top: 20px;
-  margin-bottom: 20px;
-}
-
-.workflowDescription2 {
-  margin-bottom: 20px;
-}
-
-.workflowDescription3 {
-  margin-bottom: 0px;
-}
-
-.workflowSelect {
-  text-align: right;
-  margin-right: 40px;
-}
-
-.ant-collapse-content > .ant-collapse-content-box {
-  padding: 0px;
-}
-
 .metadata {
   font-size: 13px;
   padding-top: 10px;
@@ -124,21 +92,62 @@
   color: rgb(140 140 140) !important;
 }
 
-.states {
-  font-size: 13px;
-  padding-top: 10px;
-  color: #6f7682;
-}
-
-.stateDetails {
-  font-size: 13px;
-  color: #6f7682;
-}
-
 .code {
   background-color: #f1f2f3;
   color: #000;
   padding: 0.2em 0.4em;
+}
+
+/* Workspace header status strip: whole items wrap on narrow screens instead of breaking their text. */
+.workspace-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 40px;
+  row-gap: 8px;
+  margin-bottom: 40px;
+}
+
+.workspace-status-strip > * {
+  white-space: nowrap;
+}
+
+.workspace-status-strip > .workspace-status-lock {
+  white-space: normal;
+}
+
+.workspace-status-iac {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-status-value {
+  font-weight: 500;
+}
+
+@media (max-width: 767px) {
+  .workspace-status-strip {
+    column-gap: 16px;
+  }
+}
+
+/* CLI-driven workflow snippets: same look as the registry "Usage" snippet. */
+.cli-snippet-tabs {
+  margin-top: 16px;
+}
+
+.cli-snippet {
+  margin: 0 0 12px;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .workspace-details {
@@ -171,7 +180,7 @@
   border-color: var(--ant-color-border) !important;
 }
 
-[data-theme="dark"] .generalSettings .ant-input:hover,
+[data-theme="dark"] .generalSettings .ant-input:not([readonly]):hover,
 [data-theme="dark"] .generalSettings .ant-input-affix-wrapper:hover,
 [data-theme="dark"] .generalSettings .ant-select-selector:hover {
   border-color: var(--ant-color-border-secondary) !important;
@@ -181,11 +190,6 @@
   color: var(--ant-color-text-secondary) !important;
 }
 
-[data-theme="dark"] .states,
-[data-theme="dark"] .stateDetails {
-  color: var(--ant-color-text-secondary);
-}
-
 [data-theme="dark"] .code {
   background-color: #21262d;
   color: #e6edf3;
@@ -193,4 +197,492 @@
 
 [data-theme="dark"] .workspace-details {
   color: var(--ant-color-text-secondary);
+}
+
+/* Copy icon next to the workspace ID: outlined on hover so it reads as a button. */
+.workspace-id .ant-typography-copy {
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.workspace-id .ant-typography-copy:hover,
+.workspace-id .ant-typography-copy:focus-visible {
+  border-color: var(--tk-border-primary);
+  background-color: var(--tk-fill-primary);
+}
+
+/* Overview right rail: label/value facts, then sections; no stacked headings for single values. */
+.workspace-rail {
+  padding-top: 8px;
+  font-size: 13px;
+}
+
+.workspace-rail-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0 0 20px;
+  list-style: none;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.workspace-rail-facts li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--tk-text-primary);
+}
+
+/* Repository paths have no spaces; let only them break anywhere. */
+.workspace-rail-facts li > a[href^="http"],
+.workspace-rail-facts li > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-rail-label {
+  flex-shrink: 0;
+}
+
+/* Long machine values (working directory) move under their label instead of breaking letter by letter. */
+.workspace-rail-facts li:has(> code) {
+  flex-wrap: wrap;
+}
+
+.workspace-rail-facts li > .anticon,
+.workspace-rail-facts li > svg {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--tk-text-secondary);
+}
+
+.workspace-rail-facts li > img {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.workspace-rail-label {
+  color: var(--tk-text-secondary);
+}
+
+.workspace-rail-facts code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+.workspace-rail-section {
+  padding-top: 20px;
+}
+
+.workspace-rail-section .ant-select-placeholder,
+.workspace-rail-section .ant-select-selection-placeholder {
+  color: var(--tk-text-secondary);
+}
+
+.workspace-rail-section h4.ant-typography {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+/* Sections after the first are separated like the facts list. */
+.workspace-rail-section:has(+ .workspace-rail-section) {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.workspace-rail-heading-note {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.workspace-rail-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.workspace-rail-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-rail-metrics dt {
+  color: var(--tk-text-secondary);
+}
+
+.workspace-rail-metrics dd {
+  margin: 0;
+  color: var(--tk-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Overview main column and its resources table. */
+.workspace-overview-main {
+  padding-right: 32px;
+}
+
+.workspace-overview-tabs {
+  margin-top: 30px;
+}
+
+.resource-name-link.ant-btn {
+  max-width: 100%;
+  padding-inline: 0;
+}
+
+.resource-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resource-name-link svg {
+  flex-shrink: 0;
+}
+
+.ant-table code.resource-provider {
+  padding: 0;
+  background: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.resource-type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.resource-type img {
+  flex-shrink: 0;
+}
+
+.resource-type span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Latest run card on the overview. */
+.latest-run-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.latest-run-header h3.ant-typography {
+  margin: 0;
+}
+
+.latest-run {
+  padding: 20px 24px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+}
+
+.latest-run--empty {
+  padding: 32px 24px;
+}
+
+.latest-run-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.latest-run-title h4.ant-typography {
+  margin: 0;
+  font-size: 16px;
+}
+
+.latest-run-byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--tk-text-secondary);
+}
+
+.latest-run-byline strong {
+  color: var(--tk-text-primary);
+  font-weight: 600;
+}
+
+.latest-run-byline code,
+.latest-run-facts code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+.latest-run-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 16px;
+  margin: 20px 0 0;
+}
+
+.latest-run-facts dt {
+  margin-bottom: 4px;
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+}
+
+.latest-run-facts dd {
+  margin: 0;
+  color: var(--tk-text-primary);
+}
+
+.latest-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* States: a flat version list (one bordered container, 1px row separators) and the version detail. */
+.state-versions > h3.ant-typography,
+.state-version-header h3.ant-typography,
+.state-changes h4.ant-typography {
+  margin: 0;
+}
+
+.state-version-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  overflow: hidden;
+}
+
+.state-version-list--empty {
+  padding: 32px 24px;
+}
+
+.state-version-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 20px;
+}
+
+.state-version-row + .state-version-row {
+  border-top: 1px solid var(--tk-border-secondary);
+}
+
+.state-version-row:hover {
+  background: var(--tk-fill-secondary);
+}
+
+.state-version-row:has(.state-version-title:focus-visible) {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: -2px;
+}
+
+.state-version-row .ant-avatar,
+.state-version-header .ant-avatar {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.state-version-body {
+  min-width: 0;
+}
+
+/* The title is the row's button; its ::after stretches over the row so the whole row is clickable. */
+.state-version-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tk-text-primary);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.state-version-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.state-version-title:focus-visible {
+  outline: none;
+}
+
+.state-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+/* The separator travels with the item after it, so a wrapped line never starts with a stray dot. */
+.state-version-meta > * + *::before {
+  content: "·" / "";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--tk-text-secondary);
+}
+
+.state-version-meta strong {
+  color: var(--tk-text-primary);
+  font-weight: 600;
+}
+
+.state-version-meta code,
+.state-tab-help code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Links in a row sit above the stretched title. */
+.state-version-meta a {
+  position: relative;
+  z-index: 1;
+}
+
+.state-version-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.state-version-header .ant-avatar {
+  margin-top: 6px;
+}
+
+.state-version-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 20px 0 16px;
+}
+
+.state-diagram {
+  height: 500px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+}
+
+.state-tab-help {
+  margin: 0 0 12px;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.state-changes {
+  margin-top: 32px;
+}
+
+.state-changes h4.ant-typography {
+  margin-bottom: 4px;
+}
+
+/* Page and section titles that sit flush (no antd heading margins) */
+.ant-typography.workspace-flush-title,
+.ant-typography + .ant-typography.workspace-flush-title {
+  margin: 0;
+}
+
+.ant-typography.workspace-id,
+.ant-typography.workspace-output-value {
+  margin: 0;
+}
+
+.workspace-variable-value {
+  max-width: 2000px;
+  max-height: 100px;
+  overflow: auto;
+}
+
+.workspace-variable-value--editable {
+  cursor: pointer;
+}
+
+.workspace-variable-value--readonly {
+  cursor: default;
+}
+
+.ant-alert.workspace-variables-alert,
+.ant-collapse.workspace-variables-collapse,
+.ant-alert.run-triggers-modal-alert,
+.ant-alert.workspace-policies-alert {
+  margin-bottom: 16px;
+}
+
+.ant-alert.workspace-locked-alert {
+  margin-bottom: 24px;
+}
+
+.ant-typography.run-triggers-intro {
+  margin-top: 8px;
+}
+
+.ant-typography.run-triggers-outgoing-title {
+  margin-top: 32px;
+}
+
+.ant-space.run-triggers-incoming,
+.ant-space.schedule-modal-body,
+.ant-space.resource-drawer-body,
+.ant-space.workspace-tag-editor {
+  width: 100%;
+}
+
+/* Key and value inputs of a tag editor row share the width. */
+.workspace-tag-editor .workspace-tag-editor-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.schedule-required-mark {
+  color: var(--ant-color-error);
+}
+
+.react-flow__handle.state-diagram-handle {
+  background: var(--tk-text-secondary);
+}
+
+.ant-card.state-diagram-node {
+  width: 300px;
+}
+
+.state-shared-access {
+  margin-top: 48px;
+}
+
+.ant-select.state-shared-picker {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.ant-typography.state-shared-id {
+  font-family: var(--ant-font-family-code);
+  font-size: 13px;
 }

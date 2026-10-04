@@ -1,0 +1,18 @@
+.log-viewport {
+  overflow: auto;
+}
+
+.log-viewport-spacer {
+  position: relative;
+}
+
+.log-viewport-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.log-viewport-line {
+  height: var(--log-line-height);
+  line-height: var(--log-line-height);
+}

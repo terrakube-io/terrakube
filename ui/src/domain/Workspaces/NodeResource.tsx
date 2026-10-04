@@ -4,6 +4,7 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { Handle, NodeProps, Position } from "reactflow";
 import { Resource } from "../types.js";
 import { getServiceIcon } from "./Icons.jsx";
+import "./Workspaces.css";
 const { Meta } = Card;
 
 export default memo(({ data, isConnectable }: NodeProps<Resource>) => {
@@ -12,11 +13,11 @@ export default memo(({ data, isConnectable }: NodeProps<Resource>) => {
       <Handle
         type="source"
         position={Position.Top}
-        style={{ background: "#555" }}
+        className="state-diagram-handle"
         onConnect={(params) => console.log("handle onConnect", params)}
         isConnectable={isConnectable}
       />
-      <Card style={{ width: 300 }}>
+      <Card className="state-diagram-node">
         <Meta
           avatar={GetResourceIcon(data)}
           title={
@@ -35,7 +36,7 @@ export default memo(({ data, isConnectable }: NodeProps<Resource>) => {
         type="target"
         position={Position.Bottom}
         id="b"
-        style={{ background: "#555" }}
+        className="state-diagram-handle"
         isConnectable={isConnectable}
       />
     </>

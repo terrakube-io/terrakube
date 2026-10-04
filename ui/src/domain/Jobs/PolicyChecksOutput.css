@@ -1,137 +1,80 @@
-.policy-checks-container {
-  padding: 16px;
-  background: var(--ant-color-bg-container, #ffffff);
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
-}
-
-.policy-checks-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary, #f0f0f0);
-}
-
-.policy-checks-summary-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.policy-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
-
-.policy-pill--clickable {
-  cursor: pointer;
-  user-select: none;
-  transition:
-    transform 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out,
-    filter 0.2s ease-in-out;
-}
-
-.policy-pill--clickable:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  filter: brightness(0.96);
-}
-
-.policy-pill--active {
-  box-shadow: 0 0 0 2px var(--ant-color-primary, #1677ff);
-  transform: translateY(-1px);
-}
-
-.policy-pill--passed {
-  background: #f6ffed;
-  color: #389e0d;
-  border-color: #b7eb8f;
-}
-
-.policy-pill--exempted {
-  background: #f9f0ff;
-  color: #722ed1;
-  border-color: #d3adf7;
-}
-
-.policy-pill--warning {
-  background: #fffbe6;
-  color: #d48806;
-  border-color: #ffe58f;
-}
-
-.policy-pill--soft {
-  background: #fff7e6;
-  color: #d46b08;
-  border-color: #ffd591;
-}
-
-.policy-pill--hard {
-  background: #fff1f0;
-  color: #cf1322;
-  border-color: #ffa39e;
-}
-
-.policy-checks-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.policy-checks-list {
+/* Policy checks inside their run panel: a decision band, one filter row, then a flat list of results. */
+.policy-checks {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+
+.policy-checks-decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-fill-secondary);
+  color: var(--tk-text-primary);
+}
+
+[data-theme="dark"] .policy-checks-decision {
+  background: var(--tk-bg-elevated);
+}
+
+.policy-checks-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.policy-checks-search {
+  flex: 0 1 280px;
+  min-width: 200px;
+}
+
+.policy-checks-search .anticon-search {
+  color: var(--tk-text-tertiary);
+}
+
+.policy-checks .ant-input::placeholder {
+  color: var(--tk-text-secondary);
+}
+
+/* Filter chips reuse the workspace status pills; the icon carries the severity colour. */
+.workspace-status-pill[data-severity="passed"] .anticon {
+  color: var(--run-status-success);
+}
+
+.workspace-status-pill[data-severity="hard"] .anticon {
+  color: var(--run-status-error);
+}
+
+.workspace-status-pill:is([data-severity="soft"], [data-severity="warning"]) .anticon {
+  color: var(--run-status-warning);
+}
+
+/* Flat rows inside the panel: dividers, no card around them. */
+.policy-rule-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--run-divider);
 }
 
 .policy-rule-card {
-  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--ant-color-bg-elevated, #fafafa);
-  transition:
-    border-color 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--run-divider);
 }
 
-.policy-rule-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border-color: var(--ant-color-primary-hover, #40a9ff);
-}
-
-.policy-rule-card--hard {
-  border-color: rgba(255, 77, 79, 0.45);
-}
-
-.policy-rule-card--soft {
-  border-color: rgba(250, 140, 22, 0.45);
-}
-
-.policy-rule-card--exempted {
-  border-color: rgba(114, 46, 209, 0.45);
-}
-
-.policy-rule-card--warning {
-  border-color: rgba(250, 173, 20, 0.45);
-}
-
-.policy-rule-card--passed {
-  border-color: rgba(82, 196, 26, 0.45);
+.policy-rule-card:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .policy-rule-header {
@@ -140,101 +83,89 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
-.policy-rule-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ant-color-text-heading, #1f1f1f);
+.policy-rule-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+/* Two classes so the global dark-theme code chip does not apply. */
+.policy-rule-name .policy-rule-id {
+  padding: 0;
+  background: none;
+  color: var(--tk-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.policy-rule-set {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
 }
 
 .policy-resource-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  background: var(--ant-color-bg-container, #ffffff);
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--ant-color-border-secondary, #e8e8e8);
-  margin-bottom: 8px;
+  gap: 4px 8px;
 }
 
-.policy-resource-address {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.policy-resource-row .policy-resource-address {
+  padding: 0;
+  background: none;
+  color: var(--tk-text-primary);
   font-size: 13px;
-  color: #1890ff;
-  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
-.policy-exemption-box {
-  background: #fcf9fe;
-  border: 1px solid #d3adf7;
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-top: 10px;
+.policy-resource-row .ant-btn-link {
+  padding-inline: 0;
+}
+
+.policy-exemption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .policy-exemption-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  color: var(--tk-text-primary);
   font-weight: 600;
-  color: #531dab;
-  margin-bottom: 6px;
 }
 
-.policy-exemption-details {
-  font-size: 13px;
-  color: #595959;
-  line-height: 1.6;
-}
-
-.policy-message-box {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--ant-color-text, #434343);
-  line-height: 1.5;
-}
-
+.policy-exemption-details,
+.policy-message,
 .policy-suggested-fix {
-  margin-top: 8px;
-  background: #f5f5f5;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  border: 1px solid var(--ant-color-border-secondary, #e8e8e8);
+  margin: 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  line-height: 1.54;
 }
 
-.highlight-resource {
-  animation: resourcePulse 1.5s ease-in-out;
+.policy-message {
+  color: var(--tk-text-primary);
 }
 
-@keyframes resourcePulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.7);
-  }
-  50% {
-    box-shadow: 0 0 0 10px rgba(24, 144, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0);
-  }
+.policy-logs .ant-btn-link {
+  padding-inline: 0;
 }
 
-.policy-logs-container {
-  margin-top: 12px;
-}
-
-.policy-logs-content {
-  margin-top: 8px;
+.policy-logs .policy-logs-content {
+  margin: 8px 0 0;
   padding: 10px 14px;
-  background: #1e1e1e;
-  color: #d4d4d4;
   border-radius: 6px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  background: var(--run-console-bg);
+  color: var(--run-console-fg);
   font-size: 12px;
   line-height: 1.5;
   max-height: 240px;
@@ -243,75 +174,34 @@
   word-break: break-all;
 }
 
-/* Dark theme */
-[data-theme="dark"] .policy-pill--passed {
-  background: rgba(46, 160, 67, 0.15);
-  color: #3fb950;
-  border-color: rgba(46, 160, 67, 0.4);
+.policy-notification-action {
+  margin-top: 8px;
 }
 
-[data-theme="dark"] .policy-pill--exempted {
-  background: rgba(163, 113, 247, 0.15);
-  color: #b37feb;
-  border-color: rgba(163, 113, 247, 0.4);
+/* The plan row a "View in plan diff" link scrolled to. */
+.highlight-resource {
+  animation: resourcePulse 1.5s ease-in-out;
 }
 
-[data-theme="dark"] .policy-pill--warning {
-  background: rgba(210, 153, 34, 0.15);
-  color: #e3b341;
-  border-color: rgba(210, 153, 34, 0.4);
-}
-
-[data-theme="dark"] .policy-pill--soft {
-  background: rgba(219, 109, 40, 0.15);
-  color: #f0883e;
-  border-color: rgba(219, 109, 40, 0.4);
-}
-
-[data-theme="dark"] .policy-pill--hard {
-  background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
-  border-color: rgba(248, 81, 73, 0.4);
-}
-
-[data-theme="dark"] .policy-pill--clickable:hover {
-  box-shadow: var(--tk-shadow-md);
-}
-
-[data-theme="dark"] .policy-rule-card:hover {
-  box-shadow: var(--tk-shadow-md);
-}
-
-[data-theme="dark"] .policy-resource-address {
-  color: #58a6ff;
-}
-
-[data-theme="dark"] .policy-exemption-box {
-  background: rgba(163, 113, 247, 0.08);
-  border-color: rgba(163, 113, 247, 0.4);
-}
-
-[data-theme="dark"] .policy-exemption-title {
-  color: #b37feb;
-}
-
-[data-theme="dark"] .policy-exemption-details {
-  color: var(--tk-text-secondary);
-}
-
-[data-theme="dark"] .policy-suggested-fix {
-  background: var(--tk-bg-base);
-  border-color: var(--tk-border-primary);
+@keyframes resourcePulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px var(--run-focus);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .highlight-resource {
     animation: none;
-    box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.5);
+    box-shadow: inset 0 0 0 2px var(--run-focus);
   }
+}
 
-  .policy-pill--clickable:hover,
-  .policy-pill--active {
-    transform: none;
+@media (max-width: 575.98px) {
+  .policy-checks-search {
+    flex-basis: 100%;
   }
 }

@@ -1,21 +1,57 @@
-import { Button, Tabs, Typography } from "antd";
+import { CopyOutlined } from "@ant-design/icons";
+import { Button, message, Tabs, Typography } from "antd";
 import { HiOutlineExternalLink } from "react-icons/hi";
+import { copyValue } from "@/components/settings/IdField/IdField";
+import "./Workspaces.css";
 
 type Props = {
   organizationName?: string;
   workspaceName: string;
 };
+
+// A configuration snippet with a copy button, as in the registry "Usage" section.
+const Snippet = ({ code, disabled }: { code: string; disabled: boolean }) => (
+  <>
+    <pre className="cli-snippet">{code}</pre>
+    <Button
+      icon={<CopyOutlined />}
+      disabled={disabled}
+      onClick={() =>
+        copyValue(code).then(
+          () => message.success("Configuration copied"),
+          () => message.error("Could not copy the configuration")
+        )
+      }
+    >
+      Copy configuration
+    </Button>
+  </>
+);
+
 export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
+  const hostname = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname;
+  const configBlock = (opener: string) =>
+    `terraform {
+  ${opener}
+    hostname     = "${hostname}"
+    organization = "${organizationName ?? ""}"
+
+    workspaces {
+      name = "${workspaceName}"
+    }
+  }
+}`;
+
   return (
     <div>
-      <Typography.Title level={2} style={{ margin: 0 }}>
+      <Typography.Title level={2} className="workspace-flush-title">
         Waiting for configuration
       </Typography.Title>
       <div className="App-text">
         This workspace currently has no Terraform configuration files associated with it. Terrakube is waiting for the
         configuration to be uploaded.
       </div>
-      <Typography.Title level={3} style={{ margin: 0 }}>
+      <Typography.Title level={3} className="workspace-flush-title">
         CLI-driven workflow
       </Typography.Title>
       <div className="App-text">
@@ -32,47 +68,17 @@ export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
             <b>Example Code</b>
             <Tabs
               type="card"
-              style={{ marginTop: "30px" }}
+              className="cli-snippet-tabs"
               items={[
                 {
                   label: "cloud block",
                   key: "1",
-                  children: (
-                    <pre className="moduleCode">
-                      terraform {"{"} <br />
-                      &nbsp;&nbsp;cloud {"{"} <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;hostname = "{new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname}"
-                      <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;organization = "{organizationName}
-                      " <br />
-                      <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;workspaces {"{"} <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;name = "{workspaceName}" <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;{"}"} <br />
-                      &nbsp;&nbsp;{"}"} <br />
-                      {"}"} <br />
-                    </pre>
-                  ),
+                  children: <Snippet code={configBlock("cloud {")} disabled={!organizationName} />,
                 },
                 {
                   label: "remote backend",
                   key: "2",
-                  children: (
-                    <pre className="moduleCode">
-                      terraform {"{"} <br />
-                      &nbsp;&nbsp;backend "remote" {"{"} <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;hostname = "{new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname}"
-                      <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;organization = "{organizationName}
-                      " <br />
-                      <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;workspaces {"{"} <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;name = "{workspaceName}" <br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;{"}"} <br />
-                      &nbsp;&nbsp;{"}"} <br />
-                      {"}"} <br />
-                    </pre>
-                  ),
+                  children: <Snippet code={configBlock('backend "remote" {')} disabled={!organizationName} />,
                 },
               ]}
             />
@@ -96,7 +102,7 @@ export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
           CLI workflow guide.&nbsp; <HiOutlineExternalLink />.
         </Button>
         <br /> <br />
-        <Typography.Title level={3} style={{ margin: 0 }}>
+        <Typography.Title level={3} className="workspace-flush-title">
           API-driven workflow
         </Typography.Title>
         Advanced users can follow{" "}

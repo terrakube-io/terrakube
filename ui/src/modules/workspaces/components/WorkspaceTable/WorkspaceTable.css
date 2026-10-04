@@ -39,6 +39,14 @@
   font-size: 8px;
 }
 
+.workspace-sortable-header--active {
+  font-weight: 700;
+}
+
+.workspace-sort-carets .workspace-sort-caret--active {
+  color: var(--tk-link);
+}
+
 .workspace-col-name {
   flex: 1 1 0;
   max-width: 50%;
@@ -133,7 +141,7 @@
 .workspace-row-link:focus-visible,
 .workspace-sortable-header:focus-visible,
 .workspace-group-show-more:focus-visible {
-  outline: 2px solid #1890ff;
+  outline: 2px solid var(--tk-accent);
   outline-offset: -2px;
 }
 
@@ -142,6 +150,8 @@
   align-items: center;
   font-size: 13px;
   flex-shrink: 0;
+  /* --workspace-status-color is set per row from the status palette */
+  color: var(--workspace-status-color, var(--tk-text-secondary));
 }
 
 .workspace-name {
@@ -164,7 +174,7 @@
   padding: 10px 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--tk-accent);
+  color: var(--tk-link);
   cursor: pointer;
 }
 
@@ -173,7 +183,7 @@
 }
 
 [data-theme="dark"] .workspace-group-show-more {
-  color: var(--tk-accent);
+  color: var(--tk-link);
 }
 
 .workspace-source-link {

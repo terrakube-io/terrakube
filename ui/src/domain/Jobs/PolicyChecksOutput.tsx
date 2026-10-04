@@ -1,20 +1,8 @@
 import React, { useMemo, useState } from "react";
+import { Button, Drawer, Empty, Form, Input, Space, Tag, Tooltip, Typography, message, notification } from "antd";
+import clsx from "classnames";
 import {
-  Button,
-  Drawer,
-  Empty,
-  Form,
-  Input,
-  Popconfirm,
-  Radio,
-  Space,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-  notification,
-} from "antd";
-import {
+  BarsOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CloseOutlined,
@@ -23,6 +11,7 @@ import {
   FileTextOutlined,
   PlayCircleOutlined,
   SafetyCertificateOutlined,
+  SearchOutlined,
   WarningOutlined,
   UnlockOutlined,
   LinkOutlined,
@@ -32,6 +21,9 @@ import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import { PolicyEvaluationContext } from "../types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import { PolicyExemptionModal } from "../Settings/components";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import "@/modules/workspaces/components/WorkspaceFilter.css";
+import "./runTokens.css";
 import "./PolicyChecksOutput.css";
 
 const { Text, Paragraph } = Typography;
@@ -43,10 +35,7 @@ const ANSI_REGEX = /\u001B\[[0-9;]*m/g;
 const formatEnforcementLevel = (level?: string) => {
   if (!level) return "";
   const clean = level.toLowerCase().replace(/[-_]/g, " ");
-  if (clean === "hard mandatory") return "Hard Mandatory";
-  if (clean === "soft mandatory") return "Soft Mandatory";
-  if (clean === "advisory") return "Advisory";
-  return clean.replace(/\b\w/g, (c) => c.toUpperCase());
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
 };
 
 type FlattenedRule = {
@@ -65,6 +54,8 @@ type FlattenedRule = {
   logs?: string[];
 };
 
+type PolicyFilter = "all" | FlattenedRule["severityType"];
+
 type Props = {
   policyEvaluation?: PolicyEvaluationContext;
   jobId?: string;
@@ -72,9 +63,13 @@ type Props = {
   workspaceId?: string;
   status?: string;
   approvalTeam?: string;
+  /** The `approveJob` permission of the current user; without it override and discard are disabled. */
+  canApprove?: boolean;
   onOverrideSuccess?: () => void;
   onRejectSuccess?: () => void;
 };
+
+const NO_APPROVE_PERMISSION = "You do not have permission to approve runs on this workspace.";
 
 export const PolicyChecksOutput: React.FC<Props> = ({
   policyEvaluation,
@@ -83,15 +78,17 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   workspaceId,
   status,
   approvalTeam,
+  canApprove = false,
   onOverrideSuccess,
   onRejectSuccess,
 }) => {
-  const [filter, setFilter] = useState<"all" | "passed" | "violations" | "exempted" | "warnings">("all");
+  const [filter, setFilter] = useState<PolicyFilter>("all");
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [overrideDrawerOpen, setOverrideDrawerOpen] = useState(false);
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [form] = Form.useForm();
 
   const toggleLogs = (key: string) => {
@@ -119,7 +116,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
     axiosInstance
       .post(`${origin}/policy/v1/organization/${effectiveOrgId}/workspace/${workspaceId}/evaluation`)
       .then(() => {
-        message.success("Policy evaluation dispatched successfully");
+        message.success("Policy evaluation started");
         if (onOverrideSuccess) onOverrideSuccess();
       })
       .catch((err) => {
@@ -130,16 +127,16 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   const handleExemptionSuccess = () => {
     setExemptionModalVisible(false);
     notification.success({
-      message: "Exemption Created",
+      message: "Exemption created",
       description: (
         <div>
           <div>
             Policy exemption for rule <Text code>{selectedExemptionRule?.ruleId}</Text> was created successfully.
           </div>
           {workspaceId && (
-            <div style={{ marginTop: 8 }}>
+            <div className="policy-notification-action">
               <Button type="primary" size="small" icon={<PlayCircleOutlined />} onClick={handleTriggerEvaluationNow}>
-                Evaluate Policies Now
+                Evaluate policies now
               </Button>
             </div>
           )}
@@ -268,7 +265,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
             ruleId: setName,
             address: "-",
             severityType: "passed",
-            message: "All policy guardrails evaluated and passed cleanly with zero violations.",
+            message: "Every rule in this policy set passed.",
             logs: res.bufferedLogs,
           });
         }
@@ -352,7 +349,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
           ruleId: `policy_passed_${i + 1}`,
           address: "-",
           severityType: "passed",
-          message: "All policy guardrails evaluated and passed cleanly with zero violations.",
+          message: "Every rule in this policy set passed.",
         });
       }
     }
@@ -363,15 +360,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
   // Filtered rules
   const filteredRules = useMemo(() => {
     return allRules.filter((rule) => {
-      if (filter === "passed") {
-        if (rule.severityType !== "passed") return false;
-      } else if (filter === "violations") {
-        if (rule.severityType !== "hard" && rule.severityType !== "soft") return false;
-      } else if (filter === "exempted") {
-        if (rule.severityType !== "exempted") return false;
-      } else if (filter === "warnings") {
-        if (rule.severityType !== "warning") return false;
-      }
+      if (filter !== "all" && rule.severityType !== filter) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -400,7 +389,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
       target.classList.add("highlight-resource");
       setTimeout(() => target.classList.remove("highlight-resource"), 2000);
     } else {
-      message.info(`Navigating to plan diff for ${cleanAddress}...`);
+      message.info(`Open the plan step to see ${cleanAddress} in the plan diff`);
     }
   };
 
@@ -449,7 +438,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
         });
       }
 
-      message.success("Policy override submitted and run approved successfully!");
+      message.success("Policy override recorded and run approved");
       setOverrideDrawerOpen(false);
       form.resetFields();
       if (onOverrideSuccess) {
@@ -527,224 +516,157 @@ export const PolicyChecksOutput: React.FC<Props> = ({
       }
 
       return (
-        <Tag color={diffDays < 7 ? "volcano" : "purple"}>
-          Expires: {formattedDate} ({countdownText})
+        <Tag color={diffDays < 7 ? "warning" : undefined}>
+          Expires {formattedDate} ({countdownText})
         </Tag>
       );
     } catch {
       const fallbackStr = String(expiresAt || "").slice(0, 10);
-      return <Tag color="purple">Expires: {fallbackStr}</Tag>;
+      return <Tag>Expires {fallbackStr}</Tag>;
     }
   };
 
   const hasSoftViolations = stats.soft > 0;
   const isWaitingApproval = status === "waitingApproval" || status === undefined;
-  const canOverride =
-    hasSoftViolations &&
-    isWaitingApproval &&
-    status !== "approved" &&
-    status !== "rejected" &&
-    status !== "completed" &&
-    status !== "running" &&
-    status !== "failed" &&
-    status !== "cancelled";
+  const canOverride = hasSoftViolations && isWaitingApproval;
+
+  // Results with nothing in them stay out of the way; "All" and the selected one always show.
+  const chips: { key: PolicyFilter; label: string; icon: React.ReactNode; count: number }[] = [
+    { key: "all", label: "All", icon: <BarsOutlined aria-hidden />, count: allRules.length },
+    { key: "passed", label: "Passed", icon: <CheckCircleOutlined aria-hidden />, count: stats.passed },
+    { key: "hard", label: "Hard mandatory", icon: <CloseCircleOutlined aria-hidden />, count: stats.hard },
+    { key: "soft", label: "Soft mandatory", icon: <ExclamationCircleOutlined aria-hidden />, count: stats.soft },
+    { key: "warning", label: "Advisory", icon: <WarningOutlined aria-hidden />, count: stats.warning },
+    { key: "exempted", label: "Exempted", icon: <SafetyCertificateOutlined aria-hidden />, count: stats.exempted },
+  ];
 
   return (
-    <div className="policy-checks-container">
-      <div className="policy-checks-header">
-        <div className="policy-checks-summary-pills">
-          <div
-            className={`policy-pill policy-pill--passed policy-pill--clickable ${filter === "passed" ? "policy-pill--active" : ""}`}
-            data-testid="pill-passed"
-            onClick={() => setFilter((prev) => (prev === "passed" ? "all" : "passed"))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setFilter((prev) => (prev === "passed" ? "all" : "passed"));
-              }
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            <CheckCircleOutlined />
-            <span>{stats.passed} Passed</span>
-          </div>
-          {stats.exempted > 0 && (
-            <div
-              className={`policy-pill policy-pill--exempted policy-pill--clickable ${filter === "exempted" ? "policy-pill--active" : ""}`}
-              data-testid="pill-exempted"
-              onClick={() => setFilter((prev) => (prev === "exempted" ? "all" : "exempted"))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setFilter((prev) => (prev === "exempted" ? "all" : "exempted"));
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <SafetyCertificateOutlined />
-              <span>{stats.exempted} Exempted</span>
-            </div>
-          )}
-          {stats.warning > 0 && (
-            <div
-              className={`policy-pill policy-pill--warning policy-pill--clickable ${filter === "warnings" ? "policy-pill--active" : ""}`}
-              data-testid="pill-warning"
-              onClick={() => setFilter((prev) => (prev === "warnings" ? "all" : "warnings"))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setFilter((prev) => (prev === "warnings" ? "all" : "warnings"));
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <WarningOutlined />
-              <span>{stats.warning} Warnings</span>
-            </div>
-          )}
-          {stats.soft > 0 && (
-            <div
-              className={`policy-pill policy-pill--soft policy-pill--clickable ${filter === "violations" ? "policy-pill--active" : ""}`}
-              data-testid="pill-soft"
-              onClick={() => setFilter((prev) => (prev === "violations" ? "all" : "violations"))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setFilter((prev) => (prev === "violations" ? "all" : "violations"));
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <ExclamationCircleOutlined />
-              <span>{stats.soft} Soft Mandatory</span>
-            </div>
-          )}
-          {stats.hard > 0 && (
-            <div
-              className={`policy-pill policy-pill--hard policy-pill--clickable ${filter === "violations" ? "policy-pill--active" : ""}`}
-              data-testid="pill-hard"
-              onClick={() => setFilter((prev) => (prev === "violations" ? "all" : "violations"))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setFilter((prev) => (prev === "violations" ? "all" : "violations"));
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <CloseCircleOutlined />
-              <span>{stats.hard} Hard Mandatory</span>
-            </div>
-          )}
-        </div>
-
-        {canOverride && (
-          <Space>
-            <Popconfirm
-              title="Discard this run?"
-              description="The plan will not be applied because of the policy violations, and the run is marked as discarded."
-              onConfirm={handleRejectSubmit}
-              okText="Discard run"
-              cancelText="No"
-              okButtonProps={{ danger: true }}
-            >
-              <Button danger icon={<CloseOutlined />} loading={rejectSubmitting} data-testid="reject-button">
-                Discard run
-              </Button>
-            </Popconfirm>
-            <Button
-              type="primary"
-              icon={<UnlockOutlined />}
-              onClick={() => setOverrideDrawerOpen(true)}
-              data-testid="override-button"
-            >
-              Override Policy Checks
-            </Button>
+    <div className="policy-checks">
+      {canOverride && (
+        <div className="policy-checks-decision" role="region" aria-label="Policy decision">
+          <span>
+            <strong>Soft-mandatory policies failed.</strong>{" "}
+            {approvalTeam ? (
+              <>
+                Someone from <strong>{approvalTeam}</strong> can override them with a justification
+              </>
+            ) : (
+              "An authorized team can override them with a justification"
+            )}
+            , or discard the run.
+          </span>
+          <Space wrap>
+            <Tooltip title={canApprove ? undefined : NO_APPROVE_PERMISSION}>
+              <span>
+                <Button
+                  type="primary"
+                  icon={<UnlockOutlined />}
+                  disabled={!canApprove}
+                  onClick={() => setOverrideDrawerOpen(true)}
+                  data-testid="override-button"
+                >
+                  Override policy checks
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={canApprove ? undefined : NO_APPROVE_PERMISSION}>
+              <span>
+                <Button
+                  danger
+                  icon={<CloseOutlined />}
+                  disabled={!canApprove}
+                  loading={rejectSubmitting}
+                  onClick={() => setDiscardOpen(true)}
+                  data-testid="reject-button"
+                >
+                  Discard run
+                </Button>
+              </span>
+            </Tooltip>
           </Space>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="policy-checks-controls">
-        <Radio.Group value={filter} onChange={(e) => setFilter(e.target.value)} buttonStyle="solid" size="middle">
-          <Radio.Button value="all">All ({allRules.length})</Radio.Button>
-          <Radio.Button value="passed">Passed ({stats.passed})</Radio.Button>
-          <Radio.Button value="violations">Violations ({stats.hard + stats.soft})</Radio.Button>
-          <Radio.Button value="exempted">Exempted ({stats.exempted})</Radio.Button>
-          <Radio.Button value="warnings">Warnings ({stats.warning})</Radio.Button>
-        </Radio.Group>
-
-        <Input.Search
-          placeholder="Filter by rule, resource, or ticket..."
+      <div className="policy-checks-toolbar">
+        <div className="workspace-status-pills" role="group" aria-label="Filter by result">
+          {chips
+            .filter((chip) => chip.key === "all" || chip.key === filter || chip.count > 0)
+            .map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                aria-pressed={filter === chip.key}
+                data-severity={chip.key}
+                data-testid={chip.key === "all" ? undefined : `pill-${chip.key}`}
+                className={clsx("workspace-status-pill", { "workspace-status-pill--active": filter === chip.key })}
+                onClick={() => setFilter((prev) => (prev === chip.key ? "all" : chip.key))}
+              >
+                {chip.icon}
+                {chip.label}
+                <span className="workspace-status-count">{chip.count}</span>
+              </button>
+            ))}
+        </div>
+        <Input
+          aria-label="Search policy results"
+          placeholder="Filter by rule, resource or ticket"
+          prefix={<SearchOutlined />}
           allowClear
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ maxWidth: 320 }}
+          className="policy-checks-search"
         />
       </div>
 
-      <div className="policy-checks-list">
-        {filteredRules.length > 0 ? (
-          filteredRules.map((rule) => {
-            const cardClass = `policy-rule-card policy-rule-card--${rule.severityType}`;
+      {filteredRules.length > 0 ? (
+        <ul className="policy-rule-list">
+          {filteredRules.map((rule) => {
             const isLogsExpanded = Boolean(expandedLogs[rule.key]);
+            const hasAddress = Boolean(rule.address) && rule.address !== "-";
+            const isViolation = rule.severityType === "hard" || rule.severityType === "soft";
 
             return (
-              <div key={rule.key} className={cardClass} data-testid="rule-card">
+              <li
+                key={rule.key}
+                className={`policy-rule-card policy-rule-card--${rule.severityType}`}
+                data-testid="rule-card"
+              >
                 <div className="policy-rule-header">
-                  <Space align="center">
-                    <span className="policy-rule-id">{rule.ruleId}</span>
-                    {rule.policySetName && rule.policySetName !== rule.ruleId && <Tag>{rule.policySetName}</Tag>}
-                  </Space>
-                  <div>
+                  <div className="policy-rule-name">
+                    <code className="policy-rule-id">{rule.ruleId}</code>
+                    {rule.policySetName && rule.policySetName !== rule.ruleId && (
+                      <span className="policy-rule-set">{rule.policySetName}</span>
+                    )}
+                  </div>
+                  <Space size={4}>
                     {rule.severityType === "hard" && (
                       <Tag color="error" icon={<CloseCircleOutlined />}>
-                        Hard Mandatory
+                        Hard mandatory
                       </Tag>
                     )}
                     {rule.severityType === "soft" && (
                       <Tag color="warning" icon={<ExclamationCircleOutlined />}>
-                        Soft Mandatory
+                        Soft mandatory
                       </Tag>
                     )}
-                    {rule.severityType === "exempted" && (
-                      <Tag color="purple" icon={<SafetyCertificateOutlined />}>
-                        🛡️ EXEMPTED
-                      </Tag>
-                    )}
-                    {rule.severityType === "warning" && (
-                      <Tag color="blue" icon={<WarningOutlined />}>
-                        Advisory
-                      </Tag>
-                    )}
+                    {rule.severityType === "exempted" && <Tag icon={<SafetyCertificateOutlined />}>Exempted</Tag>}
+                    {rule.severityType === "warning" && <Tag icon={<WarningOutlined />}>Advisory</Tag>}
                     {rule.severityType === "passed" && (
-                      <Space size={6}>
-                        {rule.enforcementLevel && (
-                          <Tag color="default">{formatEnforcementLevel(rule.enforcementLevel)}</Tag>
-                        )}
+                      <>
+                        {rule.enforcementLevel && <Tag>{formatEnforcementLevel(rule.enforcementLevel)}</Tag>}
                         <Tag color="success" icon={<CheckCircleOutlined />}>
                           Passed
                         </Tag>
-                      </Space>
+                      </>
                     )}
-                  </div>
+                  </Space>
                 </div>
 
-                {(rule.address && rule.address !== "-") ||
-                rule.severityType === "hard" ||
-                rule.severityType === "soft" ? (
+                {(hasAddress || isViolation) && (
                   <div className="policy-resource-row">
-                    {rule.address && rule.address !== "-" ? (
-                      <span className="policy-resource-address">{rule.address}</span>
-                    ) : (
-                      <span />
-                    )}
-                    <Space size={8}>
-                      {rule.address && rule.address !== "-" && (
+                    {hasAddress ? <code className="policy-resource-address">{rule.address}</code> : <span />}
+                    <Space size={8} wrap>
+                      {hasAddress && (
                         <Button
                           type="link"
                           size="small"
@@ -752,13 +674,13 @@ export const PolicyChecksOutput: React.FC<Props> = ({
                           onClick={() => handleDeepLinkToResource(rule.address)}
                           data-testid={`deep-link-${rule.ruleId}`}
                         >
-                          View in Plan Diff
+                          View in plan diff
                         </Button>
                       )}
-                      {(rule.severityType === "hard" || rule.severityType === "soft") && (
+                      {isViolation && (
                         <Tooltip
                           title={
-                            !canManagePolicies ? "Requires Policy Management permission to add exemptions" : undefined
+                            !canManagePolicies ? "Adding an exemption needs the manage policies permission" : undefined
                           }
                         >
                           <span>
@@ -770,115 +692,122 @@ export const PolicyChecksOutput: React.FC<Props> = ({
                               disabled={!canManagePolicies}
                               data-testid={`add-exemption-${rule.ruleId}`}
                             >
-                              Add Exemption
+                              Add exemption
                             </Button>
                           </span>
                         </Tooltip>
                       )}
                     </Space>
                   </div>
-                ) : null}
+                )}
 
                 {rule.severityType === "exempted" && (
-                  <div className="policy-exemption-box" data-testid="exemption-card">
+                  <div className="policy-exemption" data-testid="exemption-card">
                     <div className="policy-exemption-title">
-                      <SafetyCertificateOutlined />
-                      <span>Active Policy Exemption</span>
-                      {rule.ticketReference && (
-                        <Tag color="blue" icon={<LinkOutlined />}>
-                          Ticket: {rule.ticketReference}
-                        </Tag>
-                      )}
+                      <SafetyCertificateOutlined aria-hidden />
+                      <span>Active policy exemption</span>
+                      {rule.ticketReference && <Tag icon={<LinkOutlined />}>Ticket: {rule.ticketReference}</Tag>}
                       {renderExpirationBadge(rule.expiresAt)}
                     </div>
                     {rule.justification && (
-                      <div className="policy-exemption-details">
-                        <i>&ldquo;{rule.justification}&rdquo;</i>
-                      </div>
+                      <p className="policy-exemption-details">&ldquo;{rule.justification}&rdquo;</p>
                     )}
                   </div>
                 )}
 
-                {rule.message && (
-                  <div className="policy-message-box">
-                    <Text>{rule.message}</Text>
-                  </div>
-                )}
+                {rule.message && <p className="policy-message">{rule.message}</p>}
 
                 {rule.logs && rule.logs.length > 0 && (
-                  <div className="policy-logs-container">
+                  <div className="policy-logs">
                     <Button
                       type="link"
                       size="small"
                       icon={<FileTextOutlined />}
                       onClick={() => toggleLogs(rule.key)}
+                      aria-expanded={isLogsExpanded}
                       data-testid={`toggle-logs-${rule.ruleId}`}
                     >
-                      {isLogsExpanded ? "Hide Execution Logs" : "View Execution Logs"}
+                      {isLogsExpanded ? "Hide execution logs" : "View execution logs"}
                     </Button>
                     {isLogsExpanded && (
-                      <div className="policy-logs-content" data-testid={`logs-content-${rule.ruleId}`}>
+                      <pre className="policy-logs-content" data-testid={`logs-content-${rule.ruleId}`}>
                         {rule.logs.map((line, idx) => (
                           <div key={idx}>{line.replace(ANSI_REGEX, "")}</div>
                         ))}
-                      </div>
+                      </pre>
                     )}
                   </div>
                 )}
 
                 {rule.suggestedFix && (
-                  <div className="policy-suggested-fix">
-                    <b>Suggested Fix:</b> {rule.suggestedFix}
-                  </div>
+                  <p className="policy-suggested-fix">
+                    <strong>Suggested fix:</strong> {rule.suggestedFix}
+                  </p>
                 )}
-              </div>
+              </li>
             );
-          })
-        ) : (
-          <Empty
-            description={
-              allRules.length === 0
-                ? "All policy guardrails passed cleanly! No violations or warnings."
-                : "No policy results match your filter."
-            }
-          />
-        )}
-      </div>
+          })}
+        </ul>
+      ) : (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            allRules.length === 0
+              ? "All policy checks passed with no violations or warnings."
+              : "No policy results match your filter."
+          }
+        />
+      )}
 
-      {/* Soft-Mandatory Override Drawer */}
       <Drawer
-        title="Override Soft-Mandatory Policy Checks"
+        title="Override soft-mandatory policy checks"
         placement="right"
         width={580}
         onClose={() => setOverrideDrawerOpen(false)}
         open={overrideDrawerOpen}
       >
         <Paragraph>
-          Soft-mandatory policy checks allow authorized teams ({approvalTeam || "configured override team"}) to approve
-          a run by providing an audit justification.
+          The run continues to apply once you approve. Your justification is recorded with the run so the{" "}
+          {approvalTeam ? <strong>{approvalTeam}</strong> : "override"} team can audit it later.
         </Paragraph>
 
-        <Form form={form} layout="vertical" onFinish={handleOverrideSubmit}>
+        <Form form={form} layout="vertical" requiredMark={false} onFinish={handleOverrideSubmit}>
           <Form.Item
             name="justification"
-            label="Override Justification"
-            rules={[{ required: true, message: "Please provide a justification for this override" }]}
+            label="Justification"
+            rules={[{ required: true, message: "Explain why this run may proceed" }]}
           >
-            <TextArea rows={4} placeholder="E.g. Approved by SecOps for emergency mitigation (ticket SEC-9102)..." />
+            <TextArea rows={4} placeholder="E.g. Approved by SecOps for emergency mitigation (ticket SEC-9102)" />
           </Form.Item>
 
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space style={{ width: "100%", justifyContent: "flex-end" }} size="middle" wrap>
-              <Button danger loading={rejectSubmitting} onClick={handleRejectSubmit} data-testid="reject-override-btn">
-                Reject Policy Override
-              </Button>
-              <Button type="primary" htmlType="submit" loading={overrideSubmitting} data-testid="submit-override-btn">
-                Approve Exception & Proceed to Apply
-              </Button>
-            </Space>
-          </Form.Item>
+          <Space wrap>
+            <Button type="primary" htmlType="submit" loading={overrideSubmitting} data-testid="submit-override-btn">
+              Approve and apply
+            </Button>
+            <Button
+              danger
+              loading={rejectSubmitting}
+              onClick={() => setDiscardOpen(true)}
+              data-testid="reject-override-btn"
+            >
+              Discard run
+            </Button>
+          </Space>
         </Form>
       </Drawer>
+
+      <DeleteConfirmationModal
+        open={discardOpen}
+        title="Discard this run?"
+        message="The plan is not applied and the run is marked as discarded. Your infrastructure stays as it is."
+        okText="Discard run"
+        confirmLoading={rejectSubmitting}
+        onConfirm={() => {
+          setDiscardOpen(false);
+          void handleRejectSubmit();
+        }}
+        onCancel={() => setDiscardOpen(false)}
+      />
 
       {effectiveOrgId && (
         <PolicyExemptionModal

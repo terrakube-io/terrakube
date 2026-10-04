@@ -13,6 +13,7 @@ import { TagModel } from "@/modules/organizations/types";
 import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
 import IacTypeLogo from "./IacTypeLogo";
 import { relativeTime } from "@/modules/utils/dates";
+import "./WorkspaceCard.css";
 
 type Props = {
   item: WorkspaceListItem;
@@ -22,8 +23,8 @@ type Props = {
 export default function WorkspaceCard({ item, tags, organizationId }: Props) {
   const orgId = organizationId || sessionStorage.getItem(ORGANIZATION_ARCHIVE) || undefined;
   return (
-    <Card hoverable style={{ width: "100%" }}>
-      <Space style={{ width: "100%" }} orientation="vertical">
+    <Card hoverable className="workspace-card">
+      <Space className="workspace-card-body" orientation="vertical">
         <Row>
           <Col span={12}>
             <Typography.Title level={3}>{item.name}</Typography.Title>
@@ -46,7 +47,7 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
             </Row>
           </Col>
         </Row>
-        <Space size={40} style={{ marginTop: "25px" }} wrap>
+        <Space size={40} className="workspace-card-meta" wrap>
           <Space>
             <WorkspaceStatusTag status={item.lastStatus} /> <br />
           </Space>
@@ -60,7 +61,7 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
           </Space>
           <Space>
             <ClockCircleOutlined />
-            <Typography.Text>{relativeTime(item.lastRun) ?? "Never Executed"}</Typography.Text>
+            <Typography.Text>{relativeTime(item.lastRun) ?? "Never executed"}</Typography.Text>
           </Space>
           <Space>
             <IacTypeLogo type={item.iacType} />
@@ -74,18 +75,13 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                style={{ position: "relative", zIndex: 2 }}
+                className="workspace-card-vcs-link"
               >
                 {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
               </Typography.Link>
             </Space>
           ) : (
-            <Typography.Text
-              style={{
-                verticalAlign: "middle",
-                display: "inline-block",
-              }}
-            >
+            <Typography.Text className="workspace-card-cli">
               <IconContext.Provider value={{ size: "1.4em" }}>
                 <BiTerminal />
               </IconContext.Provider>

@@ -1,39 +1,20 @@
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
+  ArrowRightOutlined,
+  BranchesOutlined,
   ClockCircleOutlined,
   FolderOutlined,
   LockOutlined,
-  PlayCircleOutlined,
   ProfileOutlined,
+  ProjectOutlined,
   ThunderboltOutlined,
   UnlockOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import {
-  Alert,
-  Avatar,
-  Button,
-  Col,
-  Divider,
-  Empty,
-  Layout,
-  List,
-  message,
-  Row,
-  Space,
-  Table,
-  Tabs,
-  Typography,
-  Card,
-  Segmented,
-  Flex,
-  Select,
-  Input,
-} from "antd";
+import { Alert, Avatar, Button, Col, Empty, message, Row, Space, Table, Tabs, Typography, Modal } from "antd";
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useJobStatusSubscription, usePolling } from "../../hooks";
-import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -53,6 +34,7 @@ import {
   IncludedItem,
   Organization,
   Resource,
+  Template,
   VcsType,
   Workspace,
 } from "../types.js";
@@ -65,14 +47,17 @@ import { Variables } from "../Workspaces/Variables";
 import { getServiceIcon } from "./Icons.jsx";
 import { getIaCIconById, getIaCNameById } from "./Workspaces";
 import "./Workspaces.css";
+import { UNLOCK_CONFIRM_TEXT } from "./Settings/lockingCopy";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import RunList from "@/modules/workspaces/components/RunList";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
 import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
 import VcsLogo from "@/components/display/VcsLogo";
-import { relativeTime } from "@/modules/utils/dates";
+import { formatDateTime, formatDuration, relativeTime } from "@/modules/utils/dates";
+import { computeWorkspaceMetrics, FINISHED_JOB_STATUSES } from "./workspaceMetrics";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -88,19 +73,19 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "4": "Variables",
   "5": "Schedules",
   "6": "Settings",
-  "7": "Run Triggers",
+  "7": "Run triggers",
 };
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
   general: "General",
   policies: "Policies",
   locking: "Locking",
-  sshkey: "SSH Key",
+  sshkey: "SSH key",
   webhook: "Webhook",
   notifications: "Notifications",
-  "state-shared": "State Shared",
-  "team-access": "Team Access",
-  advanced: "Destruction and Deletion",
+  "state-shared": "State shared",
+  "team-access": "Team access",
+  advanced: "Destruction and deletion",
 };
 
 type Props = {
@@ -199,7 +184,10 @@ export const WorkspaceDetails = ({
       dataIndex: "value",
       key: "value",
       render: (text: string, record: StateOutputVariableWithName) => (
-        <Paragraph style={{ margin: "0px" }} copyable={{ tooltips: false, text: getOutputValueFromState(record.name) }}>
+        <Paragraph
+          className="workspace-output-value"
+          copyable={{ tooltips: false, text: getOutputValueFromState(record.name) }}
+        >
           {text}
         </Paragraph>
       ),
@@ -234,18 +222,28 @@ export const WorkspaceDetails = ({
               : `${text}[${record.index}]`
             : text;
         return (
-          <Button onClick={() => showDrawer(record)} type="link">
-            {displayName} &nbsp;
-            <HiOutlineExternalLink />
+          <Button onClick={() => showDrawer(record)} type="link" className="resource-name-link" title={displayName}>
+            <span className="resource-name-text">{displayName}</span>
+            <HiOutlineExternalLink aria-hidden />
           </Button>
         );
       },
+      width: "27%",
+      ellipsis: true,
     },
     {
       title: "Provider",
       dataIndex: "provider",
       key: "provider",
       sorter: (a: Resource, b: Resource) => a.provider.localeCompare(b.provider),
+      // Drop only the default registry host: "registry.terraform.io/hashicorp/null" reads "hashicorp/null".
+      render: (text: string) => (
+        <code className="resource-provider" title={text}>
+          {text?.replace(/^registry\.(terraform\.io|opentofu\.org)\//, "")}
+        </code>
+      ),
+      width: "25%",
+      ellipsis: true,
     },
     {
       title: "Type",
@@ -254,15 +252,19 @@ export const WorkspaceDetails = ({
       onFilter: (value: React.Key | boolean, record: Resource) => record.type.indexOf(value as any) === 0,
       sorter: (a: Resource, b: Resource) => a.type.localeCompare(b.type),
       render: (text: string, record: Resource) => (
-        <>
-          <Avatar shape="square" size="small" src={getServiceIcon(record.provider, record.type)} /> &nbsp;{text}
-        </>
+        <span className="resource-type" title={text}>
+          <img src={getServiceIcon(record.provider, record.type)} alt="" width={16} height={16} />
+          <span>{text}</span>
+        </span>
       ),
+      width: "27%",
+      ellipsis: true,
     },
     {
       title: "Module",
       dataIndex: "module",
       key: "module",
+      ellipsis: true,
     },
   ];
 
@@ -515,6 +517,23 @@ export const WorkspaceDetails = ({
     switchKey("6");
   };
 
+  const [lockModal, lockModalContext] = Modal.useModal();
+
+  // Unlocking asks the same question as the Locking settings page; locking from the header stays one click.
+  const confirmLockButton = (locked: boolean) => {
+    if (!locked) {
+      handleLockButton(false);
+      return;
+    }
+    lockModal.confirm({
+      title: `Unlock ${workspaceName}?`,
+      content: UNLOCK_CONFIRM_TEXT,
+      okText: "Unlock workspace",
+      cancelText: "Cancel",
+      onOk: () => handleLockButton(true),
+    });
+  };
+
   const handleLockButton = (locked: boolean) => {
     const body = {
       data: {
@@ -542,110 +561,128 @@ export const WorkspaceDetails = ({
       });
   };
 
+  const latestJob = jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id)[0] : undefined;
+  const metrics = computeWorkspaceMetrics(jobs);
+
   const renderSection = (workspace: Workspace) => {
     switch (activeKey) {
       case "1":
         return (
           <Row>
-            <Col span={19} style={{ paddingRight: "20px" }}>
+            <Col span={18} className="workspace-overview-main">
               {workspace.attributes.source === "empty" &&
               workspace.attributes.branch === "remote-content" &&
               (workspace.relationships?.history?.data?.length || 0) < 1 ? (
                 <CLIDriven organizationName={organizationNameLocal} workspaceName={workspaceName} />
               ) : (
                 <div>
-                  <Typography.Title level={3} style={{ margin: 0 }}>
-                    Latest Run
-                  </Typography.Title>
-                  <div style={{ marginRight: "150px", borderWidth: "1px" }}>
-                    <List
-                      itemLayout="horizontal"
-                      style={{
-                        border: "1px solid #c2c5cb",
-                        padding: "24px",
-                      }}
-                      locale={{
-                        emptyText: (
-                          <Empty
-                            image={Empty.PRESENTED_IMAGE_SIMPLE}
-                            description={
-                              manageWorkspace
-                                ? "No runs yet. Use the New run button above to trigger your first plan."
-                                : "No runs yet."
-                            }
-                          />
-                        ),
-                      }}
-                      dataSource={jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id).slice(0, 1) : []}
-                      renderItem={(item) => (
-                        <List.Item>
-                          <List.Item.Meta
-                            style={{ margin: "0px", padding: "0px" }}
-                            avatar={<Avatar shape="square" icon={<UserOutlined />} />}
-                            description={
-                              <div>
-                                <Row>
-                                  <Col span={20}>
-                                    <Typography.Title
-                                      level={4}
-                                      className="ant-list-item-meta-title"
-                                      style={{ margin: 0 }}
-                                    >
-                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
-                                        {item.title}
-                                      </Link>{" "}
-                                    </Typography.Title>
-                                    <b>{item.createdBy}</b> triggered a run {item.latestChange} via{" "}
-                                    <b>{item.via || "UI"}</b>{" "}
-                                    <ApprovalAttribution approvedBy={item.approvedBy} approvedAt={item.approvedAt} />
-                                    {item.commitId !== "000000000" ? (
-                                      <>
-                                        <FiGitCommit /> {item.commitId?.substring(0, 6)}{" "}
-                                      </>
-                                    ) : (
-                                      ""
-                                    )}
-                                  </Col>
-                                  <Col>
-                                    {
-                                      <div className="textLeft">
-                                        <WorkspaceStatusTag status={item.status} />{" "}
-                                      </div>
-                                    }
-                                  </Col>
-                                </Row>
-                                <br />
-                                <br />
-                                <Row>
-                                  <Col span={20}></Col>
-                                  <Col>
-                                    <Button>
-                                      <Link to={runLink(item.id)} onClick={() => changeJob(item.id)}>
-                                        See details
-                                      </Link>
-                                    </Button>
-                                  </Col>
-                                </Row>
-                              </div>
-                            }
-                          />
-                        </List.Item>
-                      )}
-                    />
+                  <div className="latest-run-header">
+                    <Typography.Title level={3}>Latest run</Typography.Title>
+                    {jobs.length > 0 && (
+                      <Link to={`/organizations/${organizationId}/workspaces/${id}/runs`}>
+                        View all runs <ArrowRightOutlined aria-hidden />
+                      </Link>
+                    )}
                   </div>
+                  {latestJob ? (
+                    <article className="latest-run" aria-label="Latest run">
+                      <div className="latest-run-title">
+                        <Typography.Title level={4}>
+                          <Link to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
+                            {latestJob.title}
+                          </Link>
+                        </Typography.Title>
+                        <WorkspaceStatusTag status={latestJob.status} />
+                      </div>
+                      <p className="latest-run-byline">
+                        <Avatar size={20} shape="square" icon={<UserOutlined />} />
+                        <span>
+                          <strong>{latestJob.createdBy}</strong> triggered a run {latestJob.latestChange} via{" "}
+                          <strong>{latestJob.via || "UI"}</strong>
+                          {latestJob.commitId && latestJob.commitId !== "000000000" && (
+                            <>
+                              {" · "}
+                              <FiGitCommit aria-label="commit" /> <code>{latestJob.commitId.substring(0, 7)}</code>
+                            </>
+                          )}{" "}
+                          <ApprovalAttribution approvedBy={latestJob.approvedBy} approvedAt={latestJob.approvedAt} />
+                        </span>
+                      </p>
+                      <dl className="latest-run-facts">
+                        <div>
+                          <dt>Template</dt>
+                          <dd>
+                            {(templates as Template[]).find((t) => t.id === latestJob.templateReference)?.attributes
+                              ?.name ?? "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Policy checks</dt>
+                          <dd>
+                            <PolicyStatusTag
+                              status={workspace.attributes?.policyComplianceStatus}
+                              organizationId={organizationId}
+                              workspaceId={id}
+                              clickable
+                            />
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Duration</dt>
+                          <dd>
+                            {FINISHED_JOB_STATUSES.includes(latestJob.status)
+                              ? (formatDuration(latestJob.createdDate, latestJob.updatedDate) ?? "—")
+                              : "In progress"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Run</dt>
+                          <dd>
+                            <code>#{latestJob.id}</code>
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="latest-run-actions">
+                        <LinkButton to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
+                          See details
+                        </LinkButton>
+                      </div>
+                    </article>
+                  ) : (
+                    <div className="latest-run latest-run--empty">
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={
+                          manageWorkspace
+                            ? "No runs yet. Use Run now above to trigger your first plan."
+                            : "No runs yet."
+                        }
+                      />
+                    </div>
+                  )}
                   <Tabs
                     type="card"
-                    style={{ marginTop: "30px" }}
+                    className="workspace-overview-tabs"
                     items={[
                       {
                         label: `Resources (${resources.length})`,
                         key: "1",
-                        children: <Table dataSource={resources} columns={resourceColumns} />,
+                        // Fills the column; scrolls only when it is narrower than 560px.
+                        children: (
+                          <Table size="middle" dataSource={resources} columns={resourceColumns} scroll={{ x: 560 }} />
+                        ),
                       },
                       {
                         label: `Outputs (${outputs.length})`,
                         key: "2",
-                        children: <Table dataSource={outputs} columns={outputColumns} />,
+                        children: (
+                          <Table
+                            size="middle"
+                            dataSource={outputs}
+                            columns={outputColumns}
+                            scroll={{ x: "max-content" }}
+                          />
+                        ),
                       },
                     ]}
                   />
@@ -654,51 +691,98 @@ export const WorkspaceDetails = ({
                 </div>
               )}
             </Col>
-            <Col span={5}>
-              <Space orientation="vertical">
-                <br />
-                <span>
-                  {workspace.attributes.branch !== "remote-content" &&
-                  isValidUrl(fixSshURL(workspace.attributes.source)) ? (
-                    <>
-                      {" "}
-                      <VcsLogo type={vcsProvider} />{" "}
-                      <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
-                        {new URL(fixSshURL(workspace.attributes.source))?.pathname?.replace(".git", "")?.substring(1)}
-                      </a>
-                    </>
-                  ) : (
-                    <>
-                      <IconContext.Provider value={{ size: "1.4em" }}>
-                        <BiTerminal />
-                      </IconContext.Provider>
-                      &nbsp;&nbsp;cli/api driven workflow
-                    </>
+            <Col span={6}>
+              <aside className="workspace-rail" aria-label="Workspace details">
+                <ul className="workspace-rail-facts">
+                  <li>
+                    {workspace.attributes.branch !== "remote-content" &&
+                    isValidUrl(fixSshURL(workspace.attributes.source)) ? (
+                      <>
+                        <VcsLogo type={vcsProvider} />
+                        <a href={fixSshURL(workspace.attributes.source)} target="_blank" rel="noreferrer">
+                          {new URL(fixSshURL(workspace.attributes.source))?.pathname?.replace(".git", "")?.substring(1)}
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <BiTerminal aria-hidden />
+                        <span>CLI/API-driven workflow</span>
+                      </>
+                    )}
+                  </li>
+                  {workspace.attributes.branch && workspace.attributes.branch !== "remote-content" && (
+                    <li>
+                      <BranchesOutlined aria-hidden />
+                      <span className="workspace-rail-label">Branch:</span>
+                      <code>{workspace.attributes.branch}</code>
+                    </li>
                   )}
-                </span>
-                <span>
-                  <ThunderboltOutlined /> Execution Mode: {executionMode}{" "}
-                </span>
-                {workspace.attributes.folder && (
-                  <span>
-                    <FolderOutlined /> Working Directory: {workspace.attributes.folder}{" "}
-                  </span>
+                  <li>
+                    <ThunderboltOutlined aria-hidden />
+                    <span className="workspace-rail-label">Execution mode:</span>
+                    <Link to={`/organizations/${organizationId}/workspaces/${id}/settings/general`}>
+                      {executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}
+                    </Link>
+                  </li>
+                  {workspace.attributes.folder && (
+                    <li>
+                      <FolderOutlined aria-hidden />
+                      <span className="workspace-rail-label">Working directory:</span>
+                      <code>{workspace.attributes.folder}</code>
+                    </li>
+                  )}
+                  <li>
+                    <ProjectOutlined aria-hidden />
+                    <span className="workspace-rail-label">Project:</span>
+                    {projectName && projectId ? (
+                      <Link to={`/organizations/${organizationId}/projects/${projectId}`}>{projectName}</Link>
+                    ) : (
+                      <span>None</span>
+                    )}
+                  </li>
+                </ul>
+                {metrics && (
+                  <section className="workspace-rail-section" aria-labelledby="workspace-rail-metrics">
+                    <Typography.Title level={4} id="workspace-rail-metrics">
+                      Metrics{" "}
+                      <span className="workspace-rail-heading-note">
+                        (last {metrics.runCount === 1 ? "run" : `${metrics.runCount} runs`})
+                      </span>
+                    </Typography.Title>
+                    <dl className="workspace-rail-metrics">
+                      <div>
+                        <dt>Average run duration</dt>
+                        <dd>{metrics.averageDuration ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Failed runs</dt>
+                        <dd>{metrics.failedRuns}</dd>
+                      </div>
+                      <div>
+                        <dt>Last success</dt>
+                        <dd>
+                          {metrics.lastSuccessfulRun ? (
+                            <time
+                              dateTime={metrics.lastSuccessfulRun}
+                              title={formatDateTime(metrics.lastSuccessfulRun)}
+                            >
+                              {relativeTime(metrics.lastSuccessfulRun)}
+                            </time>
+                          ) : (
+                            "None"
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
                 )}
-                <Divider />
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  Project
-                </Typography.Title>
-                {projectName && projectId ? (
-                  <Link to={`/organizations/${organizationId}/projects/${projectId}`}>{projectName}</Link>
-                ) : (
-                  <Typography.Text type="secondary">No project</Typography.Text>
-                )}
-                <Divider />
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  Tags
-                </Typography.Title>
-                <Tags organizationId={organizationId} workspaceId={id!} manageWorkspace={manageWorkspace} />
-              </Space>
+                <section className="workspace-rail-section" aria-labelledby="workspace-rail-tags">
+                  <Typography.Title level={4} id="workspace-rail-tags">
+                    Tags
+                  </Typography.Title>
+                  <Tags organizationId={organizationId} workspaceId={id!} manageWorkspace={manageWorkspace} />
+                </section>
+              </aside>
             </Col>
           </Row>
         );
@@ -782,8 +866,12 @@ export const WorkspaceDetails = ({
       : [{ label: WORKSPACE_SECTION_LABELS[activeKey ?? "1"] ?? "Overview" }]),
   ];
 
+  const isSettings = activeKey === "6";
+  // Settings pages drop the header entirely; General settings shows the ID as a field.
+  const showWorkspaceId = !isSettings;
+
   const pageActions =
-    !loading && workspace ? (
+    !loading && workspace && !isSettings ? (
       <Space orientation="horizontal">
         {actions &&
           actions
@@ -836,7 +924,7 @@ export const WorkspaceDetails = ({
         <Button
           type="default"
           htmlType="button"
-          onClick={() => handleLockButton(workspace.attributes.locked)}
+          onClick={() => confirmLockButton(workspace.attributes.locked)}
           icon={workspace.attributes.locked ? <UnlockOutlined /> : <LockOutlined />}
           disabled={!manageWorkspace}
         >
@@ -858,6 +946,7 @@ export const WorkspaceDetails = ({
   return (
     <PageWrapper
       title={workspaceName}
+      showTitle={!isSettings}
       breadcrumbs={pageBreadcrumbs}
       error={
         loadError
@@ -868,70 +957,68 @@ export const WorkspaceDetails = ({
       loadingText="Loading Workspace..."
       actions={pageActions}
     >
+      {lockModalContext}
       {workspace && (
         <div className="orgWrapper">
           <Space className="workspace-details" orientation="vertical">
-            <Paragraph style={{ margin: "0px" }} copyable={{ text: id, tooltips: false }}>
-              <Typography.Text type="secondary"> ID: {id} </Typography.Text>
-            </Paragraph>
-            {workspace.attributes?.description === "" ? (
+            {showWorkspaceId && (
+              <Paragraph className="workspace-id" copyable={{ text: id, tooltips: false }}>
+                <Typography.Text type="secondary"> ID: {id} </Typography.Text>
+              </Paragraph>
+            )}
+            {isSettings ? null : workspace.attributes?.description === "" ? (
               <a className="workspace-button" onClick={handleClickSettings}>
                 Add workspace description
               </a>
             ) : (
               <Typography.Text type="secondary">{workspace.attributes.description}</Typography.Text>
             )}
-            <Space size={40} style={{ marginBottom: "40px" }} orientation="horizontal">
-              <Typography.Text>
-                {workspace.attributes.locked ? (
-                  <>
-                    <LockOutlined /> Locked
-                  </>
-                ) : (
-                  <>
-                    <UnlockOutlined /> Unlocked
-                  </>
-                )}
-              </Typography.Text>
-              <PolicyStatusTag
-                status={workspace.attributes?.policyComplianceStatus}
-                organizationId={organizationId}
-                workspaceId={id}
-                clickable
-              />
-              <Typography.Text>
-                <ProfileOutlined /> Resources <span style={{ fontWeight: "500" }}>{resources.length}</span>
-              </Typography.Text>
-              <Space orientation="horizontal">
-                {getIaCIconById(workspace.attributes?.iacType)}
+            {!isSettings && (
+              <div className="workspace-status-strip">
                 <Typography.Text>
-                  {getIaCNameById(workspace.attributes?.iacType)}{" "}
-                  <a onClick={handleClickSettings} className="workspace-button">
-                    {workspace.attributes.terraformVersion}
-                  </a>
+                  {workspace.attributes.locked ? (
+                    <>
+                      <LockOutlined /> Locked
+                    </>
+                  ) : (
+                    <>
+                      <UnlockOutlined /> Unlocked
+                    </>
+                  )}
                 </Typography.Text>
-              </Space>
-
-              <Typography.Text>
-                <ClockCircleOutlined /> Updated{" "}
-                <span style={{ fontWeight: "500" }}>{relativeTime(lastRun) ?? "never executed"}</span>
-              </Typography.Text>
-
-              <span>
-                {workspace.attributes.locked ? (
-                  <>
-                    <Alert
-                      title="Lock Description"
-                      description={workspace.attributes.lockDescription}
-                      type="warning"
-                      showIcon
-                    />
-                  </>
-                ) : (
-                  <></>
+                <PolicyStatusTag
+                  status={workspace.attributes?.policyComplianceStatus}
+                  organizationId={organizationId}
+                  workspaceId={id}
+                  clickable
+                />
+                <Typography.Text>
+                  <ProfileOutlined /> Resources <span className="workspace-status-value">{resources.length}</span>
+                </Typography.Text>
+                <span className="workspace-status-iac">
+                  {getIaCIconById(workspace.attributes?.iacType)}
+                  <Typography.Text>
+                    {getIaCNameById(workspace.attributes?.iacType)}{" "}
+                    <a onClick={handleClickSettings} className="workspace-button">
+                      {workspace.attributes.terraformVersion}
+                    </a>
+                  </Typography.Text>
+                </span>
+                <Typography.Text>
+                  <ClockCircleOutlined /> Updated{" "}
+                  <span className="workspace-status-value">{relativeTime(lastRun) ?? "never executed"}</span>
+                </Typography.Text>
+                {workspace.attributes.locked && (
+                  <Alert
+                    className="workspace-status-lock"
+                    title="Lock Description"
+                    description={workspace.attributes.lockDescription}
+                    type="warning"
+                    showIcon
+                  />
                 )}
-              </span>
-            </Space>
+              </div>
+            )}
           </Space>
 
           {renderSection(workspace)}

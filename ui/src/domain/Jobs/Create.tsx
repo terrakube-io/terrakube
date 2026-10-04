@@ -1,5 +1,5 @@
-import { DeleteOutlined, InfoCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { Button, Collapse, Form, Input, Modal, Select, Space, Tooltip, message, Typography } from "antd";
+import { DeleteOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { Button, Collapse, Form, Input, Select, Tooltip, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -7,8 +7,23 @@ import axiosInstance from "../../config/axiosConfig";
 import { Resource, Template } from "../types";
 import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import "./runTokens.css";
+import "./Create.css";
 
-const validateMessages = { required: "${label} is required!" };
+const validateMessages = { required: "${label} is required" };
+
+const isDestroyTemplate = (template: Template) => template.attributes.name.includes("Destroy");
+
+const templateLabel = (template: Template) =>
+  isDestroyTemplate(template) ? (
+    <span className="run-template--destroy">
+      <DeleteOutlined aria-hidden /> {template.attributes.name}
+    </span>
+  ) : (
+    template.attributes.name
+  );
 
 type Props = {
   changeJob: (id: string) => void;
@@ -116,7 +131,7 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
       })
       .catch((error) => {
         setSubmitting(false);
-        message.error("Failed to start job: " + error.response.data.errors[0].detail);
+        message.error("Could not start the run: " + (error?.response?.data?.errors?.[0]?.detail ?? error.message));
       });
   };
 
@@ -138,99 +153,83 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
         </Button>
       </Tooltip>
 
-      <Modal
+      <CrudFormModal<CreateJobForm>
         open={visible}
-        title="Run job"
-        okText="Start"
-        cancelText="Cancel"
+        title="Start a run"
+        okText="Start run"
+        form={form}
+        formName="create-run"
+        validateMessages={validateMessages}
         onCancel={onCancel}
-        onOk={() => {
-          form
-            .validateFields()
-            .then((values) => {
-              form.resetFields();
-              onCreate(values);
-            })
-            .catch(() => {});
+        onSubmit={(values) => {
+          form.resetFields();
+          onCreate(values);
         }}
       >
-        <Space orientation="vertical">
-          <div>
-            <InfoCircleOutlined style={{ fontSize: "16px", marginRight: "8px", color: "var(--tk-accent)" }} />
-            <Typography.Text type="secondary">
-              You will be redirected to the run details page to see this job executed.
-            </Typography.Text>
-          </div>
-          <Form form={form} layout="vertical" name="create-org" validateMessages={validateMessages}>
-            <Form.Item
-              name="templateId"
-              label="Choose job type"
-              rules={[{ required: true }]}
-              initialValue={defaultTemplate}
-            >
-              {loading || !templates ? (
-                <LoadingFallback />
-              ) : (
-                <Select>
-                  {templates.map((item) => (
-                    <Select.Option key={item.id} value={item.id}>
-                      <span style={item.attributes.name.includes("Destroy") ? { color: "red" } : {}}>
-                        {item.attributes.name.includes("Destroy") && <DeleteOutlined style={{ marginRight: 8 }} />}
-                        {item.attributes.name}
-                      </span>
-                    </Select.Option>
-                  ))}
-                </Select>
-              )}
-            </Form.Item>
-            <Form.Item
-              name="branchName"
-              label="Branch Name"
-              tooltip="Select the branch to use for this job. When using the CLI driven workflow do not modify the branch name."
-              initialValue={branchName}
-            >
-              <Input />
-            </Form.Item>
-            <Collapse
-              ghost
-              items={[
-                {
-                  key: "additionalPlanningOptions",
-                  label: "Additional planning options",
-                  children: (
-                    <>
-                      <Form.Item
-                        name="targetAddrs"
-                        label="Target resources"
-                        tooltip="Limit the plan to these resource addresses and their dependencies, e.g. aws_instance.example or module.foo.aws_instance.bar. Type an address and press Enter to add it."
-                      >
-                        <Select
-                          mode="tags"
-                          tokenSeparators={[","]}
-                          placeholder="Select or type a resource address"
-                          options={resourceOptions}
-                        />
-                      </Form.Item>
-                      <Form.Item
-                        name="replaceAddrs"
-                        label="Replace resources"
-                        tooltip="Force replacement of these resource addresses on the next apply, e.g. aws_instance.example or module.foo.aws_instance.bar. Type an address and press Enter to add it."
-                      >
-                        <Select
-                          mode="tags"
-                          tokenSeparators={[","]}
-                          placeholder="Select or type a resource address"
-                          options={resourceOptions}
-                        />
-                      </Form.Item>
-                    </>
-                  ),
-                },
-              ]}
+        <Form.Item name="templateId" label="Template" rules={[{ required: true }]} initialValue={defaultTemplate}>
+          {loading || !templates ? (
+            <LoadingFallback />
+          ) : templates.length <= 3 ? (
+            <RadioChoices
+              options={templates.map((item) => ({
+                value: item.id,
+                label: templateLabel(item),
+                help: isDestroyTemplate(item)
+                  ? "Destroys every resource this workspace manages."
+                  : item.attributes.description,
+              }))}
             />
-          </Form>
-        </Space>
-      </Modal>
+          ) : (
+            <Select options={templates.map((item) => ({ value: item.id, label: templateLabel(item) }))} />
+          )}
+        </Form.Item>
+        <Form.Item
+          name="branchName"
+          label="Branch"
+          extra="The run uses this branch instead of the workspace default. Leave it as is for CLI-driven workspaces."
+          initialValue={branchName}
+        >
+          <Input />
+        </Form.Item>
+        <Collapse
+          ghost
+          className="run-create-options"
+          items={[
+            {
+              key: "additionalPlanningOptions",
+              label: "Additional planning options",
+              children: (
+                <>
+                  <Form.Item
+                    name="targetAddrs"
+                    label="Target resources"
+                    extra="Only these resources and their dependencies are planned. Type an address and press Enter to add it."
+                  >
+                    <Select
+                      mode="tags"
+                      tokenSeparators={[","]}
+                      placeholder="Select or type a resource address"
+                      options={resourceOptions}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="replaceAddrs"
+                    label="Replace resources"
+                    extra="These resources are destroyed and created again on apply, even if nothing changed."
+                  >
+                    <Select
+                      mode="tags"
+                      tokenSeparators={[","]}
+                      placeholder="Select or type a resource address"
+                      options={resourceOptions}
+                    />
+                  </Form.Item>
+                </>
+              ),
+            },
+          ]}
+        />
+      </CrudFormModal>
     </div>
   );
 };

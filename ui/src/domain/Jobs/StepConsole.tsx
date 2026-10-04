@@ -90,7 +90,7 @@ export const StepConsole = ({
     if (state === "loading") {
       return (
         <Spin spinning tip="Loading logs...">
-          <div style={{ minHeight: 120 }} />
+          <div className="run-detail-loading" />
         </Spin>
       );
     }
@@ -117,14 +117,12 @@ export const StepConsole = ({
   const isPlanStep = /\bplan\b/.test(stepNameLower);
   const isDestroyStep = /\bdestroy\b/.test(stepNameLower);
   const isPlanOrApplyStep = isApplyStep || isPlanStep || isDestroyStep;
-  const stepFailed =
-    item.status === "failed" ||
-    item.status === "cancelled" ||
-    /(^|\n)\s*Error: /.test(logText);
+  const stepFailed = item.status === "failed" || item.status === "cancelled" || /(^|\n)\s*Error: /.test(logText);
 
   // This phase's own snapshot has been loaded from a persisted context (even an explicit empty
   // array is authoritative evidence, not a persistence failure).
-  const ownPhaseSnapshot = isApplyStep || isDestroyStep ? structured.structuredApplyChanges : structured.structuredChanges;
+  const ownPhaseSnapshot =
+    isApplyStep || isDestroyStep ? structured.structuredApplyChanges : structured.structuredChanges;
   const ownSnapshotConfirmed = ownPhaseSnapshot != null && Boolean(structured.contextEverPersisted);
 
   // A standard apply whose plan was explicitly empty is a valid no-op: absent applyStructuredOutput
@@ -157,7 +155,7 @@ export const StepConsole = ({
   if (applyIsNoOp) {
     return (
       <>
-        <div className="structured-plan-noChanges" style={{ marginBottom: 12 }}>
+        <div className="structured-plan-noChanges run-step-notice">
           <CheckCircleOutlined className="structured-plan-noChangesIcon" />
           <span>Apply completed with no changes.</span>
         </div>
@@ -172,12 +170,12 @@ export const StepConsole = ({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 12 }}
+          className="run-step-notice"
           message="Structured output temporarily unavailable"
           description={
             <>
-              The structured view for this step could not be loaded yet. The full console output is
-              shown below and the page keeps retrying automatically.
+              The structured view for this step could not be loaded yet. The full console output is shown below and the
+              page keeps retrying automatically.
               {onRetryStructured != null && (
                 <>
                   {" "}
@@ -218,12 +216,12 @@ export const StepConsole = ({
     <div>{parse(structured.template ?? "")}</div>
   );
 
-  // Both views stay mounted; CSS toggles visibility so flipping the switch never resets
+  // Both views stay mounted; the hidden attribute toggles visibility so flipping the switch never resets
   // StructuredPlanOutput's internal expanded-row state.
   return (
     <>
-      <div style={{ display: uiType === "structured" ? "block" : "none" }}>{structuredContent}</div>
-      <div style={{ display: uiType === "structured" ? "none" : "block" }}>{renderConsole()}</div>
+      <div hidden={uiType !== "structured"}>{structuredContent}</div>
+      <div hidden={uiType === "structured"}>{renderConsole()}</div>
     </>
   );
 };

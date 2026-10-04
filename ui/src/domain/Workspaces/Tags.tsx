@@ -9,6 +9,7 @@ import WorkspaceTagChips from "@/modules/workspaces/components/WorkspaceTagChips
 import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { Tag, ApiWorkspaceTag } from "../types";
+import "./Workspaces.css";
 
 type Props = {
   organizationId: string;
@@ -236,12 +237,12 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
         keyboard={!saving}
         mask={{ closable: false }}
       >
-        <Space orientation="vertical" style={{ width: "100%" }} size={8}>
+        <Space orientation="vertical" className="workspace-tag-editor" size={8}>
           {rows.length === 0 && <Typography.Text type="secondary">No tags on this workspace yet.</Typography.Text>}
           {rows.map((row) => (
             <Flex key={row.rowKey} gap={8} align="center">
               {row.bindingId ? (
-                <Input aria-label="Tag key" value={row.key} disabled style={{ flex: 1, minWidth: 0 }} />
+                <Input aria-label="Tag key" value={row.key} disabled className="workspace-tag-editor-field" />
               ) : (
                 <AutoComplete
                   aria-label="New tag key"
@@ -253,7 +254,7 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
                     filterOption: (input, option) => (option?.value ?? "").toLowerCase().includes(input.toLowerCase()),
                   }}
                   onChange={(key) => updateRow(row.rowKey, { key })}
-                  style={{ flex: 1, minWidth: 0 }}
+                  className="workspace-tag-editor-field"
                 />
               )}
               <Input
@@ -262,7 +263,7 @@ export const Tags = ({ organizationId, workspaceId, manageWorkspace }: Props) =>
                 placeholder={row.bindingId ? "No value" : "Value (optional)"}
                 maxLength={TAG_VALUE_MAX_LENGTH}
                 onChange={(e) => updateRow(row.rowKey, { value: e.target.value })}
-                style={{ flex: 1, minWidth: 0 }}
+                className="workspace-tag-editor-field"
               />
               <Button
                 type="text"

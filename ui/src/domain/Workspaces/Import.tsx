@@ -33,6 +33,7 @@ import { VcsModel, VcsTypeExtended } from "../types";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import VcsLogo from "@/components/display/VcsLogo";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import "./CreateImport.css";
 const { Content } = Layout;
 const validateMessages = {
   required: "${label} is required!",
@@ -849,35 +850,32 @@ export const ImportWorkspace = () => {
         description="Only approved URLs can be used when using Terraform Enterprise to import workspaces. Please verify with your Terrakube administrator if you encounter any issues."
         type="warning"
         showIcon
-        style={{ marginBottom: "20px" }}
+        className="ws-import-alert"
       />
       <Content hidden={stepsHidden}>
-        <Steps direction="horizontal" size="small" current={current} onChange={handleChange} items={stepItems} />
+        <Steps
+          className="ws-import-steps"
+          direction="horizontal"
+          size="small"
+          current={current}
+          onChange={handleChange}
+          items={stepItems}
+        />
         {current == 0 && (
           <Space className="chooseType" orientation="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
+            <Typography.Title level={3} className="ws-import-title">
               Select a Platform for Workspace Import{" "}
             </Typography.Title>
             <List
-              grid={{ gutter: 1, column: 4 }}
+              grid={{ gutter: 16, xs: 1, sm: 2, lg: 4 }}
               dataSource={platforms}
               renderItem={(item) => (
                 <List.Item>
-                  <Card
-                    style={{
-                      width: "240px",
-                      height: "120px",
-                      textAlign: "center",
-                    }}
-                    hoverable
-                    onClick={() => handlePlatformClick(item)}
-                  >
+                  <Card className="ws-import-platform-card" hoverable onClick={() => handlePlatformClick(item)}>
                     <Space orientation="vertical">
                       <img
-                        style={{
-                          padding: "6px",
-                          height: item.height,
-                        }}
+                        className="ws-import-platform-logo"
+                        style={{ "--ws-import-logo-height": item.height } as React.CSSProperties}
                         alt={item.name}
                         src={item.icon}
                       />
@@ -891,7 +889,7 @@ export const ImportWorkspace = () => {
 
         {current === 1 && (
           <Space className="chooseType" orientation="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
+            <Typography.Title level={3} className="ws-import-title">
               Choose your workflow{" "}
             </Typography.Title>
             <Card hoverable onClick={handleClick}>
@@ -903,7 +901,6 @@ export const ImportWorkspace = () => {
                 Store your Terraform configuration in a git repository, and trigger runs based on pull requests and
                 merges.
               </div>
-              <div className="workflowSelect"></div>
             </Card>
             <Card hoverable onClick={handleCliDriven}>
               <IconContext.Provider value={{ size: "1.3em" }}>
@@ -928,7 +925,7 @@ export const ImportWorkspace = () => {
 
         {current === 2 && versionControlFlow && (
           <Space className="chooseType" orientation="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
+            <Typography.Title level={3} className="ws-import-title">
               Connect to a version control provider
             </Typography.Title>
             <div className="workflowDescription2 App-text">
@@ -1015,7 +1012,7 @@ export const ImportWorkspace = () => {
           }}
         >
           <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
-            <Typography.Title level={3} style={{ margin: 0 }}>
+            <Typography.Title level={3} className="ws-import-title">
               Connect to Platform
             </Typography.Title>
             <div className="workflowDescription2 App-text">
@@ -1057,7 +1054,7 @@ export const ImportWorkspace = () => {
         </Form>
 
         <Space className="chooseType" hidden={workspacesHidden} orientation="vertical">
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="ws-import-title">
             Import Workspaces
           </Typography.Title>
           <div className="workflowDescription2 App-text">
@@ -1115,24 +1112,10 @@ export const ImportWorkspace = () => {
           </Button>,
         ]}
       >
-        <Space orientation="vertical" style={{ width: "100%" }} size="large">
-          <Card
-            size="small"
-            style={{
-              borderRadius: "12px",
-              background: "linear-gradient(135deg, rgba(22,119,255,0.08) 0%, rgba(22,119,255,0.02) 100%)",
-            }}
-          >
-            <Space orientation="vertical" style={{ width: "100%" }} size="middle">
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "16px",
-                  flexWrap: "wrap",
-                }}
-              >
+        <Flex vertical gap="large">
+          <Card size="small" className="ws-import-summary">
+            <Flex vertical gap="middle">
+              <Flex justify="space-between" align="center" gap="middle" wrap="wrap">
                 <div>
                   <Typography.Text strong>Variable collection mapping progress</Typography.Text>
                   <div>
@@ -1142,16 +1125,10 @@ export const ImportWorkspace = () => {
                   </div>
                 </div>
                 <Typography.Text strong>{mappingProgressPercent}%</Typography.Text>
-              </div>
+              </Flex>
               <Progress percent={mappingProgressPercent} showInfo={false} strokeLinecap="round" />
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                  gap: "12px",
-                }}
-              >
-                <Card size="small" style={{ borderRadius: "10px" }}>
+              <div className="ws-import-stats">
+                <Card size="small" className="ws-import-stat">
                   <Typography.Text type="secondary">Current workspace</Typography.Text>
                   <div>
                     <Typography.Text strong>
@@ -1159,39 +1136,34 @@ export const ImportWorkspace = () => {
                     </Typography.Text>
                   </div>
                 </Card>
-                <Card size="small" style={{ borderRadius: "10px" }}>
+                <Card size="small" className="ws-import-stat">
                   <Typography.Text type="secondary">Collections selected</Typography.Text>
                   <div>
                     <Typography.Text strong>{selectedCollectionCount}</Typography.Text>
                   </div>
                 </Card>
-                <Card size="small" style={{ borderRadius: "10px" }}>
+                <Card size="small" className="ws-import-stat">
                   <Typography.Text type="secondary">Sensitive variables</Typography.Text>
                   <div>
                     <Typography.Text strong>{selectedSensitiveVariableCount}</Typography.Text>
                   </div>
                 </Card>
-                <Card size="small" style={{ borderRadius: "10px" }}>
+                <Card size="small" className="ws-import-stat">
                   <Typography.Text type="secondary">Still incomplete</Typography.Text>
                   <div>
                     <Typography.Text strong>{incompleteSensitiveVariableCount}</Typography.Text>
                   </div>
                 </Card>
-                <Card size="small" style={{ borderRadius: "10px" }}>
+                <Card size="small" className="ws-import-stat">
                   <Typography.Text type="secondary">Workspaces remaining</Typography.Text>
                   <div>
                     <Typography.Text strong>{remainingWorkspaceCount}</Typography.Text>
                   </div>
                 </Card>
               </div>
-            </Space>
+            </Flex>
           </Card>
-          <Card
-            size="small"
-            title="Review import details for this workspace"
-            style={{ borderRadius: "12px" }}
-            styles={{ body: { paddingTop: "12px" } }}
-          >
+          <Card size="small" title="Review import details for this workspace" className="ws-import-panel">
             <Typography.Text type="secondary">
               Match each Terraform Cloud variable collection to an existing Terrakube variable collection. You can also
               attach extra Terrakube variable collections that were not present on the source workspace. Any sensitive
@@ -1216,38 +1188,33 @@ export const ImportWorkspace = () => {
             <Card
               key={row.key}
               size="small"
-              style={{
-                borderRadius: "12px",
-                borderColor: row.isAdditional ? "rgba(22,119,255,0.25)" : undefined,
-                background: row.isAdditional ? "rgba(22,119,255,0.03)" : undefined,
-              }}
+              className={row.isAdditional ? "ws-import-mapping ws-import-mapping--additional" : "ws-import-mapping"}
             >
               <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: row.isAdditional ? "1fr 1fr auto" : "1fr 1fr",
-                  gap: "16px",
-                  alignItems: "end",
-                }}
+                className={
+                  row.isAdditional
+                    ? "ws-import-mapping-grid ws-import-mapping-grid--additional"
+                    : "ws-import-mapping-grid"
+                }
               >
                 <div>
                   <Typography.Text type="secondary">
                     {row.isAdditional ? "Additional Terrakube collection" : "Terraform Cloud collection"}
                   </Typography.Text>
-                  <div style={{ marginTop: "6px" }}>
+                  <div className="ws-import-field-value">
                     <Typography.Text strong>{row.sourceName}</Typography.Text>
                   </div>
                 </div>
                 <div>
                   <Typography.Text type="secondary">Terrakube replacement</Typography.Text>
-                  <div style={{ marginTop: "6px" }}>
+                  <div className="ws-import-field-value">
                     <Select
                       value={row.terrakubeCollectionId ?? NONE_COLLECTION_VALUE}
                       onChange={(value) => handleMappingSelectionChange(row.key, value)}
                       options={collectionOptions}
                       showSearch
                       optionFilterProp="label"
-                      style={{ width: "100%" }}
+                      className="ws-import-full"
                       placeholder="Select a Terrakube variable collection"
                     />
                   </div>
@@ -1265,22 +1232,8 @@ export const ImportWorkspace = () => {
               </div>
             </Card>
           ))}
-          <Card
-            size="small"
-            style={{
-              borderRadius: "12px",
-              borderStyle: "dashed",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "16px",
-                flexWrap: "wrap",
-              }}
-            >
+          <Card size="small" className="ws-import-add">
+            <Flex justify="space-between" align="center" gap="middle" wrap="wrap">
               <div>
                 <Typography.Text strong>Add more coverage</Typography.Text>
                 <div>
@@ -1292,14 +1245,9 @@ export const ImportWorkspace = () => {
               <Button icon={<PlusOutlined />} onClick={handleAddAdditionalCollection}>
                 Add additional variable collection
               </Button>
-            </div>
+            </Flex>
           </Card>
-          <Card
-            size="small"
-            title="Sensitive variables that need a value"
-            style={{ borderRadius: "12px" }}
-            styles={{ body: { paddingTop: "12px" } }}
-          >
+          <Card size="small" title="Sensitive variables that need a value" className="ws-import-panel">
             <Typography.Text type="secondary">
               Terraform Cloud does not expose sensitive values during import. Leave a value blank to import that
               variable as incomplete, which blocks future runs until the value is filled in or the variable is removed.
@@ -1312,41 +1260,26 @@ export const ImportWorkspace = () => {
             <Card
               key={variable.id}
               size="small"
-              style={{
-                borderRadius: "12px",
-                borderColor: variable.value.trim() === "" ? "rgba(250, 140, 22, 0.35)" : "rgba(22, 119, 255, 0.2)",
-                background: variable.value.trim() === "" ? "rgba(250, 140, 22, 0.04)" : "rgba(22, 119, 255, 0.03)",
-              }}
+              className={
+                variable.value.trim() === ""
+                  ? "ws-import-secret ws-import-secret--incomplete"
+                  : "ws-import-secret ws-import-secret--filled"
+              }
             >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 360px) auto",
-                  gap: "16px",
-                  alignItems: "end",
-                }}
-              >
+              <div className="ws-import-secret-grid">
                 <div>
                   <Typography.Text type="secondary">Sensitive variable</Typography.Text>
-                  <div
-                    style={{
-                      marginTop: "6px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <Flex align="center" gap="small" wrap="wrap" className="ws-import-field-value">
                     <Typography.Text strong>{variable.key}</Typography.Text>
                     <Typography.Text type="secondary">{getVariableCategoryLabel(variable.category)}</Typography.Text>
                     {variable.hcl && <Typography.Text type="secondary">HCL</Typography.Text>}
-                  </div>
+                  </Flex>
                   {variable.description != null && variable.description !== "" && (
-                    <div style={{ marginTop: "8px" }}>
+                    <div className="ws-import-secret-note">
                       <Typography.Text type="secondary">{variable.description}</Typography.Text>
                     </div>
                   )}
-                  <div style={{ marginTop: "8px" }}>
+                  <div className="ws-import-secret-note">
                     <Typography.Text type={variable.value.trim() === "" ? "warning" : "secondary"}>
                       {variable.value.trim() === ""
                         ? "Will be imported as incomplete until a value is added later."
@@ -1356,7 +1289,7 @@ export const ImportWorkspace = () => {
                 </div>
                 <div>
                   <Typography.Text type="secondary">Replacement value</Typography.Text>
-                  <div style={{ marginTop: "6px" }}>
+                  <div className="ws-import-field-value">
                     <Input.Password
                       value={variable.value}
                       onChange={(event) => handleSensitiveVariableValueChange(variable.id, event.target.value)}
@@ -1375,10 +1308,10 @@ export const ImportWorkspace = () => {
               </div>
             </Card>
           ))}
-        </Space>
+        </Flex>
       </Modal>
       <Space hidden={listHidden} orientation="vertical">
-        <Typography.Title level={3} style={{ margin: 0 }}>
+        <Typography.Title level={3} className="ws-import-title">
           Importing Workspaces
         </Typography.Title>
         <div className="workflowDescription2 App-text">

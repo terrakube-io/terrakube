@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { message } from "antd";
 import { DetailsJob } from "../Details";
 import { stepLogCache } from "../stepLogCache";
 
@@ -19,10 +20,11 @@ window._env_ = {
 };
 
 const getMock = jest.fn();
+const patchMock = jest.fn();
 
 jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => getMock(...args) },
+  default: { get: (...args: unknown[]) => getMock(...args), patch: (...args: unknown[]) => patchMock(...args) },
   axiosClient: { get: (...args: unknown[]) => getMock(...args) },
   axiosAuxiliary: {
     get: (...args: unknown[]) => getMock(...args),
@@ -247,9 +249,7 @@ describe("DetailsJob terminal-status context reconciliation", () => {
       return Promise.resolve({
         data: {
           data: { id: "1", attributes: { status: jobStatus } },
-          included: [
-            { id: "step-2", type: "step", attributes: { name: "Apply", status: jobStatus, stepNumber: "2" } },
-          ],
+          included: [{ id: "step-2", type: "step", attributes: { name: "Apply", status: jobStatus, stepNumber: "2" } }],
         },
       });
     });
@@ -260,10 +260,9 @@ describe("DetailsJob terminal-status context reconciliation", () => {
     jobStatus = "completed";
     contextPersisted = true;
 
-    await waitFor(
-      () => expect(screen.getByRole("button", { name: /aws_instance\.reconciled/i })).toBeInTheDocument(),
-      { timeout: 8000 }
-    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /aws_instance\.reconciled/i })).toBeInTheDocument(), {
+      timeout: 8000,
+    });
     expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
   }, 12000);
 
@@ -282,8 +281,16 @@ describe("DetailsJob terminal-status context reconciliation", () => {
         data: {
           data: { id: "1", attributes: { status: "completed" } },
           included: [
-            { id: "step-1", type: "step", attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" } },
-            { id: "step-2", type: "step", attributes: { name: "Terraform Apply", status: "completed", stepNumber: "2" } },
+            {
+              id: "step-1",
+              type: "step",
+              attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" },
+            },
+            {
+              id: "step-2",
+              type: "step",
+              attributes: { name: "Terraform Apply", status: "completed", stepNumber: "2" },
+            },
           ],
         },
       });
@@ -315,9 +322,7 @@ describe("DetailsJob terminal-status context reconciliation", () => {
       return Promise.resolve({
         data: {
           data: { id: "1", attributes: { status: jobStatus } },
-          included: [
-            { id: "step-1", type: "step", attributes: { name: "Plan", status: jobStatus, stepNumber: "1" } },
-          ],
+          included: [{ id: "step-1", type: "step", attributes: { name: "Plan", status: jobStatus, stepNumber: "1" } }],
         },
       });
     });
@@ -327,10 +332,9 @@ describe("DetailsJob terminal-status context reconciliation", () => {
 
     jobStatus = "completed";
 
-    await waitFor(
-      () => expect(screen.getByText("Structured output temporarily unavailable")).toBeInTheDocument(),
-      { timeout: 8000 }
-    );
+    await waitFor(() => expect(screen.getByText("Structured output temporarily unavailable")).toBeInTheDocument(), {
+      timeout: 8000,
+    });
     expect(
       screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
     ).not.toBeInTheDocument();
@@ -374,9 +378,7 @@ describe("DetailsJob SSE reconnect behavior", () => {
       return Promise.resolve({
         data: {
           data: { id: "1", attributes: { status: "running" } },
-          included: [
-            { id: "step-2", type: "step", attributes: { name: "Apply", status: "running", stepNumber: "2" } },
-          ],
+          included: [{ id: "step-2", type: "step", attributes: { name: "Apply", status: "running", stepNumber: "2" } }],
         },
       });
     });
@@ -387,95 +389,90 @@ describe("DetailsJob SSE reconnect behavior", () => {
     contextHasData = true;
 
     // No SSE event ever arrives; the 5s refreshJobDetails HTTP poll must still pick up the diff.
-    await waitFor(
-      () => expect(screen.getByRole("button", { name: /aws_instance\.via_poll/i })).toBeInTheDocument(),
-      { timeout: 8000 }
-    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /aws_instance\.via_poll/i })).toBeInTheDocument(), {
+      timeout: 8000,
+    });
     expect(screen.queryByText("Loading Job...")).not.toBeInTheDocument();
   }, 12000);
 
-  it(
-    "keeps the last known structured output when the job leaves running and the live channel disables",
-    async () => {
-      let jobStatus: "running" | "completed" = "running";
+  it("keeps the last known structured output when the job leaves running and the live channel disables", async () => {
+    let jobStatus: "running" | "completed" = "running";
 
-      getMock.mockImplementation((url: string) => {
-        if (url.includes("/context/v1/")) {
-          return Promise.resolve({ data: {} });
-        }
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
 
-        return Promise.resolve({
+      return Promise.resolve({
+        data: {
           data: {
-            data: {
-              id: "1",
-              attributes: { status: jobStatus },
-            },
-            included: [
-              {
-                id: "step-2",
-                type: "step",
-                attributes: { name: "Apply", status: jobStatus, stepNumber: "2" },
-              },
-            ],
+            id: "1",
+            attributes: { status: jobStatus },
           },
-        });
-      });
-
-      // Mirrors the real useStructuredOutputStream/useEventStream: while enabled, it keeps
-      // returning the *same* value reference across re-renders (the real hook only produces a
-      // new one via setValue when an SSE message actually arrives) - a fresh object literal on
-      // every call, by contrast, would make Details.tsx's `useEffect(() => {...},
-      // [liveStructuredOutput])` see a "changed" dependency on every single render (referential
-      // inequality) and re-run its state-setting merge every time, which triggers another
-      // re-render, which calls this mock again, forever - an infinite loop entirely of the
-      // test's own making, not a symptom of anything under test.
-      const livePayload = {
-        phase: "apply",
-        changes: {
-          "step-2": [
+          included: [
             {
-              address: "aws_instance.live",
-              action: "create",
-              actions: ["create"],
-              after: { id: "i-live" },
-              status: "applying",
+              id: "step-2",
+              type: "step",
+              attributes: { name: "Apply", status: jobStatus, stepNumber: "2" },
             },
           ],
         },
-        jobDiagnostics: {},
-      };
-
-      // It resets to `initial` (null) the instant the caller disables it - Details.tsx does that
-      // the moment the job leaves "running" (see useEventStream's unconditional
-      // `setValue(initial)` on every [url, enabled] change). The merge effect in Details.tsx must
-      // treat that reset as "no new live data this render", not as "clear whatever structured
-      // output is already showing".
-      useStructuredOutputStreamMock.mockImplementation((options: { enabled: boolean }) =>
-        options.enabled ? livePayload : null
-      );
-
-      render(<DetailsJob jobId="1" />);
-
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: /aws_instance\.live/i })).toBeInTheDocument();
       });
+    });
 
-      jobStatus = "completed";
+    // Mirrors the real useStructuredOutputStream/useEventStream: while enabled, it keeps
+    // returning the *same* value reference across re-renders (the real hook only produces a
+    // new one via setValue when an SSE message actually arrives) - a fresh object literal on
+    // every call, by contrast, would make Details.tsx's `useEffect(() => {...},
+    // [liveStructuredOutput])` see a "changed" dependency on every single render (referential
+    // inequality) and re-run its state-setting merge every time, which triggers another
+    // re-render, which calls this mock again, forever - an infinite loop entirely of the
+    // test's own making, not a symptom of anything under test.
+    const livePayload = {
+      phase: "apply",
+      changes: {
+        "step-2": [
+          {
+            address: "aws_instance.live",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-live" },
+            status: "applying",
+          },
+        ],
+      },
+      jobDiagnostics: {},
+    };
 
-      // Details.tsx polls the job every 5s (usePolling); real timers here (no fake-timer
-      // juggling with the interval that was already scheduled at mount) so wait past one cycle
-      // for the transition to actually happen.
-      await waitFor(
-        () => {
-          expect(screen.getByText("Completed")).toBeInTheDocument();
-        },
-        { timeout: 8000 }
-      );
+    // It resets to `initial` (null) the instant the caller disables it - Details.tsx does that
+    // the moment the job leaves "running" (see useEventStream's unconditional
+    // `setValue(initial)` on every [url, enabled] change). The merge effect in Details.tsx must
+    // treat that reset as "no new live data this render", not as "clear whatever structured
+    // output is already showing".
+    useStructuredOutputStreamMock.mockImplementation((options: { enabled: boolean }) =>
+      options.enabled ? livePayload : null
+    );
 
+    render(<DetailsJob jobId="1" />);
+
+    await waitFor(() => {
       expect(screen.getByRole("button", { name: /aws_instance\.live/i })).toBeInTheDocument();
-    },
-    10000
-  );
+    });
+
+    jobStatus = "completed";
+
+    // Details.tsx polls the job every 5s (usePolling); real timers here (no fake-timer
+    // juggling with the interval that was already scheduled at mount) so wait past one cycle
+    // for the transition to actually happen.
+    await waitFor(
+      () => {
+        expect(screen.getAllByText("Completed")).toHaveLength(2); // run header tag and Apply step
+      },
+      { timeout: 8000 }
+    );
+
+    expect(screen.getByRole("button", { name: /aws_instance\.live/i })).toBeInTheDocument();
+  }, 10000);
 });
 
 describe("DetailsJob progressive render", () => {
@@ -538,16 +535,15 @@ describe("DetailsJob no-change apply semantics", () => {
   it("renders a no-op Apply state (not a warning) for a persisted empty plan with no apply rows", async () => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/context/v1/")) return Promise.resolve(noChangeContext);
-      if (url.includes("/step/")) return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
+      if (url.includes("/step/"))
+        return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
       return Promise.resolve(twoStepJob("completed"));
     });
 
     render(<DetailsJob jobId="1" />);
 
     await waitFor(() => expect(screen.getByText(/Apply completed with no changes/)).toBeInTheDocument());
-    expect(
-      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Your infrastructure matches the configuration — no changes needed.")).toBeInTheDocument();
     expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
   });
 
@@ -561,7 +557,8 @@ describe("DetailsJob no-change apply semantics", () => {
           ? Promise.resolve(noChangeContext)
           : Promise.reject({ response: { status: 503 }, isAxiosError: true });
       }
-      if (url.includes("/step/")) return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
+      if (url.includes("/step/"))
+        return Promise.resolve({ data: "Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", headers: {} });
       return Promise.resolve(twoStepJob(jobStatus));
     });
 
@@ -591,14 +588,13 @@ describe("DetailsJob no-change apply semantics", () => {
           data: {
             structuredOutputStatus: { state: "PERSISTED" },
             planStructuredOutput: {
-              "plan-1": [
-                { address: "aws_instance.x", action: "create", actions: ["create"], after: { id: "i-1" } },
-              ],
+              "plan-1": [{ address: "aws_instance.x", action: "create", actions: ["create"], after: { id: "i-1" } }],
             },
           },
         });
       }
-      if (url.includes("/step/")) return Promise.resolve({ data: "Terraform will perform the following actions:", headers: {} });
+      if (url.includes("/step/"))
+        return Promise.resolve({ data: "Terraform will perform the following actions:", headers: {} });
       return Promise.resolve(twoStepJob("completed"));
     });
 
@@ -617,7 +613,9 @@ describe("DetailsJob no-change apply semantics", () => {
 
     render(<DetailsJob jobId="1" />);
 
-    await waitFor(() => expect(screen.getAllByText("Structured output temporarily unavailable").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("Structured output temporarily unavailable").length).toBeGreaterThan(0)
+    );
     expect(
       screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
     ).not.toBeInTheDocument();
@@ -634,7 +632,11 @@ describe("DetailsJob no-change apply semantics", () => {
         data: {
           data: { id: "1", attributes: { status: "failed" } },
           included: [
-            { id: "plan-1", type: "step", attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" } },
+            {
+              id: "plan-1",
+              type: "step",
+              attributes: { name: "Terraform Plan", status: "completed", stepNumber: "1" },
+            },
             { id: "apply-1", type: "step", attributes: { name: "Terraform Apply", status: "failed", stepNumber: "2" } },
           ],
         },
@@ -680,5 +682,131 @@ describe("plan approval attribution", () => {
     } else {
       expect(screen.queryByText(/Approved by/)).not.toBeInTheDocument();
     }
+  });
+});
+
+describe("run actions", () => {
+  it("asks before approving, states what the plan destroys, then approves", async () => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {
+              planStructuredOutput: {
+                "step-1": [{ address: "aws_instance.old", action: "delete", actions: ["delete"] }],
+              },
+            }
+          : {
+              data: { id: "7", attributes: { status: "waitingApproval", createdBy: "author@example.com" } },
+              included: [
+                { id: "step-1", type: "step", attributes: { name: "Plan", status: "completed", stepNumber: "1" } },
+              ],
+            },
+      })
+    );
+    patchMock.mockResolvedValue({});
+
+    render(<DetailsJob jobId="7" canApprove />);
+    await waitFor(() => expect(screen.getByText(/0 to add, 0 to change, 1 to destroy/)).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("approve-run"));
+
+    expect(screen.getByText("Approve and apply this run?")).toBeInTheDocument();
+    expect(screen.getByText(/1 resource is destroyed/)).toBeInTheDocument();
+    expect(patchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("confirm-run-action"));
+    await waitFor(() =>
+      expect(patchMock).toHaveBeenCalledWith(
+        "organization/org-1/job/7",
+        { data: { type: "job", id: "7", attributes: { status: "approved" } } },
+        expect.anything()
+      )
+    );
+  });
+
+  const mockJobStatus = (getStatus: () => string) =>
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {}
+          : { data: { id: "7", attributes: { status: getStatus(), createdBy: "author@example.com" } }, included: [] },
+      })
+    );
+
+  const runPoll = async () => {
+    const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 5000)?.[0] as () => void;
+    await act(async () => {
+      poll();
+    });
+  };
+
+  let intervalSpy: jest.SpyInstance;
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    patchMock.mockReset();
+    intervalSpy = jest.spyOn(window, "setInterval");
+  });
+  afterEach(() => {
+    intervalSpy.mockRestore();
+    message.destroy();
+  });
+
+  it("closes the confirm modal without sending anything when polling moves the run on", async () => {
+    let status = "running";
+    mockJobStatus(() => status);
+    render(<DetailsJob jobId="7" canApprove />);
+    fireEvent.click(await screen.findByTestId("cancel-run"));
+    expect(screen.getByText("Cancel this run?")).toBeInTheDocument();
+
+    status = "completed";
+    await runPoll();
+
+    await waitFor(() => expect(screen.queryByText("Cancel this run?")).not.toBeInTheDocument());
+    expect(await screen.findAllByText("This run changed status; nothing was sent.")).toHaveLength(1);
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it("closes the approve modal when the run is no longer waiting for approval", async () => {
+    let status = "waitingApproval";
+    mockJobStatus(() => status);
+    render(<DetailsJob jobId="7" canApprove />);
+    fireEvent.click(await screen.findByTestId("approve-run"));
+    expect(screen.getByText("Approve and apply this run?")).toBeInTheDocument();
+
+    status = "rejected";
+    await runPoll();
+
+    await waitFor(() => expect(screen.queryByText("Approve and apply this run?")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("confirm-run-action")).not.toBeInTheDocument();
+  });
+
+  it("closes the modal quietly when its own action moves the run on", async () => {
+    let status = "running";
+    mockJobStatus(() => status);
+    patchMock.mockImplementation(() => {
+      status = "cancelled";
+      return Promise.resolve({});
+    });
+    render(<DetailsJob jobId="7" />);
+    fireEvent.click(await screen.findByTestId("cancel-run"));
+    fireEvent.click(screen.getByTestId("confirm-run-action"));
+
+    await waitFor(() => expect(screen.queryByText("Cancel this run?")).not.toBeInTheDocument());
+    expect(patchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Run cancelled")).toBeInTheDocument();
+    expect(screen.queryByText("This run changed status; nothing was sent.")).not.toBeInTheDocument();
+  });
+
+  it("drops a pending confirmation when the run on the page changes", async () => {
+    mockJobStatus(() => "running");
+    const { rerender } = render(<DetailsJob jobId="7" />);
+    fireEvent.click(await screen.findByTestId("cancel-run"));
+    expect(screen.getByText("Cancel this run?")).toBeInTheDocument();
+
+    rerender(<DetailsJob jobId="8" />);
+
+    await waitFor(() => expect(screen.queryByText("Cancel this run?")).not.toBeInTheDocument());
   });
 });

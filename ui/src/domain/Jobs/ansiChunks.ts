@@ -26,7 +26,7 @@ function renderLine(line: string): ReactElement {
   const element = createElement(
     "span",
     { className: "tf-log-line" },
-    createElement(Ansi, null, line.length === 0 ? " " : line)
+    createElement(Ansi, { useClasses: true }, line.length === 0 ? " " : line)
   );
   if (lineCache.size >= MAX_CACHED_LINES) {
     const oldest = lineCache.keys().next().value;

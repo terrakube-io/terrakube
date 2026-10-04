@@ -1,275 +1,148 @@
-/* WorkspaceFilter.css */
-
-/* Main Container */
+/* Workspace list filters: one row of 32px controls, then the status pills. No container box. */
 .workspace-filter-container {
-  margin-top: 16px;
+  --status-warning: #9c5c00;
+  --status-error: #cf1322;
+  --status-running: var(--tk-status-info);
+  --status-success: #389e0d;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
 }
 
-/* Top row: Search */
-.workspace-filter-search-row {
-  margin-bottom: 12px;
+[data-theme="dark"] .workspace-filter-container {
+  --status-warning: #d89614;
+  --status-error: #ff7875;
+  --status-success: #73d13d;
+}
+
+.workspace-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .workspace-search-input {
-  width: 100%;
-}
-
-/* antd's Input renders an emergent (compounding) height at size="large" while Select
-   uses a single fixed token, so the two drift apart even with matching size props. */
-.workspace-search-input .ant-input-affix-wrapper,
-.workspace-search-input .ant-input-search-button {
-  height: 40px;
-}
-
-/* Compact: search + project picker + group-by-project share one row */
-.workspace-filter-container--compact .workspace-filter-search-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.workspace-filter-container--compact .workspace-search-input {
-  flex: 1 1 auto;
+  flex: 1 1 240px;
   min-width: 0;
-  width: auto;
 }
 
-/* This antd version has no .ant-select-selector wrapper - the .ant-select root itself
-   (matched by this class) is the box, containing .ant-select-content (text) and
-   .ant-select-suffix (arrow). Verified against the actual rendered DOM, not assumed. */
-.workspace-sort-select {
-  min-width: 180px;
-  height: 32px;
-  align-items: center;
-}
-
-.workspace-sort-select .ant-select-content {
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-}
-
-.workspace-status-count {
-  font-size: 11px;
-  font-weight: 700;
+/* Placeholders here name the current value ("All projects"), so they need body-text contrast. */
+.workspace-filter-controls .ant-input::placeholder,
+.workspace-filter-controls .ant-select-placeholder,
+.workspace-filter-controls .ant-select-selection-placeholder {
   color: var(--tk-text-secondary);
+}
+
+.workspace-search-input .anticon-search {
+  color: var(--tk-text-tertiary);
+}
+
+.workspace-project-select {
+  flex: 0 1 150px;
+  min-width: 0;
+}
+
+.workspace-policy-select {
+  flex: 0 0 150px;
+}
+
+.ant-btn.workspace-tags-button {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.ant-btn.workspace-tags-button .anticon-down {
+  color: var(--tk-text-tertiary);
+  font-size: 10px;
+}
+
+.workspace-tags-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
   background: var(--tk-fill-secondary);
-  border-radius: 10px;
-  padding: 0 6px;
-  margin-left: 2px;
-}
-
-.workspace-filter-container--compact .workspace-status-count {
-  font-size: 12.5px;
-  padding: 1px 8px;
-}
-
-/* Bottom row: Status + Tags */
-.workspace-filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--tk-bg-container);
-  border: 1px solid var(--tk-border-primary);
-  border-radius: 8px;
-  flex-wrap: wrap;
-}
-
-.workspace-filter-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.workspace-filter-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* Filter Buttons (Tags) */
-.filter-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--tk-border-primary);
-  background: var(--tk-bg-container);
   color: var(--tk-text-primary);
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-}
-
-.filter-button:hover {
-  background: var(--tk-fill-secondary);
-  border-color: var(--tk-border-secondary);
-}
-
-.filter-button .anticon {
   font-size: 12px;
-  color: var(--tk-text-secondary);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Active state for filter buttons */
-.filter-button.active {
-  background: var(--tk-fill-secondary);
-  border-color: var(--tk-border-primary);
+/* Tag filter popover: key/value rows, then the actions. */
+.workspace-tag-filter {
+  width: min(440px, calc(100vw - 48px));
 }
 
-/* Popover Content */
-.filter-popover-content {
-  width: min(500px, calc(100vw - 32px));
-  padding: 16px;
-}
-
-.filter-popover-header {
-  margin-bottom: 16px;
-  font-weight: 600;
-  color: var(--tk-text-primary);
-}
-
-.filter-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+.workspace-tag-filter-header,
+.workspace-tag-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+  gap: 8px;
   align-items: center;
 }
 
-.filter-row .ant-select {
-  flex: 1;
-}
-
-.filter-row-remove {
+.workspace-tag-filter-header {
+  margin-bottom: 8px;
   color: var(--tk-text-secondary);
-  cursor: pointer;
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.filter-row-remove:hover {
-  color: var(--tk-text-primary);
+.workspace-tag-filter-row + .workspace-tag-filter-row {
+  margin-top: 8px;
 }
 
-.add-filter-btn {
-  color: var(--tk-accent);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 16px;
-  font-size: 14px;
-  background: none;
-  border: none;
-  padding: 0;
+.ant-btn.workspace-tag-filter-add {
+  margin-top: 8px;
+  padding-inline: 0;
 }
 
-.add-filter-btn:hover {
-  text-decoration: underline;
-}
-
-[data-theme="dark"] .add-filter-btn {
-  color: var(--tk-accent);
-}
-
-.filter-footer {
+.workspace-tag-filter-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--tk-border-secondary);
 }
 
-/* Clear sits apart from Cancel and Apply, since it takes effect at once */
-.filter-footer-clear {
+/* Clear sits apart from Cancel and Apply, since it takes effect at once. */
+.ant-btn.workspace-tag-filter-clear {
   margin-inline-end: auto;
   padding-inline: 0;
 }
 
-/* Dark Mode Overrides */
-[data-theme="dark"] .workspace-filter-bar {
-  background: var(--tk-bg-container);
-  border-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .filter-button {
-  background: var(--tk-bg-elevated);
-  border-color: var(--tk-border-primary);
-  color: var(--tk-text-primary);
-}
-
-[data-theme="dark"] .filter-button:hover {
-  background: var(--tk-fill-secondary);
-}
-
-[data-theme="dark"] .filter-popover-content {
-  background: var(--tk-bg-elevated);
-}
-
-[data-theme="dark"] .filter-footer {
-  border-top-color: var(--tk-border-primary);
-}
-
-/* Segmented control styling */
-.workspace-filter-left .ant-segmented {
-  background: transparent;
-}
-
-/* Compact density (used by the "New" list view) */
-.workspace-filter-container--compact {
-  margin-top: 8px;
-}
-
-.workspace-filter-container--compact .workspace-filter-search-row {
-  margin-bottom: 8px;
-}
-
-.workspace-filter-container--compact .workspace-filter-bar {
-  padding: 8px 12px;
-  gap: 8px;
-}
-
-/* Compact-only: project chips + group-by-project toggle row */
-.workspace-filter-projects-row {
+.workspace-active-tags {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workspace-active-tags-label {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.workspace-active-tags .ant-tag {
+  margin: 0;
+}
+
+.workspace-sort-select {
+  flex: 0 0 140px;
+}
+
+.workspace-filter-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
-  margin-top: 8px;
-  margin-bottom: 4px;
-  background: var(--tk-bg-container);
-  border: 1px solid var(--tk-border-primary);
-  border-radius: 8px;
 }
 
-.workspace-project-select {
-  width: min(220px, 100%);
-  flex-shrink: 0;
-}
-
-.workspace-group-toggle {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Compact-only: removable chips for currently active tag filters */
-.workspace-active-tags-row {
-  margin-top: 8px;
-}
-
-/* Compact-only: status count pills replacing the Segmented control */
 .workspace-status-pills {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
@@ -279,16 +152,16 @@
   gap: 6px;
   height: 28px;
   padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: 14px;
-  border: 1px solid var(--tk-border-primary);
-  background: var(--tk-bg-container);
+  background: none;
   color: var(--tk-text-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    background-color 0.2s,
-    border-color 0.2s;
+    background-color 0.15s,
+    border-color 0.15s;
 }
 
 .workspace-status-pill:hover {
@@ -296,47 +169,102 @@
 }
 
 .workspace-status-pill--active {
+  border-color: var(--tk-border-primary);
   background: var(--tk-fill-secondary);
-  border-width: 1.5px;
   color: var(--tk-text-primary);
 }
 
-.workspace-status-pill:focus-visible,
-.workspace-clear-filters:focus-visible {
-  outline: 2px solid #1890ff;
-  outline-offset: 2px;
+.workspace-status-pill .anticon {
+  color: var(--tk-text-tertiary);
+}
+
+/* On the grey fill of the active pill the neutral icons need the stronger grey; status icons keep their colour. */
+.workspace-status-pill--active .anticon {
+  color: var(--tk-text-secondary);
+}
+
+.workspace-status-pill[data-status="waitingApproval"] .anticon {
+  color: var(--status-warning);
+}
+
+.workspace-status-pill[data-status="failed"] .anticon {
+  color: var(--status-error);
+}
+
+.workspace-status-pill[data-status="running"] .anticon {
+  color: var(--status-running);
+}
+
+.workspace-status-pill[data-status="completed"] .anticon {
+  color: var(--status-success);
+}
+
+.workspace-status-count {
+  color: var(--tk-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-status-pill--active .workspace-status-count {
+  color: var(--tk-text-secondary);
+}
+
+/* Graphite: tertiary grey is 3.8:1 on the container and secondary 4:1 on the active fill, so step each up. */
+[data-theme="dark"] .workspace-status-count {
+  color: var(--tk-text-secondary);
+}
+
+[data-theme="dark"] .workspace-status-pill--active .workspace-status-count {
+  color: var(--tk-text-primary);
 }
 
 .workspace-clear-filters {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--tk-accent);
-  background: none;
-  border: none;
-  cursor: pointer;
+  margin-left: 8px;
   padding: 0;
+  border: none;
+  background: none;
+  color: var(--tk-link);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .workspace-clear-filters:hover {
   text-decoration: underline;
 }
 
-[data-theme="dark"] .workspace-clear-filters {
-  color: var(--tk-accent);
+.workspace-status-pill:focus-visible,
+.workspace-clear-filters:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
 }
 
-[data-theme="dark"] .workspace-status-pill {
-  background: var(--tk-bg-elevated);
-  border-color: var(--tk-border-primary);
+.workspace-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-@media (max-width: 767px) {
-  .workspace-filter-projects-row,
-  .workspace-filter-container--compact .workspace-filter-search-row {
+/* Narrow screens: search takes its own row, the selects share the next ones. */
+@media (max-width: 991.98px) {
+  .workspace-filter-controls {
     flex-wrap: wrap;
   }
 
+  .workspace-search-input {
+    flex-basis: 100%;
+  }
+
+  .workspace-project-select,
+  .workspace-policy-select,
   .workspace-sort-select {
-    min-width: 0;
+    flex: 1 1 140px;
+  }
+
+  .workspace-filter-status-row {
+    flex-wrap: wrap;
   }
 }

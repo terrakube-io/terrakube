@@ -60,7 +60,7 @@ test("settings stay usable at phone width with the navigation in a drawer", asyn
   await expect(toggle).toBeFocused();
 });
 
-test("the workspaces list fits a phone: actions wrap, the table scrolls inside its card", async ({
+test("the workspaces list fits a phone: actions wrap, rows wrap inside their card", async ({
   page,
 }) => {
   await page.goto("/organizations");
@@ -80,9 +80,10 @@ test("the workspaces list fits a phone: actions wrap, the table scrolls inside i
     .getByRole("link", { name: "New workspace" })
     .boundingBox())!;
   expect(create.x + create.width).toBeLessThanOrEqual(390 - 16);
+  await expect(page.locator(".workspace-list-header")).toBeHidden();
   expect(
     await page
-      .locator(".workspace-list-scroll")
-      .evaluate((el) => el.scrollWidth > el.clientWidth),
+      .locator(".workspace-list")
+      .evaluate((el) => el.scrollWidth <= el.clientWidth),
   ).toBe(true);
 });
