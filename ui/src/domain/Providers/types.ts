@@ -65,6 +65,21 @@ export type TerraformRegistryProvider = {
   logo_url: string;
 };
 
+// GET /v1/providers/{namespace}/{name}[/{version}] (proxied by the API).
+export type TerraformRegistryProviderDetails = {
+  id: string;
+  namespace: string;
+  name: string;
+  version: string;
+  description: string;
+  source: string;
+  published_at: string;
+  downloads: number;
+  tier: string;
+  logo_url: string;
+  versions: string[];
+};
+
 export type TerraformRegistryProviderVersions = {
   versions: {
     version: string;

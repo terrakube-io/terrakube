@@ -49,6 +49,29 @@ public class PublicRegistryProxyController {
     }
 
     /**
+     * Get provider details (latest version) from Terraform Registry
+     * GET /registry/v1/providers/{namespace}/{name}
+     */
+    @GetMapping("/providers/{namespace}/{name}")
+    public ResponseEntity<String> getProvider(
+            @PathVariable("namespace") String namespace,
+            @PathVariable("name") String name) {
+        return publicRegistryProxyService.getProvider(namespace, name, null);
+    }
+
+    /**
+     * Get provider details for a specific version from Terraform Registry
+     * GET /registry/v1/providers/{namespace}/{name}/{version}
+     */
+    @GetMapping("/providers/{namespace}/{name}/{version}")
+    public ResponseEntity<String> getProviderVersion(
+            @PathVariable("namespace") String namespace,
+            @PathVariable("name") String name,
+            @PathVariable("version") String version) {
+        return publicRegistryProxyService.getProvider(namespace, name, version);
+    }
+
+    /**
      * Get provider download info from Terraform Registry
      * GET /registry/v1/providers/{namespace}/{name}/{version}/download/{os}/{arch}
      */
