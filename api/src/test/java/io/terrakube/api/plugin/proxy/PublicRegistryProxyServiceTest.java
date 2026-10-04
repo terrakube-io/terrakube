@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.proxy;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -10,6 +12,7 @@ import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -79,4 +82,45 @@ class PublicRegistryProxyServiceTest {
         assertEquals("https://registry.terraform.io/v1/providers/nobody/nothing/versions",
                 requests.get(0).url().toString());
     }
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 403, 429})
+    void getProviderPassesOtherClientErrorsThroughWithoutRetrying(int status) {
+        PublicRegistryProxyService service = serviceRespondingWith(HttpStatus.valueOf(status), "{\"errors\":[\"no\"]}");
+
+        ResponseEntity<String> response = service.getProvider("hashicorp", "random", null);
+
+        assertEquals(status, response.getStatusCode().value());
+        assertEquals("{\"errors\":[\"no\"]}", response.getBody());
+        assertEquals(1, requests.size());
+    }
+
+    @Test
+    void getProviderVersionsRetriesARegistryServerErrorThenAnswersBadGatewayWithAFixedBody() {
+        PublicRegistryProxyService service = serviceRespondingWith(HttpStatus.SERVICE_UNAVAILABLE, "<html>upstream \"down\"</html>");
+
+        ResponseEntity<String> response = service.getProviderVersions("hashicorp", "random");
+
+        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
+        assertEquals(BAD_GATEWAY_BODY, response.getBody());
+        // The first attempt and three retries.
+        assertEquals(4, requests.size());
+    }
+
+    @Test
+    void getProviderRetriesANetworkErrorAndDoesNotEchoItsMessage() {
+        WebClient.Builder builder = WebClient.builder().exchangeFunction(request -> {
+            requests.add(request);
+            return Mono.error(new IOException("connection reset \"by\" peer"));
+        });
+        PublicRegistryProxyService service = new PublicRegistryProxyService(builder);
+
+        ResponseEntity<String> response = service.getProvider("hashicorp", "random", "3.6.0");
+
+        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
+        assertEquals(BAD_GATEWAY_BODY, response.getBody());
+        assertEquals(4, requests.size());
+    }
+
+    private static final String BAD_GATEWAY_BODY = "{\"error\": \"The public registry is unavailable. Try again later.\"}";
 }
