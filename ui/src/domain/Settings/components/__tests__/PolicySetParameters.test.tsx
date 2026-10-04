@@ -84,18 +84,17 @@ describe("PolicySetParameters", () => {
     const addBtn = screen.getByTestId("add-parameter-btn");
     fireEvent.click(addBtn);
 
-    expect(await screen.findByText("Add Policy Parameter")).toBeInTheDocument();
+    expect(await screen.findByText("Add parameter", { selector: ".ant-modal-title" })).toBeInTheDocument();
 
-    const keyInput = screen.getByLabelText("Parameter Key");
-    const valInput = screen.getByLabelText("Parameter Value");
+    const keyInput = screen.getByLabelText("Key");
+    const valInput = screen.getByLabelText("Value");
     const descInput = screen.getByLabelText("Description");
 
     fireEvent.change(keyInput, { target: { value: "new_param" } });
     fireEvent.change(valInput, { target: { value: "true" } });
     fireEvent.change(descInput, { target: { value: "test description" } });
 
-    const okBtn = screen.getByText("OK");
-    fireEvent.click(okBtn);
+    fireEvent.click(screen.getByRole("button", { name: "Add parameter" }));
 
     await waitFor(() => {
       expect(axiosInstance.post).toHaveBeenCalledWith(
@@ -129,16 +128,14 @@ describe("PolicySetParameters", () => {
     render(<PolicySetParameters policySetId="ps-100" managePermission={true} />);
     expect(await screen.findByText("max_deletions")).toBeInTheDocument();
 
-    const editBtns = screen.getAllByTitle("Edit Parameter");
-    fireEvent.click(editBtns[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit parameter max_deletions" }));
 
-    expect(await screen.findByText("Edit Parameter: max_deletions")).toBeInTheDocument();
+    expect(await screen.findByText("Edit parameter max_deletions")).toBeInTheDocument();
 
-    const valInput = screen.getByLabelText("Parameter Value");
+    const valInput = screen.getByLabelText("Value");
     fireEvent.change(valInput, { target: { value: "10" } });
 
-    const okBtn = screen.getByText("OK");
-    fireEvent.click(okBtn);
+    fireEvent.click(screen.getByRole("button", { name: "Save parameter" }));
 
     await waitFor(() => {
       expect(axiosInstance.patch).toHaveBeenCalledWith(
@@ -163,13 +160,10 @@ describe("PolicySetParameters", () => {
     render(<PolicySetParameters policySetId="ps-100" managePermission={true} />);
     expect(await screen.findByText("max_deletions")).toBeInTheDocument();
 
-    const deleteBtns = screen.getAllByTitle("Delete Parameter");
-    fireEvent.click(deleteBtns[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete parameter max_deletions" }));
 
-    expect(await screen.findByText("Delete Policy Parameter")).toBeInTheDocument();
-
-    const confirmBtn = screen.getByText("Delete");
-    fireEvent.click(confirmBtn);
+    expect(await screen.findByText("Delete parameter", { selector: ".ant-modal-title" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete parameter" }));
 
     await waitFor(() => {
       expect(axiosInstance.delete).toHaveBeenCalledWith("policy_set/ps-100/parameters/param-1");
@@ -182,10 +176,18 @@ describe("PolicySetParameters", () => {
     expect(await screen.findByText("max_deletions")).toBeInTheDocument();
     expect(screen.getByTestId("add-parameter-btn")).toBeDisabled();
 
-    const editBtns = screen.getAllByTitle("Edit Parameter");
-    expect(editBtns[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit parameter max_deletions" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete parameter max_deletions" })).toBeDisabled();
+  });
 
-    const deleteBtns = screen.getAllByTitle("Delete Parameter");
-    expect(deleteBtns[0]).toBeDisabled();
+  it("shows an empty state instead of an empty table", async () => {
+    (axiosInstance.get as jest.Mock).mockResolvedValue({ data: { data: [] } });
+    render(<PolicySetParameters policySetId="ps-100" managePermission={true} />);
+
+    expect(
+      await screen.findByText("No parameters. Add one to pass a value to the rules in this policy set.")
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parameters (0)" })).toBeInTheDocument();
   });
 });

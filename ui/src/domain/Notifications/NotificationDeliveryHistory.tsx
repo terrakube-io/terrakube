@@ -1,10 +1,17 @@
-import { CheckCircleFilled, ClockCircleFilled, CloseCircleFilled, LoadingOutlined, SyncOutlined } from "@ant-design/icons";
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
+  LoadingOutlined,
+  SyncOutlined,
+} from "@ant-design/icons";
 import { Button, List, Spin, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage } from "@/config/axiosConfig";
 import { NotificationChannelType } from "../types";
 import { CHANNEL_META } from "./channelMeta";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import "./Notifications.css";
 
 type DeliveryStatus = "PENDING" | "SENDING" | "SENT" | "FAILED";
 
@@ -24,14 +31,12 @@ type Props = {
   workspaceId: string;
 };
 
-const STATUS_META: Record<
-  DeliveryStatus,
-  { tagColor: string; iconColor: string; icon: typeof CheckCircleFilled; label: string }
-> = {
-  SENT: { tagColor: "green", iconColor: "#389e0d", icon: CheckCircleFilled, label: "Sent" },
-  PENDING: { tagColor: "orange", iconColor: "#d46b08", icon: ClockCircleFilled, label: "Pending" },
-  SENDING: { tagColor: "blue", iconColor: "#1677ff", icon: LoadingOutlined, label: "Sending" },
-  FAILED: { tagColor: "red", iconColor: "#cf1322", icon: CloseCircleFilled, label: "Failed" },
+// Status is semantic color plus a text label (DESIGN.md, The Status Is Semantic Rule).
+const STATUS_META: Record<DeliveryStatus, { color: string; icon: typeof CheckCircleOutlined; label: string }> = {
+  SENT: { color: "success", icon: CheckCircleOutlined, label: "Sent" },
+  PENDING: { color: "warning", icon: ClockCircleOutlined, label: "Pending" },
+  SENDING: { color: "processing", icon: LoadingOutlined, label: "Sending" },
+  FAILED: { color: "error", icon: CloseCircleOutlined, label: "Failed" },
 };
 
 export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
@@ -51,7 +56,6 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
 
   useEffect(() => {
     loadDeliveries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   const retryDelivery = (deliveryId: string) => {
@@ -71,13 +75,11 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
   }
 
   return (
-    <SettingsSection maxWidth="100%">
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        Recent Deliveries
-      </Typography.Title>
-      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-        The last {deliveries.length} notification attempts for this workspace's runs.
-      </Typography.Text>
+    <SettingsSection
+      maxWidth="100%"
+      title="Recent deliveries"
+      description={`The last ${deliveries.length} notification attempts for this workspace's runs.`}
+    >
       <Spin spinning={loading}>
         <List
           size="small"
@@ -86,7 +88,6 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
             const statusMeta = STATUS_META[delivery.status];
             const StatusIcon = statusMeta.icon;
             const channelMeta = CHANNEL_META[delivery.channelType];
-            const ChannelIcon = channelMeta.icon;
             return (
               <List.Item
                 actions={
@@ -97,6 +98,7 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
                           size="small"
                           icon={<SyncOutlined />}
                           loading={retryingId === delivery.id}
+                          aria-label={`Retry delivery to ${delivery.configurationName}`}
                           onClick={() => retryDelivery(delivery.id)}
                         >
                           Retry
@@ -106,17 +108,14 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
                 }
               >
                 <List.Item.Meta
-                  avatar={<StatusIcon style={{ color: statusMeta.iconColor, fontSize: 20 }} />}
                   title={
                     <>
-                      <Tag color={statusMeta.tagColor} icon={<StatusIcon />}>
+                      <Tag color={statusMeta.color} icon={<StatusIcon />}>
                         {statusMeta.label}
                       </Tag>
-                      <Tag color={channelMeta.color} icon={<ChannelIcon />}>
-                        {channelMeta.label}
-                      </Tag>
+                      <Tag>{channelMeta.label}</Tag>
                       <Typography.Text>{delivery.configurationName}</Typography.Text>
-                      <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+                      <Typography.Text type="secondary" className="notification-meta-text notification-delivery-meta">
                         Job #{delivery.jobId} · {new Date(delivery.createdDate).toLocaleString()}
                         {delivery.attemptCount > 1 && ` · ${delivery.attemptCount} attempts`}
                       </Typography.Text>
@@ -124,8 +123,10 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
                   }
                   description={
                     delivery.status === "FAILED" && delivery.lastError ? (
-                      <Typography.Text type="danger" style={{ fontSize: 12 }}>
-                        {delivery.lastError.length > 200 ? `${delivery.lastError.slice(0, 200)}...` : delivery.lastError}
+                      <Typography.Text type="danger" className="notification-meta-text">
+                        {delivery.lastError.length > 200
+                          ? `${delivery.lastError.slice(0, 200)}...`
+                          : delivery.lastError}
                       </Typography.Text>
                     ) : undefined
                   }

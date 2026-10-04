@@ -1,14 +1,5 @@
-import React from "react";
-import {
-  Button,
-  Empty,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import React, { useState } from "react";
+import { Button, Empty, Flex, Grid, Table, Tag, Tooltip, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   AppstoreOutlined,
@@ -17,9 +8,12 @@ import {
   EditOutlined,
   FolderOutlined,
   GlobalOutlined,
-  LinkOutlined,
-  SafetyCertificateOutlined,
 } from "@ant-design/icons";
+import { DateTime } from "luxon";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { formatOrdinalDate } from "@/modules/utils/dates";
+import "../PolicySets.css";
+import "./PolicyComponents.css";
 
 const { Text } = Typography;
 
@@ -51,6 +45,56 @@ export type PolicyExemptionTableProps = {
   pageSize?: number;
 };
 
+const renderExpiration = (expiresAt: string | number | null) => {
+  if (!expiresAt) {
+    return <Tag>Permanent</Tag>;
+  }
+  const expDate = DateTime.fromJSDate(new Date(expiresAt));
+  if (!expDate.isValid) {
+    return <Text>{String(expiresAt)}</Text>;
+  }
+  const date = formatOrdinalDate(expDate);
+  const diffDays = Math.ceil(expDate.diffNow("days").days);
+
+  if (diffDays < 0) {
+    return (
+      <div className="policy-cell-stack">
+        <Tag color="error">Expired</Tag>
+        <Text type="secondary" className="policy-cell-secondary">
+          {date}
+        </Text>
+      </div>
+    );
+  }
+  if (diffDays <= 7) {
+    return (
+      <div className="policy-cell-stack">
+        <Tag color="warning">
+          {diffDays === 0 ? "Expires today" : `Expires in ${diffDays} day${diffDays > 1 ? "s" : ""}`}
+        </Tag>
+        <Text type="secondary" className="policy-cell-secondary">
+          {date}
+        </Text>
+      </div>
+    );
+  }
+  return <Text>{date}</Text>;
+};
+
+const scopeLabel = (record: ExemptionRecord) => {
+  if (record.scopeType === "WORKSPACE") {
+    return { icon: <AppstoreOutlined />, name: record.workspaceName || record.workspaceId, type: "Workspace" };
+  }
+  if (record.scopeType === "PROJECT") {
+    return { icon: <FolderOutlined />, name: record.projectName || record.projectId, type: "Project" };
+  }
+  return { icon: <GlobalOutlined />, name: "Organization-wide", type: undefined };
+};
+
+// Rule IDs are snake_case: let them wrap after underscores instead of truncating the part that tells them apart.
+const breakAtUnderscores = (ruleId: string) =>
+  ruleId.split("_").flatMap((part, i, parts) => (i < parts.length - 1 ? [part + "_", <wbr key={i} />] : [part]));
+
 export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
   items,
   loading = false,
@@ -60,275 +104,164 @@ export const PolicyExemptionTable: React.FC<PolicyExemptionTableProps> = ({
   onDelete,
   pageSize = 10,
 }) => {
-  const renderExpirationBadge = (expiresAt: string | number | null) => {
-    if (!expiresAt) {
-      return <Tag color="default">Permanent</Tag>;
-    }
-    try {
-      const expDate = new Date(expiresAt);
-      const now = new Date();
-      const diffMs = expDate.getTime() - now.getTime();
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      const formattedDate = !isNaN(expDate.getTime())
-        ? expDate.toISOString().slice(0, 10)
-        : String(expiresAt).slice(0, 10);
+  const screens = Grid.useBreakpoint();
+  const [pendingRevoke, setPendingRevoke] = useState<ExemptionRecord | null>(null);
 
-      if (diffDays < 0) {
-        return <Tag color="error">Expired ({formattedDate})</Tag>;
-      }
-      if (diffDays === 0) {
-        return <Tag color="volcano">Expires today</Tag>;
-      }
-      if (diffDays <= 7) {
-        return (
-          <Tag color="volcano">
-            Expiring in {diffDays} day{diffDays > 1 ? "s" : ""}
-          </Tag>
-        );
-      }
-      return (
-        <Tag color="purple">
-          {diffDays} days remaining ({formattedDate})
-        </Tag>
-      );
-    } catch {
-      const fallbackStr = String(expiresAt || "").slice(0, 10);
-      return <Tag color="purple">Expires: {fallbackStr}</Tag>;
-    }
-  };
-
-  const renderScopeTag = (record: ExemptionRecord) => {
-    let scopeBadge;
-    if (record.scopeType === "WORKSPACE") {
-      const label = `Workspace: ${record.workspaceName || record.workspaceId}`;
-      scopeBadge = (
-        <Tooltip title={label}>
-          <Tag
-            color="geekblue"
-            icon={<AppstoreOutlined />}
-            style={{
-              maxWidth: 175,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              verticalAlign: "bottom",
-            }}
-          >
-            {label}
-          </Tag>
-        </Tooltip>
-      );
-    } else if (record.scopeType === "PROJECT") {
-      const label = `Project: ${record.projectName || record.projectId}`;
-      scopeBadge = (
-        <Tooltip title={label}>
-          <Tag
-            color="cyan"
-            icon={<FolderOutlined />}
-            style={{
-              maxWidth: 175,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              verticalAlign: "bottom",
-            }}
-          >
-            {label}
-          </Tag>
-        </Tooltip>
-      );
-    } else {
-      scopeBadge = (
-        <Tag color="blue" icon={<GlobalOutlined />}>
-          Organization-Wide
-        </Tag>
-      );
-    }
-
-    const isInherited =
+  const isInherited = (record: ExemptionRecord) =>
+    Boolean(
       record.isInherited ||
       (currentWorkspaceId &&
         (record.scopeType === "ORGANIZATION" ||
-          (record.scopeType === "PROJECT" && record.workspaceId !== currentWorkspaceId)));
-
-    return (
-      <Space wrap size={4}>
-        {scopeBadge}
-        {isInherited && <Tag color="default">Inherited</Tag>}
-      </Space>
+          (record.scopeType === "PROJECT" && record.workspaceId !== currentWorkspaceId)))
     );
-  };
 
   const columns: ColumnsType<ExemptionRecord> = [
     {
-      title: "Rule ID",
+      title: "Rule",
       dataIndex: "ruleId",
       key: "ruleId",
-      width: 250,
-      render: (ruleId: string) => (
-        <Space size={4} wrap={false}>
-          <Text
-            code
-            strong
-            style={{
-              whiteSpace: "nowrap",
-              wordBreak: "keep-all",
-            }}
-          >
-            {ruleId}
+      render: (ruleId: string, record) => (
+        <div className="policy-cell-stack">
+          <Flex align="flex-start" gap={4}>
+            <Text strong className="policy-mono policy-rule-id">
+              {breakAtUnderscores(ruleId)}
+            </Text>
+            <Tooltip title="Copy rule ID">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                aria-label={`Copy rule ID ${ruleId}`}
+                onClick={() =>
+                  // navigator.clipboard is missing on plain HTTP; that ends up in the error branch too.
+                  Promise.resolve()
+                    .then(() => navigator.clipboard.writeText(ruleId))
+                    .then(
+                      () => message.success("Rule ID copied"),
+                      () => message.error("Could not copy the rule ID")
+                    )
+                }
+              />
+            </Tooltip>
+          </Flex>
+          <Text type="secondary" className="policy-cell-secondary" ellipsis={{ tooltip: record.policySetName }}>
+            {record.policySetName || "—"}
           </Text>
-          <Tooltip title="Copy Rule ID">
-            <Button
-              type="text"
-              size="small"
-              icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard?.writeText(ruleId)}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
-    {
-      title: "Policy Set",
-      dataIndex: "policySetName",
-      key: "policySetName",
-      width: 170,
-      render: (name: string) => (
-        <Tooltip title={name || "Policy Set"}>
-          <Tag
-            color="blue"
-            icon={<SafetyCertificateOutlined />}
-            style={{
-              maxWidth: 155,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              verticalAlign: "bottom",
-            }}
-          >
-            {name || "Policy Set"}
-          </Tag>
-        </Tooltip>
+        </div>
       ),
     },
     {
       title: "Scope",
       key: "scope",
-      width: 190,
-      render: (_, record) => renderScopeTag(record),
+      width: 150,
+      render: (_, record) => {
+        const { icon, name, type } = scopeLabel(record);
+        return (
+          <div className="policy-cell-stack">
+            <Text ellipsis={{ tooltip: name }}>
+              {icon} {name}
+            </Text>
+            {type && (
+              <Text type="secondary" className="policy-cell-secondary">
+                {type}
+              </Text>
+            )}
+            {isInherited(record) && (
+              <Tooltip title="Set for the organization or a project. Change it in the organization's policy settings.">
+                <Tag className="policy-inherited-tag">Inherited</Tag>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
     },
     {
-      title: "Ticket",
-      dataIndex: "ticketReference",
-      key: "ticketReference",
-      width: 120,
-      render: (ticket: string) =>
-        ticket ? (
-          <Tag color="cyan" icon={<LinkOutlined />}>
-            {ticket}
-          </Tag>
+      title: "Reason",
+      key: "reason",
+      width: 170,
+      render: (_, record) =>
+        record.ticketReference || record.justification ? (
+          <div className="policy-cell-stack">
+            {record.ticketReference && (
+              <Text ellipsis={{ tooltip: record.ticketReference }}>{record.ticketReference}</Text>
+            )}
+            {record.justification && (
+              <Text type="secondary" className="policy-cell-secondary" ellipsis={{ tooltip: record.justification }}>
+                {record.justification}
+              </Text>
+            )}
+          </div>
         ) : (
           <Text type="secondary">—</Text>
         ),
     },
     {
-      title: "Justification",
-      dataIndex: "justification",
-      key: "justification",
-      width: 190,
-      ellipsis: true,
-      render: (justification: string) =>
-        justification ? (
-          <Tooltip title={justification} placement="topLeft">
-            <span style={{ fontStyle: "italic" }}>"{justification}"</span>
-          </Tooltip>
-        ) : (
-          <Text type="secondary">—</Text>
-        ),
-    },
-    {
-      title: "Expiration",
+      title: "Expires",
       dataIndex: "expiresAt",
       key: "expiresAt",
-      width: 200,
-      render: (expiresAt: string | null) => renderExpirationBadge(expiresAt),
+      width: 160,
+      render: (expiresAt: string | number | null) => renderExpiration(expiresAt),
     },
     {
       title: "Actions",
       key: "actions",
-      width: 100,
-      align: "center",
+      width: 112,
+      align: "right",
       render: (_, record) => {
-        const isInherited =
-          record.isInherited ||
-          (currentWorkspaceId &&
-            (record.scopeType === "ORGANIZATION" ||
-              (record.scopeType === "PROJECT" && record.workspaceId !== currentWorkspaceId)));
-
         if (!managePermission) {
           return (
-            <Tooltip title="Requires Policy Management permission">
-              <span style={{ color: "#999" }}>Read-only</span>
+            <Tooltip title="Requires permission to manage policies">
+              <Text type="secondary">Read-only</Text>
             </Tooltip>
           );
         }
-
-        if (isInherited) {
-          return (
-            <Tooltip title="This exemption is defined at Organization/Project level and cannot be modified from workspace settings.">
-              <span style={{ color: "#999", fontSize: 12 }}>Inherited</span>
-            </Tooltip>
-          );
+        if (isInherited(record)) {
+          return null;
         }
-
         return (
-          <Space size={8}>
-            <Tooltip title="Edit Exemption">
-              <Button
-                type="text"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => onEdit(record)}
-                data-testid={`edit-exemption-${record.id}`}
-              />
-            </Tooltip>
-            <Tooltip title="Revoke Exemption">
-              <Popconfirm
-                title="Revoke Policy Exemption"
-                description="Are you sure you want to revoke this policy waiver? Evaluated runs may immediately fail policy checks."
-                onConfirm={() => onDelete(record)}
-                okText="Revoke"
-                cancelText="Cancel"
-                okButtonProps={{ danger: true }}
-              >
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  data-testid={`delete-exemption-${record.id}`}
-                />
-              </Popconfirm>
-            </Tooltip>
-          </Space>
+          <Flex gap={8} justify="flex-end">
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => onEdit(record)}
+              aria-label={`Edit exemption ${record.ruleId}`}
+              data-testid={`edit-exemption-${record.id}`}
+            />
+            <Button
+              icon={<DeleteOutlined />}
+              onClick={() => setPendingRevoke(record)}
+              aria-label={`Revoke exemption ${record.ruleId}`}
+              data-testid={`delete-exemption-${record.id}`}
+            />
+          </Flex>
         );
       },
     },
   ];
 
   return (
-    <Table<ExemptionRecord>
-      dataSource={items}
-      columns={columns}
-      rowKey="id"
-      loading={loading}
-      pagination={{ pageSize, showSizeChanger: true }}
-      scroll={{ x: 1050 }}
-      locale={{
-        emptyText: (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No policy exemptions configured"
-          />
-        ),
-      }}
-    />
+    <>
+      <Table<ExemptionRecord>
+        dataSource={items}
+        columns={columns}
+        rowKey="id"
+        loading={loading}
+        tableLayout="fixed"
+        pagination={{ pageSize, showSizeChanger: true }}
+        // Fits the content column at 1024px and up; narrower screens scroll the table, not the page.
+        scroll={screens.lg ? undefined : { x: "max-content" }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No exemptions" /> }}
+      />
+      <DeleteConfirmationModal
+        open={pendingRevoke !== null}
+        title="Revoke exemption"
+        message={`Runs evaluated from now on are checked against ${pendingRevoke?.ruleId} again, unless another exemption covers them.`}
+        okText="Revoke exemption"
+        onConfirm={() => {
+          if (pendingRevoke) onDelete(pendingRevoke);
+          setPendingRevoke(null);
+        }}
+        onCancel={() => setPendingRevoke(null)}
+      />
+    </>
   );
 };

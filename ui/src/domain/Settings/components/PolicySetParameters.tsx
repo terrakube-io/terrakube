@@ -1,28 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  Card,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
-import {
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import { Button, Flex, Form, Input, Table, Typography, message } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import "../PolicySets.css";
+import "./PolicyComponents.css";
 
-const { Paragraph, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 export interface PolicyParameterItem {
@@ -37,10 +23,7 @@ type Props = {
   managePermission?: boolean;
 };
 
-export const PolicySetParameters: React.FC<Props> = ({
-  policySetId,
-  managePermission = true,
-}) => {
+export const PolicySetParameters: React.FC<Props> = ({ policySetId, managePermission = true }) => {
   const [parameters, setParameters] = useState<PolicyParameterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,7 +134,7 @@ export const PolicySetParameters: React.FC<Props> = ({
   };
 
   const handleDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
     setDeleting(true);
     try {
       await axiosInstance.delete(`policy_set/${policySetId}/parameters/${pendingDelete.id}`);
@@ -169,9 +152,7 @@ export const PolicySetParameters: React.FC<Props> = ({
     if (!searchQuery.trim()) return parameters;
     const q = searchQuery.toLowerCase();
     return parameters.filter(
-      (p) =>
-        p.key.toLowerCase().includes(q) ||
-        (p.description && p.description.toLowerCase().includes(q))
+      (p) => p.key.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q))
     );
   }, [parameters, searchQuery]);
 
@@ -182,72 +163,69 @@ export const PolicySetParameters: React.FC<Props> = ({
       key: "key",
       width: "28%",
       render: (text: string) => (
-        <Space orientation="horizontal">
-          <Tag color="geekblue" style={{ fontFamily: "monospace", fontSize: 13 }}>
-            {text}
-          </Tag>
-        </Space>
+        <Text strong className="policy-mono" ellipsis={{ tooltip: text }}>
+          {text}
+        </Text>
       ),
     },
     {
       title: "Value",
       dataIndex: "value",
       key: "value",
-      width: "37%",
-      render: (text: string) => {
-        const isLong = text && text.length > 50;
-        const displayValue = isLong ? `${text.slice(0, 50)}...` : text;
-        return (
-          <Tooltip title={isLong ? text : undefined}>
-            <Text code style={{ fontSize: 12, wordBreak: "break-all" }}>
-              {displayValue}
-            </Text>
-          </Tooltip>
-        );
-      },
+      render: (text: string) => (
+        <Text className="policy-mono" ellipsis={{ tooltip: text }}>
+          {text}
+        </Text>
+      ),
     },
     {
       title: "Description",
       dataIndex: "description",
       key: "description",
-      width: "23%",
-      render: (text?: string) => (
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {text || "—"}
-        </Text>
-      ),
+      width: "28%",
+      render: (text?: string) =>
+        text ? (
+          <Text type="secondary" ellipsis={{ tooltip: text }}>
+            {text}
+          </Text>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
     {
       title: "Actions",
       key: "actions",
-      width: "12%",
+      width: 96,
       align: "right" as const,
       render: (_: any, record: PolicyParameterItem) => (
-        <Space size="small">
+        <Flex gap={8} justify="flex-end">
           <Button
-            type="text"
             icon={<EditOutlined />}
             onClick={() => handleOpenEdit(record)}
             disabled={!managePermission}
-            title="Edit Parameter"
+            aria-label={`Edit parameter ${record.key}`}
           />
           <Button
-            type="text"
-            danger
             icon={<DeleteOutlined />}
             onClick={() => setPendingDelete(record)}
             disabled={!managePermission}
-            title="Delete Parameter"
+            aria-label={`Delete parameter ${record.key}`}
           />
-        </Space>
+        </Flex>
       ),
     },
   ];
 
   return (
-    <Card
-      title={`Policy Parameters (${parameters.length})`}
-      extra={
+    <section>
+      <div className="policy-list-header">
+        <div>
+          <Typography.Title level={4}>Parameters ({parameters.length})</Typography.Title>
+          <Typography.Text type="secondary">
+            Values passed to this policy set at evaluation, read in Rego as{" "}
+            <Text code>data.terrakube.inputs.&lt;key&gt;</Text>.
+          </Typography.Text>
+        </div>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -255,110 +233,100 @@ export const PolicySetParameters: React.FC<Props> = ({
           disabled={!managePermission}
           data-testid="add-parameter-btn"
         >
-          Add Parameter
+          Add parameter
         </Button>
-      }
-    >
-      <Paragraph type="secondary" style={{ marginBottom: 16, fontSize: 13 }}>
-        Parameters defined here are injected directly into this policy set during OPA evaluation and accessible in Rego via <Text code>data.terrakube.inputs.&lt;key&gt;</Text>.
-      </Paragraph>
-
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
-        <Input
-          aria-label="Search parameters by key or description"
-          placeholder="Search parameters by key or description..."
-          prefix={<SearchOutlined />}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          allowClear
-          style={{ maxWidth: 350 }}
-        />
       </div>
 
-      <Table
-        dataSource={filteredParameters}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={filteredParameters.length > 10 ? { pageSize: 10 } : false}
-        locale={{
-          emptyText: (
-            <Empty
-              description="No parameters configured for this policy set"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            >
-              {managePermission && (
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
-                  Add Parameter
-                </Button>
-              )}
-            </Empty>
-          ),
-        }}
-      />
+      {!loading && parameters.length === 0 ? (
+        <EmptyState simple description="No parameters. Add one to pass a value to the rules in this policy set.">
+          {managePermission && (
+            <Button icon={<PlusOutlined />} onClick={handleOpenCreate}>
+              Add parameter
+            </Button>
+          )}
+        </EmptyState>
+      ) : (
+        <>
+          <Input
+            aria-label="Search parameters by key or description"
+            placeholder="Search by key or description"
+            prefix={<SearchOutlined />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            allowClear
+            className="policy-parameter-search"
+          />
+          <Table
+            dataSource={filteredParameters}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            tableLayout="fixed"
+            pagination={filteredParameters.length > 10 ? { pageSize: 10 } : false}
+          />
+        </>
+      )}
 
-      {/* Add / Edit Parameter Modal */}
-      <Modal
-        title={modalMode === "create" ? "Add Policy Parameter" : `Edit Parameter: ${editingParam?.key}`}
+      <CrudFormModal
         open={modalVisible}
+        title={modalMode === "create" ? "Add parameter" : `Edit parameter ${editingParam?.key}`}
+        okText={modalMode === "create" ? "Add parameter" : "Save parameter"}
+        form={form}
+        formName="policy-set-parameter"
+        confirmLoading={submitting}
         onCancel={() => {
           setModalVisible(false);
           form.resetFields();
         }}
-        onOk={() => form.submit()}
-        confirmLoading={submitting}
-        destroyOnHidden
+        onSubmit={handleSubmit}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            name="key"
-            label="Parameter Key"
-            rules={[
-              { required: true, message: "Please enter a parameter key" },
-              {
-                pattern: /^[a-zA-Z0-9_-]+$/,
-                message: "Key can only contain letters, numbers, hyphens, and underscores",
-              },
-            ]}
-            tooltip="The name accessed in Rego via data.terrakube.inputs.<key>"
-          >
-            <Input placeholder="e.g. max_deletions, allowed_regions" />
-          </Form.Item>
+        <Form.Item
+          name="key"
+          label="Key"
+          rules={[
+            { required: true, message: "Enter a key" },
+            {
+              pattern: /^[a-zA-Z0-9_-]+$/,
+              message: "Use only letters, numbers, hyphens and underscores",
+            },
+          ]}
+          extra={
+            <>
+              Rules read it as <Text code>data.terrakube.inputs.&lt;key&gt;</Text>.
+            </>
+          }
+        >
+          <Input className="policy-mono" placeholder="max_deletions" />
+        </Form.Item>
 
-          <Form.Item
-            name="value"
-            label="Parameter Value"
-            rules={[{ required: true, message: "Please enter a value" }]}
-            extra={'Supports plain strings, numbers, booleans, arrays (e.g. ["us-east-1"]), and JSON objects. Automatically parsed for Rego evaluation.'}
-          >
-            <TextArea
-              rows={4}
-              autoSize={{ minRows: 3, maxRows: 8 }}
-              placeholder='e.g. 5 or ["us-east-1", "us-west-2"]'
-              style={{ fontFamily: "monospace" }}
-            />
-          </Form.Item>
+        <Form.Item
+          name="value"
+          label="Value"
+          rules={[{ required: true, message: "Enter a value" }]}
+          extra="A string, number, boolean, JSON array or JSON object. JSON is parsed before evaluation."
+        >
+          <TextArea
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            placeholder='["us-east-1", "us-west-2"]'
+            className="policy-mono"
+          />
+        </Form.Item>
 
-          <Form.Item name="description" label="Description">
-            <Input placeholder="Optional description of this parameter's purpose" />
-          </Form.Item>
-        </Form>
-      </Modal>
+        <Form.Item name="description" label="Description">
+          <Input placeholder="What this value controls" />
+        </Form.Item>
+      </CrudFormModal>
 
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         open={!!pendingDelete}
-        title="Delete Policy Parameter"
-        description={
-          <>
-            Are you sure you want to delete parameter <Text code>{pendingDelete?.key}</Text>? This parameter will no longer be provided during policy evaluations.
-          </>
-        }
+        title="Delete parameter"
+        message={`Rules will no longer receive ${pendingDelete?.key} when this policy set is evaluated.`}
+        okText="Delete parameter"
         confirmLoading={deleting}
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(null)}
       />
-    </Card>
+    </section>
   );
 };
 

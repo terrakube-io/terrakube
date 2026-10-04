@@ -21,10 +21,6 @@
   float: right;
 }
 
-.link {
-  padding: 0;
-}
-
 .vcsList {
   width: 100%;
 }
@@ -51,20 +47,6 @@ ul.disc-list {
   color: var(--tk-text-secondary) !important;
 }
 
-.execution-mode-option {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--tk-border-primary);
-  border-radius: 8px;
-}
-
-.execution-mode-option.ant-radio-wrapper-checked {
-  border-color: var(--tk-accent);
-}
-
 .ant-card.template-card {
   height: 280px;
   display: flex;
@@ -88,103 +70,6 @@ ul.disc-list {
   overflow: hidden;
 }
 
-.vcs-provider-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  height: 110px;
-  background-color: transparent;
-  border: 1px solid var(--tk-border-primary);
-  border-radius: 8px;
-  color: var(--tk-text-primary);
-  font-size: 15px;
-  cursor: pointer;
-  box-shadow: var(--tk-shadow-sm);
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
-}
-
-.vcs-provider-card:hover {
-  border-color: var(--tk-accent);
-  box-shadow: var(--tk-shadow-md);
-  transform: translateY(-2px);
-}
-
-.vcs-provider-card .vcs-provider-icon {
-  font-size: 28px;
-}
-
-.vcs-provider-card .vcs-provider-caret {
-  font-size: 11px;
-  color: var(--tk-text-tertiary);
-}
-
-.vcs-guide-step {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.vcs-guide-step:last-child {
-  margin-bottom: 0;
-}
-
-.vcs-guide-step-number {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: var(--tk-accent-tint);
-  color: var(--tk-accent);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.vcs-guide-step-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  font-size: 14px;
-}
-
-.vcs-guide-step-content > .ant-typography {
-  margin: 0;
-  line-height: 24px;
-}
-
-.vcs-guide-values .ant-descriptions-item-label {
-  width: 220px;
-  white-space: nowrap;
-  vertical-align: top;
-}
-
-.vcs-guide-values .ant-descriptions-item-content .ant-typography {
-  font-size: 14px;
-}
-
-.vcs-guide-values ul {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.vcs-guide-values ul li {
-  margin-bottom: 4px;
-}
-
-.vcs-guide-values ul li:last-child {
-  margin-bottom: 0;
-}
-
 .template-card .template-card-cover {
   display: flex;
   align-items: center;
@@ -201,82 +86,13 @@ ul.disc-list {
   object-fit: contain;
 }
 
-.role-option.ant-radio-wrapper .ant-radio {
-  border-color: var(--role-accent, var(--tk-border-primary));
-}
-
-.role-option.ant-radio-wrapper:hover:not(.ant-radio-wrapper-disabled) .ant-radio {
-  border-color: var(--role-accent, var(--tk-accent));
-}
-
-.role-option.ant-radio-wrapper-checked {
-  border-color: var(--role-accent, var(--tk-accent));
-}
-
-.role-option.ant-radio-wrapper .ant-radio.ant-radio-checked {
-  border-color: var(--role-accent, var(--tk-accent));
-  background-color: var(--role-accent, var(--tk-accent));
-}
-
-.role-option.ant-radio-wrapper:hover .ant-radio-checked:not(.ant-radio-disabled) {
-  border-color: var(--role-accent, var(--tk-accent));
-  background-color: var(--role-accent, var(--tk-accent));
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ant-card.template-card:hover,
-  .vcs-provider-card:hover {
+  .ant-card.template-card:hover {
     transform: none;
   }
 }
 
-/* Organization general settings: a single column. */
-.general-settings-column {
-  max-width: 680px;
-  margin-top: 24px;
-}
-
-.general-settings-id {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 24px;
-}
-
-.general-settings-id-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-}
-
-.general-settings .ant-form-item-label > label {
-  font-weight: 600;
-}
-
-h5.ant-typography.general-settings-subtitle {
+/* Organization general settings. */
+h4.ant-typography.general-settings-subtitle {
   margin: 32px 0 4px;
-}
-
-.general-settings-modes {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.general-settings-mode-help {
-  display: block;
-  color: var(--tk-text-secondary);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.general-settings-danger {
-  margin-top: 48px;
-}
-
-.general-settings-danger h3.ant-typography {
-  margin-bottom: 16px;
-}
-
-.general-settings-danger .ant-typography + .ant-typography {
-  margin-top: 4px;
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, Card, Space, Typography, message } from "antd";
-import { PlusOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { Button, Typography, message } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import {
@@ -11,16 +11,14 @@ import {
   PolicyExemptionModal,
   PolicyExemptionTable,
 } from "./components";
-
-const { Paragraph } = Typography;
+import { EmptyState } from "@/components/feedback/EmptyState";
+import "./PolicySets.css";
 
 type Props = {
   managePermission?: boolean;
 };
 
-export const PolicyExemptionsSettings: React.FC<Props> = ({
-  managePermission = true,
-}) => {
+export const PolicyExemptionsSettings: React.FC<Props> = ({ managePermission = true }) => {
   const { orgid } = useParams<{ orgid: string }>();
 
   const [rawExemptions, setRawExemptions] = useState<any[]>([]);
@@ -62,9 +60,7 @@ export const PolicyExemptionsSettings: React.FC<Props> = ({
       }
 
       // 2. Fetch exemptions with included relationships
-      const res = await axiosInstance.get(
-        `organization/${orgid}/policyExemption?include=policySet,workspace,project`
-      );
+      const res = await axiosInstance.get(`organization/${orgid}/policyExemption?include=policySet,workspace,project`);
 
       const items = res.data?.data || [];
       const included = res.data?.included || [];
@@ -102,10 +98,7 @@ export const PolicyExemptionsSettings: React.FC<Props> = ({
       const projId = rels.project?.data?.id;
 
       const psName =
-        includedMap["policy_set"]?.[psId]?.name ||
-        policySets.find((p) => p.id === psId)?.name ||
-        psId ||
-        "Policy Set";
+        includedMap["policy_set"]?.[psId]?.name || policySets.find((p) => p.id === psId)?.name || psId || "Policy Set";
       const wsName = includedMap["workspace"]?.[wsId]?.name;
       const projName = includedMap["project"]?.[projId]?.name;
 
@@ -210,14 +203,7 @@ export const PolicyExemptionsSettings: React.FC<Props> = ({
         const matchesWs = rec.workspaceName?.toLowerCase().includes(q);
         const matchesProj = rec.projectName?.toLowerCase().includes(q);
 
-        if (
-          !matchesRule &&
-          !matchesTicket &&
-          !matchesJustification &&
-          !matchesSetName &&
-          !matchesWs &&
-          !matchesProj
-        ) {
+        if (!matchesRule && !matchesTicket && !matchesJustification && !matchesSetName && !matchesWs && !matchesProj) {
           return false;
         }
       }
@@ -248,55 +234,58 @@ export const PolicyExemptionsSettings: React.FC<Props> = ({
     }
   };
 
+  const createButton = (primary: boolean) => (
+    <Button
+      type={primary ? "primary" : "default"}
+      icon={<PlusOutlined />}
+      onClick={handleCreate}
+      disabled={!managePermission}
+      data-testid={primary ? "add-exemption-btn" : undefined}
+    >
+      Create exemption
+    </Button>
+  );
+
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-        }}
-      >
+      <div className="policy-list-header">
         <div>
-          <Paragraph type="secondary" style={{ margin: 0 }}>
-            Policy exemptions provide audited, time-bounded waivers for specific OPA rules across workspaces or projects.
-          </Paragraph>
+          <Typography.Title level={4}>Exemptions ({exemptionRecords.length})</Typography.Title>
+          <Typography.Text type="secondary">
+            Time-bounded waivers for specific rules, recorded with a ticket and a justification.
+          </Typography.Text>
         </div>
-        {managePermission && (
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleCreate}
-            data-testid="add-exemption-btn"
-          >
-            Create Exemption
-          </Button>
-        )}
+        {createButton(true)}
       </div>
 
-      <Card>
-        <PolicyExemptionFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          scopeFilter={scopeFilter}
-          onScopeFilterChange={setScopeFilter}
-          policySetFilter={policySetFilter}
-          onPolicySetFilterChange={setPolicySetFilter}
-          policySets={policySets}
-          statusCounts={statusCounts}
-        />
+      {!loading && exemptionRecords.length === 0 ? (
+        <EmptyState simple description="No exemptions. Every rule applies to every workspace it covers.">
+          {managePermission && createButton(false)}
+        </EmptyState>
+      ) : (
+        <>
+          <PolicyExemptionFilter
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            scopeFilter={scopeFilter}
+            onScopeFilterChange={setScopeFilter}
+            policySetFilter={policySetFilter}
+            onPolicySetFilterChange={setPolicySetFilter}
+            policySets={policySets}
+            statusCounts={statusCounts}
+          />
 
-        <PolicyExemptionTable
-          items={filteredRecords}
-          loading={loading}
-          managePermission={managePermission}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-        />
-      </Card>
+          <PolicyExemptionTable
+            items={filteredRecords}
+            loading={loading}
+            managePermission={managePermission}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
+        </>
+      )}
 
       {orgid && (
         <PolicyExemptionModal

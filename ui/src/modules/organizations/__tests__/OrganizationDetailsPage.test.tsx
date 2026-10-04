@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import OrganizationsDetailPage from "../OrganizationDetailsPage";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import projectService from "@/modules/projects/projectService";
@@ -7,11 +7,18 @@ import { message } from "antd";
 jest.mock("react-router-dom", () => ({
   useParams: () => ({ id: "org-2" }),
   Link: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+  useHref: (to: string) => to,
+  useNavigate: () => jest.fn(),
 }));
 jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
   __esModule: true,
-  default: function PageWrapper({ children }: { children?: React.ReactNode }) {
-    return <>{children}</>;
+  default: function PageWrapper({ children, actions }: { children?: React.ReactNode; actions?: React.ReactNode }) {
+    return (
+      <>
+        {actions}
+        {children}
+      </>
+    );
   },
 }));
 jest.mock("@/hooks", () => ({ usePolling: jest.fn(), useOrganizationJobStatusSubscription: jest.fn() }));
@@ -105,5 +112,14 @@ describe("OrganizationDetailsPage project filter", () => {
     });
     await act(async () => tableProps.onPageChange(3, tableProps.pageSize));
     await waitFor(() => expect(message.error).toHaveBeenCalledWith("boom"));
+  });
+
+  it("lets the header actions wrap so New workspace stays reachable on narrow screens", async () => {
+    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: [] });
+
+    render(<OrganizationsDetailPage organizationName="org" setOrganizationName={jest.fn()} />);
+
+    const create = await screen.findByRole("link", { name: /New workspace/ });
+    expect(create.closest(".ant-space")).toHaveStyle({ flexWrap: "wrap" });
   });
 });

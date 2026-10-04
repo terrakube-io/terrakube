@@ -1,13 +1,11 @@
-import { Button, Flex, Form, Select, Spin, Typography, message } from "antd";
+import { Form, Select, Spin, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { SshKey, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-
-const { Text } = Typography;
+import { SettingsForm } from "@/components/settings/SettingsForm";
 
 type Props = {
   workspace: Workspace;
@@ -18,19 +16,14 @@ type Props = {
 export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const organizationId = workspace.relationships.organization.data.id;
   const id = workspace.id;
-  const Option = Select;
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
   const [waiting, setWaiting] = useState(false);
 
-  const loadSSHKeys = () => {
+  useEffect(() => {
     axiosInstance.get(`organization/${organizationId}/ssh`).then((response) => {
       setSSHKeys(response.data.data);
     });
-  };
-
-  useEffect(() => {
-    loadSSHKeys();
-  }, []);
+  }, [organizationId]);
 
   const onFinish = (values: { moduleSshKey?: string }) => {
     setWaiting(true);
@@ -54,72 +47,50 @@ export const WorkspaceSSHKey = ({ workspace, manageWorkspace, onWorkspaceUpdate 
       .post("/operations", body, atomicHeader)
       .then((response) => {
         if (response.status === 200) {
-          message.success("SSH key updated successfully");
+          message.success("SSH key updated");
           onWorkspaceUpdate?.();
         } else {
-          message.error("SSH key update failed");
+          message.error(`Could not update the SSH key (HTTP ${response.status})`);
         }
-        setWaiting(false);
       })
-      .catch(() => {
-        message.error("SSH key update failed");
-        setWaiting(false);
-      });
+      .catch((error) => message.error(`Could not update the SSH key: ${getErrorMessage(error)}`))
+      .finally(() => setWaiting(false));
   };
 
   return (
     <div className="generalSettings">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
-        title="SSH Key"
-        description="Select the SSH key this workspace uses to fetch private modules and repositories."
+        title="SSH key"
+        description="Select the SSH key this workspace uses to download modules from private Git repositories."
+        divider={false}
       />
-      <Text type="secondary">
-        Optionally choose a private SSH key for downloading Terraform modules from Git-based module sources. This key is
-        not used for cloning the workspace VCS repository or for provisioner connections.
-      </Text>
-      <p style={{ marginTop: 4 }}>
-        <Link to={`/organizations/${organizationId}/settings`}>Manage SSH keys for this organization.</Link>
-      </p>
-
       <Spin spinning={waiting}>
-        <SettingsSection>
-          <Form
-            onFinish={onFinish}
-            requiredMark={false}
-            initialValues={{
-              moduleSshKey: workspace.attributes?.moduleSshKey || "",
-            }}
-            layout="vertical"
+        <SettingsForm
+          onFinish={onFinish}
+          saveLabel="Update SSH key"
+          saveDisabled={!manageWorkspace}
+          initialValues={{ moduleSshKey: workspace.attributes?.moduleSshKey || "" }}
+        >
+          <Form.Item
+            name="moduleSshKey"
+            label="SSH key"
+            extra={
+              <>
+                It is not used to clone the workspace repository or for provisioner connections.{" "}
+                <Link to={`/organizations/${organizationId}/settings/ssh`}>Manage organization SSH keys</Link>
+              </>
+            }
           >
-            <Form.Item name="moduleSshKey" label="SSH key" style={{ marginTop: 16 }}>
-              <Select
-                defaultValue={workspace.attributes?.moduleSshKey || ""}
-                placeholder="(No SSH key)"
-                disabled={!manageWorkspace}
-              >
-                <Option key="" value="">
-                  (No SSH key)
-                </Option>
-                {sshKeys.map(function (sshKey) {
-                  return (
-                    <Option key={sshKey?.id} value={sshKey?.id}>
-                      {sshKey?.attributes?.name}
-                    </Option>
-                  );
-                })}
-              </Select>
-            </Form.Item>
-
-            <Form.Item>
-              <Flex justify="flex-end">
-                <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
-                  Update SSH key
-                </Button>
-              </Flex>
-            </Form.Item>
-          </Form>
-        </SettingsSection>
+            <Select
+              disabled={!manageWorkspace}
+              options={[
+                { value: "", label: "(No SSH key)" },
+                ...sshKeys.map((sshKey) => ({ value: sshKey.id, label: sshKey.attributes?.name })),
+              ]}
+            />
+          </Form.Item>
+        </SettingsForm>
       </Spin>
     </div>
   );

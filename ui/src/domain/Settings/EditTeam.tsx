@@ -1,5 +1,4 @@
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { Alert, Button, Col, Flex, Form, Input, Row, Space, Spin, Tooltip, message } from "antd";
+import { Alert, Button, Flex, Form, Input, Spin, message } from "antd";
 import CreatePatModal from "@/components/modals/CreatePatModal";
 import { CreateTokenForm } from "@/modules/token/types";
 import TokenGrid from "@/modules/token/TokenGrid";
@@ -10,14 +9,20 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./TeamsTagsVariables.css";
 import { TeamPermissionsV2 } from "./TeamPermissionsV2";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { IdField } from "@/components/settings/IdField";
+import { DangerZone } from "@/components/settings/DangerZone";
 
 type Props = {
   mode: "edit" | "create";
   setMode: React.Dispatch<React.SetStateAction<"list" | "edit" | "create">>;
   teamId?: string;
   loadTeams: () => void;
+  onDeleteTeam: (id: string) => void;
+  managePermission?: boolean;
 };
 
 type CreateTeamForm = {
@@ -38,7 +43,7 @@ type UpdateTeamForm = {
   approveJob?: boolean;
 };
 
-export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
+export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +53,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
   const [tokens, setTokens] = useState<TeamToken[]>([]);
   const [visible, setVisible] = useState(false);
   const [createTokenDisabled, setCreateTokenDisabled] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (mode === "edit" && teamId) {
@@ -118,6 +124,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
       },
     };
 
+    setSaving(true);
     axiosInstance
       .post(`organization/${orgid}/team`, body, {
         headers: { "Content-Type": "application/vnd.api+json" },
@@ -129,8 +136,9 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
+        message.error(`Could not create the team: ${getErrorMessage(err)}`);
+      })
+      .finally(() => setSaving(false));
   };
 
   const onUpdate = (values: UpdateTeamForm) => {
@@ -157,6 +165,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
       },
     };
 
+    setSaving(true);
     axiosInstance
       .patch(`organization/${orgid}/team/${teamId}`, body, {
         headers: { "Content-Type": "application/vnd.api+json" },
@@ -168,8 +177,9 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
+        message.error(`Could not save the team: ${getErrorMessage(err)}`);
+      })
+      .finally(() => setSaving(false));
   };
 
   const onFinish = (values: CreateTeamForm | UpdateTeamForm) => {
@@ -192,7 +202,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
   const onDeleteToken = async (id: string) => {
     const response = await apiDelete(`/access-token/v1/teams/${id}`);
     if (response.isError) {
-      message.error("Failed to delete token");
+      message.error(`Could not delete the token: ${getErrorMessage(response.error)}`);
     } else {
       message.success("Token deleted successfully");
     }
@@ -222,86 +232,103 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams }: Props) => {
     }
   };
 
+  const onDelete = () => {
+    if (teamId) onDeleteTeam(teamId);
+    setMode("list");
+  };
+
   return (
     <div className="setting">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
-        title={mode === "edit" ? `Team: ${teamName}` : "New Team"}
+        title={mode === "edit" ? (teamName ?? "Team") : "Create a team"}
         description={
           mode === "edit"
-            ? "Update this team's role and permissions to control what its members can do within the organization."
-            : "Create a new team and assign a role to control what its members can do. The team name must match a valid identity provider group name."
+            ? "Choose what members of this team can do in the organization."
+            : "A team gives the members of an identity provider group a role in this organization."
         }
+        divider={false}
       />
 
       {error ? (
-        <Alert title="Error" description={error} type="error" showIcon style={{ marginTop: 16 }} />
+        <Alert title="Could not load the team" description={error} type="error" showIcon />
       ) : (
         <Spin spinning={loading}>
-          <Form name="team" form={form} onFinish={onFinish} layout="vertical">
-            {mode === "create" && (
-              <SettingsSection maxWidth={960} title="Identity">
-                <Row>
-                  <Col xs={24} md={12}>
-                    <Form.Item
-                      name="name"
-                      tooltip={{
-                        title: "Must match a valid identity provider (AD/LDAP/OIDC) group name",
-                        icon: <InfoCircleOutlined />,
-                      }}
-                      label="Team Name"
-                      rules={[{ required: true, message: "Team name is required" }]}
-                    >
-                      <Input placeholder="e.g. ENGINEERING_TEAM" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              </SettingsSection>
-            )}
+          <SettingsForm name="team" form={form} onFinish={onFinish} showSave={false}>
+            <SettingsSection title="Identity">
+              {mode === "edit" ? (
+                <IdField id="team-id" value={teamId ?? ""} copiedMessage="Team ID copied" />
+              ) : (
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  extra="Must match a group name in your identity provider (AD, LDAP or OIDC); it cannot be changed later."
+                  rules={[{ required: true, message: "Enter the identity provider group name" }]}
+                >
+                  <Input placeholder="e.g. ENGINEERING_TEAM" />
+                </Form.Item>
+              )}
+            </SettingsSection>
 
             <TeamPermissionsV2 managePermissions={true} />
 
-            <Flex justify="flex-end" style={{ maxWidth: 960, marginBottom: 32 }}>
-              <Space orientation="horizontal">
-                <Button onClick={onCancel} type="default">
-                  Cancel
-                </Button>
-                <Button type="primary" htmlType="submit">
-                  {mode === "edit" ? "Update team" : "Create team"}
-                </Button>
-              </Space>
+            <Flex gap="small">
+              <Button type="primary" htmlType="submit" loading={saving}>
+                {mode === "edit" ? "Save changes" : "Create team"}
+              </Button>
+              <Button onClick={onCancel}>Cancel</Button>
             </Flex>
-          </Form>
+          </SettingsForm>
         </Spin>
       )}
 
       {mode === "edit" && !loading && !error && (
-        <SettingsSection
-          title="Team API Tokens"
-          description="Team API tokens inherit the team's access level. Use them for CI/CD pipelines and automation."
-          maxWidth={960}
-          extra={
-            <Tooltip title={createTokenDisabled ? "You must be a member of this team to create tokens" : ""}>
-              <Button type="primary" disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
-                Create a Team Token
-              </Button>
-            </Tooltip>
-          }
-        >
-          {loadingTokens ? (
-            <Spin style={{ display: "block", marginTop: 16 }} />
-          ) : (
-            <TokenGrid tokens={tokens} action={onDeleteToken} onDeleted={() => loadTokens(teamName)} />
-          )}
+        <>
+          <div className="team-tokens">
+            <SettingsSection
+              maxWidth={680}
+              title="Team API tokens"
+              description={
+                createTokenDisabled
+                  ? "Tokens act with this team's permissions, for CI/CD pipelines and automation. Only members of this team can create them."
+                  : "Tokens act with this team's permissions, for CI/CD pipelines and automation."
+              }
+              extra={
+                <Button disabled={createTokenDisabled} onClick={onNewToken} htmlType="button">
+                  Create a team token
+                </Button>
+              }
+            >
+              {loadingTokens ? (
+                <Spin className="team-tokens-loading" />
+              ) : (
+                <TokenGrid hideTitle tokens={tokens} action={onDeleteToken} onDeleted={() => loadTokens(teamName)} />
+              )}
 
-          <CreatePatModal
-            open={visible}
-            onCancel={() => setVisible(false)}
-            onCreated={() => loadTokens(teamName)}
-            action={onCreateToken}
-            shortlivedTokens={true}
+              <CreatePatModal
+                open={visible}
+                onCancel={() => setVisible(false)}
+                onCreated={() => loadTokens(teamName)}
+                action={onCreateToken}
+                shortlivedTokens={true}
+              />
+            </SettingsSection>
+          </div>
+
+          <DangerZone
+            actionName="Delete this team"
+            description={`Members of the ${teamName} group lose the organization permissions this team grants. Team access granted on individual workspaces and the group in your identity provider are not changed. This cannot be undone.`}
+            disabled={!managePermission}
+            confirmValue={teamName ?? ""}
+            confirmMessage={
+              <>
+                The team <strong>{teamName}</strong> and its organization permissions will be deleted. This cannot be
+                undone.
+              </>
+            }
+            onConfirm={onDelete}
           />
-        </SettingsSection>
+        </>
       )}
     </div>
   );

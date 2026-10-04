@@ -1,7 +1,6 @@
-import { InfoCircleOutlined } from "@ant-design/icons";
-import type { OnMount, OnValidate } from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
-import { Alert, Button, Col, Flex, Form, Input, message, Row, Space } from "antd";
+import { Alert, Form, Input, message } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -9,21 +8,21 @@ import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { Template } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./EditorForm.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { IdField } from "@/components/settings/IdField";
+import { DangerZone } from "@/components/settings/DangerZone";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
-
-const validateMessages = {
-  required: "${label} is required!",
-};
 
 type Props = {
   setMode: (mode: string) => void;
   templateId: string;
   loadTemplates: () => void;
+  managePermission?: boolean;
 };
 
 type IStandaloneCodeEditor = Parameters<OnMount>[0];
-type IMarkerArray = Parameters<OnValidate>[0];
 
 type EditTemplateForm = {
   name: string;
@@ -32,7 +31,7 @@ type EditTemplateForm = {
   version: string;
 };
 
-export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
+export const EditTemplate = ({ setMode, templateId, loadTemplates, managePermission = true }: Props) => {
   const { orgid } = useParams();
   const [tcl, setTCL] = useState("");
   const editorRef = useRef<IStandaloneCodeEditor>(null);
@@ -47,10 +46,6 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
   useEffect(() => {
     loadTemplate(templateId);
   }, [templateId]);
-
-  function handleEditorValidation(markers: IMarkerArray) {
-    markers.forEach((marker) => console.log("onValidate:", marker.message));
-  }
 
   const loadTemplate = (templateId: string) => {
     axiosInstance
@@ -76,7 +71,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
         attributes: {
           name: values.name,
           description: values.description,
-          tcl: Buffer.from(editorRef.current.getValue()).toString("base64"),
+          tcl: Buffer.from(editorRef.current?.getValue() ?? tcl).toString("base64"),
           version: "1.0.0",
         },
       },
@@ -100,71 +95,72 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates }: Props) => {
       });
   };
 
+  const onDelete = () => {
+    axiosInstance
+      .delete(`organization/${orgid}/template/${templateId}`)
+      .then(() => {
+        message.success("Template deleted");
+        setMode("list");
+        loadTemplates();
+      })
+      .catch((err) => message.error(getErrorMessage(err)));
+  };
+
   return (
     <div>
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
-        title="Edit Template"
-        description="Update this template's job flow definition."
+        title="Edit template"
+        description="Change the name, description or job flow of this template."
       />
       {loading ? (
         <LoadingFallback />
       ) : error ? (
-        <Alert title="Error" description={error} type="error" showIcon />
+        <Alert title="Could not load the template" description={error} type="error" showIcon />
       ) : template ? (
-        <Form
-          initialValues={{ name: template.attributes.name, description: template.attributes.description }}
-          onFinish={onFinish}
-          validateMessages={validateMessages}
-          name="edit-template"
-          layout="vertical"
-        >
-          <SettingsSection maxWidth={960} title="General">
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
+        <>
+          <SettingsForm<EditTemplateForm>
+            className="editor-form"
+            name="edit-template"
+            initialValues={{ name: template.attributes.name, description: template.attributes.description }}
+            onFinish={onFinish}
+            saveLabel="Update template"
+            saveDisabled={!managePermission}
+          >
+            <div className="editor-form-fields">
+              <SettingsSection title="Identity">
+                <IdField value={template.id} copiedMessage="Template ID copied" />
                 <Form.Item
                   name="name"
                   label="Name"
-                  tooltip={{
-                    title: "A name for your Template. This will appear in the workspaces when you execute a new job.",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  rules={[{ required: true }]}
+                  extra="Shown in the workspace when someone starts a job."
+                  rules={[{ required: true, message: "Enter a name for the template" }]}
                 >
                   <Input />
                 </Form.Item>
-              </Col>
-            </Row>
-            <Form.Item name="description" label="Description" style={{ marginBottom: 0 }}>
-              <Input.TextArea rows={2} />
-            </Form.Item>
-          </SettingsSection>
-
-          <SettingsSection
-            maxWidth={960}
-            title="Template Definition"
-            description="The YAML flow executed by this template. You can run any tool before or after terraform plan, apply or destroy."
-          >
-            <CodeEditor
-              height="45vh"
-              onMount={handleEditorDidMount}
-              onValidate={handleEditorValidation}
-              defaultLanguage="yaml"
-              defaultValue={tcl}
-            />
-          </SettingsSection>
-
-          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-            <Space>
-              <Button onClick={() => setMode("list")}>Cancel</Button>
-              <Button type="primary" htmlType="submit">
-                Save Template
-              </Button>
-            </Space>
-          </Flex>
-        </Form>
+                <Form.Item name="description" label="Description">
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+                </Form.Item>
+              </SettingsSection>
+            </div>
+            <SettingsSection
+              maxWidth="100%"
+              title="Definition"
+              description="The YAML flow this template runs, before or after plan, apply and destroy."
+            >
+              <CodeEditor height="45vh" onMount={handleEditorDidMount} defaultLanguage="yaml" defaultValue={tcl} />
+            </SettingsSection>
+          </SettingsForm>
+          <DangerZone
+            actionName="Delete this template"
+            description="Workspaces can no longer run jobs with this template. Notifications filtered only to this template then fire for every template. This cannot be undone."
+            disabled={!managePermission}
+            onConfirm={onDelete}
+            confirmMessage={`Workspaces can no longer run jobs with ${template.attributes.name}. Notifications filtered only to this template then fire for every template. This cannot be undone.`}
+          />
+        </>
       ) : (
-        <p>Failed to load template...</p>
+        <Alert title="Could not load the template" type="error" showIcon />
       )}
     </div>
   );

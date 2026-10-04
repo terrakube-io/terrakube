@@ -1,11 +1,13 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Flex, Form, Input, Space, Spin, Table, message, Typography, Row, Col } from "antd";
+import { Button, Form, Input, Spin, Table, Tooltip, message, Typography } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { FederatedClaim } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./components/ResourceCard.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
 
 type Props = {
   mode: "edit" | "create";
@@ -33,7 +35,8 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   const [loading, setLoading] = useState(true);
   const [form] = Form.useForm();
   const [claims, setClaims] = useState<ClaimRow[]>([]);
-  const [claimForm] = Form.useForm();
+  const [newClaim, setNewClaim] = useState({ claimKey: "", claimValue: "" });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (mode === "edit" && federatedId) {
@@ -64,7 +67,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
         setClaims(loadedClaims);
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not load the federated credential: ${getErrorMessage(err)}`);
       })
       .finally(() => {
         setLoading(false);
@@ -73,7 +76,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
 
   const onFinish = async (values: FederatedForm) => {
     if (claims.length === 0) {
-      message.error("At least one claim condition is required");
+      message.error("Add at least one claim condition");
       return;
     }
 
@@ -88,6 +91,7 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
       },
     };
 
+    setSaving(true);
     try {
       let savedId = federatedId;
 
@@ -96,21 +100,23 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
           headers: JSONAPI_HEADERS,
         });
         savedId = res.data.data.id;
-        message.success("Federated credential created successfully");
+        message.success("Federated credential added");
       } else {
         await axiosInstance.patch(
           `federated/${federatedId}`,
           { data: { id: federatedId, ...body.data } },
           { headers: JSONAPI_HEADERS }
         );
-        message.success("Federated credential updated successfully");
+        message.success("Federated credential updated");
       }
 
       await saveClaims(savedId!);
       setMode("list");
       loadFederated();
-    } catch (err: any) {
-      message.error(getErrorMessage(err));
+    } catch (err: unknown) {
+      message.error(`Could not save the federated credential: ${getErrorMessage(err)}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -181,155 +187,134 @@ export const EditFederatedCredential = ({ mode, setMode, federatedId, loadFedera
   };
 
   const addClaim = () => {
-    const values = claimForm.getFieldsValue();
-    if (!values.claimKey || !values.claimValue) {
-      message.warning("Both claim key and value are required");
+    const claimKey = newClaim.claimKey.trim();
+    const claimValue = newClaim.claimValue.trim();
+    if (!claimKey || !claimValue) {
+      message.warning("Enter both a claim key and a value");
       return;
     }
-    setClaims([
-      ...claims,
-      {
-        key: `new-${Date.now()}`,
-        claimKey: values.claimKey,
-        claimValue: values.claimValue,
-      },
-    ]);
-    claimForm.resetFields();
+    setClaims([...claims, { key: `new-${Date.now()}`, claimKey, claimValue }]);
+    setNewClaim({ claimKey: "", claimValue: "" });
   };
 
   const removeClaim = (key: string) => {
     setClaims(claims.filter((c) => c.key !== key));
   };
 
+  // Enter adds the condition instead of submitting the whole form.
+  const addOnEnter = (event: React.KeyboardEvent) => {
+    event.preventDefault();
+    addClaim();
+  };
+
   const claimColumns = [
     {
-      title: "Claim Key",
+      title: "Claim key",
       dataIndex: "claimKey",
       key: "claimKey",
+      render: (value: string) => <span className="resource-mono">{value}</span>,
     },
     {
-      title: "Claim Value",
+      title: "Value",
       dataIndex: "claimValue",
       key: "claimValue",
+      render: (value: string) => <span className="resource-mono">{value}</span>,
     },
     {
-      title: "Action",
+      title: <span className="resource-sr-only">Actions</span>,
       key: "action",
-      width: 80,
-      render: (_: any, record: ClaimRow) => (
-        <Button type="link" danger icon={<DeleteOutlined />} onClick={() => removeClaim(record.key)} />
+      width: 56,
+      render: (_: unknown, record: ClaimRow) => (
+        <Tooltip title="Remove">
+          <Button
+            icon={<DeleteOutlined />}
+            aria-label={`Remove claim condition ${record.claimKey}`}
+            onClick={() => removeClaim(record.key)}
+          />
+        </Tooltip>
       ),
     },
   ];
 
   return (
     <Spin spinning={loading}>
-      <div className="edit-team">
-        <SettingsPageHeader
-          docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
-          title={mode === "create" ? "Create Federated Credential" : "Edit Federated Credential"}
-          description="Federated credentials let external identity providers exchange OIDC tokens for Terrakube access without storing secrets."
-        />
-        <SettingsSection maxWidth={960}>
-          <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Row gutter={16}>
-              <Col xs={24} md={9}>
-                <Form.Item
-                  name="name"
-                  label="Terrakube team name"
-                  extra="The external identity receives exactly the permissions assigned to this existing team."
-                  rules={[{ required: true, message: "Please enter an existing Terrakube team name" }]}
-                >
-                  <Input placeholder="e.g. TERRAKUBE_AUTOMATION" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={9}>
-                <Form.Item
-                  name="issuerUrl"
-                  label="Issuer URL"
-                  rules={[{ required: true, message: "Please enter the issuer URL" }]}
-                >
-                  <Input placeholder="e.g. https://token.actions.githubusercontent.com" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={6}>
-                <Form.Item
-                  name="audience"
-                  label="Audience"
-                  extra="Configure one accepted audience per credential. Tokens with a multi-value aud claim are supported."
-                  rules={[{ required: true, message: "Please enter the audience" }]}
-                >
-                  <Input placeholder="e.g. terrakube-audience" />
-                </Form.Item>
-              </Col>
-            </Row>
+      <SettingsPageHeader
+        docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
+        title={mode === "create" ? "Add a federated credential" : "Edit federated credential"}
+        description="Trust tokens from an identity provider and give them a team's permissions."
+        divider={false}
+      />
+      <SettingsForm
+        form={form}
+        onFinish={onFinish}
+        saving={saving}
+        saveLabel={mode === "create" ? "Add federated credential" : "Update federated credential"}
+      >
+        <Form.Item
+          name="name"
+          label="Team name"
+          extra="Matching tokens get exactly this existing team's permissions."
+          rules={[{ required: true, message: "Enter the name of an existing team" }]}
+        >
+          <Input placeholder="TERRAKUBE_AUTOMATION" />
+        </Form.Item>
+        <Form.Item name="issuerUrl" label="Issuer URL" rules={[{ required: true, message: "Issuer URL is required" }]}>
+          <Input className="resource-mono" placeholder="https://token.actions.githubusercontent.com" />
+        </Form.Item>
+        <Form.Item
+          name="audience"
+          label="Audience"
+          extra="Tokens must list this value in their aud claim."
+          rules={[{ required: true, message: "Audience is required" }]}
+        >
+          <Input className="resource-mono" placeholder="terrakube-audience" />
+        </Form.Item>
 
-            <Typography.Title level={5} style={{ marginTop: 24 }}>
-              Claim Conditions
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              Add at least one condition to restrict which tokens are accepted. All conditions must match for a token to
-              be authorized.
-            </Typography.Text>
-            <div
-              style={{
-                marginTop: 12,
-                padding: "12px",
-                backgroundColor: "#fafafa",
-                borderRadius: "4px",
-                border: "1px solid #f0f0f0",
-              }}
-            >
-              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 8 }}>
-                <strong>Examples by provider:</strong>
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 4 }}>
-                • <Typography.Text code>repository_owner</Typography.Text> (GitHub Actions)
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: 4 }}>
-                • <Typography.Text code>groups_direct</Typography.Text> (GitLab CI)
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block" }}>
-                • <Typography.Text code>amr</Typography.Text> (Azure AD)
-              </Typography.Text>
-            </div>
-
-            <Form form={claimForm} layout="inline" style={{ marginTop: 16, marginBottom: 16 }}>
-              <Form.Item name="claimKey" style={{ flex: 1 }}>
-                <Input placeholder="Claim key (e.g. repository_owner, groups_direct)" />
-              </Form.Item>
-              <Form.Item name="claimValue" style={{ flex: 1 }}>
-                <Input placeholder="Claim value (e.g. terrakube-org)" />
-              </Form.Item>
-              <Form.Item>
-                <Button icon={<PlusOutlined />} onClick={addClaim}>
-                  Add
-                </Button>
-              </Form.Item>
-            </Form>
-
-            <Table
-              columns={claimColumns}
-              dataSource={claims}
-              pagination={false}
-              size="small"
-              locale={{ emptyText: "At least one claim condition is required" }}
-              style={{ marginBottom: 24 }}
+        <SettingsSection
+          maxWidth="100%"
+          title="Claim conditions"
+          description={
+            <>
+              A token is accepted only when every condition matches, for example{" "}
+              <Typography.Text code>repository_owner</Typography.Text>,{" "}
+              <Typography.Text code>groups_direct</Typography.Text> or <Typography.Text code>amr</Typography.Text>.
+            </>
+          }
+        >
+          <Table
+            columns={claimColumns}
+            dataSource={claims}
+            pagination={false}
+            size="small"
+            scroll={{ x: "max-content" }}
+            locale={{ emptyText: "No conditions yet. Add at least one." }}
+            className="federated-claims"
+          />
+          <Form.Item label="Claim key" htmlFor="claim-key">
+            <Input
+              id="claim-key"
+              className="resource-mono"
+              placeholder="repository_owner"
+              value={newClaim.claimKey}
+              onChange={(e) => setNewClaim({ ...newClaim, claimKey: e.target.value })}
+              onPressEnter={addOnEnter}
             />
-
-            <Form.Item>
-              <Flex justify="flex-end">
-                <Space>
-                  <Button onClick={() => setMode("list")}>Cancel</Button>
-                  <Button type="primary" htmlType="submit">
-                    {mode === "create" ? "Create" : "Update"}
-                  </Button>
-                </Space>
-              </Flex>
-            </Form.Item>
-          </Form>
+          </Form.Item>
+          <Form.Item label="Value" htmlFor="claim-value">
+            <Input
+              id="claim-value"
+              className="resource-mono"
+              placeholder="terrakube-org"
+              value={newClaim.claimValue}
+              onChange={(e) => setNewClaim({ ...newClaim, claimValue: e.target.value })}
+              onPressEnter={addOnEnter}
+            />
+          </Form.Item>
+          <Button icon={<PlusOutlined />} onClick={addClaim}>
+            Add condition
+          </Button>
         </SettingsSection>
-      </div>
+      </SettingsForm>
     </Spin>
   );
 };

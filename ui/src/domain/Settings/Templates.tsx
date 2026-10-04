@@ -1,14 +1,14 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, List, message, Typography } from "antd";
+import { Button, Flex, List, message, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Template } from "../types";
 import { AddTemplate } from "./AddTemplate";
 import { EditTemplate } from "./EditTemplate";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { Loading } from "@/components/feedback/Loading";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
@@ -35,6 +35,7 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
     axiosInstance
       .delete(`organization/${orgid}/template/${id}`)
       .then(() => {
+        message.success("Template deleted");
         loadTemplates();
       })
       .catch((err) => {
@@ -71,13 +72,19 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
       ) : (
         (mode === "new" && <AddTemplate setMode={closeEditor} loadTemplates={loadTemplates} />) ||
         (mode === "edit" && (
-          <EditTemplate setMode={closeEditor} templateId={templateID} loadTemplates={loadTemplates} />
+          <EditTemplate
+            setMode={closeEditor}
+            templateId={templateID!}
+            loadTemplates={loadTemplates}
+            managePermission={managePermission}
+          />
         )) || (
           <div>
             <SettingsPageHeader
               docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
               title="Templates"
               description="Templates define the job flows a workspace can run, such as plan, apply, or custom steps."
+              divider={false}
               actions={
                 <LinkButton
                   to={`/organizations/${orgid}/settings/templates/new`}
@@ -85,55 +92,72 @@ export const TemplatesSettings = ({ editorMode, editorId, managePermission = tru
                   icon={<PlusOutlined />}
                   disabled={!managePermission}
                 >
-                  Add a Template
+                  Create template
                 </LinkButton>
               }
             />
-            <SettingsSection maxWidth="100%">
-              {loading ? (
-                <Loading loading description="Loading templates..." />
-              ) : (
+            {loading ? (
+              <Loading loading description="Loading templates..." />
+            ) : templates.length === 0 ? (
+              <EmptyState simple description="No templates yet. Workspaces need one to run a job.">
+                {managePermission && (
+                  <LinkButton to={`/organizations/${orgid}/settings/templates/new`} icon={<PlusOutlined />}>
+                    Create template
+                  </LinkButton>
+                )}
+              </EmptyState>
+            ) : (
+              <section>
+                <Typography.Title level={4}>Templates ({templates.length})</Typography.Title>
                 <List
-                  className="vcsList"
                   itemLayout="horizontal"
                   dataSource={templates}
                   renderItem={(item) => (
                     <List.Item
                       actions={[
-                        <LinkButton
-                          to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}
-                          icon={<EditOutlined />}
-                          type="link"
-                          disabled={!managePermission}
-                        >
-                          Edit
-                        </LinkButton>,
-                        <Button
-                          icon={<DeleteOutlined />}
-                          type="link"
-                          danger
-                          disabled={!managePermission}
-                          onClick={() => setPendingDelete(item)}
-                        >
-                          Delete
-                        </Button>,
+                        <Flex key="actions" gap={8}>
+                          <LinkButton
+                            to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}
+                            icon={<EditOutlined />}
+                            disabled={!managePermission}
+                            aria-label={`Edit ${item.attributes.name}`}
+                          />
+                          <Button
+                            icon={<DeleteOutlined />}
+                            disabled={!managePermission}
+                            aria-label={`Delete ${item.attributes.name}`}
+                            onClick={() => setPendingDelete(item)}
+                          />
+                        </Flex>,
                       ]}
                     >
-                      <List.Item.Meta title={item.attributes.name} description={item.attributes.description} />
+                      <List.Item.Meta
+                        title={
+                          managePermission ? (
+                            <Link to={`/organizations/${orgid}/settings/templates/edit/${item.id}`}>
+                              {item.attributes.name}
+                            </Link>
+                          ) : (
+                            item.attributes.name
+                          )
+                        }
+                        description={item.attributes.description}
+                      />
                     </List.Item>
                   )}
                 />
-              )}
-            </SettingsSection>
+              </section>
+            )}
             <DeleteConfirmationModal
               open={pendingDelete !== null}
               title="Delete template"
               message={
                 <>
-                  Deleting the template <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                  Workspaces can no longer run jobs with <strong>{pendingDelete?.attributes.name}</strong>.
+                  Notifications filtered only to this template then fire for every template. This cannot be undone.
                 </>
               }
-              okText="Delete"
+              okText="Delete template"
               onConfirm={() => {
                 if (pendingDelete) onDelete(pendingDelete.id);
                 setPendingDelete(null);

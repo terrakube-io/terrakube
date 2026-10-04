@@ -1,0 +1,92 @@
+/* Organization teams, tags and global variables. */
+
+/* Count heading above a list ("Teams (2)"). */
+h4.ant-typography.settings-list-count {
+  margin: 0 0 16px;
+}
+
+.settings-list-section + .settings-list-section {
+  margin-top: 32px;
+}
+
+.settings-list-empty {
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* Machine values (keys, values) in monospace, bounded so the table fits the content width. */
+.settings-list-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.global-variable-key {
+  display: inline-block;
+  max-width: 280px;
+}
+
+.global-variable-value {
+  display: block;
+  max-width: 400px;
+  white-space: pre-wrap;
+}
+
+.global-variable-value-sensitive {
+  color: var(--tk-text-secondary);
+}
+
+/* One line in the fixed-width table; the full summary is in the tooltip. */
+.team-row-meta {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Team permissions: one checkbox per permission, its help line aligned with the label text. */
+.team-permission-group + .team-permission-group {
+  margin-top: 24px;
+}
+
+.team-permission-group h5.ant-typography {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.team-permission-group .ant-form-item {
+  margin-bottom: 12px;
+}
+
+/* A checkbox field with its help line 4px below, aligned with the label text. */
+.team-permission-group .ant-form-item-control-input {
+  min-height: 0;
+}
+
+.team-permission-group .ant-form-item-extra {
+  min-height: 0;
+  margin-top: 4px;
+  padding-left: 24px;
+  font-size: 13px;
+}
+
+.team-tokens {
+  margin-top: 48px;
+}
+
+.team-tokens-loading {
+  display: block;
+  margin-top: 16px;
+}
+
+/* Column header read by screen readers only (icon action columns). */
+.settings-list-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

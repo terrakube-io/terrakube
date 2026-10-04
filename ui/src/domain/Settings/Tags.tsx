@@ -1,13 +1,15 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, TagOutlined } from "@ant-design/icons";
-import { Avatar, Button, Form, List, message, theme } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Flex, Form, message, Table, Tooltip, Typography } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Tag } from "../types";
 import "./Settings.css";
+import "./TeamsTagsVariables.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import TagFormModal, { TagFormValues } from "./components/TagFormModal";
 
@@ -28,7 +30,6 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
   const [tagId, setTagId] = useState<string>();
   const [pendingDelete, setPendingDelete] = useState<Tag | null>(null);
   const [form] = Form.useForm<AddTagForm>();
-  const { token } = theme.useToken();
 
   const onCancel = () => {
     setVisible(false);
@@ -37,12 +38,17 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
     setMode("edit");
     setTagId(id);
     setVisible(true);
-    axiosInstance.get(`organization/${orgid}/tag/${id}`).then((response) => {
-      setTagName(response.data.data.attributes.name);
-      form.setFieldsValue({
-        name: response.data.data.attributes.name,
+    axiosInstance
+      .get(`organization/${orgid}/tag/${id}`)
+      .then((response) => {
+        setTagName(response.data.data.attributes.name);
+        form.setFieldsValue({
+          name: response.data.data.attributes.name,
+        });
+      })
+      .catch((err) => {
+        message.error(`Could not load the tag: ${getErrorMessage(err)}`);
       });
-    });
   };
 
   const onNew = () => {
@@ -56,10 +62,11 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
     axiosInstance
       .delete(`organization/${orgid}/tag/${id}`)
       .then(() => {
+        message.success("Tag deleted");
         loadTags();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not delete the tag: ${getErrorMessage(err)}`);
       });
   };
 
@@ -80,12 +87,13 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then(() => {
+        message.success("Tag created");
         loadTags();
         setVisible(false);
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not create the tag: ${getErrorMessage(err)}`);
       });
   };
 
@@ -107,12 +115,13 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
         },
       })
       .then(() => {
+        message.success("Tag updated");
         loadTags();
         setVisible(false);
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not save the tag: ${getErrorMessage(err)}`);
       });
   };
 
@@ -127,7 +136,7 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load tags");
+          message.error(`Could not load tags: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
@@ -145,8 +154,9 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
         <>
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/organizations/tags"
-            title="Tag Management"
-            description="Tag keys are used to help identify and group together workspaces. Each workspace can give a key its own value."
+            title="Tags"
+            description="Tag keys group related workspaces so they are easier to find and filter. Each workspace sets its own value for a key."
+            divider={false}
             actions={
               <Button
                 type="primary"
@@ -159,49 +169,67 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
               </Button>
             }
           />
-          <Loading loading={loading} description="Loading Tags...">
-            <List
-              itemLayout="horizontal"
-              dataSource={tags}
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                pageSizeOptions: ["10", "20", "50"],
-                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} tags`,
-              }}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="edit"
-                      onClick={() => {
-                        onEdit(item.id);
-                      }}
-                      icon={<EditOutlined />}
-                      type="link"
-                      disabled={!managePermission}
-                    >
-                      Edit
-                    </Button>,
-                    <Button
-                      key="delete"
-                      icon={<DeleteOutlined />}
-                      type="link"
-                      danger
-                      disabled={!managePermission}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      Delete
-                    </Button>,
+          <Loading loading={loading} description="Loading tags...">
+            {tags.length === 0 ? (
+              <EmptyState simple description="No tag keys yet. Create one, then give it a value on workspaces.">
+                {managePermission && (
+                  <Button icon={<PlusOutlined />} onClick={onNew}>
+                    Create tag key
+                  </Button>
+                )}
+              </EmptyState>
+            ) : (
+              <section>
+                <Typography.Title level={4} className="settings-list-count">
+                  Tags ({tags.length})
+                </Typography.Title>
+                <Table
+                  dataSource={tags}
+                  rowKey="id"
+                  scroll={{ x: "max-content" }}
+                  pagination={{
+                    pageSize: 10,
+                    showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50"],
+                    hideOnSinglePage: true,
+                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} tags`,
+                  }}
+                  columns={[
+                    {
+                      title: "Key",
+                      key: "name",
+                      render: (_: unknown, tag: Tag) => tag.attributes.name,
+                    },
+                    {
+                      title: <span className="settings-list-sr-only">Actions</span>,
+                      key: "actions",
+                      align: "right" as const,
+                      render: (_: unknown, tag: Tag) => (
+                        <Flex gap="small" justify="flex-end">
+                          <Tooltip title="Edit tag">
+                            <Button
+                              icon={<EditOutlined />}
+                              aria-label={`Edit tag ${tag.attributes.name}`}
+                              disabled={!managePermission}
+                              onClick={() => onEdit(tag.id)}
+                            />
+                          </Tooltip>
+                          <Tooltip title="Delete tag">
+                            <Button
+                              danger
+                              icon={<DeleteOutlined />}
+                              aria-label={`Delete tag ${tag.attributes.name}`}
+                              disabled={!managePermission}
+                              onClick={() => setPendingDelete(tag)}
+                            />
+                          </Tooltip>
+                        </Flex>
+                      ),
+                    },
                   ]}
-                >
-                  <List.Item.Meta
-                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<TagOutlined />}></Avatar>}
-                    title={item.attributes.name}
-                  />
-                </List.Item>
-              )}
-            />
+                />
+              </section>
+            )}
           </Loading>
 
           <TagFormModal
@@ -221,11 +249,11 @@ export const TagsSettings = ({ managePermission = true }: Props) => {
             title="Delete tag"
             message={
               <>
-                Deleting the tag <strong>{pendingDelete?.attributes.name}</strong> cannot be undone. It will also be
-                removed from all the workspaces that use it.
+                The tag <strong>{pendingDelete?.attributes.name}</strong> will be removed from every workspace that uses
+                it. This cannot be undone.
               </>
             }
-            okText="Delete"
+            okText="Delete tag"
             onConfirm={() => {
               if (pendingDelete) onDelete(pendingDelete.id);
               setPendingDelete(null);

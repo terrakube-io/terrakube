@@ -1,21 +1,16 @@
-import {
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-  SearchOutlined,
-  AppstoreOutlined,
-  UnorderedListOutlined,
-} from "@ant-design/icons";
-import { Alert, Button, Card, Input, List, Space, Typography, Pagination, message } from "antd";
+import { DeleteOutlined, FolderOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Alert, Button, Input, Typography, Pagination, message } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import "./Settings.css";
+import "./VariableCollections.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { deleteCollection } from "./deleteCollection";
 
 // Type definitions for Variable Collections
 type Collection = {
@@ -58,45 +53,13 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
     try {
       setDeleteLoading(id);
 
-      // First get all variables and delete them in parallel
-      const variablesResponse = await axiosInstance.get(`organization/${orgid}/collection/${id}/item`);
-      const variables = variablesResponse.data.data || [];
-
-      if (variables.length > 0) {
-        const variableDeletePromises = variables.map((variable: { id: string }) =>
-          axiosInstance.delete(`organization/${orgid}/collection/${id}/item/${variable.id}`)
-        );
-        const variableResults = await Promise.allSettled(variableDeletePromises);
-        const variableFailures = variableResults.filter((r) => r.status === "rejected");
-        if (variableFailures.length > 0) {
-          message.warning(`${variableFailures.length} variable(s) failed to delete`);
-        }
-      }
-
-      // Then get all references and delete them in parallel
-      const referencesResponse = await axiosInstance.get(`organization/${orgid}/collection/${id}/reference`);
-      const references = referencesResponse.data.data || [];
-
-      if (references.length > 0) {
-        const referenceDeletePromises = references.map((reference: { id: string }) =>
-          axiosInstance.delete(`organization/${orgid}/collection/${id}/reference/${reference.id}`)
-        );
-        const referenceResults = await Promise.allSettled(referenceDeletePromises);
-        const referenceFailures = referenceResults.filter((r) => r.status === "rejected");
-        if (referenceFailures.length > 0) {
-          message.warning(`${referenceFailures.length} reference(s) failed to delete`);
-        }
-      }
-
-      // Finally delete the collection
-      await axiosInstance.delete(`organization/${orgid}/collection/${id}`);
+      await deleteCollection(orgid, id);
 
       // Reload collections
-      message.success("Collection deleted successfully");
+      message.success("Variable collection deleted");
       loadCollections();
     } catch (error) {
-      console.error("Error deleting collection:", error);
-      message.error("Failed to delete collection");
+      message.error(`Could not delete the variable collection: ${getErrorMessage(error)}`);
     } finally {
       setDeleteLoading(null);
     }
@@ -170,124 +133,124 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
   const paginatedCollections = filteredCollections.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  return (
-    <div className="setting">
-      <SettingsPageHeader
-        title="Variable Collections"
-        description="Variable Collections allow you to define and apply variables one time across multiple workspaces within an organization."
-        actions={
-          <LinkButton
-            to={`/organizations/${orgid}/settings/collection/new`}
-            type="primary"
-            icon={<PlusOutlined />}
-            disabled={!managePermission}
-          >
-            Create variable collection
-          </LinkButton>
-        }
-      />
-      <SettingsSection maxWidth="100%">
-        <div style={{ marginBottom: "20px", width: "100%" }}>
-          <Input
-            prefix={<SearchOutlined />}
-            aria-label="Search variable collections by name"
-            placeholder="Search by variable collections name"
-            style={{ width: "100%" }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+  const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+  const createButton = (
+    <LinkButton
+      to={`/organizations/${orgid}/settings/collection/new`}
+      type="primary"
+      icon={<PlusOutlined />}
+      disabled={!managePermission}
+    >
+      Create variable collection
+    </LinkButton>
+  );
+
+  const renderCollection = (item: Collection) => {
+    const { name, description, priority } = item.attributes;
+    const workspaces = item.relationships?.workspaces?.data;
+    const variables = item.relationships?.variables?.data;
+    return (
+      <li key={item.id} className="collection-card">
+        <span className="collection-card-icon" aria-hidden="true">
+          <FolderOutlined />
+        </span>
+        <div className="collection-card-body">
+          <Link to={editCollectionLink(item.id)} className="collection-card-name">
+            {name}
+          </Link>
+          {description && <span className="collection-card-description">{description}</span>}
+          <span className="collection-card-meta">
+            Priority {priority}
+            {workspaces && variables && (
+              <>
+                {" · "}
+                {plural(workspaces.length, "workspace")} · {plural(variables.length, "variable")}
+              </>
+            )}
+          </span>
         </div>
+        <Button
+          icon={<DeleteOutlined />}
+          aria-label={`Delete variable collection ${name}`}
+          onClick={() => setPendingDelete(item)}
+          loading={deleteLoading === item.id}
+          disabled={!managePermission}
+        />
+      </li>
+    );
+  };
 
-        {error ? (
-          <Alert
-            title={error.includes("permission") ? "Access Denied" : "Error"}
-            description={error}
-            type="error"
-            showIcon
-            style={{ marginTop: "20px" }}
-          />
+  const renderList = () => {
+    if (collections.length === 0) {
+      return (
+        <EmptyState description="There are no variable collections in this organization yet.">
+          {createButton}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <Typography.Title level={4} className="collections-heading">
+          Collections ({collections.length})
+        </Typography.Title>
+        <Input
+          prefix={<SearchOutlined />}
+          aria-label="Search variable collections"
+          placeholder="Search by name or description"
+          className="collections-search"
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(1);
+          }}
+          allowClear
+        />
+        {filteredCollections.length === 0 ? (
+          <EmptyState simple description={`No variable collections match "${searchTerm}".`} />
         ) : (
-          <Loading loading={loading} description="Loading Variable Collections...">
-            <List
-              grid={{ gutter: 16, column: 1 }}
-              dataSource={paginatedCollections}
-              renderItem={(item) => (
-                <List.Item>
-                  <Card hoverable style={{ width: "100%" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <Link to={editCollectionLink(item.id)} style={{ display: "block", flex: 1, color: "inherit" }}>
-                        <Typography.Title level={4} style={{ margin: 0 }}>
-                          {item.attributes.name}
-                        </Typography.Title>
-                        <Typography.Paragraph style={{ marginTop: "8px" }}>
-                          {item.attributes.description}
-                        </Typography.Paragraph>
-                        <Space style={{ marginTop: "16px" }}>
-                          <span style={{ display: "inline-flex", alignItems: "center" }}>
-                            <AppstoreOutlined style={{ marginRight: "5px" }} />
-                            {item.relationships?.workspaces?.data?.length || 0} workspaces
-                          </span>
-                          <span style={{ display: "inline-flex", alignItems: "center", marginLeft: "20px" }}>
-                            <UnorderedListOutlined style={{ marginRight: "5px" }} />
-                            {item.relationships?.variables?.data?.length || 0} variables
-                          </span>
-                        </Space>
-                      </Link>
-                      <Space>
-                        <LinkButton
-                          to={editCollectionLink(item.id)}
-                          type="text"
-                          icon={<EditOutlined />}
-                          disabled={!managePermission}
-                        >
-                          Edit
-                        </LinkButton>
-                        <Button
-                          danger
-                          type="text"
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDelete(item);
-                          }}
-                          loading={deleteLoading === item.id}
-                          disabled={!managePermission}
-                        >
-                          Delete
-                        </Button>
-                      </Space>
-                    </div>
-                  </Card>
-                </List.Item>
-              )}
-            />
-
-            <div style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
-              {filteredCollections.length > 0 && (
-                <Pagination
-                  current={currentPage}
-                  pageSize={pageSize}
-                  total={filteredCollections.length}
-                  onChange={setCurrentPage}
-                  showSizeChanger={false}
-                  simple={false}
-                />
-              )}
-            </div>
-          </Loading>
+          <ul className="collections-list">{paginatedCollections.map(renderCollection)}</ul>
         )}
-      </SettingsSection>
+        {filteredCollections.length > pageSize && (
+          <Pagination
+            className="collections-pagination"
+            current={currentPage}
+            pageSize={pageSize}
+            total={filteredCollections.length}
+            onChange={setCurrentPage}
+            showSizeChanger={false}
+          />
+        )}
+      </>
+    );
+  };
+
+  return (
+    <div className="setting collections-page">
+      <SettingsPageHeader
+        title="Variable collections"
+        description="Define variables once and apply them to several workspaces in this organization."
+        divider={false}
+        actions={collections.length > 0 && createButton}
+      />
+      {error ? (
+        <Alert title="Could not load variable collections" description={error} type="error" showIcon />
+      ) : (
+        <Loading loading={loading} description="Loading variable collections...">
+          {renderList()}
+        </Loading>
+      )}
 
       <DeleteConfirmationModal
         open={pendingDelete !== null}
         title="Delete variable collection"
         message={
           <>
-            Deleting the variable collection <strong>{pendingDelete?.attributes.name}</strong> and all its variables
-            cannot be undone.
+            The collection <strong>{pendingDelete?.attributes.name}</strong>, its variables and its workspace references
+            will be deleted, and its workspaces stop receiving these variables. This cannot be undone.
           </>
         }
-        okText="Delete"
+        okText="Delete variable collection"
         onConfirm={() => {
           if (pendingDelete) onDelete(pendingDelete.id);
           setPendingDelete(null);

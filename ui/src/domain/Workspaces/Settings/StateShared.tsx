@@ -1,13 +1,14 @@
-import { Button, Checkbox, Divider, Flex, Form, Input, Typography, message, Table, Space, Select } from "antd";
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Form, Select, Spin, Table, Typography, message } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-
-const { Text } = Typography;
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import "../Workspaces.css";
 
 type Props = {
   workspace: Workspace;
@@ -34,36 +35,31 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
   const [loadingTable, setLoadingTable] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [options, setOptions] = useState<SharedWorkspace[]>([]);
+  const [pendingRemoval, setPendingRemoval] = useState<SharedWorkspace | null>(null);
 
   useEffect(() => {
-    const fetchWorkspaceNames = async () => {
-      const ids = workspace.attributes.sharedIds?.split(",").filter((id) => id.trim() !== "") || [];
-      if (ids.length === 0) {
-        setSharedWorkspaces([]);
-        return;
-      }
+    const ids =
+      workspace.attributes.sharedIds
+        ?.split(",")
+        .map((id) => id.trim())
+        .filter((id) => id !== "") || [];
+    if (ids.length === 0) {
+      setSharedWorkspaces([]);
+      return;
+    }
 
-      setLoadingTable(true);
-      const fetchedWorkspaces: SharedWorkspace[] = [];
-      for (const workspaceId of ids) {
-        try {
-          const response = await axiosInstance.get(`/organization/${organizationId}/workspace/${workspaceId.trim()}`);
-          fetchedWorkspaces.push({
-            id: workspaceId.trim(),
-            name: response.data.data.attributes.name,
-          });
-        } catch (error) {
-          fetchedWorkspaces.push({
-            id: workspaceId.trim(),
-            name: "Unknown Workspace",
-          });
-        }
-      }
-      setSharedWorkspaces(fetchedWorkspaces);
+    setLoadingTable(true);
+    Promise.all(
+      ids.map((workspaceId) =>
+        axiosInstance
+          .get(`/organization/${organizationId}/workspace/${workspaceId}`)
+          .then((response) => ({ id: workspaceId, name: response.data.data.attributes.name as string }))
+          .catch(() => ({ id: workspaceId, name: "Unknown workspace" }))
+      )
+    ).then((fetched) => {
+      setSharedWorkspaces(fetched);
       setLoadingTable(false);
-    };
-
-    fetchWorkspaceNames();
+    });
   }, [organizationId, workspace.attributes.sharedIds]);
 
   const fetchWorkspaceOptions = async (search: string) => {
@@ -88,38 +84,6 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
     }
   };
 
-  const handleSelectWorkspace = async (workspaceId: string) => {
-    if (sharedWorkspaces.find((ws) => ws.id === workspaceId)) {
-      message.warning("Workspace already added");
-      return;
-    }
-
-    const selectedWs = options.find((ws) => ws.id === workspaceId);
-    if (!selectedWs) return;
-
-    setWaiting(true);
-    try {
-      const updatedSharedWorkspaces = [...sharedWorkspaces, selectedWs];
-      await updateSharedIds(updatedSharedWorkspaces);
-    } catch (error) {
-      message.error("Failed to add workspace");
-    } finally {
-      setWaiting(false);
-    }
-  };
-
-  const handleDeleteWorkspace = async (workspaceId: string) => {
-    const updatedSharedWorkspaces = sharedWorkspaces.filter((ws) => ws.id !== workspaceId);
-    setWaiting(true);
-    try {
-      await updateSharedIds(updatedSharedWorkspaces);
-    } catch (error) {
-      message.error("Failed to delete workspace");
-    } finally {
-      setWaiting(false);
-    }
-  };
-
   const updateSharedIds = async (updatedWorkspaces: SharedWorkspace[]) => {
     const sharedIdsString = updatedWorkspaces.map((ws) => ws.id).join(",");
     const body = {
@@ -141,10 +105,41 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
     const response = await axiosInstance.post("/operations", body, atomicHeader);
     if (response.status === 200) {
       setSharedWorkspaces(updatedWorkspaces);
-      message.success("Shared workspaces updated successfully");
+      message.success("Shared workspaces updated");
       onWorkspaceUpdate?.();
     } else {
-      throw new Error("Update failed");
+      throw new Error(`HTTP ${response.status}`);
+    }
+  };
+
+  const handleSelectWorkspace = async (workspaceId: string) => {
+    if (sharedWorkspaces.find((ws) => ws.id === workspaceId)) {
+      message.warning("This workspace already has access");
+      return;
+    }
+
+    const selectedWs = options.find((ws) => ws.id === workspaceId);
+    if (!selectedWs) return;
+
+    setWaiting(true);
+    try {
+      await updateSharedIds([...sharedWorkspaces, selectedWs]);
+    } catch (error) {
+      message.error(`Could not give ${selectedWs.name} access: ${getErrorMessage(error)}`);
+    } finally {
+      setWaiting(false);
+    }
+  };
+
+  const handleRemoveWorkspace = async (removed: SharedWorkspace) => {
+    setPendingRemoval(null);
+    setWaiting(true);
+    try {
+      await updateSharedIds(sharedWorkspaces.filter((ws) => ws.id !== removed.id));
+    } catch (error) {
+      message.error(`Could not remove access for ${removed.name}: ${getErrorMessage(error)}`);
+    } finally {
+      setWaiting(false);
     }
   };
 
@@ -170,116 +165,110 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
       .post("/operations", body, atomicHeader)
       .then((response) => {
         if (response.status === 200) {
-          message.success("Workspace updated successfully");
+          message.success("State sharing updated");
           onWorkspaceUpdate?.();
         } else {
-          message.error("Workspace update failed");
+          message.error(`Could not update state sharing (HTTP ${response.status})`);
         }
-        setWaiting(false);
       })
-      .catch((error) => {
-        message.error("Workspace update failed");
-        setWaiting(false);
-      });
+      .catch((error) => message.error(`Could not update state sharing: ${getErrorMessage(error)}`))
+      .finally(() => setWaiting(false));
   };
 
   return (
     <div className="generalSettings">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces/share-workspace-state"
-        title="State Shared"
-        description="Allow other workspaces in the organization to read this workspace's state."
+        title="State shared"
+        description="Choose which other workspaces can read this workspace's state."
+        divider={false}
       />
-      <Text type="secondary">Configure how the state is shared across workspaces.</Text>
-      <SettingsSection maxWidth="100%">
-        <Divider />
-        <Form
+      <Spin spinning={waiting}>
+        <SettingsForm
           form={form}
-          layout="vertical"
           name="state-shared"
           onFinish={onFinish}
-          initialValues={{
-            globalRemoteState: workspace.attributes.globalRemoteState,
-          }}
+          initialValues={{ globalRemoteState: workspace.attributes.globalRemoteState }}
           disabled={!manageWorkspace}
+          saveDisabled={!manageWorkspace}
         >
-          <Form.Item name="globalRemoteState" valuePropName="checked" label="Global Remote State">
-            <Checkbox>Allow all workspaces in the organization to access this workspace state</Checkbox>
+          <Form.Item
+            name="globalRemoteState"
+            valuePropName="checked"
+            label="Organization access"
+            extra="State can contain secrets, and every workspace in the organization will be able to read it."
+          >
+            <Checkbox>{"Share this workspace's state with all workspaces in the organization"}</Checkbox>
           </Form.Item>
-          <Form.Item>
-            <Flex justify="flex-end">
-              <Button type="primary" htmlType="submit" loading={waiting}>
-                Update Workspace
-              </Button>
-            </Flex>
-          </Form.Item>
-        </Form>
+        </SettingsForm>
+
         {!globalRemoteState && (
-          <>
-            <Divider />
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Shared Workspace
-            </Typography.Title>
-            <div style={{ marginBottom: 16 }}>
-              <Select
+          <div className="state-shared-access">
+            <SettingsSection
+              maxWidth={680}
+              title="Workspaces with access"
+              description="These workspaces can read this workspace's state. Adding or removing one applies immediately."
+            >
+              <Select<string>
                 showSearch
-                aria-label="Search workspace by name"
-                placeholder="Search workspace by name"
+                aria-label="Add a workspace by name"
+                placeholder="Add a workspace by name"
                 filterOption={false}
                 onSearch={fetchWorkspaceOptions}
                 onSelect={handleSelectWorkspace}
                 value={null}
                 loading={fetching}
-                style={{ width: "100%" }}
+                className="state-shared-picker"
                 disabled={!manageWorkspace}
-                notFoundContent={
-                  fetching ? (
-                    <Select.Option disabled value="searching">
-                      Searching...
-                    </Select.Option>
-                  ) : null
-                }
-              >
-                {options.map((option) => (
-                  <Select.Option key={option.id} value={option.id}>
-                    {option.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <Table
-              dataSource={sharedWorkspaces}
-              loading={loadingTable}
-              rowKey="id"
-              columns={[
-                {
-                  title: "Name",
-                  dataIndex: "name",
-                  key: "name",
-                },
-                {
-                  title: "ID",
-                  dataIndex: "id",
-                  key: "id",
-                },
-                {
-                  title: "Action",
-                  key: "action",
-                  render: (_, record) => (
-                    <Button
-                      type="link"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteWorkspace(record.id)}
-                      disabled={!manageWorkspace}
-                    />
-                  ),
-                },
-              ]}
-            />
-          </>
+                notFoundContent={fetching ? "Searching..." : null}
+                options={options
+                  .filter((option) => option.id !== id)
+                  .map((option) => ({ value: option.id, label: option.name }))}
+              />
+              <Table
+                dataSource={sharedWorkspaces}
+                loading={loadingTable}
+                rowKey="id"
+                columns={[
+                  {
+                    title: "Name",
+                    dataIndex: "name",
+                    key: "name",
+                  },
+                  {
+                    title: "ID",
+                    dataIndex: "id",
+                    key: "id",
+                    render: (value: string) => <Typography.Text className="state-shared-id">{value}</Typography.Text>,
+                  },
+                  {
+                    title: "Action",
+                    key: "action",
+                    render: (_, record) => (
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
+                        aria-label={`Remove access for ${record.name}`}
+                        onClick={() => setPendingRemoval(record)}
+                        disabled={!manageWorkspace}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </SettingsSection>
+          </div>
         )}
-      </SettingsSection>
+      </Spin>
+      <DeleteConfirmationModal
+        open={pendingRemoval !== null}
+        title={`Remove access for ${pendingRemoval?.name}?`}
+        message={`${pendingRemoval?.name} will no longer be able to read this workspace's state.`}
+        okText="Remove access"
+        onConfirm={() => pendingRemoval && handleRemoveWorkspace(pendingRemoval)}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   );
 };

@@ -1,11 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router-dom";
-import {
-  PolicySetCard,
-  PolicySetFilter,
-  PolicySetTable,
-} from "../components";
+import { PolicySetCard, PolicySetFilter, PolicySetTable } from "../components";
 
 describe("PolicySet Components", () => {
   const mockItem = {
@@ -43,10 +39,10 @@ describe("PolicySet Components", () => {
 
       expect(screen.getByText("sample-policy")).toBeInTheDocument();
       expect(screen.getByText("Sample test description")).toBeInTheDocument();
-      expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
-      expect(screen.getByText("Shadow: SOFT_MANDATORY")).toBeInTheDocument();
-      expect(screen.getByText("3 Attachments")).toBeInTheDocument();
-      expect(screen.getByText("Override Team: devops-leads")).toBeInTheDocument();
+      expect(screen.getByText("Hard mandatory")).toBeInTheDocument();
+      expect(screen.getByText("Shadow: Soft mandatory")).toBeInTheDocument();
+      expect(screen.getByText("3 attachments")).toBeInTheDocument();
+      expect(screen.getByText("Override team: devops-leads")).toBeInTheDocument();
       expect(screen.getByText("https://github.com/org/policies")).toBeInTheDocument();
       expect(screen.getByText("main")).toBeInTheDocument();
       expect(screen.getByText("/rules")).toBeInTheDocument();
@@ -78,7 +74,7 @@ describe("PolicySet Components", () => {
       );
 
       expect(screen.getByText("Global")).toBeInTheDocument();
-      expect(screen.queryByText(/Attachment/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/attachment/)).not.toBeInTheDocument();
     });
 
     it("renders Notification tag when notificationConfig is provided", () => {
@@ -133,8 +129,8 @@ describe("PolicySet Components", () => {
 
       expect(screen.getByTestId("policy-sets-compact-table")).toBeInTheDocument();
       expect(screen.getByText("sample-policy")).toBeInTheDocument();
-      expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
-      expect(screen.getByText("3 Attachments")).toBeInTheDocument();
+      expect(screen.getByText("Hard mandatory")).toBeInTheDocument();
+      expect(screen.getByText("3 attachments")).toBeInTheDocument();
       expect(screen.getByText("Override: devops-leads")).toBeInTheDocument();
       expect(screen.getByTestId("policy-set-table-notif-ps-test-1")).toBeInTheDocument();
       expect(screen.getByText("SecOps Webhook")).toBeInTheDocument();
@@ -160,7 +156,9 @@ describe("PolicySet Components", () => {
           searchQuery="test-query"
           onSearchChange={onSearchChange}
           categoryFilter="HARD_MANDATORY"
+          onCategoryChange={onCategoryChange}
           scopeFilter="ALL"
+          onScopeChange={onScopeChange}
           viewMode="cards"
           onViewModeChange={onViewModeChange}
           onResetFilters={onResetFilters}

@@ -1,57 +1,42 @@
-import {
-  DownOutlined,
-  GithubOutlined,
-  GitlabOutlined,
-  InfoCircleOutlined,
-  QuestionCircleOutlined,
-} from "@ant-design/icons";
-import { Button, Col, Descriptions, Dropdown, Flex, Form, Input, Row, Space, Steps, Typography, message } from "antd";
-import TextArea from "antd/es/input/TextArea";
+import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
+import { Button, Flex, Form, Input, Radio, Typography, message } from "antd";
 import { useState } from "react";
 import { HiOutlineExternalLink } from "react-icons/hi";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { useParams, useSearchParams } from "react-router-dom";
 import { v1 as uuidv1 } from "uuid";
-import { ORGANIZATION_NAME } from "../../config/actionTypes";
-import axiosInstance from "../../config/axiosConfig";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getUiRedirectUri } from "../../config/basePath";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./VCS.css";
+import "./components/ResourceCard.css";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import { IdField } from "@/components/settings/IdField";
+import {
+  getApiOrigin,
+  getCallbackUrl,
+  getClientIdName,
+  getConnectUrl,
+  getDocsUrl,
+  getSecretIdName,
+  getVcsType,
+  usesFixedUrls,
+  usesOAuthFlow,
+  validatePrivateKeyFormat,
+  validateUrlFormat,
+  vcsLabel,
+} from "./vcsProviders";
 
 const validateMessages = {
-  required: "${label} is required!",
+  required: "${label} is required",
 };
-
-const GuideStep = ({ number, children }: { number: number; children: React.ReactNode }) => (
-  <div className="vcs-guide-step">
-    <div className="vcs-guide-step-number">{number}</div>
-    <div className="vcs-guide-step-content">{children}</div>
-  </div>
-);
-
-const GuideValues = ({ items }: { items: { label: string; value: React.ReactNode; copyable?: boolean }[] }) => (
-  <Descriptions
-    column={1}
-    bordered
-    size="small"
-    className="vcs-guide-values"
-    items={items.map((item, index) => ({
-      key: String(index),
-      label: item.label,
-      children: item.copyable ? (
-        <Typography.Paragraph copyable style={{ margin: 0 }}>
-          {item.value}
-        </Typography.Paragraph>
-      ) : (
-        item.value
-      ),
-    }))}
-  />
-);
 
 type Props = {
   setMode: (mode: string) => void;
@@ -65,566 +50,314 @@ type Params = {
 
 type CreateVcsForm = {
   name: string;
-  description: string;
-  connectionType: VcsConnectionType;
-  vcsType: VcsType;
   clientId: string;
   clientSecret: string;
   privateKey: string;
-  callback: string;
   endpoint: string;
   apiUrl: string;
-  redirectUrl: string;
-  status: string;
 };
+
+type Choice = { vcs: VcsTypeExtended; connectionType: VcsConnectionType; label: string; help?: string };
+
+const { OAUTH, STANDALONE } = VcsConnectionType;
+
+// Four providers as tiles, then their editions as stacked radios (DESIGN.md, Picker).
+const PROVIDERS: { key: string; label: string; icon: React.ReactNode; choices: Choice[] }[] = [
+  {
+    key: "github",
+    label: "GitHub",
+    icon: <GithubOutlined />,
+    choices: [
+      {
+        vcs: VcsTypeExtended.GITHUB_APP,
+        connectionType: STANDALONE,
+        label: "GitHub.com with a GitHub App",
+        help: "Installed on an organization or account, with only the repository permissions you grant it.",
+      },
+      {
+        vcs: VcsTypeExtended.GITHUB,
+        connectionType: OAUTH,
+        label: "GitHub.com with an OAuth app",
+        help: "Acts as the user who connects it, with access to all of their repositories.",
+      },
+      {
+        vcs: VcsTypeExtended.GITHUB_ENTERPRISE,
+        connectionType: STANDALONE,
+        label: "GitHub Enterprise with a GitHub App",
+        help: "For a self-hosted GitHub Enterprise Server.",
+      },
+      {
+        vcs: VcsTypeExtended.GITHUB_ENTERPRISE,
+        connectionType: OAUTH,
+        label: "GitHub Enterprise with an OAuth app",
+        help: "For a self-hosted GitHub Enterprise Server, acting as the user who connects it.",
+      },
+    ],
+  },
+  {
+    key: "gitlab",
+    label: "GitLab",
+    icon: <GitlabOutlined />,
+    choices: [
+      { vcs: VcsTypeExtended.GITLAB, connectionType: OAUTH, label: "GitLab.com" },
+      {
+        vcs: VcsTypeExtended.GITLAB_COMMUNITY,
+        connectionType: OAUTH,
+        label: "GitLab Community Edition",
+        help: "A self-managed GitLab instance.",
+      },
+      {
+        vcs: VcsTypeExtended.GITLAB_ENTERPRISE,
+        connectionType: OAUTH,
+        label: "GitLab Enterprise Edition",
+        help: "A self-managed GitLab instance.",
+      },
+    ],
+  },
+  {
+    key: "bitbucket",
+    label: "Bitbucket",
+    icon: <SiBitbucket />,
+    choices: [{ vcs: VcsTypeExtended.BITBUCKET, connectionType: OAUTH, label: "Bitbucket Cloud" }],
+  },
+  {
+    key: "azure",
+    label: "Azure DevOps",
+    icon: <VscAzureDevops />,
+    choices: [{ vcs: VcsTypeExtended.AZURE_DEVOPS, connectionType: OAUTH, label: "Azure DevOps Services" }],
+  },
+];
+
+const choiceKey = (choice: { vcs: VcsTypeExtended; connectionType: VcsConnectionType }) =>
+  `${choice.vcs}:${choice.connectionType}`;
+
+const providerOf = (vcs: VcsTypeExtended) =>
+  PROVIDERS.find((provider) => provider.choices.some((choice) => choice.vcs === vcs)) ?? PROVIDERS[0];
+
+const getAPIUrl = (vcs: VcsTypeExtended) => {
+  switch (vcs) {
+    case "GITLAB":
+      return "https://gitlab.com/api/v4";
+    case "BITBUCKET":
+      return "https://api.bitbucket.org/2.0";
+    case "AZURE_DEVOPS":
+      return "https://dev.azure.com";
+    case "GITHUB":
+    case "GITHUB_APP":
+      return "https://api.github.com";
+    default:
+      return "";
+  }
+};
+
+const getDefaultHttps = (vcs: VcsTypeExtended) => {
+  switch (vcs) {
+    case "GITLAB":
+      return "https://gitlab.com";
+    case "BITBUCKET":
+      return "https://bitbucket.org";
+    case "AZURE_DEVOPS":
+      return "https://app.vssps.visualstudio.com";
+    case "GITHUB":
+    case "GITHUB_APP":
+      return "https://github.com";
+    default:
+      return "";
+  }
+};
+
+const getHttpsPlaceholder = (vcs: VcsTypeExtended) => {
+  switch (vcs) {
+    case "GITLAB_ENTERPRISE":
+    case "GITLAB_COMMUNITY":
+      return "https://gitlab.example.com";
+    case "BITBUCKET_SERVER":
+      return "https://bitbucket.example.com/context-path";
+    case "AZURE_DEVOPS_SERVER":
+      return "https://azure-devops.example.com";
+    default:
+      return "https://github.example.com";
+  }
+};
+
+const getAPIUrlPlaceholder = (vcs: VcsTypeExtended) => {
+  switch (vcs) {
+    case "GITLAB_ENTERPRISE":
+    case "GITLAB_COMMUNITY":
+      return "https://gitlab.example.com/api/v4";
+    case "BITBUCKET_SERVER":
+      return "https://bitbucket.example.com/context-path/rest/api/1.0";
+    case "AZURE_DEVOPS_SERVER":
+      return "https://azure-devops.example.com";
+    default:
+      return "https://github.example.com/api/v3";
+  }
+};
+
+const ExternalLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <Typography.Link target="_blank" rel="noreferrer" href={href}>
+    {children} <HiOutlineExternalLink />
+  </Typography.Link>
+);
 
 export const AddVCS = ({ setMode, loadVCS }: Props) => {
   const { orgid, vcsName } = useParams<Params>();
   const [searchParams] = useSearchParams();
+  const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState(vcsName ? 1 : 0);
-  const [vcsType, setVcsType] = useState<VcsTypeExtended>(vcsName ? vcsName : VcsTypeExtended.GITHUB);
+  const [vcsType, setVcsType] = useState<VcsTypeExtended>(vcsName ? vcsName : VcsTypeExtended.GITHUB_APP);
   const [connectionType, setConnectionType] = useState(
-    searchParams.get("connectionType") === VcsConnectionType.STANDALONE
-      ? VcsConnectionType.STANDALONE
-      : VcsConnectionType.OAUTH
+    vcsName ? (searchParams.get("connectionType") === STANDALONE ? STANDALONE : OAUTH) : STANDALONE
   );
   const [uuid] = useState(uuidv1());
 
-  const validatePrivateKeyFormat = (_: any, value: string) => {
-    if (!value) {
-      return Promise.resolve();
-    }
+  const provider = providerOf(vcsType);
+  const label = vcsLabel(vcsType);
+  const callbackUrl = getCallbackUrl(uuid);
+  const terrakubeAppName = `Terrakube (${useOrganizationName(orgid) ?? ""})`;
+  const isGithubFamily = getVcsType(vcsType) === VcsType.GITHUB;
+  const oauth = connectionType === OAUTH;
+  const showSecret = oauth && vcsType !== VcsTypeExtended.AZURE_DEVOPS;
 
-    if (!value.includes("-----BEGIN PRIVATE KEY-----")) {
-      return Promise.reject(new Error("Private key must be in PKCS#8 format (-----BEGIN PRIVATE KEY-----)"));
-    }
-
-    if (!value.includes("-----END PRIVATE KEY-----")) {
-      return Promise.reject(new Error("Private key is incomplete (missing -----END PRIVATE KEY-----)"));
-    }
-
-    return Promise.resolve();
+  const choose = (choice: Choice) => {
+    setVcsType(choice.vcs);
+    setConnectionType(choice.connectionType);
   };
 
-  const validateUrlFormat = (_: any, value: string) => {
-    if (!value) {
-      return Promise.resolve();
-    }
-
-    try {
-      const url = new URL(value);
-      if (url.protocol !== "http:" && url.protocol !== "https:") {
-        return Promise.reject(new Error("URL must start with http:// or https://"));
-      }
-      return Promise.resolve();
-    } catch {
-      return Promise.reject(new Error("Please enter a valid URL"));
-    }
-  };
-
-  const handleChange = (currentVal: number) => {
-    setCurrent(currentVal);
-  };
-  const handleVCSClick = (vcs: VcsTypeExtended, connectionType: VcsConnectionType = VcsConnectionType.OAUTH) => {
-    setCurrent(1);
-    setVcsType(vcs);
-    setConnectionType(connectionType);
-  };
-
-  const getCallBackUrl = () => {
-    return `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/callback/v1/vcs/${uuid}`;
-  };
-
-  const renderVCSType = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-        return "GitLab";
-      case "GITLAB_ENTERPRISE":
-        return "GitLab Enterprise";
-      case "GITLAB_COMMUNITY":
-        return "GitLab Community Edition";
-      case "BITBUCKET":
-        return "BitBucket";
-      case "BITBUCKET_SERVER":
-        return "BitBucket Server";
-      case "AZURE_DEVOPS":
-        return "Azure DevOps";
-      case "AZURE_DEVOPS_SERVER":
-        return "Azure DevOps Server";
-      case "GITHUB_ENTERPRISE":
-        return "GitHub Enterprise";
-      case "GITHUB_APP":
-        return "GitHub App";
-      default:
-        return "GitHub";
-    }
-  };
-  const gitlabItems = [
-    {
-      label: "GitLab.com",
-      key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB);
-      },
-    },
-    {
-      label: "GitLab Community Edition",
-      key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_COMMUNITY);
-      },
-    },
-    {
-      label: "GitLab Enterprise Edition",
-      key: "3",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITLAB_ENTERPRISE);
-      },
-    },
-  ];
-
-  const githubItems = [
-    {
-      label: "GitHub.com (GitHub App)",
-      key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_APP, VcsConnectionType.STANDALONE);
-      },
-    },
-    {
-      label: "GitHub.com (oAuth App)",
-      key: "2",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB);
-      },
-    },
-    {
-      label: "GitHub Enterprise (GitHub App)",
-      key: "3",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE, VcsConnectionType.STANDALONE);
-      },
-    },
-    {
-      label: "GitHub Enterprise (oAuth App)",
-      key: "4",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.GITHUB_ENTERPRISE);
-      },
-    },
-  ];
-
-  const bitBucketItems = [
-    {
-      label: "Bitbucket Cloud",
-      key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.BITBUCKET);
-      },
-    },
-  ];
-
-  const azDevOpsItems = [
-    {
-      label: "Azure DevOps Services",
-      key: "1",
-      onClick: () => {
-        handleVCSClick(VcsTypeExtended.AZURE_DEVOPS);
-      },
-    },
-  ];
-  const getDocsUrl = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/gitlab.com";
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/gitlab-ee-and-ce";
-      case "BITBUCKET":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/bitbucket.com";
-      case "BITBUCKET_SERVER":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/bitbucket-server";
-      case "AZURE_DEVOPS":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/azure-devops";
-      case "AZURE_DEVOPS_SERVER":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/azure-devops";
-      case "GITHUB_ENTERPRISE":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/github-enterprise";
-      case "GITHUB_APP":
-        return "https://docs.terrakube.io/user-guide/vcs-providers/github-app";
-      default:
-        return "https://docs.terrakube.io/user-guide/vcs-providers/github.com";
-    }
-  };
-
-  const getClientIdName = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "Application ID";
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        return "Key";
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return "Managed Identity App ID";
-      default:
-        return connectionType === "OAUTH" ? "Client ID" : "App ID";
-    }
-  };
-
-  const getVcsType = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "GITLAB";
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        return "BITBUCKET";
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return "AZURE_SP_MI";
-      default:
-        return "GITHUB";
-    }
-  };
-
-  const getAPIUrl = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-        return "https://gitlab.com/api/v4";
-      case "BITBUCKET":
-        return "https://api.bitbucket.org/2.0";
-      case "AZURE_DEVOPS":
-        return "https://dev.azure.com";
-      case "GITHUB":
-      case "GITHUB_APP":
-        return "https://api.github.com";
-      default:
-        return "";
-    }
-  };
-
-  const getAPIUrlPlaceholder = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "ex. https://<GITLAB INSTANCE HOSTNAME>/api/v4";
-      case "BITBUCKET_SERVER":
-        return "ex. https://<BITBUCKET INSTANCE HOSTNAME>/context-path/rest/api/1.0";
-      case "AZURE_DEVOPS_SERVER":
-        return "ex. https://<AZURE DEVOPS INSTANCE HOSTNAME>";
-      case "GITHUB_ENTERPRISE":
-        return "ex. https://<GITHUB INSTANCE HOSTNAME>/api/v3";
-      default:
-        return "";
-    }
-  };
-
-  const getHttpsPlaceholder = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "ex. https://<GITLAB INSTANCE HOSTNAME>";
-      case "BITBUCKET_SERVER":
-        return "ex. https://<BITBUCKET INSTANCE HOSTNAME>/<CONTEXT PATH>";
-      case "AZURE_DEVOPS_SERVER":
-        return "ex. https://<AZURE DEVOPS INSTANCE HOSTNAME>";
-      case "GITHUB_ENTERPRISE":
-        return "ex. https://<GITHUB INSTANCE HOSTNAME>";
-      default:
-        return "";
-    }
-  };
-
-  const httpsHidden = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "BITBUCKET":
-      case "AZURE_DEVOPS":
-      case "GITHUB_APP":
-        return true;
-      case "GITHUB":
-        return true;
-      default:
-        return false;
-    }
-  };
-
-  const apiUrlHidden = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "BITBUCKET":
-      case "AZURE_DEVOPS":
-      case "GITHUB_APP":
-        return true;
-      case "GITHUB":
-        return true;
-      default:
-        return false;
-    }
-  };
-
-  const getSecretIdName = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "Secret";
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        return "Secret";
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return "Client Secret";
-      default:
-        return connectionType === "OAUTH" ? "Client Secret" : "Private Key in PKCS#8 format";
-    }
-  };
-
-  const getScopes = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-        return "api";
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "api";
-      case "BITBUCKET":
-        return "repository";
-      case "BITBUCKET_SERVER":
-        return "repository";
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return "vso.code+vso.code_status";
-      default:
-        return "repo";
-    }
-  };
-
-  const renderStep1 = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-        return (
-          <GuideStep number={1}>
-            <Typography.Text>
-              On {renderVCSType(vcsType)},{" "}
-              {vcsType === "GITLAB" ? (
-                <>
-                  <Typography.Link target="_blank" rel="noreferrer" href="https://gitlab.com/-/profile/applications">
-                    register a new OAuth Application <HiOutlineExternalLink />
-                  </Typography.Link>{" "}
-                  with the following information:
-                </>
-              ) : (
-                <span>
-                  navigate to User Settings → Application and register a new OAuth Application with the following
-                  information:
-                </span>
-              )}
-            </Typography.Text>
-            <GuideValues
-              items={[
-                { label: "Name", value: `Terrakube (${sessionStorage.getItem(ORGANIZATION_NAME)})`, copyable: true },
-                { label: "Redirect URI", value: getCallBackUrl(), copyable: true },
-                { label: "Scopes", value: getScopes(vcsType) },
-              ]}
-            />
-          </GuideStep>
-        );
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        return (
-          <GuideStep number={1}>
-            <Typography.Text>
-              On {renderVCSType(vcsType)}, logged in as whichever account you want Terrakube to act as, add a new OAuth
-              Consumer. You can find the OAuth Consumer settings page under your workspace settings. Enter the following
-              information:
-            </Typography.Text>
-            <GuideValues
-              items={[
-                { label: "Name", value: `Terrakube (${sessionStorage.getItem(ORGANIZATION_NAME)})`, copyable: true },
-                { label: "Description", value: "Any description of your choice" },
-                { label: "Callback URL", value: getCallBackUrl(), copyable: true },
-                { label: "URL", value: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin, copyable: true },
-                { label: "This is a private consumer", value: "Checked" },
-                {
-                  label: "Permissions",
-                  value: (
-                    <ul>
-                      <li>Account: Write</li>
-                      <li>Repositories: Admin</li>
-                      <li>Pull requests: Write</li>
-                      <li>Webhooks: Read and write</li>
-                    </ul>
-                  ),
-                },
-              ]}
-            />
-          </GuideStep>
-        );
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return (
-          <GuideStep number={1}>
-            <Typography.Text>
-              On {renderVCSType(vcsType)},{" "}
-              <Typography.Link target="_blank" rel="noreferrer" href="https://aex.dev.azure.com/me?mkt=es-ES">
-                grant accesses to the managed identity <HiOutlineExternalLink />
-              </Typography.Link>{" "}
-              with the following information:
-            </Typography.Text>
-            <GuideValues
-              items={[
-                {
-                  label: "Organization setup",
-                  value: "Add the managed identity to the organization and grant the Basic access level",
-                },
-                {
-                  label: "Repository setup",
-                  value: "Add the managed identity to the repository and grant the Contributor access level",
-                },
-              ]}
-            />
-          </GuideStep>
-        );
-      default:
-        return (
-          <GuideStep number={1}>
-            <Typography.Text>
-              On {renderVCSType(vcsType)},{" "}
-              {vcsType === "GITHUB" ? (
-                <Typography.Link
-                  target="_blank"
-                  rel="noreferrer"
-                  href={
-                    connectionType === "OAUTH"
-                      ? "https://github.com/settings/applications/new"
-                      : "https://github.com/settings/apps/new"
-                  }
-                >
-                  register a new {connectionType == "OAUTH" ? "OAuth" : "GitHub"} Application <HiOutlineExternalLink />
-                </Typography.Link>
-              ) : (
-                <span>
-                  register a new {connectionType == "OAUTH" ? "OAuth" : "GitHub"} Application using the link https://
-                  <i>yourdomain.com</i>/settings/{connectionType == "OAUTH" ? "applications" : "apps"}/new
-                </span>
-              )}{" "}
-              with the information below
-              {connectionType === "OAUTH" ? (
-                <span>:</span>
-              ) : (
-                <span>
-                  , install it to your organization or account, and grant necessary permissions. Please check{" "}
-                  <Typography.Link
-                    target="_blank"
-                    rel="noreferrer"
-                    href="https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps"
-                  >
-                    here to learn more <HiOutlineExternalLink />
-                  </Typography.Link>
-                  .
-                </span>
-              )}
-            </Typography.Text>
-            <GuideValues
-              items={[
-                {
-                  label: "Application Name",
-                  value: `Terrakube (${sessionStorage.getItem(ORGANIZATION_NAME)})`,
-                  copyable: true,
-                },
-                {
-                  label: "Homepage URL",
-                  value: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
-                  copyable: true,
-                },
-                { label: "Authorization callback URL", value: getCallBackUrl(), copyable: true },
-                { label: "Webhook", value: "Untick Active" },
-                {
-                  label: "Repository permissions",
-                  value: (
-                    <ul>
-                      <li>Commit statuses: Read and write (only if webhook is used on VCS workflow workspaces)</li>
-                      <li>Contents: Read-only</li>
-                      <li>Metadata: Read-only</li>
-                      <li>
-                        Pull requests: Read and write (only if webhook is used on VCS workflow workspaces; write is
-                        required to post plan/apply comments back on pull requests when PR Workflow is enabled)
-                      </li>
-                      <li>Webhooks: Read and write (only if webhook is used on VCS workflow workspaces)</li>
-                    </ul>
-                  ),
-                },
-              ]}
-            />
-          </GuideStep>
-        );
-    }
-  };
-
-  const getStep2Text = (vcs: VcsTypeExtended) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-      case "GITLAB_COMMUNITY":
-        return "After clicking the Save application button, you will be taken to the new application page. Name this connection and enter the Application ID and Secret below.";
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        return "After clicking the Save button, find your new OAuth consumer under the OAuth Consumers heading, and click its name to reveal its details. Name this connection and enter the Key and Secret below.";
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        return "Now Terrakube should be able to access your Azure DevOps organization. Name this connection and enter the Managed Identity App ID below.";
-      default:
-        return "After clicking the Register application button, you will be taken to the new application page. Name this connection and enter the Client ID below.";
-    }
-  };
-
-  const isGithubFamily = getVcsType(vcsType) === "GITHUB";
-
-  const getConnectUrl = (vcs: VcsTypeExtended, clientId: string, callbackUrl: string, endpoint: string) => {
-    switch (vcs) {
-      case "GITLAB":
-      case "GITLAB_ENTERPRISE":
-        if (endpoint != null)
-          return `${endpoint}/oauth/authorize?client_id=${clientId}&response_type=code&scope=api&&redirect_uri=${callbackUrl}`;
-        else
-          return `https://gitlab.com/oauth/authorize?client_id=${clientId}&response_type=code&scope=api&&redirect_uri=${callbackUrl}`;
-      case "BITBUCKET":
-      case "BITBUCKET_SERVER":
-        if (endpoint != null)
-          return `${endpoint}/site/oauth2/authorize?client_id=${clientId}&response_type=code&response_type=code&scope=repository`;
-        else
-          return `https://bitbucket.org/site/oauth2/authorize?client_id=${clientId}&response_type=code&response_type=code&scope=repository`;
-      case "AZURE_DEVOPS":
-      case "AZURE_DEVOPS_SERVER":
-        if (endpoint != null)
-          return `${endpoint}/oauth2/authorize?client_id=${clientId}&redirect_uri=${callbackUrl}&response_type=Assertion&scope=vso.code+vso.code_status`;
-        else
-          return `https://app.vssps.visualstudio.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${callbackUrl}&response_type=Assertion&scope=vso.code+vso.code_status`;
-      default:
-        if (endpoint != null)
-          return `${endpoint}/login/oauth/authorize?client_id=${clientId}&allow_signup=false&scope=repo`;
-        else return `https://github.com/login/oauth/authorize?client_id=${clientId}&allow_signup=false&scope=repo`;
-    }
-  };
-
-  const getDefaultHttps = (vcsType: VcsTypeExtended) => {
+  const renderRegistration = () => {
     switch (vcsType) {
       case "GITLAB":
-        return `https://gitlab.com`;
+      case "GITLAB_ENTERPRISE":
+      case "GITLAB_COMMUNITY":
+        return (
+          <SettingsSection
+            maxWidth="100%"
+            title={`Register Terrakube on ${label}`}
+            description={
+              vcsType === "GITLAB" ? (
+                <>
+                  On GitLab,{" "}
+                  <ExternalLink href="https://gitlab.com/-/profile/applications">
+                    register a new OAuth application
+                  </ExternalLink>{" "}
+                  with these values.
+                </>
+              ) : (
+                "In User settings → Applications, register a new OAuth application with these values."
+              )
+            }
+          >
+            <IdField id="vcs-app-name" label="Name" value={terrakubeAppName} />
+            <IdField id="vcs-callback-url" label="Redirect URI" value={callbackUrl} />
+            <Form.Item label="Scopes">
+              <Typography.Text code>api</Typography.Text>
+            </Form.Item>
+          </SettingsSection>
+        );
       case "BITBUCKET":
-        return `https://bitbucket.org`;
+      case "BITBUCKET_SERVER":
+        return (
+          <SettingsSection
+            maxWidth="100%"
+            title={`Register Terrakube on ${label}`}
+            description="Signed in as the account Terrakube should act as, add an OAuth consumer under your workspace settings with these values."
+          >
+            <IdField id="vcs-app-name" label="Name" value={terrakubeAppName} />
+            <IdField id="vcs-callback-url" label="Callback URL" value={callbackUrl} />
+            <IdField id="vcs-homepage-url" label="URL" value={getApiOrigin()} />
+            <Form.Item label="This is a private consumer">Checked</Form.Item>
+            <Form.Item label="Permissions">
+              <ul className="vcs-guide-list">
+                <li>Account: Write</li>
+                <li>Repositories: Admin</li>
+                <li>Pull requests: Write</li>
+                <li>Webhooks: Read and write</li>
+              </ul>
+            </Form.Item>
+          </SettingsSection>
+        );
       case "AZURE_DEVOPS":
-        return `https://app.vssps.visualstudio.com`;
-      case "GITHUB":
-      case "GITHUB_APP":
-        return `https://github.com`;
+      case "AZURE_DEVOPS_SERVER":
+        return (
+          <SettingsSection
+            maxWidth="100%"
+            title={`Give the managed identity access to ${label}`}
+            description={
+              <>
+                In {label},{" "}
+                <ExternalLink href="https://aex.dev.azure.com/me">grant access to the managed identity</ExternalLink> as
+                follows.
+              </>
+            }
+          >
+            <Form.Item label="Organization">Add the managed identity with the Basic access level.</Form.Item>
+            <Form.Item label="Repositories">Add the managed identity with the Contributor access level.</Form.Item>
+          </SettingsSection>
+        );
+      default: {
+        const kind = oauth ? "OAuth app" : "GitHub App";
+        const path = oauth ? "applications" : "apps";
+        return (
+          <SettingsSection
+            maxWidth="100%"
+            title={`Register Terrakube on ${label}`}
+            description={
+              <>
+                {vcsType === "GITHUB_ENTERPRISE" ? (
+                  <>
+                    On your server, open <Typography.Text code>{`/settings/${path}/new`}</Typography.Text> and register
+                    a new {kind} with these values.
+                  </>
+                ) : (
+                  <>
+                    On GitHub,{" "}
+                    <ExternalLink href={`https://github.com/settings/${path}/new`}>register a new {kind}</ExternalLink>{" "}
+                    with these values.
+                  </>
+                )}
+                {!oauth && (
+                  <>
+                    {" "}
+                    Then install it on your organization or account.{" "}
+                    <ExternalLink href="https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps">
+                      About GitHub Apps
+                    </ExternalLink>
+                  </>
+                )}
+              </>
+            }
+          >
+            <IdField id="vcs-app-name" label="Application name" value={terrakubeAppName} />
+            <IdField id="vcs-homepage-url" label="Homepage URL" value={getApiOrigin()} />
+            <IdField id="vcs-callback-url" label="Authorization callback URL" value={callbackUrl} />
+            <Form.Item label="Webhook">Leave Active unchecked.</Form.Item>
+            <Form.Item label="Repository permissions">
+              <ul className="vcs-guide-list">
+                <li>Contents: Read-only</li>
+                <li>Metadata: Read-only</li>
+                <li>Commit statuses: Read and write, for workspaces that run on VCS webhooks</li>
+                <li>Webhooks: Read and write, for workspaces that run on VCS webhooks</li>
+                <li>Pull requests: Read and write, for webhooks and to comment plans on pull requests</li>
+              </ul>
+            </Form.Item>
+          </SettingsSection>
+        );
+      }
+    }
+  };
+
+  const credentialsHelp = () => {
+    switch (getVcsType(vcsType)) {
+      case VcsType.GITLAB:
+        return "After you save the application, GitLab shows its application ID and secret.";
+      case VcsType.BITBUCKET:
+        return "After you save, open the new consumer under OAuth consumers to see its key and secret.";
+      case VcsType.AZURE_SP_MI:
+        return "Enter the app ID of the managed identity you gave access to.";
       default:
-        return ``;
+        return oauth
+          ? "After you register the application, copy its client ID and generate a client secret."
+          : "After you register the app, copy its app ID, then generate a private key and convert it to PKCS#8.";
     }
   };
 
@@ -648,6 +381,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
         },
       },
     };
+    setSaving(true);
     axiosInstance
       .post(`organization/${orgid}/vcs`, body, {
         headers: {
@@ -656,229 +390,154 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
       })
       .then((response) => {
         if (response.status == 201) {
-          if (connectionType === "OAUTH" && getVcsType(vcsType) != "AZURE_SP_MI") {
+          if (usesOAuthFlow(getVcsType(vcsType), connectionType)) {
             window.location.replace(
               getConnectUrl(
-                vcsType,
+                getVcsType(vcsType),
                 response.data.data.attributes.clientId,
-                getCallBackUrl(),
+                callbackUrl,
                 response.data.data.attributes.endpoint
               )
             );
           } else {
-            message.success("VCS provider created successfully");
+            message.success("VCS provider added");
           }
           loadVCS();
           setMode("list");
         }
       })
       .catch((error) => {
-        if (error.response) {
-          if (error.response.status === 403) {
-            message.error(<PermissionErrorMessage action="create VCS Settings" permission="Manage VCS Settings" />);
-          }
+        if (error.response?.status === 403) {
+          message.error(<PermissionErrorMessage action="create VCS Settings" permission="Manage VCS Settings" />);
+        } else {
+          message.error(`Could not add the VCS provider: ${getErrorMessage(error)}`);
         }
-      });
+      })
+      .finally(() => setSaving(false));
   };
+
   return (
     <div>
       <SettingsPageHeader
-        docUrl="https://docs.terrakube.io/user-guide/vcs-providers"
-        title="Add VCS Provider"
-        description="To connect workspaces and modules to git repositories containing configurations, Terrakube needs access to your version control system (VCS) provider."
-      />
-      <Steps
-        direction="horizontal"
-        size="small"
-        current={current}
-        onChange={handleChange}
-        style={{ maxWidth: 960, margin: "8px 0 32px" }}
-        items={[
-          { title: "Connect to VCS", description: "Choose a provider" },
-          { title: "Set up provider", description: "Configure credentials" },
-        ]}
+        docUrl={current === 1 ? getDocsUrl(vcsType) : "https://docs.terrakube.io/user-guide/vcs-providers"}
+        title="Add a VCS provider"
+        description="Register Terrakube with your provider, then enter the credentials it gives you."
+        divider={false}
       />
       {current == 0 && (
-        <SettingsSection
-          maxWidth={960}
-          title="Choose a version control provider"
-          description="Choose the version control provider you would like to connect."
-        >
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} lg={6}>
-              <Dropdown menu={{ items: githubItems }} trigger={["click"]}>
-                <button type="button" className="vcs-provider-card">
-                  <GithubOutlined className="vcs-provider-icon" />
-                  <span>
-                    GitHub <DownOutlined className="vcs-provider-caret" />
+        <SettingsForm name="choose-vcs" onFinish={() => setCurrent(1)} saveLabel="Continue">
+          <Form.Item label="Provider">
+            <Radio.Group
+              className="vcs-provider-tiles"
+              value={provider.key}
+              onChange={(event) => choose(PROVIDERS.find((p) => p.key === event.target.value)!.choices[0])}
+            >
+              {PROVIDERS.map((p) => (
+                <Radio key={p.key} value={p.key} className="vcs-provider-tile">
+                  <span className="vcs-provider-tile-icon" aria-hidden="true">
+                    {p.icon}
                   </span>
-                </button>
-              </Dropdown>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Dropdown menu={{ items: gitlabItems }} trigger={["click"]}>
-                <button type="button" className="vcs-provider-card">
-                  <GitlabOutlined className="vcs-provider-icon" />
-                  <span>
-                    GitLab <DownOutlined className="vcs-provider-caret" />
-                  </span>
-                </button>
-              </Dropdown>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Dropdown menu={{ items: bitBucketItems }} trigger={["click"]}>
-                <button type="button" className="vcs-provider-card">
-                  <SiBitbucket className="vcs-provider-icon" />
-                  <span>
-                    Bitbucket <DownOutlined className="vcs-provider-caret" />
-                  </span>
-                </button>
-              </Dropdown>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Dropdown menu={{ items: azDevOpsItems }} trigger={["click"]}>
-                <button type="button" className="vcs-provider-card">
-                  <VscAzureDevops className="vcs-provider-icon" />
-                  <span>
-                    Azure DevOps <DownOutlined className="vcs-provider-caret" />
-                  </span>
-                </button>
-              </Dropdown>
-            </Col>
-          </Row>
-        </SettingsSection>
+                  {p.label}
+                </Radio>
+              ))}
+            </Radio.Group>
+          </Form.Item>
+          {provider.choices.length > 1 && (
+            <Form.Item label="Type">
+              <RadioChoices
+                value={choiceKey({ vcs: vcsType, connectionType })}
+                onChange={(event) => choose(provider.choices.find((c) => choiceKey(c) === event.target.value)!)}
+                options={provider.choices.map((c) => ({ value: choiceKey(c), label: c.label, help: c.help }))}
+              />
+            </Form.Item>
+          )}
+        </SettingsForm>
       )}
       {current == 1 && (
-        <Form
+        <SettingsForm
           onFinish={onFinish}
           validateMessages={validateMessages}
           name="create-vcs"
-          layout="vertical"
           initialValues={{
             endpoint: getDefaultHttps(vcsType),
             apiUrl: getAPIUrl(vcsType),
           }}
+          saveLabel={usesOAuthFlow(getVcsType(vcsType), connectionType) ? "Add and connect" : "Add VCS provider"}
+          saving={saving}
         >
-          <SettingsSection
-            maxWidth={960}
-            title={`Connect to ${renderVCSType(vcsType)}`}
-            description={
-              <>Create the application on the {renderVCSType(vcsType)} side, then enter its credentials below.</>
-            }
-            extra={
-              <Button
-                icon={<QuestionCircleOutlined />}
-                type="link"
-                href={getDocsUrl(vcsType)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Provider guide
+          <Form.Item label="Provider">
+            <Flex align="center" gap="small" wrap>
+              <span className="vcs-provider-selected-icon" aria-hidden="true">
+                {provider.icon}
+              </span>
+              <Typography.Text>
+                {label}
+                {isGithubFamily && (oauth ? " (OAuth app)" : " (GitHub App)")}
+              </Typography.Text>
+              <Button type="link" size="small" onClick={() => setCurrent(0)}>
+                Change provider
               </Button>
-            }
-          >
-            {renderStep1(vcsType)}
+            </Flex>
+          </Form.Item>
 
-            <GuideStep number={2}>
-              <Typography.Text>{getStep2Text(vcsType)}</Typography.Text>
-              <Row gutter={16}>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="name"
-                    label="Name"
-                    tooltip={{
-                      title:
-                        "A name for your VCS Provider. This is helpful if you will be configuring multiple instances of the same provider.",
-                      icon: <InfoCircleOutlined />,
-                    }}
-                    rules={[{ required: true }]}
-                  >
-                    <Input placeholder={renderVCSType(vcsType)} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item name="clientId" label={getClientIdName(vcsType)} rules={[{ required: true }]}>
-                    <Input placeholder={connectionType === "OAUTH" ? "ex. 824ff023a7136981f322" : "970081"} />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row gutter={16}>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="endpoint"
-                    label="HTTPS URL"
-                    rules={[{ required: !httpsHidden(vcsType) }, { validator: validateUrlFormat }]}
-                    hidden={httpsHidden(vcsType)}
-                  >
-                    <Input placeholder={getHttpsPlaceholder(vcsType)} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="apiUrl"
-                    label="API URL"
-                    rules={[{ required: !apiUrlHidden(vcsType) }, { validator: validateUrlFormat }]}
-                    hidden={apiUrlHidden(vcsType)}
-                  >
-                    <Input placeholder={getAPIUrlPlaceholder(vcsType)} />
-                  </Form.Item>
-                </Col>
-              </Row>
-              {!isGithubFamily && (
-                <Row gutter={16}>
-                  <Col xs={24} md={12}>
-                    <Form.Item
-                      name="clientSecret"
-                      label={getSecretIdName(vcsType)}
-                      rules={[{ required: connectionType === "OAUTH" && vcsType != "AZURE_DEVOPS" }]}
-                      hidden={connectionType != "OAUTH" || vcsType === "AZURE_DEVOPS"}
-                    >
-                      <Input placeholder="ex. db55545bd64e851dc298ba900dd197a02b42bb3s" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              )}
-            </GuideStep>
+          {renderRegistration()}
 
-            {isGithubFamily && (
-              <GuideStep number={3}>
-                <Typography.Text>
-                  Next, generate a{" "}
-                  {connectionType === "OAUTH"
-                    ? "client secret and"
-                    : "private key and convert it to PKCS#8 format then"}{" "}
-                  enter the value below.
-                </Typography.Text>
-                {connectionType === "OAUTH" ? (
-                  <Row gutter={16}>
-                    <Col xs={24} md={12}>
-                      <Form.Item name="clientSecret" label={getSecretIdName(vcsType)} rules={[{ required: true }]}>
-                        <Input placeholder="ex. db55545bd64e851dc298ba900dd197a02b42bb3s" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                ) : (
-                  <Form.Item
-                    name="privateKey"
-                    label={getSecretIdName(vcsType)}
-                    rules={[{ required: true }, { validator: validatePrivateKeyFormat }]}
-                  >
-                    <TextArea placeholder="-----BEGIN PRIVATE KEY-----" style={{ minHeight: "200px" }} />
-                  </Form.Item>
-                )}
-              </GuideStep>
+          <SettingsSection maxWidth="100%" title="Credentials" description={credentialsHelp()}>
+            <Form.Item
+              name="name"
+              label="Name"
+              extra="Tells connections apart when you add more than one provider."
+              rules={[{ required: true }]}
+            >
+              <Input placeholder={label} />
+            </Form.Item>
+            <Form.Item name="clientId" label={getClientIdName(vcsType, connectionType)} rules={[{ required: true }]}>
+              <Input className="resource-mono" placeholder={oauth ? "824ff023a7136981f322" : "970081"} />
+            </Form.Item>
+            <Form.Item
+              name="endpoint"
+              label="HTTPS URL"
+              extra="The address of your instance, as users open it in a browser."
+              rules={[{ required: !usesFixedUrls(vcsType) }, { validator: validateUrlFormat }]}
+              hidden={usesFixedUrls(vcsType)}
+            >
+              <Input className="resource-mono" placeholder={getHttpsPlaceholder(vcsType)} />
+            </Form.Item>
+            <Form.Item
+              name="apiUrl"
+              label="API URL"
+              extra="Terrakube calls this address to read repositories and register webhooks."
+              rules={[{ required: !usesFixedUrls(vcsType) }, { validator: validateUrlFormat }]}
+              hidden={usesFixedUrls(vcsType)}
+            >
+              <Input className="resource-mono" placeholder={getAPIUrlPlaceholder(vcsType)} />
+            </Form.Item>
+            {showSecret && (
+              <Form.Item
+                name="clientSecret"
+                label={getSecretIdName(vcsType, connectionType)}
+                rules={[{ required: true }]}
+              >
+                <Input.Password className="resource-mono" autoComplete="off" />
+              </Form.Item>
+            )}
+            {isGithubFamily && !oauth && (
+              <Form.Item
+                name="privateKey"
+                label={getSecretIdName(vcsType, connectionType)}
+                extra={
+                  <>
+                    Convert the downloaded key with{" "}
+                    <Typography.Text code>openssl pkcs8 -topk8 -nocrypt -in key.pem</Typography.Text>.
+                  </>
+                }
+                rules={[{ required: true }, { validator: validatePrivateKeyFormat }]}
+              >
+                <Input.TextArea className="resource-mono" placeholder="-----BEGIN PRIVATE KEY-----" rows={8} />
+              </Form.Item>
             )}
           </SettingsSection>
-
-          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-            <Space>
-              <Button onClick={() => setCurrent(0)}>Back</Button>
-              <Button type="primary" htmlType="submit">
-                Connect and Continue
-              </Button>
-            </Space>
-          </Flex>
-        </Form>
+        </SettingsForm>
       )}
     </div>
   );

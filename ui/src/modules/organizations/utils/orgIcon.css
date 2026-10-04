@@ -1,0 +1,10 @@
+/* Organization icons carry a user-chosen colour and size (set by getOrgIcon, or by a parent such as the icon picker);
+   in dark mode lift the colour towards the text colour so dark picks stay visible. */
+.org-icon {
+  color: var(--org-icon-color);
+  font-size: var(--org-icon-size);
+}
+
+[data-theme="dark"] .org-icon {
+  color: color-mix(in srgb, var(--org-icon-color) 55%, var(--tk-text-primary));
+}

@@ -1,27 +1,12 @@
 import React from "react";
-import { Col, Input, Row, Select, Space } from "antd";
-import {
-  AppstoreOutlined,
-  ClockCircleOutlined,
-  FilterOutlined,
-  SafetyCertificateOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import { Input, Select } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
+import "../PolicySets.css";
+import "./PolicyComponents.css";
 
-const { Option } = Select;
+export type ExemptionStatusFilter = "ALL" | "ACTIVE" | "EXPIRING_SOON" | "EXPIRED" | "INDEFINITE";
 
-export type ExemptionStatusFilter =
-  | "ALL"
-  | "ACTIVE"
-  | "EXPIRING_SOON"
-  | "EXPIRED"
-  | "INDEFINITE";
-
-export type ExemptionScopeFilter =
-  | "ALL"
-  | "ORGANIZATION"
-  | "PROJECT"
-  | "WORKSPACE";
+export type ExemptionScopeFilter = "ALL" | "ORGANIZATION" | "PROJECT" | "WORKSPACE";
 
 export type PolicyExemptionFilterProps = {
   searchQuery: string;
@@ -54,75 +39,59 @@ export const PolicyExemptionFilter: React.FC<PolicyExemptionFilterProps> = ({
   policySets,
   statusCounts,
 }) => {
+  const count = (n?: number) => (statusCounts ? ` (${n})` : "");
+
   return (
-    <Row gutter={[16, 16]} style={{ marginBottom: 16 }} align="middle">
-      <Col xs={24} sm={12} md={8}>
-        <Input
-          aria-label="Search exemptions by rule, ticket, or reason"
-          placeholder="Search exemptions by rule, ticket, reason..."
-          prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />}
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
-      </Col>
+    <div className="policy-toolbar-filters policy-exemption-filters">
+      <Input
+        aria-label="Search exemptions by rule, ticket, or reason"
+        placeholder="Search by rule, ticket or reason"
+        prefix={<SearchOutlined />}
+        value={searchQuery}
+        onChange={(e) => onSearchChange(e.target.value)}
+        allowClear
+        className="policy-filter-search"
+      />
 
-      <Col xs={24} sm={12} md={5}>
-        <Select
-          value={statusFilter}
-          onChange={onStatusFilterChange}
-          style={{ width: "100%" }}
-          prefix={<ClockCircleOutlined />}
-        >
-          <Option value="ALL">
-            Status: All {statusCounts ? `(${statusCounts.all})` : ""}
-          </Option>
-          <Option value="ACTIVE">
-            Active {statusCounts ? `(${statusCounts.active})` : ""}
-          </Option>
-          <Option value="EXPIRING_SOON">
-            Expiring Soon {statusCounts ? `(${statusCounts.expiringSoon})` : ""}
-          </Option>
-          <Option value="EXPIRED">
-            Expired {statusCounts ? `(${statusCounts.expired})` : ""}
-          </Option>
-          <Option value="INDEFINITE">
-            Permanent {statusCounts ? `(${statusCounts.indefinite})` : ""}
-          </Option>
-        </Select>
-      </Col>
+      <Select
+        aria-label="Filter by status"
+        value={statusFilter}
+        onChange={onStatusFilterChange}
+        className="policy-filter-select"
+        options={[
+          { value: "ALL", label: `All statuses${count(statusCounts?.all)}` },
+          { value: "ACTIVE", label: `Active${count(statusCounts?.active)}` },
+          { value: "EXPIRING_SOON", label: `Expiring soon${count(statusCounts?.expiringSoon)}` },
+          { value: "EXPIRED", label: `Expired${count(statusCounts?.expired)}` },
+          { value: "INDEFINITE", label: `Permanent${count(statusCounts?.indefinite)}` },
+        ]}
+      />
 
-      <Col xs={24} sm={12} md={5}>
-        <Select
-          value={scopeFilter}
-          onChange={onScopeFilterChange}
-          style={{ width: "100%" }}
-          prefix={<AppstoreOutlined />}
-        >
-          <Option value="ALL">Scope: All</Option>
-          <Option value="ORGANIZATION">Organization-Wide</Option>
-          <Option value="PROJECT">Project-Scoped</Option>
-          <Option value="WORKSPACE">Workspace-Scoped</Option>
-        </Select>
-      </Col>
+      <Select
+        aria-label="Filter by scope"
+        value={scopeFilter}
+        onChange={onScopeFilterChange}
+        className="policy-filter-select"
+        options={[
+          { value: "ALL", label: "All scopes" },
+          { value: "ORGANIZATION", label: "Organization-wide" },
+          { value: "PROJECT", label: "Project" },
+          { value: "WORKSPACE", label: "Workspace" },
+        ]}
+      />
 
-      <Col xs={24} sm={12} md={6}>
-        <Select
-          value={policySetFilter}
-          onChange={onPolicySetFilterChange}
-          style={{ width: "100%" }}
-          prefix={<SafetyCertificateOutlined />}
-          showSearch
-          optionFilterProp="children"
-        >
-          <Option value="ALL">Policy Set: All</Option>
-          {policySets.map((ps) => (
-            <Option key={ps.id} value={ps.id}>
-              {ps.name}
-            </Option>
-          ))}
-        </Select>
-      </Col>
-    </Row>
+      <Select
+        aria-label="Filter by policy set"
+        value={policySetFilter}
+        onChange={onPolicySetFilterChange}
+        className="policy-filter-select-wide"
+        showSearch
+        optionFilterProp="label"
+        options={[
+          { value: "ALL", label: "All policy sets" },
+          ...policySets.map((ps) => ({ value: ps.id, label: ps.name })),
+        ]}
+      />
+    </div>
   );
 };

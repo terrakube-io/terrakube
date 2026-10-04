@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyOutlined } from "@ant-design/icons";
-import { Avatar, Button, List, message, Tag, Typography, theme } from "antd";
+import { Button, message, Tag, Tooltip, Typography } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -11,6 +11,8 @@ import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import ResourceCard from "./components/ResourceCard";
 
 type Props = {
   editorMode?: "new" | "edit";
@@ -29,7 +31,6 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
   const mode: "list" | "edit" | "create" = editorMode === "new" ? "create" : (editorMode ?? "list");
   const federatedId = editorId;
   const closeEditor = () => navigate(`/organizations/${orgid}/settings/federated-credentials`);
-  const { token } = theme.useToken();
 
   const onDelete = async (id: string) => {
     try {
@@ -38,10 +39,10 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
       const claimsData = claimsRes.data.data || [];
       await Promise.all(claimsData.map((c: any) => axiosInstance.delete(`federated/${id}/claims/${c.id}`)));
       await axiosInstance.delete(`federated/${id}`);
-      message.success("Federated credential deleted successfully");
+      message.success("Federated credential deleted");
       loadFederated();
     } catch (err: any) {
-      message.error(getErrorMessage(err));
+      message.error(`Could not delete the federated credential: ${getErrorMessage(err)}`);
     }
   };
 
@@ -71,7 +72,7 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load federated credentials");
+          message.error(`Could not load federated credentials: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
@@ -81,6 +82,76 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
     setLoading(true);
     loadFederated();
   }, [orgid]);
+
+  const renderList = () => {
+    if (loading) return <Loading loading description="Loading federated credentials..." />;
+    if (federated.length === 0) {
+      return (
+        <EmptyState simple description="No federated credentials yet. Pipelines need one to sign in without a token.">
+          {managePermission && (
+            <LinkButton to={`/organizations/${orgid}/settings/federated-credentials/new`} icon={<PlusOutlined />}>
+              Add a federated credential
+            </LinkButton>
+          )}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <Typography.Title level={4} className="resource-list-title">
+          Federated credentials ({federated.length})
+        </Typography.Title>
+        <div className="resource-list">
+          {federated.map((item) => {
+            const claims = claimCounts[item.id] ?? 0;
+            return (
+              <ResourceCard
+                key={item.id}
+                icon={<SafetyOutlined />}
+                name={item.attributes.name}
+                tags={
+                  claims > 0 ? (
+                    <Tag>
+                      {claims} claim condition{claims !== 1 ? "s" : ""}
+                    </Tag>
+                  ) : (
+                    <Tag color="warning">No claim conditions</Tag>
+                  )
+                }
+                actions={
+                  <>
+                    <Tooltip title="Edit">
+                      <LinkButton
+                        to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}
+                        icon={<EditOutlined />}
+                        disabled={!managePermission}
+                        aria-label={`Edit federated credential ${item.attributes.name}`}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <Button
+                        icon={<DeleteOutlined />}
+                        disabled={!managePermission}
+                        aria-label={`Delete federated credential ${item.attributes.name}`}
+                        onClick={() => setPendingDelete(item)}
+                      />
+                    </Tooltip>
+                  </>
+                }
+              >
+                <dl className="resource-card-fields">
+                  <dt>Issuer URL</dt>
+                  <dd className="resource-mono">{item.attributes.issuerUrl}</dd>
+                  <dt>Audience</dt>
+                  <dd className="resource-mono">{item.attributes.audience}</dd>
+                </dl>
+              </ResourceCard>
+            );
+          })}
+        </div>
+      </>
+    );
+  };
 
   return (
     <div className="setting">
@@ -97,8 +168,9 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
         <>
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/workspaces/dynamic-provider-credentials"
-            title="Federated Credentials"
-            description="Federated credentials allow you to establish a trust relationship between terrakube and external identity providers, such as GitHub Actions."
+            title="Federated credentials"
+            description="Let CI pipelines and other identity providers act as a team, without stored secrets."
+            divider={false}
             actions={
               <LinkButton
                 to={`/organizations/${orgid}/settings/federated-credentials/new`}
@@ -106,71 +178,24 @@ export const FederatedCredentials = ({ editorMode, editorId, managePermission = 
                 icon={<PlusOutlined />}
                 disabled={!managePermission}
               >
-                Create federated credential
+                Add a federated credential
               </LinkButton>
             }
           />
-          <Loading loading={loading} description="Loading Federated Credentials...">
-            <List
-              itemLayout="horizontal"
-              dataSource={federated}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <LinkButton
-                      to={`/organizations/${orgid}/settings/federated-credentials/edit/${item.id}`}
-                      icon={<EditOutlined />}
-                      shape="round"
-                      type="primary"
-                      disabled={!managePermission}
-                    >
-                      Edit
-                    </LinkButton>,
-                    <Button
-                      icon={<DeleteOutlined />}
-                      shape="round"
-                      type="primary"
-                      danger
-                      disabled={!managePermission}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      Delete
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={<Avatar style={{ backgroundColor: token.colorPrimary }} icon={<SafetyOutlined />} />}
-                    title={item.attributes.name}
-                    description={
-                      <>
-                        <Typography.Text type="secondary">{item.attributes.issuerUrl}</Typography.Text>
-                        <br />
-                        <Typography.Text type="secondary">{item.attributes.audience}</Typography.Text>
-                        <br />
-                        {claimCounts[item.id] > 0 ? (
-                          <Tag color="blue" style={{ marginTop: 4 }}>
-                            {claimCounts[item.id]} claim condition{claimCounts[item.id] !== 1 ? "s" : ""}
-                          </Tag>
-                        ) : (
-                          <Tag style={{ marginTop: 4 }}>No claim conditions</Tag>
-                        )}
-                      </>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          </Loading>
+          {renderList()}
 
           <DeleteConfirmationModal
             open={pendingDelete !== null}
             title="Delete federated credential"
             message={
               <>
-                Deleting the federated credential <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                Tokens from <span className="resource-mono">{pendingDelete?.attributes.issuerUrl}</span> can no longer
+                act as team <strong>{pendingDelete?.attributes.name}</strong>, so pipelines that use it fail to sign in.
+                Its claim conditions are deleted too. This cannot be undone.
               </>
             }
-            okText="Delete"
+            confirmValue={pendingDelete?.attributes.name ?? ""}
+            okText="Delete federated credential"
             onConfirm={() => {
               if (pendingDelete) onDelete(pendingDelete.id);
               setPendingDelete(null);

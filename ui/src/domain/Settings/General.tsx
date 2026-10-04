@@ -1,6 +1,5 @@
-import { Button, Form, Input, message, Radio, Space, Typography, ColorPicker } from "antd";
+import { Form, Input, message, Space, Typography, ColorPicker } from "antd";
 import { Loading } from "@/components/feedback/Loading";
-import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -10,7 +9,12 @@ import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import { IdField } from "@/components/settings/IdField";
+import { DangerZone } from "@/components/settings/DangerZone";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
+import { cacheOrganizationName } from "@/hooks/useOrganizationName";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -39,7 +43,6 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   const [form] = Form.useForm();
   const [icon, setIcon] = useState<string>(DEFAULT_ICON);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   const onFinish = (values: GeneralSettingsForm) => {
     setWaiting(true);
@@ -68,6 +71,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           message.success("Organization updated successfully");
           if (orgid) {
             updateOrganization(orgid, { ...values, icon: iconField });
+            cacheOrganizationName(orgid, values.name);
           }
         } else {
           message.error("Organization update failed");
@@ -145,7 +149,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
   }, [orgid, form]);
 
   return (
-    <div className="setting general-settings">
+    <div className="setting">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations"
         title="General settings"
@@ -156,101 +160,72 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
       ) : (
         <Loading loading={loading || organization === undefined} description="Loading organization settings...">
           <Loading overlay loading={waiting}>
-            <div className="general-settings-column">
-              <div className="general-settings-id">
-                <Typography.Text strong>ID</Typography.Text>
-                <Typography.Text copyable={{ tooltips: ["Copy ID", "Copied"] }} className="general-settings-id-value">
-                  {orgid}
-                </Typography.Text>
-              </div>
-
-              <Form
-                form={form}
-                layout="vertical"
-                name="form-settings"
-                requiredMark={false}
-                onFinish={onFinish}
-                initialValues={{
-                  name: organization?.attributes.name,
-                  description: organization?.attributes.description,
-                  executionMode: organization?.attributes.executionMode,
-                }}
-              >
-                <Form.Item name="name" label="Name" rules={organizationNameRules}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="description" label="Description">
-                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
-                </Form.Item>
-                <Form.Item label="Icon and color" extra="Shown for this organization throughout Terrakube.">
-                  <Space align="start">
-                    <IconSelector value={icon} color={color} onChange={setIcon} />
-                    <ColorPicker
-                      value={color}
-                      onChange={(colorObj) => setColor(colorObj.toHexString())}
-                      presets={[
-                        {
-                          label: "Recommended",
-                          colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
-                        },
-                      ]}
-                    />
-                  </Space>
-                </Form.Item>
-
-                <Typography.Title level={5} className="general-settings-subtitle">
-                  Organizational default execution mode
-                </Typography.Title>
-                <Typography.Paragraph type="secondary">
-                  Suggested to new workspaces created in this organization. Existing workspaces keep their mode.
-                </Typography.Paragraph>
-                <Form.Item name="executionMode" label="Workspaces">
-                  <Radio.Group className="general-settings-modes">
-                    <Radio value="remote">
-                      Remote
-                      <span className="general-settings-mode-help">
-                        Terrakube hosts your plans and applies, allowing you and your team to collaborate and review
-                        jobs in the app.
-                      </span>
-                    </Radio>
-                    <Radio value="local">
-                      Local
-                      <span className="general-settings-mode-help">
-                        Your planning and applying jobs are performed on your own machines. Terrakube is used just for
-                        storing and syncing the state.
-                      </span>
-                    </Radio>
-                  </Radio.Group>
-                </Form.Item>
-
-                <Button type="primary" htmlType="submit" disabled={!managePermission}>
-                  Update organization
-                </Button>
-              </Form>
-
-              <section className="general-settings-danger">
-                <Typography.Title level={3}>Destruction and deletion</Typography.Title>
-                <Typography.Text strong>Delete this organization</Typography.Text>
-                <Typography.Paragraph type="secondary">
-                  Deleting the {organization?.attributes?.name} organization will permanently delete all workspaces
-                  associated with it. Please be certain that you understand this. This action cannot be undone.
-                </Typography.Paragraph>
-                <Button type="primary" danger disabled={!managePermission} onClick={() => setDeleteModalOpen(true)}>
-                  Delete this organization
-                </Button>
-              </section>
-            </div>
-            <DeleteConfirmationModal
-              open={deleteModalOpen}
-              title="Delete this organization"
-              message="The organization will be permanently deleted and all its workspaces will be marked as deleted. This action cannot be undone."
-              confirmValue={organization?.attributes?.name ?? ""}
-              okText="Delete this organization"
-              onConfirm={() => {
-                onDelete();
-                setDeleteModalOpen(false);
+            <SettingsForm
+              form={form}
+              name="form-settings"
+              onFinish={onFinish}
+              initialValues={{
+                name: organization?.attributes.name,
+                description: organization?.attributes.description,
+                executionMode: organization?.attributes.executionMode,
               }}
-              onCancel={() => setDeleteModalOpen(false)}
+              saveLabel="Update organization"
+              saveDisabled={!managePermission}
+            >
+              <IdField id="organization-id" value={orgid ?? ""} />
+              <Form.Item name="name" label="Name" rules={organizationNameRules}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="description" label="Description">
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+              </Form.Item>
+              <Form.Item label="Icon and color" extra="Shown for this organization throughout Terrakube.">
+                <Space align="start">
+                  <IconSelector value={icon} color={color} onChange={setIcon} />
+                  <ColorPicker
+                    value={color}
+                    onChange={(colorObj) => setColor(colorObj.toHexString())}
+                    presets={[
+                      {
+                        label: "Recommended",
+                        colors: ["#000000", "#1890ff", "#722ED1", "#2eb039", "#fa8f37", "#FB0136"],
+                      },
+                    ]}
+                  />
+                </Space>
+              </Form.Item>
+
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Organizational default execution mode
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                Suggested to new workspaces created in this organization. Existing workspaces keep their mode.
+              </Typography.Paragraph>
+              <Form.Item name="executionMode" label="Workspaces">
+                <RadioChoices
+                  options={[
+                    {
+                      value: "remote",
+                      label: "Remote",
+                      help: "Terrakube hosts your plans and applies, allowing you and your team to collaborate and review jobs in the app.",
+                    },
+                    {
+                      value: "local",
+                      label: "Local",
+                      help: "Your planning and applying jobs are performed on your own machines. Terrakube is used just for storing and syncing the state.",
+                    },
+                  ]}
+                />
+              </Form.Item>
+            </SettingsForm>
+
+            <DangerZone
+              actionName="Delete this organization"
+              description={`Deleting the ${organization?.attributes?.name} organization will permanently delete all workspaces associated with it. Please be certain that you understand this. This action cannot be undone.`}
+              disabled={!managePermission}
+              confirmValue={organization?.attributes?.name ?? ""}
+              confirmMessage="The organization will be permanently deleted and all its workspaces will be marked as deleted. This action cannot be undone."
+              onConfirm={onDelete}
             />
           </Loading>
         </Loading>

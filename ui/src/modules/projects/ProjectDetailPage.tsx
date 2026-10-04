@@ -1,5 +1,5 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message, theme } from "antd";
+import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
@@ -15,6 +15,7 @@ import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import type { MenuProps } from "antd";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import "./Projects.css";
 
 const { Content, Sider } = Layout;
 type MenuItem = Required<MenuProps>["items"][number];
@@ -95,7 +96,7 @@ function ProjectGeneralSettings({
   };
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="project-settings-panel">
       <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
@@ -106,26 +107,26 @@ function ProjectGeneralSettings({
             <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
           </Form.Item>
           <Form.Item>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Flex justify="flex-end">
               <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
                 Save settings
               </Button>
-            </div>
+            </Flex>
           </Form.Item>
         </Form>
       </Spin>
 
-      <div style={{ marginTop: "40px" }}>
+      <div className="project-delete-section">
         <Typography.Text type="secondary">
           Deleting this project permanently removes all of its settings and history from Terrakube.
         </Typography.Text>
-        <h3 style={{ marginBottom: "16px", marginTop: "24px" }}>Delete this Project</h3>
-        <div style={{ marginBottom: "16px" }}>
+        <h3 className="project-delete-title">Delete this Project</h3>
+        <div className="project-delete-notice">
           <Typography.Text type="secondary">
             <Typography.Text strong>Warning!</Typography.Text> This action cannot be undone.
           </Typography.Text>
           {assignedWorkspacesCount > 0 && (
-            <div style={{ marginTop: "8px" }}>
+            <div className="project-delete-workspaces-warning">
               <Typography.Text type="warning">
                 This project has {assignedWorkspacesCount} workspace{assignedWorkspacesCount > 1 ? "s" : ""} assigned.
                 Please remove all workspaces before deleting this project.
@@ -153,7 +154,7 @@ function ProjectGeneralSettings({
           <Button
             type="primary"
             danger
-            style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
+            className="project-delete-button"
             disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
           >
             <Space>
@@ -172,7 +173,6 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const [project, setProject] = useState<ProjectModel | null>(null);
   const [activeKey, setActiveKey] = useState("general");
   const [assignedWorkspacesCount, setAssignedWorkspacesCount] = useState(0);
-  const { token } = theme.useToken();
   const { permissions } = useOrgPermissions();
   const [userGroups, setUserGroups] = useState<string[]>([]);
   const [projectAccessForPerm, setProjectAccessForPerm] = useState<ProjectAccessModel[]>([]);
@@ -287,25 +287,17 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         { label: project?.name ?? "Project", path: `/organizations/${orgid}/projects/${id}` },
       ]}
     >
-      <Layout style={{ background: token.colorBgContainer }}>
-        <Sider
-          width={200}
-          style={{
-            background: token.colorBgContainer,
-            borderRight: `1px solid ${token.colorBorderSecondary}`,
-            height: "100%",
-            overflow: "auto",
-          }}
-        >
+      <Layout className="project-detail-layout">
+        <Sider width={200} className="project-detail-sider">
           <Menu
             mode="inline"
             selectedKeys={[activeKey]}
-            style={{ height: "100%" }}
+            className="project-detail-menu"
             items={menuItems}
             onClick={(e) => handleTabChange(e.key)}
           />
         </Sider>
-        <Content style={{ padding: "0 24px", minHeight: 280, maxWidth: 900 }}>{renderContent()}</Content>
+        <Content className="project-detail-content">{renderContent()}</Content>
       </Layout>
     </PageWrapper>
   );

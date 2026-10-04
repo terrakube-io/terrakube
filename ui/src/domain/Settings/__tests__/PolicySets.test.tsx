@@ -118,13 +118,13 @@ describe("PolicySetsSettings", () => {
       expect(screen.getByText("security-baseline")).toBeInTheDocument();
       expect(screen.getByText("tagging-rules")).toBeInTheDocument();
       expect(screen.getByText("advisory-checks")).toBeInTheDocument();
-      expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
-      expect(screen.getByText("Soft Mandatory")).toBeInTheDocument();
+      expect(screen.getByText("Hard mandatory")).toBeInTheDocument();
+      expect(screen.getByText("Soft mandatory")).toBeInTheDocument();
       expect(screen.getByText("Advisory")).toBeInTheDocument();
       expect(screen.getByText("Global")).toBeInTheDocument();
-      expect(screen.getByText("2 Attachments")).toBeInTheDocument();
-      expect(screen.getByText("1 Attachment")).toBeInTheDocument();
-      expect(screen.getByText("Override Team: secops")).toBeInTheDocument();
+      expect(screen.getByText("2 attachments")).toBeInTheDocument();
+      expect(screen.getByText("1 attachment")).toBeInTheDocument();
+      expect(screen.getByText("Override team: secops")).toBeInTheDocument();
       expect(screen.getByText("Notification: SecOps Alerts")).toBeInTheDocument();
     });
 
@@ -134,7 +134,7 @@ describe("PolicySetsSettings", () => {
     expect(screen.getByTestId("policy-set-scope-select")).toBeInTheDocument();
     expect(screen.getByTestId("policy-set-view-toggle")).toBeInTheDocument();
     expect(screen.getByTestId("add-policy-set-btn")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /New Policy Set/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create policy set/ })).toBeInTheDocument();
   });
 
   it("allows toggling between Card mode and Compact mode", async () => {
@@ -231,7 +231,7 @@ describe("PolicySetsSettings", () => {
     fireEvent.change(searchInput, { target: { value: "non-existent-policy" } });
 
     await waitFor(() => {
-      expect(screen.getByText("No policy sets match your search and filter criteria.")).toBeInTheDocument();
+      expect(screen.getByText("No policy sets match these filters.")).toBeInTheDocument();
     });
 
     const clearButton = screen.getByTestId("empty-clear-filters-btn");
@@ -276,7 +276,9 @@ describe("PolicySetsSettings", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("No Policy Sets Configured")).toBeInTheDocument();
+      expect(
+        screen.getByText("No policy sets yet. Create one to check plans against OPA policies.")
+      ).toBeInTheDocument();
     });
   });
 
@@ -292,14 +294,13 @@ describe("PolicySetsSettings", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByRole("heading", { name: "Create Policy Set" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Policy Set Name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Enforcement Level/i)).toBeInTheDocument();
-    expect(screen.getByText("Notifications & Alerting")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Notification Channel/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create policy set" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Hard mandatory/ })).toBeChecked();
+    expect(screen.getByLabelText("Notification")).toBeInTheDocument();
     expect(screen.getByTestId("policy-set-override-team-select")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Authorized Override Team/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Create Policy Set/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Override team")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create policy set" })).toBeInTheDocument();
   });
 
   it("renders authorized override team select allowing user to pick teams", async () => {
@@ -329,7 +330,7 @@ describe("PolicySetsSettings", () => {
       expect(screen.getByTestId("policy-set-override-team-select")).toBeInTheDocument();
     });
 
-    expect(screen.getByLabelText(/Authorized Override Team/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Override team")).toBeInTheDocument();
   });
 
   it("renders edit form with pre-populated override team in select", async () => {
@@ -375,7 +376,7 @@ describe("PolicySetsSettings", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Edit Policy Set" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Edit policy set" })).toBeInTheDocument();
       expect(screen.getByText("secops")).toBeInTheDocument();
     });
   });
@@ -395,13 +396,13 @@ describe("PolicySetsSettings", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Create Policy Set" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Create policy set" })).toBeInTheDocument();
     });
 
     const opaVersionInput = screen.getByTestId("policy-set-opa-version-input");
     expect(opaVersionInput).toBeInTheDocument();
     expect(opaVersionInput).toHaveAttribute("placeholder", "Inherit system default (e.g. 1.20.2)");
-    expect(screen.getByText(/OPA GitHub Releases/i)).toBeInTheDocument();
+    expect(screen.getByText("OPA releases")).toBeInTheDocument();
   });
 
   it("renders edit form with pre-populated opaVersion", async () => {
@@ -437,10 +438,58 @@ describe("PolicySetsSettings", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Edit Policy Set" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Edit policy set" })).toBeInTheDocument();
     });
 
     const opaVersionInput = screen.getByTestId("policy-set-opa-version-input") as HTMLInputElement;
     expect(opaVersionInput.value).toBe("0.68.0");
+  });
+
+  it("deletes a policy set only after its name is typed", async () => {
+    deleteMock.mockResolvedValue({});
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies"
+            element={<PolicySetsSettings managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete tagging-rules" }));
+    const confirm = await screen.findByRole("button", { name: "Delete policy set" });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Type the name to confirm"), { target: { value: "tagging-rules" } });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("policy_set/ps-2"));
+  });
+
+  it("offers deletion in a danger zone on the edit page", async () => {
+    getMock.mockImplementation((url: string) =>
+      url.startsWith("policy_set/ps-3")
+        ? Promise.resolve({
+            data: { data: { id: "ps-3", attributes: { name: "advisory-checks" }, relationships: {} } },
+          })
+        : Promise.resolve({ data: { data: [] } })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/edit/ps-3"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/edit/:id"
+            element={<PolicySetsSettings editorMode="edit" editorId="ps-3" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Destruction and deletion" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete this policy set" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Update policy set" })).toBeInTheDocument();
   });
 });

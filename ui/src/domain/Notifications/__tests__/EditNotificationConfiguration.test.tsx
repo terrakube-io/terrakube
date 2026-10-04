@@ -8,7 +8,12 @@ jest.mock("@/config/axiosConfig", () => ({
   // get() defaults to resolving an empty template list - the component fetches templates for
   // the "3. Templates" filter unconditionally on mount, so an unconfigured jest.fn() (which
   // returns undefined, not a Promise) would throw synchronously on the .then() call.
-  default: { post: jest.fn(), patch: jest.fn(), get: jest.fn().mockResolvedValue({ data: { data: [] } }), delete: jest.fn() },
+  default: {
+    post: jest.fn(),
+    patch: jest.fn(),
+    get: jest.fn().mockResolvedValue({ data: { data: [] } }),
+    delete: jest.fn(),
+  },
   getErrorMessage: jest.fn(() => "error"),
 }));
 jest.mock("@/modules/api/apiWrapper", () => ({ apiPost: jest.fn() }));
@@ -70,7 +75,7 @@ describe("EditNotificationConfiguration", () => {
 
     render(<EditNotificationConfiguration orgId="org-1" workspaceId="ws-1" mode="create" onDone={jest.fn()} />);
 
-    selectChannel("Generic Webhook");
+    selectChannel("Webhook");
     fireEvent.change(screen.getByLabelText("Destination URL"), {
       target: { value: "https://example.com/hook" },
     });
@@ -172,17 +177,89 @@ describe("EditNotificationConfiguration", () => {
   });
 
   it("renders informational tooltips clarifying OPA policy reviews and violations on relevant triggers", async () => {
-    render(
-      <EditNotificationConfiguration orgId="org-1" mode="create" onDone={jest.fn()} />
-    );
+    render(<EditNotificationConfiguration orgId="org-1" mode="create" onDone={jest.fn()} />);
 
     const attentionGroup = within(await screen.findByTestId("trigger-group-needs-attention"));
-    expect(attentionGroup.getByRole("checkbox", { name: "Waiting for Approval" })).toBeInTheDocument();
+    expect(attentionGroup.getByRole("checkbox", { name: "Waiting for approval" })).toBeInTheDocument();
     expect(attentionGroup.getByRole("img", { name: "info-circle" })).toBeInTheDocument();
 
     const erroredGroup = within(screen.getByTestId("trigger-group-errored"));
     expect(erroredGroup.getByRole("checkbox", { name: "Failed" })).toBeInTheDocument();
     expect(erroredGroup.getByRole("img", { name: "info-circle" })).toBeInTheDocument();
   });
-});
 
+  it("deletes an existing configuration from the danger zone after confirmation", async () => {
+    (apiPost as jest.Mock).mockResolvedValue({
+      data: {
+        notification_configuration: {
+          edges: [{ node: { name: "Prod", channelType: "SLACK", active: true, workspace: { edges: [] } } }],
+        },
+      },
+    });
+    (axiosInstance.delete as jest.Mock).mockResolvedValue({});
+    const onDone = jest.fn();
+
+    render(<EditNotificationConfiguration orgId="org-1" mode="edit" configId="config-1" onDone={onDone} />);
+
+    expect(await screen.findByRole("button", { name: "Update notification" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete this notification" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete this notification" })
+    );
+
+    await waitFor(() =>
+      expect(axiosInstance.delete).toHaveBeenCalledWith("notification_configuration/config-1", {
+        headers: { "Content-Type": undefined },
+      })
+    );
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+
+  const editing = (workspace: { edges: { node: { id: string } }[] }) =>
+    (apiPost as jest.Mock).mockResolvedValue({
+      data: {
+        notification_configuration: {
+          edges: [{ node: { name: "Prod", channelType: "SLACK", active: true, workspace } }],
+        },
+      },
+    });
+
+  it("disables saving and deleting without the manage permission", async () => {
+    editing({ edges: [] });
+    render(
+      <EditNotificationConfiguration
+        orgId="org-1"
+        mode="edit"
+        configId="config-1"
+        onDone={jest.fn()}
+        managePermission={false}
+      />
+    );
+
+    expect(await screen.findByRole("button", { name: "Update notification" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete this notification" })).toBeDisabled();
+  });
+
+  it("hides the danger zone for an organization-wide default opened from a workspace", async () => {
+    editing({ edges: [] });
+    render(
+      <EditNotificationConfiguration
+        orgId="org-1"
+        workspaceId="ws-1"
+        mode="edit"
+        configId="config-1"
+        onDone={jest.fn()}
+      />
+    );
+
+    expect(await screen.findByText("Organization-wide default")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete this notification" })).not.toBeInTheDocument();
+  });
+
+  it("has no danger zone while creating", () => {
+    render(<EditNotificationConfiguration orgId="org-1" mode="create" onDone={jest.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Create notification" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete this notification" })).not.toBeInTheDocument();
+  });
+});

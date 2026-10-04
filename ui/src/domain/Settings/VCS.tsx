@@ -1,26 +1,40 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Divider, Flex, List, Row, Space, Typography, message } from "antd";
+import { Button, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
-import { ORGANIZATION_NAME } from "../../config/actionTypes";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
-import { VcsModel, VcsType } from "../types";
+import { VcsModel, VcsStatus, VcsType } from "../types";
 import { AddVCS } from "./AddVCS";
 import { EditVCS } from "./EditVCS";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./VCS.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import VcsLogo from "@/components/display/VcsLogo";
 import { Loading } from "@/components/feedback/Loading";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-const { Paragraph } = Typography;
+import ResourceCard from "./components/ResourceCard";
+import { relativeTime } from "@/modules/utils/dates";
+import { getCallbackUrl, getConnectUrl, getVcsTypeExtended, usesOAuthFlow, vcsLabel } from "./vcsProviders";
 
 type Props = {
   vcsMode?: "new" | "edit" | "list";
   vcsId?: string;
   managePermission?: boolean;
+};
+
+const providerLabel = (item: VcsModel) =>
+  vcsLabel(getVcsTypeExtended(item.attributes.vcsType, item.attributes.connectionType, item.attributes.endpoint));
+
+const plural = (count: number, noun: string) => (count > 0 ? `${count} ${noun}${count === 1 ? "" : "s"}` : "");
+
+const STATUS_TAGS: Record<VcsStatus, { color: string; label: string }> = {
+  [VcsStatus.COMPLETED]: { color: "success", label: "Connected" },
+  [VcsStatus.PENDING]: { color: "warning", label: "Not connected" },
+  [VcsStatus.ERROR]: { color: "error", label: "Connection failed" },
 };
 
 export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) => {
@@ -32,75 +46,44 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
   const [pendingDelete, setPendingDelete] = useState<VcsModel | null>(null);
 
   const mode: "list" | "new" | "edit" = vcsMode ?? "list";
-  const editVcsId = vcsId;
   const closeEditor = () => navigate(`/organizations/${orgid}/settings/vcs`);
+  const organizationName = useOrganizationName(orgid);
 
-  const renderVCSType = (vcs: VcsType) => {
-    switch (vcs) {
-      case "GITLAB":
-        return "GitLab";
-      case "BITBUCKET":
-        return "BitBucket";
-      case "AZURE_DEVOPS":
-        return "Azure Devops";
-      case "AZURE_SP_MI":
-        return "Azure Devops";
-      default:
-        return "GitHub";
-    }
-  };
-
-  const getConnectUrl = (vcs: VcsType, clientId: string, callbackUrl: string, endpoint: string) => {
-    switch (vcs) {
-      case "GITLAB":
-        if (endpoint != null)
-          return `${endpoint}/oauth/authorize?client_id=${clientId}&response_type=code&scope=api&&redirect_uri=${callbackUrl}`;
-        else
-          return `https://gitlab.com/oauth/authorize?client_id=${clientId}&response_type=code&scope=api&&redirect_uri=${callbackUrl}`;
-      case "BITBUCKET":
-        if (endpoint != null)
-          return `${endpoint}/site/oauth2/authorize?client_id=${clientId}&response_type=code&response_type=code&scope=repository`;
-        else
-          return `https://bitbucket.org/site/oauth2/authorize?client_id=${clientId}&response_type=code&response_type=code&scope=repository`;
-      case "AZURE_DEVOPS":
-        if (endpoint != null)
-          return `${endpoint}/oauth2/authorize?client_id=${clientId}&redirect_uri=${callbackUrl}&response_type=Assertion&scope=vso.code+vso.code_status`;
-        else
-          return `https://app.vssps.visualstudio.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${callbackUrl}&response_type=Assertion&scope=vso.code+vso.code_status`;
-      default:
-        if (endpoint != null)
-          return `${endpoint}/login/oauth/authorize?client_id=${clientId}&allow_signup=false&scope=repo`;
-        else return `https://github.com/login/oauth/authorize?client_id=${clientId}&allow_signup=false&scope=repo`;
-    }
-  };
-
-  const onDelete = (id: string) => {
-    axiosInstance
-      .get(`organization/${orgid}/vcs/${id}?include=workspace`)
-      .then((response) => {
-        if (response.data.included != null && response.data.included.length > 0) {
+  const onDelete = (item: VcsModel) => {
+    const count = (path: string) => axiosInstance.get(path).then((response) => response.data.data?.length ?? 0);
+    Promise.all([
+      axiosInstance
+        .get(`organization/${orgid}/vcs/${item.id}?include=workspace`)
+        .then((response) => response.data.included?.length ?? 0),
+      count(`organization/${orgid}/module?filter[module]=vcs.id==${item.id}&fields[module]=name`),
+      count(`policy_set?filter[policy_set]=vcs.id==${item.id}&fields[policy_set]=name`),
+    ])
+      .then(([workspaces, modules, policySets]) => {
+        const usage = [
+          plural(workspaces, "workspace"),
+          plural(modules, "module"),
+          plural(policySets, "policy set"),
+        ].filter(Boolean);
+        if (usage.length > 0) {
           message.error(
-            "This VCS is currently in use by one or more workspaces. Please remove the VCS from all workspaces before deleting it."
+            `${item.attributes.name} is used by ${new Intl.ListFormat("en").format(usage)}. Move them to another VCS provider first.`
           );
-        } else {
-          axiosInstance
-            .delete(`organization/${orgid}/vcs/${id}`)
-            .then(() => {
-              message.success("VCS provider deleted successfully");
-              loadVCS();
-            })
-            .catch((err) => {
-              message.error(getErrorMessage(err));
-            });
+          return;
         }
+        return axiosInstance.delete(`organization/${orgid}/vcs/${item.id}`).then(() => {
+          message.success("VCS provider deleted");
+          loadVCS();
+        });
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        // Shared repository webhooks also reference the provider but are not exposed by the API, so the
+        // usage check above can't see them; the delete then fails with a 409.
+        message.error(
+          err?.response?.status === 409
+            ? `Could not delete ${item.attributes.name}: it is still in use. A shared repository webhook created with this provider is not listed here; it is removed once no workspace on its repository uses a shared webhook.`
+            : `Could not delete the VCS provider: ${getErrorMessage(err)}`
+        );
       });
-  };
-
-  const getCallBackUrl = (id: string) => {
-    return `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/callback/v1/vcs/${id}`;
   };
 
   useEffect(() => {
@@ -119,10 +102,128 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load VCS providers");
+          message.error(`Could not load VCS providers: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
+  };
+
+  const renderConnection = (item: VcsModel) => {
+    const attrs = item.attributes;
+    const provider = providerLabel(item);
+    if (!usesOAuthFlow(attrs.vcsType, attrs.connectionType)) return null;
+    if (attrs.status === VcsStatus.COMPLETED) {
+      return (
+        <Typography.Text className="resource-card-meta">
+          Connected through OAuth by <strong>{attrs.createdBy}</strong>. Every Terrakube user in{" "}
+          {organizationName ?? "this organization"} uses this token for {provider} API calls.
+        </Typography.Text>
+      );
+    }
+    return (
+      <div className="vcs-connect">
+        <Typography.Text className="resource-card-meta">
+          Connecting signs you in to {provider}. Your token is then used for every {provider} API call in{" "}
+          {organizationName ?? "this organization"}.
+        </Typography.Text>
+        <Button
+          size="small"
+          target="_blank"
+          disabled={!managePermission}
+          href={getConnectUrl(attrs.vcsType, attrs.clientId, getCallbackUrl(attrs.callback ?? item.id), attrs.endpoint)}
+        >
+          Connect to {provider}
+        </Button>
+      </div>
+    );
+  };
+
+  const renderList = () => {
+    if (loading) return <Loading loading description="Loading VCS providers..." />;
+    if (vcs.length === 0) {
+      return (
+        <EmptyState simple description="No VCS providers yet. Workspaces and modules need one to read repositories.">
+          {managePermission && (
+            <LinkButton to={`/organizations/${orgid}/settings/vcs/new`} icon={<PlusOutlined />}>
+              Add a VCS provider
+            </LinkButton>
+          )}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <Typography.Title level={4} className="resource-list-title">
+          VCS providers ({vcs.length})
+        </Typography.Title>
+        <div className="resource-list">
+          {vcs.map((item) => {
+            const attrs = item.attributes;
+            const status = usesOAuthFlow(attrs.vcsType, attrs.connectionType) ? STATUS_TAGS[attrs.status] : undefined;
+            return (
+              <ResourceCard
+                key={item.id}
+                icon={
+                  // VcsLogo has no managed identity variant; it is still Azure DevOps.
+                  <VcsLogo
+                    type={attrs.vcsType === VcsType.AZURE_SP_MI ? VcsType.AZURE_DEVOPS : attrs.vcsType}
+                    size={20}
+                  />
+                }
+                name={attrs.name}
+                tags={
+                  <>
+                    <Tag>{providerLabel(item)}</Tag>
+                    {status && <Tag color={status.color}>{status.label}</Tag>}
+                  </>
+                }
+                actions={
+                  <>
+                    <Tooltip title="Edit">
+                      <LinkButton
+                        to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}
+                        icon={<EditOutlined />}
+                        disabled={!managePermission}
+                        aria-label={`Edit VCS provider ${attrs.name}`}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <Button
+                        icon={<DeleteOutlined />}
+                        disabled={!managePermission}
+                        aria-label={`Delete VCS provider ${attrs.name}`}
+                        onClick={() => setPendingDelete(item)}
+                      />
+                    </Tooltip>
+                  </>
+                }
+              >
+                <dl className="resource-card-fields">
+                  <dt>Callback URL</dt>
+                  <dd>
+                    <Typography.Text className="resource-mono" copyable>
+                      {getCallbackUrl(attrs.callback ?? item.id)}
+                    </Typography.Text>
+                  </dd>
+                  {attrs.apiUrl && (
+                    <>
+                      <dt>API URL</dt>
+                      <dd className="resource-mono">{attrs.apiUrl}</dd>
+                    </>
+                  )}
+                  <dt>Created</dt>
+                  <dd>
+                    {relativeTime(attrs.createdDate) ?? "Unknown"}
+                    {attrs.createdBy && ` by ${attrs.createdBy}`}
+                  </dd>
+                </dl>
+                {renderConnection(item)}
+              </ResourceCard>
+            );
+          })}
+        </div>
+      </>
+    );
   };
 
   return (
@@ -133,8 +234,9 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
         <div>
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/vcs-providers"
-            title="VCS Providers"
-            description="Connect version control providers so workspaces and modules can read from your repositories."
+            title="VCS providers"
+            description="Let workspaces and modules read your Git repositories."
+            divider={false}
             actions={
               <LinkButton
                 to={`/organizations/${orgid}/settings/vcs/new`}
@@ -142,158 +244,25 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
                 icon={<PlusOutlined />}
                 disabled={!managePermission}
               >
-                Add a VCS Provider
+                Add a VCS provider
               </LinkButton>
             }
           />
-          <SettingsSection maxWidth="100%">
-            {loading ? (
-              <Loading loading description="Loading VCS providers..." />
-            ) : (
-              <List
-                className="vcsList"
-                itemLayout="horizontal"
-                dataSource={vcs}
-                split
-                renderItem={(item) => (
-                  <List.Item>
-                    <Card
-                      style={{ width: "100%" }}
-                      title={
-                        <span>
-                          <VcsLogo type={item.attributes.vcsType} size={20} />
-                          &nbsp;&nbsp;
-                          {item.attributes.name}
-                        </span>
-                      }
-                      actions={[
-                        <Flex key="actions" justify="flex-end" style={{ paddingInline: 24 }}>
-                          <Space>
-                            <LinkButton
-                              to={`/organizations/${orgid}/settings/vcs/edit/${item.id}`}
-                              type="default"
-                              icon={<EditOutlined />}
-                              disabled={!managePermission}
-                            >
-                              Edit Client
-                            </LinkButton>
-                            <Button
-                              type="primary"
-                              icon={<DeleteOutlined />}
-                              danger
-                              disabled={!managePermission}
-                              onClick={() => setPendingDelete(item)}
-                            >
-                              Delete Client
-                            </Button>
-                          </Space>
-                        </Flex>,
-                      ]}
-                    >
-                      <div className="paragraph">
-                        <Row>
-                          <Col span={6}>
-                            <Typography.Text type="secondary">Callback URL</Typography.Text>
-                          </Col>
-                          <Col span={18}>
-                            <Paragraph copyable> {getCallBackUrl(item.attributes?.callback ?? item.id)} </Paragraph>
-                          </Col>
-                        </Row>
-                      </div>
-                      <Divider />
-                      <div className="paragraph">
-                        <Row>
-                          <Col span={6}>
-                            <Typography.Text type="secondary">API URL</Typography.Text>
-                          </Col>
-                          <Col span={18}>
-                            <Typography.Text type="secondary">{item.attributes?.apiUrl}</Typography.Text>
-                          </Col>
-                        </Row>
-                      </div>
-                      <Divider />
-                      <div className="paragraph">
-                        <Row>
-                          <Col span={6}>
-                            <Typography.Text type="secondary">Created</Typography.Text>
-                          </Col>
-                          <Col span={18}>
-                            <Typography.Text type="secondary">{item.attributes.createdDate}</Typography.Text>
-                          </Col>
-                        </Row>
-                      </div>
-                      <Divider />
-                      <div className="paragraph">
-                        <Row>
-                          <Col span={6}>
-                            {item.attributes.status !== "COMPLETED" ? (
-                              <Typography.Text type="secondary">
-                                Connect to {renderVCSType(item.attributes.vcsType)}
-                              </Typography.Text>
-                            ) : (
-                              <Typography.Text type="secondary">Connection</Typography.Text>
-                            )}
-                          </Col>
-                          <Col span={12}>
-                            {item.attributes.status !== "COMPLETED" ? (
-                              <Typography.Text type="secondary">
-                                Connecting to {renderVCSType(item.attributes.vcsType)} will take your{" "}
-                                {renderVCSType(item.attributes.vcsType)} user through the OAuth flow to create an
-                                authorization token for access to all repositories for this organization. This means
-                                that your currently logged in {renderVCSType(item.attributes.vcsType)} user token will
-                                be used for all {renderVCSType(item.attributes.vcsType)} API interactions by any
-                                Terrakube user anywhere within the scope of{" "}
-                                <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b>.
-                              </Typography.Text>
-                            ) : (
-                              <Typography.Text type="secondary">
-                                A connection was made on {item.attributes.createdDate} by authenticating via OAuth as{" "}
-                                {renderVCSType(item.attributes.vcsType)} user <b>{item.attributes.createdBy}</b>, which
-                                assigned an OAuth token for use by all Terrakube users in the{" "}
-                                <b>{sessionStorage.getItem(ORGANIZATION_NAME)}</b> organization.
-                              </Typography.Text>
-                            )}
-                          </Col>
-                          <Col span={6}>
-                            {item.attributes.status !== "COMPLETED" && item.attributes.connectionType === "OAUTH" ? (
-                              <Button
-                                type="primary"
-                                target="_blank"
-                                href={getConnectUrl(
-                                  item.attributes.vcsType,
-                                  item.attributes.clientId,
-                                  getCallBackUrl(item.attributes?.callback ?? item.id),
-                                  item.attributes.endpoint
-                                )}
-                                size="small"
-                              >
-                                Connect to {renderVCSType(item.attributes.vcsType)}
-                              </Button>
-                            ) : (
-                              <span />
-                            )}
-                          </Col>
-                        </Row>
-                      </div>
-                    </Card>
-                  </List.Item>
-                )}
-              />
-            )}
-          </SettingsSection>
+          {renderList()}
           <DeleteConfirmationModal
             open={pendingDelete !== null}
             title="Delete VCS provider"
             message={
               <>
-                Deleting the {pendingDelete && renderVCSType(pendingDelete.attributes.vcsType)} client{" "}
-                <strong>{pendingDelete?.attributes.name}</strong> will disconnect any workspaces currently using it.
-                This means that VCS changes will not trigger jobs on those workspaces.
+                Deleting <strong>{pendingDelete?.attributes.name}</strong> removes its stored credentials. It only works
+                when no workspace, module, policy set or shared repository webhook uses this provider. This cannot be
+                undone.
               </>
             }
-            okText="Delete"
+            confirmValue={pendingDelete?.attributes.name ?? ""}
+            okText="Delete VCS provider"
             onConfirm={() => {
-              if (pendingDelete) onDelete(pendingDelete.id);
+              if (pendingDelete) onDelete(pendingDelete);
               setPendingDelete(null);
             }}
             onCancel={() => setPendingDelete(null)}
@@ -302,7 +271,7 @@ export const VCSSettings = ({ vcsMode, vcsId, managePermission = true }: Props) 
       ) : mode === "new" ? (
         <AddVCS setMode={closeEditor} loadVCS={loadVCS} />
       ) : (
-        <EditVCS vcsId={editVcsId!} setMode={closeEditor} loadVCS={loadVCS} />
+        <EditVCS vcsId={vcsId!} setMode={closeEditor} loadVCS={loadVCS} />
       )}
     </div>
   );

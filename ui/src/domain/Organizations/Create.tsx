@@ -1,4 +1,4 @@
-import { Button, Form, Input, message, Space, ColorPicker } from "antd";
+import { Button, Flex, Form, Input, message, Space, ColorPicker } from "antd";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance from "../../config/axiosConfig";
@@ -138,11 +138,11 @@ export const CreateOrganization = ({ setOrganizationName }: Props) => {
         </Form.Item>
 
         <Form.Item>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Flex justify="flex-end">
             <Button type="primary" htmlType="submit" loading={submitting} disabled={submitting}>
               Create organization
             </Button>
-          </div>
+          </Flex>
         </Form.Item>
       </Form>
     </PageWrapper>

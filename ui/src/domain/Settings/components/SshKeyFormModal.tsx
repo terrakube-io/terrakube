@@ -1,13 +1,10 @@
-import { InfoCircleOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
-import { Form, Input, Select } from "antd";
+import { Form, Input, Select, Typography } from "antd";
 import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import "./ResourceCard.css";
 
 export type AddSshKeyFormValues = {
   name: string;
-} & UpdateSshKeyFormValues;
-
-export type UpdateSshKeyFormValues = {
   description: string;
   sshType: string;
   privateKey: string;
@@ -15,51 +12,52 @@ export type UpdateSshKeyFormValues = {
 
 type Props = {
   open: boolean;
-  mode: "create" | "edit";
-  sshKeyName?: string;
-  form: FormInstance<AddSshKeyFormValues | UpdateSshKeyFormValues>;
+  form: FormInstance<AddSshKeyFormValues>;
+  saving?: boolean;
   onCancel: () => void;
-  onSubmit: (values: AddSshKeyFormValues | UpdateSshKeyFormValues) => void;
+  onSubmit: (values: AddSshKeyFormValues) => void;
 };
 
-export default function SshKeyFormModal({ open, mode, sshKeyName, form, onCancel, onSubmit }: Props) {
+export default function SshKeyFormModal({ open, form, saving, onCancel, onSubmit }: Props) {
   return (
-    <CrudFormModal<AddSshKeyFormValues | UpdateSshKeyFormValues>
+    <CrudFormModal<AddSshKeyFormValues>
       open={open}
-      title={mode === "edit" ? "Edit Private SSH Key " + sshKeyName : "Add a new Private SSH Key"}
-      okText="Save SSH Key"
+      title="Add an SSH key"
+      okText="Add SSH key"
       form={form}
       formName="sshKey"
       onCancel={onCancel}
       onSubmit={onSubmit}
-      width="650px"
+      confirmLoading={saving}
     >
-      {mode === "create" && (
-        <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-      )}
-
-      <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+      <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
         <Input />
       </Form.Item>
-      <Form.Item name="sshType" label="SSH Type" rules={[{ required: true }]}>
-        <Select placeholder="Please select a ssh type">
-          <Select.Option value="rsa">RSA</Select.Option>
-          <Select.Option value="ed25519">ED25519</Select.Option>
-        </Select>
-      </Form.Item>
       <Form.Item
-        name="privateKey"
-        rules={[{ required: true }]}
-        label="Private SSH Key"
-        tooltip={{
-          title:
-            "Generate a new key with ssh-keygen -t rsa -m PEM and make sure the private key starts with -----BEGIN RSA PRIVATE KEY-----",
-          icon: <InfoCircleOutlined />,
-        }}
+        name="description"
+        label="Description"
+        rules={[{ required: true, message: "Description is required" }]}
       >
-        <Input.TextArea rows={6} />
+        <Input />
+      </Form.Item>
+      <Form.Item name="sshType" label="Key type" rules={[{ required: true, message: "Key type is required" }]}>
+        <Select
+          placeholder="Select a key type"
+          options={[
+            { value: "rsa", label: "RSA" },
+            { value: "ed25519", label: "ED25519" },
+          ]}
+        />
+      </Form.Item>
+      <Form.Item label="Private key" htmlFor="ssh-private-key" required>
+        <Typography.Paragraph type="secondary" className="modal-field-hint">
+          Paste the whole private key. Generate RSA keys with{" "}
+          <Typography.Text code>ssh-keygen -t rsa -m PEM</Typography.Text> so they start with{" "}
+          <Typography.Text code>-----BEGIN RSA PRIVATE KEY-----</Typography.Text>.
+        </Typography.Paragraph>
+        <Form.Item name="privateKey" noStyle rules={[{ required: true, message: "Private key is required" }]}>
+          <Input.TextArea id="ssh-private-key" className="resource-mono" rows={6} autoComplete="off" />
+        </Form.Item>
       </Form.Item>
     </CrudFormModal>
   );

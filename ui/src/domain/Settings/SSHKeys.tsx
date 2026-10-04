@@ -1,5 +1,5 @@
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, List, message } from "antd";
+import { DeleteOutlined, KeyOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Form, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -8,16 +8,16 @@ import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Loading } from "@/components/feedback/Loading";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import SshKeyFormModal, { AddSshKeyFormValues, UpdateSshKeyFormValues } from "./components/SshKeyFormModal";
+import SshKeyFormModal, { AddSshKeyFormValues } from "./components/SshKeyFormModal";
+import ResourceCard from "./components/ResourceCard";
+
+const plural = (count: number, noun: string) => (count > 0 ? `${count} ${noun}${count === 1 ? "" : "s"}` : "");
 
 type Params = {
   orgid: string;
 };
-
-type AddSshKeyForm = AddSshKeyFormValues;
-
-type UpdateSshKeyForm = UpdateSshKeyFormValues;
 
 type Props = {
   managePermission?: boolean;
@@ -29,35 +29,40 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
-  const [sshKeyName, setSSHKeyName] = useState<string>();
-  const [mode, setMode] = useState("create");
-  const [sshKeyId] = useState([]);
+  const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SshKey | null>(null);
-  const [form] = Form.useForm<AddSshKeyForm | UpdateSshKeyForm>();
-
-  const onCancel = () => {
-    setVisible(false);
-  };
+  const [form] = Form.useForm<AddSshKeyFormValues>();
 
   const onNew = () => {
     form.resetFields();
     setVisible(true);
-    setSSHKeyName("");
-    setMode("create");
   };
 
-  const onDelete = (id: string) => {
-    axiosInstance
-      .delete(`organization/${orgid}/ssh/${id}`)
-      .then(() => {
-        loadSSHKeys();
+  const onDelete = (key: SshKey) => {
+    const count = (path: string) => axiosInstance.get(path).then((response) => response.data.data?.length ?? 0);
+    Promise.all([
+      count(`organization/${orgid}/workspace?filter[workspace]=ssh.id==${key.id}&fields[workspace]=name`),
+      count(`organization/${orgid}/module?filter[module]=ssh.id==${key.id}&fields[module]=name`),
+    ])
+      .then(([workspaces, modules]) => {
+        const usage = [plural(workspaces, "workspace"), plural(modules, "module")].filter(Boolean);
+        if (usage.length > 0) {
+          message.error(
+            `${key.attributes.name} is used by ${new Intl.ListFormat("en").format(usage)}. Move them to another SSH key first.`
+          );
+          return;
+        }
+        return axiosInstance.delete(`organization/${orgid}/ssh/${key.id}`).then(() => {
+          message.success(`SSH key ${key.attributes.name} deleted`);
+          loadSSHKeys();
+        });
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not delete the SSH key: ${getErrorMessage(err)}`);
       });
   };
 
-  const onCreate = (values: AddSshKeyForm) => {
+  const onCreate = (values: AddSshKeyFormValues) => {
     const body = {
       data: {
         type: "ssh",
@@ -70,49 +75,23 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
       },
     };
 
+    setSaving(true);
     axiosInstance
       .post(`organization/${orgid}/ssh`, body, {
         headers: {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
-        loadSSHKeys();
-        setVisible(false);
-        form.resetFields();
-      })
-      .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
-  };
-
-  const onUpdate = (values: UpdateSshKeyForm) => {
-    const body = {
-      data: {
-        type: "ssh",
-        id: sshKeyId,
-        attributes: {
-          description: values.description,
-          sshType: values.sshType,
-          privateKey: values.privateKey,
-        },
-      },
-    };
-
-    axiosInstance
-      .patch(`organization/${orgid}/ssh/${sshKeyId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
       .then(() => {
+        message.success(`SSH key ${values.name} added`);
         loadSSHKeys();
         setVisible(false);
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
+        message.error(`Could not add the SSH key: ${getErrorMessage(err)}`);
+      })
+      .finally(() => setSaving(false));
   };
 
   const loadSSHKeys = () => {
@@ -126,7 +105,7 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load SSH keys");
+          message.error(`Could not load SSH keys: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
@@ -136,6 +115,54 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
     loadSSHKeys();
   }, [orgid]);
 
+  const renderList = () => {
+    if (loading) return <Loading loading description="Loading SSH keys..." />;
+    if (sshKeys.length === 0) {
+      return (
+        <EmptyState simple description="No SSH keys yet. Add one to download modules from private Git repositories.">
+          {managePermission && (
+            <Button icon={<PlusOutlined />} onClick={onNew}>
+              Add an SSH key
+            </Button>
+          )}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <Typography.Title level={4} className="resource-list-title">
+          SSH keys ({sshKeys.length})
+        </Typography.Title>
+        <div className="resource-list">
+          {sshKeys.map((item) => (
+            <ResourceCard
+              key={item.id}
+              icon={<KeyOutlined />}
+              name={item.attributes.name}
+              tags={
+                item.attributes.sshType && <Tag className="resource-mono">{item.attributes.sshType.toUpperCase()}</Tag>
+              }
+              actions={
+                <Tooltip title="Delete">
+                  <Button
+                    icon={<DeleteOutlined />}
+                    disabled={!managePermission}
+                    aria-label={`Delete SSH key ${item.attributes.name}`}
+                    onClick={() => setPendingDelete(item)}
+                  />
+                </Tooltip>
+              }
+            >
+              {item.attributes.description && (
+                <Typography.Text className="resource-card-meta">{item.attributes.description}</Typography.Text>
+              )}
+            </ResourceCard>
+          ))}
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="setting">
       {error ? (
@@ -144,56 +171,23 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
         <>
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/vcs-providers/ssh"
-            title="SSH Keys"
-            description="Terrakube uses these private SSH keys for downloading private Terraform modules with Git-based sources during a Terraform run. SSH keys for downloading modules are assigned per-workspace."
+            title="SSH keys"
+            description="Workspaces use these keys to download modules from private Git repositories."
+            divider={false}
             actions={
-              <Button
-                type="primary"
-                onClick={onNew}
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Add a Private SSH Key
+              <Button type="primary" onClick={onNew} icon={<PlusOutlined />} disabled={!managePermission}>
+                Add an SSH key
               </Button>
             }
           />
-          {loading ? (
-            <Loading loading description="Loading SSH keys..." />
-          ) : (
-            <List
-              itemLayout="horizontal"
-              dataSource={sshKeys}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      icon={<DeleteOutlined />}
-                      type="link"
-                      danger
-                      disabled={!managePermission}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      Delete
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                </List.Item>
-              )}
-            />
-          )}
+          {renderList()}
 
           <SshKeyFormModal
             open={visible}
-            mode={mode === "create" ? "create" : "edit"}
-            sshKeyName={sshKeyName}
             form={form}
-            onCancel={onCancel}
-            onSubmit={(values) => {
-              if (mode === "create") onCreate(values as AddSshKeyForm);
-              else onUpdate(values);
-            }}
+            saving={saving}
+            onCancel={() => setVisible(false)}
+            onSubmit={onCreate}
           />
 
           <DeleteConfirmationModal
@@ -201,13 +195,14 @@ export const SSHKeysSettings = ({ managePermission = true }: Props) => {
             title="Delete SSH key"
             message={
               <>
-                Deleting the SSH key <strong>{pendingDelete?.attributes.name}</strong> cannot be undone. Any workspaces
-                configured with this SSH key will no longer use it to download Terraform modules.
+                <strong>{pendingDelete?.attributes.name}</strong> can only be deleted when no workspace or module uses
+                it. This cannot be undone.
               </>
             }
-            okText="Delete"
+            confirmValue={pendingDelete?.attributes.name ?? ""}
+            okText="Delete SSH key"
             onConfirm={() => {
-              if (pendingDelete) onDelete(pendingDelete.id);
+              if (pendingDelete) onDelete(pendingDelete);
               setPendingDelete(null);
             }}
             onCancel={() => setPendingDelete(null)}

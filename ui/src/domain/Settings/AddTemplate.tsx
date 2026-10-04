@@ -1,7 +1,6 @@
-import type { OnMount, OnValidate } from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Flex, Form, Input, List, message, Row, Space, Steps, Typography } from "antd";
+import { Button, Card, Form, Input, List, message, Typography } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -9,12 +8,12 @@ import axiosInstance from "../../config/axiosConfig";
 import { TemplateAttributes } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./EditorForm.css";
+import "./AddTemplate.css";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
 const { Meta } = Card;
-const validateMessages = {
-  required: "${label} is required!",
-};
 
 type Props = {
   setMode: (mode: string) => void;
@@ -22,7 +21,6 @@ type Props = {
 };
 
 type IStandaloneCodeEditor = Parameters<OnMount>[0];
-type IMarkerArray = Parameters<OnValidate>[0];
 
 type AddTemplateForm = {
   name: string;
@@ -32,7 +30,7 @@ type AddTemplateForm = {
 };
 export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
   const { orgid } = useParams();
-  const [current, setCurrent] = useState(0);
+  const [chosen, setChosen] = useState(false);
   const [tcl, setTCL] = useState("");
   const [templates, setTemplates] = useState<TemplateAttributes[]>([]);
   const editorRef = useRef<IStandaloneCodeEditor>(null);
@@ -41,16 +39,10 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
     editorRef.current = editor;
   }
 
-  const handleChange = (currentVal: number) => {
-    if (current === 1 && editorRef.current) {
-      setTCL(editorRef.current.getValue());
-    }
-    setCurrent(currentVal);
-  };
   const handleClick = (item: TemplateAttributes) => {
     const buff = Buffer.from(item.tcl, "base64");
     setTCL(buff.toString("ascii"));
-    setCurrent(1);
+    setChosen(true);
   };
 
   useEffect(() => {
@@ -61,7 +53,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
     //TODO: Use github repo to get Templates
     const templates: TemplateAttributes[] = [
       {
-        name: "Blank Template",
+        name: "Blank template",
         description: "Create an empty template. So you can define your template from scratch.",
         tcl: "ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIG5hbWU6ICJBcHBseSIKICAgIHN0ZXA6IDIwMA==",
         image: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/No_image.svg/2048px-No_image.svg.png",
@@ -105,15 +97,6 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
     setTemplates(templates);
   };
 
-  const handleContinue = () => {
-    setCurrent(2);
-    setTCL(editorRef.current.getValue());
-  };
-
-  function handleEditorValidation(markers: IMarkerArray) {
-    markers.forEach((marker) => console.log("onValidate:", marker.message));
-  }
-
   const onFinish = (values: AddTemplateForm) => {
     const body = {
       data: {
@@ -121,7 +104,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
         attributes: {
           name: values.name,
           description: values.description,
-          tcl: Buffer.from(tcl).toString("base64"),
+          tcl: Buffer.from(editorRef.current ? editorRef.current.getValue() : tcl).toString("base64"),
           version: "1.0.0",
         },
       },
@@ -152,25 +135,13 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
     <div>
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations/templates"
-        title="Create a new Template"
-        description="Templates allow you to define a custom flow so you can run any tool before or after terraform plan/apply/destroy."
+        title="Create template"
+        description="A template is a job flow: the steps a run executes before or after plan, apply and destroy."
       />
-      <Steps
-        direction="horizontal"
-        size="small"
-        current={current}
-        onChange={handleChange}
-        style={{ maxWidth: 960, margin: "8px 0 32px" }}
-        items={[
-          { title: "Choose Type", description: "Pick a starting point" },
-          { title: "Define Template", description: "Write the job flow" },
-          { title: "Configure Settings", description: "Name and create" },
-        ]}
-      />
-      {current == 0 && (
+      {!chosen ? (
         <SettingsSection
           maxWidth="100%"
-          title="Choose your template"
+          title="Start from"
           description="Start from a blank template or from one of the built-in tool integrations."
         >
           <List
@@ -180,18 +151,31 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
               <List.Item>
                 <Card
                   hoverable
-                  className="template-card"
+                  className="template-card template-card-flat"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Start from ${item.name}`}
                   onClick={() => handleClick(item)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleClick(item);
+                    }
+                  }}
                   cover={
                     <div className="template-card-cover">
-                      <img alt={item.name} src={item.image} />
+                      <img alt="" src={item.image} />
                     </div>
                   }
                 >
                   <Meta
                     title={item.name}
                     description={
-                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                      <Typography.Paragraph
+                        type="secondary"
+                        ellipsis={{ rows: 3 }}
+                        className="template-card-description"
+                      >
                         {item.description}
                       </Typography.Paragraph>
                     }
@@ -201,63 +185,41 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
             )}
           />
         </SettingsSection>
-      )}
-      {current == 1 && (
-        <>
+      ) : (
+        <SettingsForm<AddTemplateForm>
+          className="editor-form"
+          name="create-template"
+          onFinish={onFinish}
+          saveLabel="Create template"
+        >
+          <div className="editor-form-fields">
+            <SettingsSection title="Identity">
+              <Form.Item
+                name="name"
+                label="Name"
+                extra="Shown in the workspace when someone starts a job."
+                rules={[{ required: true, message: "Enter a name for the template" }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item name="description" label="Description">
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+              </Form.Item>
+            </SettingsSection>
+          </div>
           <SettingsSection
-            maxWidth={960}
-            title="Set up template"
-            description="Define the YAML flow this template runs."
+            maxWidth="100%"
+            title="Definition"
+            description="The YAML flow this template runs."
+            extra={
+              <Button type="link" onClick={() => setChosen(false)}>
+                Choose another starting point
+              </Button>
+            }
           >
-            <CodeEditor
-              height="45vh"
-              onMount={handleEditorDidMount}
-              onValidate={handleEditorValidation}
-              defaultLanguage="yaml"
-              defaultValue={tcl}
-            />
+            <CodeEditor height="45vh" onMount={handleEditorDidMount} defaultLanguage="yaml" defaultValue={tcl} />
           </SettingsSection>
-          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-            <Space>
-              <Button onClick={() => handleChange(0)}>Back</Button>
-              <Button type="primary" onClick={handleContinue} htmlType="button">
-                Continue
-              </Button>
-            </Space>
-          </Flex>
-        </>
-      )}
-      {current == 2 && (
-        <Form onFinish={onFinish} validateMessages={validateMessages} name="create-template" layout="vertical">
-          <SettingsSection maxWidth={960} title="Configure settings">
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="name"
-                  label="Name"
-                  tooltip={{
-                    title: "A name for your Template. This will appear in the workspaces when you execute a new job.",
-                    icon: <InfoCircleOutlined />,
-                  }}
-                  rules={[{ required: true }]}
-                >
-                  <Input />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Form.Item name="description" label="Description" style={{ marginBottom: 0 }}>
-              <Input.TextArea rows={2} />
-            </Form.Item>
-          </SettingsSection>
-          <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-            <Space>
-              <Button onClick={() => setCurrent(1)}>Back</Button>
-              <Button type="primary" htmlType="submit">
-                Create Template
-              </Button>
-            </Space>
-          </Flex>
-        </Form>
+        </SettingsForm>
       )}
     </div>
   );

@@ -1,0 +1,10 @@
+/* Cards view: a full-card link layered over the workspace card. */
+.ant-list-item.workspace-card-item {
+  position: relative;
+}
+
+.workspace-card-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}

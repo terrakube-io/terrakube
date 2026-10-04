@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ORGANIZATION_NAME } from "../../config/actionTypes";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
 import { ActionSettings } from "./Actions";
 import { GeneralSettings } from "./General";
 import { GlobalVariablesSettings } from "./GlobalVariables";
@@ -38,17 +38,17 @@ const SETTINGS_TAB_PATHS: Record<string, string> = {
 const SETTINGS_TAB_LABELS: Record<string, string> = {
   "1": "General",
   "2": "Teams",
-  "3": "Global Variables",
-  "4": "VCS Providers",
+  "3": "Global variables",
+  "4": "VCS providers",
   "5": "Templates",
-  "6": "SSH Keys",
+  "6": "SSH keys",
   "7": "Tags",
   "8": "Agents",
-  "9": "Variable Collections",
+  "9": "Variable collections",
   "10": "Actions",
-  "11": "Federated Credentials",
+  "11": "Federated credentials",
   "12": "Notifications",
-  "13": "Policy Sets",
+  "13": "Policy sets",
 };
 
 type Props = {
@@ -71,6 +71,7 @@ export const OrganizationSettings = ({
   collectionId,
 }: Props) => {
   const { orgid } = useParams();
+  const organizationName = useOrganizationName(orgid);
   const [activeKey, setActiveKey] = useState(selectedTab || "1");
   const { permissions } = useOrgPermissions();
 
@@ -168,10 +169,10 @@ export const OrganizationSettings = ({
 
   return (
     <PageWrapper
-      title="Organization Settings"
+      title="Organization settings"
       showTitle={false}
       breadcrumbs={[
-        { label: sessionStorage.getItem(ORGANIZATION_NAME) ?? "", path: "/" },
+        { label: organizationName ?? "", path: "/" },
         { label: "Settings", path: `/organizations/${orgid}/settings/general` },
         {
           label: SETTINGS_TAB_LABELS[activeKey] ?? "General",

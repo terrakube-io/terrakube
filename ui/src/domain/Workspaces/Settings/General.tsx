@@ -1,4 +1,4 @@
-import { AutoComplete, Button, Col, Flex, Form, Input, Row, Select, Space, Spin, message } from "antd";
+import { AutoComplete, Form, Input, Select, Space, Spin, message } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -18,6 +18,9 @@ import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import { IdField } from "@/components/settings/IdField";
 import VcsLogo from "@/components/display/VcsLogo";
 
 type Props = {
@@ -135,9 +138,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       ],
     };
 
-    const requests: Promise<any>[] = [
-      axiosInstance.post("/operations", body, atomicHeader),
-    ];
+    const requests: Promise<any>[] = [axiosInstance.post("/operations", body, atomicHeader)];
 
     let bodyAgent;
 
@@ -155,14 +156,22 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
     }
 
     requests.push(
-      axiosInstance.patch(`/organization/${organizationId}/workspace/${id}/relationships/agent`, bodyAgent, genericHeader)
+      axiosInstance.patch(
+        `/organization/${organizationId}/workspace/${id}/relationships/agent`,
+        bodyAgent,
+        genericHeader
+      )
     );
 
     const bodyProject =
       values.project && values.project !== "none" ? { data: { type: "project", id: values.project } } : { data: null };
 
     requests.push(
-      axiosInstance.patch(`/organization/${organizationId}/workspace/${id}/relationships/project`, bodyProject, genericHeader)
+      axiosInstance.patch(
+        `/organization/${organizationId}/workspace/${id}/relationships/project`,
+        bodyProject,
+        genericHeader
+      )
     );
 
     const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
@@ -201,17 +210,19 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
     }
   };
 
+  const iacName = getIaCNameById(selectedIac || workspaceData.attributes?.iacType);
+
   return (
-    <div style={{ width: "100%" }} className="generalSettings">
+    <div className="generalSettings">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces"
-        title="General Settings"
-        description="Adjust the settings for this workspace. These settings control how the workspace behaves, including execution mode, IaC configuration, and security options."
+        title="General settings"
+        description="Adjust how this workspace behaves: identity, execution mode, IaC tool and version, VCS provider, default template and project."
       />
       <Spin spinning={waiting}>
-        <Form
+        <SettingsForm
           onFinish={onFinish}
-          requiredMark={false}
+          saveDisabled={!manageWorkspace}
           initialValues={{
             name: workspaceData.attributes?.name,
             description: workspaceData.attributes?.description,
@@ -228,265 +239,181 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             project: workspaceData.relationships.project?.data?.id ?? "none",
             vcs: workspaceData.relationships?.vcs?.data?.id ?? "public",
           }}
-          layout="vertical"
           name="form-settings"
         >
-          <SettingsSection title="Identity" maxWidth={960}>
-            <Row gutter={16}>
-              <Col xs={24} md={8}>
-                <Form.Item
-                  name="name"
-                  rules={[
-                    { required: true },
-                    {
-                      pattern: /^[A-Za-z0-9_-]+$/,
-                      message: "Only dashes, underscores, and alphanumeric characters are permitted.",
-                    },
-                  ]}
-                  label="Name"
-                >
-                  <Input disabled={!manageWorkspace} />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={16}>
-                <Form.Item valuePropName="value" name="description" label="Description" extra="Optional">
-                  <Input.TextArea
-                    autoSize={{ minRows: 2, maxRows: 5 }}
-                    placeholder="Workspace description"
-                    disabled={!manageWorkspace}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
+          <SettingsSection title="Identity">
+            <IdField id="workspace-id" value={id} copiedMessage="Workspace ID copied" />
+            <Form.Item
+              name="name"
+              rules={[
+                { required: true },
+                {
+                  pattern: /^[A-Za-z0-9_-]+$/,
+                  message: "Only dashes, underscores, and alphanumeric characters are permitted.",
+                },
+              ]}
+              label="Name"
+            >
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
+            <Form.Item name="description" label="Description" extra="Optional">
+              <Input.TextArea
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                placeholder="Workspace description"
+                disabled={!manageWorkspace}
+              />
+            </Form.Item>
           </SettingsSection>
 
           <SettingsSection
-            title="Execution Mode"
-            description="Select the execution mode for this workspace. Remote indicates Terrakube will run plans and applies. Local indicates users should run locally with remote state."
-            maxWidth={960}
+            title="Execution mode"
+            description="Informational only: it tells users where plans and applies are expected to run."
           >
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="executionMode"
-                  label="Execution Mode"
-                  extra={
-                    "Local indicates users should run " +
-                    getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-                    " " +
-                    "locally with remote state/cloud block and just upload the state to Terrakube. Remote " +
-                    "indicates Terrakube will run plans and apply. Informational only."
-                  }
-                >
-                  <Select defaultValue={workspaceData.attributes.executionMode} disabled={!manageWorkspace}>
-                    <Option key="remote">remote</Option>
-                    <Option key="local">local</Option>
-                  </Select>
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="executorAgent"
-                  label="Executor agent to run the job"
-                  extra="Use this option to select which executor agent will run the job remotely"
-                >
-                  <Select
-                    defaultValue={workspaceData.attributes.moduleSshKey}
-                    placeholder="select Job Agent"
-                    disabled={!manageWorkspace}
-                  >
-                    {agentList.map(function (agentKey) {
-                      return <Option key={agentKey?.id}>{agentKey?.attributes?.name}</Option>;
-                    })}
-                    <Option key="default">default</Option>
-                  </Select>
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item name="executionMode" label="Execution mode">
+              <RadioChoices
+                disabled={!manageWorkspace}
+                options={[
+                  { value: "remote", label: "Remote", help: "Terrakube runs plans and applies." },
+                  {
+                    value: "local",
+                    label: "Local",
+                    help: `Users run ${iacName} locally with the remote state or cloud block and upload the state to Terrakube.`,
+                  },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="executorAgent"
+              label="Executor agent"
+              extra="The agent that runs remote jobs for this workspace."
+            >
+              <Select placeholder="Select an executor agent" disabled={!manageWorkspace}>
+                {agentList.map(function (agentKey) {
+                  return <Option key={agentKey?.id}>{agentKey?.attributes?.name}</Option>;
+                })}
+                <Option key="default">default</Option>
+              </Select>
+            </Form.Item>
           </SettingsSection>
 
           <SettingsSection
-            title="IaC Configuration"
+            title="IaC configuration"
             description="Configure the Infrastructure as Code tool and version used for this workspace."
-            maxWidth={960}
           >
-            <Row gutter={16}>
-              <Col xs={24} md={8}>
-                <Form.Item
-                  name="iacType"
-                  label="Select IaC type "
-                  extra="IaC type when running the workspace (Example: terraform or tofu) "
-                >
-                  <Select
-                    defaultValue={workspaceData.attributes?.iacType}
-                    onChange={handleIacChange}
-                    disabled={!manageWorkspace}
-                  >
-                    {iacTypes.map(function (iacType) {
-                      return (
-                        <Option key={iacType.id}>
-                          {getIaCIconById(iacType.id)} {iacType.name}{" "}
-                        </Option>
-                      );
-                    })}
-                  </Select>
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={16}>
-                <Form.Item
-                  name="terraformVersion"
-                  label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Version"}
-                  rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
-                  extra={
-                    "The version of " +
-                    getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-                    " to use for this workspace. It will not upgrade automatically. Version constraints are also supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
-                  }
-                >
-                  <AutoComplete
-                    disabled={!manageWorkspace}
-                    options={terraformVersions.map((v) => ({ value: v }))}
-                    filterOption={(input, option) => (option?.value ?? "").includes(input)}
-                    placeholder="e.g. 1.11.0 or ~>1.11.0"
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="folder"
-                  label={getIaCNameById(selectedIac || workspaceData.attributes?.iacType) + " Working Directory"}
-                  extra={
-                    "The directory that " +
-                    getIaCNameById(selectedIac || workspaceData.attributes?.iacType) +
-                    " will execute within. This defaults to the root of your repository and is typically set to a subdirectory matching the environment when multiple environments exist within the same repository."
-                  }
-                >
-                  <Input disabled={!manageWorkspace} />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="branch"
-                  label="Default Branch"
-                  tooltip="The branch from which the runs are kicked off, this is used for runs issued from the UI."
-                  extra="Don't update the value when using CLI Driven workflows. This is only used in VCS driven workflow."
-                >
-                  <Input disabled={!manageWorkspace} />
-                </Form.Item>
-              </Col>
-            </Row>
-          </SettingsSection>
-
-          <SettingsSection
-            title="Version Control System"
-            description="Select the Version Control System provider connected to this workspace repository. Choose Public if this workspace clones a public Git repository without credentials."
-            maxWidth={960}
-          >
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="vcs"
-                  label="VCS Provider"
-                  extra={
-                    vcsList.length === 0 ? (
-                      <>
-                        No VCS providers configured.{" "}
-                        {orgPermissions.manageVcs && (
-                          <Link to={`/organizations/${organizationId}/settings/vcs`}>
-                            Configure a VCS provider
-                          </Link>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {orgPermissions.manageVcs && (
-                          <Link to={`/organizations/${organizationId}/settings/vcs`}>
-                            Manage organization VCS providers
-                          </Link>
-                        )}
-                      </>
-                    )
-                  }
-                >
-                  <Select placeholder="Select VCS Provider" disabled={!manageWorkspace}>
-                    <Option key="public" value="public">
-                      <Space>
-                        <GlobalOutlined />
-                        <span>Public (No VCS connection)</span>
-                      </Space>
+            <Form.Item name="iacType" label="IaC type">
+              <Select onChange={handleIacChange} disabled={!manageWorkspace}>
+                {iacTypes.map(function (iacType) {
+                  return (
+                    <Option key={iacType.id}>
+                      {getIaCIconById(iacType.id)} {iacType.name}
                     </Option>
-                    {vcsList.map((vcsItem) => (
-                      <Option key={vcsItem.id} value={vcsItem.id}>
-                        <Space>
-                          <VcsLogo type={vcsItem.attributes.vcsType} size={16} />
-                          <span>{vcsItem.attributes.name}</span>
-                        </Space>
-                      </Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-              </Col>
-            </Row>
+                  );
+                })}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="terraformVersion"
+              label={`${iacName} version`}
+              rules={[{ validator: validateTerraformVersion(terraformVersions) }]}
+              extra="It will not upgrade automatically. Version constraints are supported (e.g. ~>1.11.0, >=1.5.7 <1.9.0)."
+            >
+              <AutoComplete
+                disabled={!manageWorkspace}
+                options={terraformVersions.map((v) => ({ value: v }))}
+                filterOption={(input, option) => (option?.value ?? "").includes(input)}
+                placeholder="e.g. 1.11.0 or ~>1.11.0"
+              />
+            </Form.Item>
+            <Form.Item
+              name="folder"
+              label="Working directory"
+              extra={`The directory ${iacName} runs in, relative to the repository root. Use a subdirectory when one repository holds several environments.`}
+            >
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
+            <Form.Item
+              name="branch"
+              label="Default branch"
+              extra="The branch runs started from the UI use. Only applies to the VCS-driven workflow; leave it as is for CLI-driven workspaces."
+            >
+              <Input disabled={!manageWorkspace} />
+            </Form.Item>
           </SettingsSection>
 
           <SettingsSection
-            title="Default Template"
-            description={
-              <>
-                Template used for the <code>terrakube apply</code> PR comment command, and to pre-fill the template when
-                manually creating a run.
-              </>
-            }
+            title="Version control system"
+            description="Choose Public if this workspace clones a public Git repository without credentials."
           >
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item name="defaultTemplate" label="Template">
-                  <Select
-                    defaultValue={workspaceData.attributes.defaultTemplate}
-                    placeholder="select default template"
-                    disabled={!manageWorkspace}
-                  >
-                    {orgTemplates.map(function (template) {
-                      return <Option key={template?.id}>{template?.attributes?.name}</Option>;
-                    })}
-                  </Select>
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item
+              name="vcs"
+              label="VCS provider"
+              extra={
+                vcsList.length === 0 ? (
+                  <>
+                    No VCS providers configured.{" "}
+                    {orgPermissions.manageVcs && (
+                      <Link to={`/organizations/${organizationId}/settings/vcs`}>Configure a VCS provider</Link>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {orgPermissions.manageVcs && (
+                      <Link to={`/organizations/${organizationId}/settings/vcs`}>
+                        Manage organization VCS providers
+                      </Link>
+                    )}
+                  </>
+                )
+              }
+            >
+              <Select placeholder="Select VCS Provider" disabled={!manageWorkspace}>
+                <Option key="public" value="public">
+                  <Space>
+                    <GlobalOutlined />
+                    <span>Public (No VCS connection)</span>
+                  </Space>
+                </Option>
+                {vcsList.map((vcsItem) => (
+                  <Option key={vcsItem.id} value={vcsItem.id}>
+                    <Space>
+                      <VcsLogo type={vcsItem.attributes.vcsType} size={16} />
+                      <span>{vcsItem.attributes.name}</span>
+                    </Space>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
           </SettingsSection>
 
-          <SettingsSection
-            title="Project"
-            description="Assign this workspace to a project for easier organization and filtering."
-          >
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="project"
-                  label="Project"
-                  extra="Optional. Assigning a project lets you group and filter workspaces."
-                >
-                  <Select placeholder="No project" disabled={!manageWorkspace}>
-                    {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
-                    {projectList.map((p) => (
-                      <Option key={p.id}>{p.name}</Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-              </Col>
-            </Row>
+          <SettingsSection title="Default template">
+            <Form.Item
+              name="defaultTemplate"
+              label="Template"
+              extra={
+                <>
+                  Used by the <code>terrakube apply</code> PR comment command and pre-filled when you start a run.
+                </>
+              }
+            >
+              <Select placeholder="Select a default template" disabled={!manageWorkspace}>
+                {orgTemplates.map(function (template) {
+                  return <Option key={template?.id}>{template?.attributes?.name}</Option>;
+                })}
+              </Select>
+            </Form.Item>
           </SettingsSection>
 
-          <Form.Item>
-            <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-              <Button type="primary" htmlType="submit" disabled={!manageWorkspace}>
-                Save settings
-              </Button>
-            </Flex>
-          </Form.Item>
-        </Form>
+          <SettingsSection title="Project">
+            <Form.Item name="project" label="Project" extra="Optional. Projects group and filter workspaces.">
+              <Select placeholder="No project" disabled={!manageWorkspace}>
+                {orgPermissions.manageWorkspace && <Option key="none">(No project)</Option>}
+                {projectList.map((p) => (
+                  <Option key={p.id}>{p.name}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </SettingsSection>
+        </SettingsForm>
       </Spin>
     </div>
   );

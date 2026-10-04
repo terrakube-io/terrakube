@@ -1,0 +1,56 @@
+/* Filter toolbars (policy sets, exemptions). Compound selectors outrank antd's own width rules. */
+.policy-exemption-filters {
+  margin-bottom: 16px;
+}
+
+.ant-input-affix-wrapper.policy-filter-search {
+  width: 220px;
+}
+
+.ant-select.policy-filter-select-narrow {
+  min-width: 140px;
+}
+
+.ant-select.policy-filter-select {
+  min-width: 160px;
+}
+
+.ant-select.policy-filter-select-wide {
+  min-width: 180px;
+}
+
+/* Exemption modal */
+.policy-exemption-indefinite {
+  margin-bottom: 16px;
+}
+
+.ant-typography.policy-exemption-indefinite-label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.policy-exemption-durations {
+  margin-top: 4px;
+}
+
+.ant-picker.policy-exemption-expiry {
+  width: 100%;
+}
+
+/* Tables */
+.ant-typography.policy-rule-id {
+  min-width: 0;
+}
+
+.ant-tag.policy-inherited-tag {
+  align-self: flex-start;
+}
+
+.policy-set-table-link {
+  font-weight: 500;
+}
+
+.ant-input-affix-wrapper.policy-parameter-search {
+  max-width: 320px;
+  margin-bottom: 16px;
+}

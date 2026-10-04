@@ -18,37 +18,37 @@ type JobStatusGroup = {
 export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
   {
     key: "needs-attention",
-    label: "Needs Attention",
-    color: "orange",
+    label: "Needs attention",
+    color: "warning",
     icon: ClockCircleOutlined,
     statuses: [
       {
         value: JobStatus.WaitingApproval,
-        label: "Waiting for Approval",
-        hint: "Includes manual run approvals and OPA Soft-Mandatory policy reviews",
+        label: "Waiting for approval",
+        hint: "Includes manual run approvals and soft-mandatory policy reviews",
       },
     ],
   },
   {
     key: "completed",
     label: "Completed",
-    color: "green",
+    color: "success",
     icon: CheckCircleOutlined,
     statuses: [
       { value: JobStatus.Completed, label: "Completed" },
-      { value: JobStatus.NoChanges, label: "Completed (No Changes)" },
+      { value: JobStatus.NoChanges, label: "Completed (no changes)" },
     ],
   },
   {
     key: "errored",
     label: "Errored",
-    color: "red",
+    color: "error",
     icon: ExclamationCircleOutlined,
     statuses: [
       {
         value: JobStatus.Failed,
         label: "Failed",
-        hint: "Includes run errors and OPA Hard-Mandatory policy violations",
+        hint: "Includes run errors and hard-mandatory policy violations",
       },
       { value: JobStatus.Rejected, label: "Rejected" },
       { value: JobStatus.Cancelled, label: "Cancelled" },
@@ -56,8 +56,8 @@ export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
   },
   {
     key: "in-progress",
-    label: "In Progress",
-    color: "blue",
+    label: "In progress",
+    color: "processing",
     icon: SyncOutlined,
     statuses: [
       { value: JobStatus.Pending, label: "Pending" },
@@ -72,9 +72,9 @@ export const JOB_STATUS_GROUPS: JobStatusGroup[] = [
     color: "default",
     icon: QuestionCircleOutlined,
     statuses: [
-      { value: JobStatus.NotExecuted, label: "Not Executed" },
+      { value: JobStatus.NotExecuted, label: "Not executed" },
       { value: JobStatus.Unknown, label: "Unknown" },
-      { value: JobStatus.NeverExecuted, label: "Never Executed" },
+      { value: JobStatus.NeverExecuted, label: "Never executed" },
     ],
   },
 ];

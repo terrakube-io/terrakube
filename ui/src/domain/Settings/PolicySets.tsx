@@ -1,22 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  Card,
-  Empty,
-  List,
-  Tabs,
-  Typography,
-  message,
-  theme,
-} from "antd";
-import {
-  PlusOutlined,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
+import { Button, List, Tabs, message } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Loading } from "@/components/feedback/Loading";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { CreateEditPolicySet } from "./CreateEditPolicySet";
 import { PolicyExemptionsSettings } from "./PolicyExemptions";
@@ -28,8 +17,7 @@ import {
   getStoredPolicySetsViewMode,
 } from "./components";
 import "./Settings.css";
-
-const { Paragraph } = Typography;
+import "./PolicySets.css";
 
 type Props = {
   editorMode?: "new" | "edit";
@@ -37,16 +25,11 @@ type Props = {
   managePermission?: boolean;
 };
 
-export const PolicySetsSettings: React.FC<Props> = ({
-  editorMode,
-  editorId,
-  managePermission = true,
-}) => {
+export const PolicySetsSettings: React.FC<Props> = ({ editorMode, editorId, managePermission = true }) => {
   const { orgid } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") || "sets";
-  const { token } = theme.useToken();
 
   const [policySets, setPolicySets] = useState<any[]>([]);
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
@@ -155,8 +138,7 @@ export const PolicySetsSettings: React.FC<Props> = ({
     });
   }, [policySets, searchQuery, categoryFilter, scopeFilter]);
 
-  const hasActiveFilters =
-    searchQuery.trim() !== "" || categoryFilter !== "ALL" || scopeFilter !== "ALL";
+  const hasActiveFilters = searchQuery.trim() !== "" || categoryFilter !== "ALL" || scopeFilter !== "ALL";
 
   const handleResetFilters = () => {
     setSearchQuery("");
@@ -190,30 +172,110 @@ export const PolicySetsSettings: React.FC<Props> = ({
   }
 
   if (editorMode === "edit") {
-    return (
-      <CreateEditPolicySet
-        mode="edit"
-        policySetId={editorId}
-        managePermission={managePermission}
-      />
-    );
+    return <CreateEditPolicySet mode="edit" policySetId={editorId} managePermission={managePermission} />;
   }
+
+  const openCreate = () => navigate(`/organizations/${orgid}/settings/policies/new`);
+  const openEdit = (id: string) => navigate(`/organizations/${orgid}/settings/policies/edit/${id}`);
+
+  const renderPolicySets = () => {
+    if (loading) {
+      return <Loading loading description="Loading policy sets..." />;
+    }
+    if (policySets.length === 0) {
+      return (
+        <EmptyState simple description="No policy sets yet. Create one to check plans against OPA policies.">
+          {managePermission && (
+            <Button icon={<PlusOutlined />} onClick={openCreate}>
+              Create policy set
+            </Button>
+          )}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <PolicySetFilter
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          categoryFilter={categoryFilter}
+          onCategoryChange={handleCategoryChange}
+          scopeFilter={scopeFilter}
+          onScopeChange={handleScopeChange}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onResetFilters={handleResetFilters}
+          hasActiveFilters={hasActiveFilters}
+        />
+
+        {filteredPolicySets.length === 0 ? (
+          <EmptyState simple description="No policy sets match these filters.">
+            <Button onClick={handleResetFilters} data-testid="empty-clear-filters-btn">
+              Clear filters
+            </Button>
+          </EmptyState>
+        ) : viewMode === "compact" ? (
+          <PolicySetTable
+            policySets={filteredPolicySets}
+            attachmentCounts={attachmentCounts}
+            managePermission={managePermission}
+            onEdit={openEdit}
+            onDelete={(item) => setPendingDelete(item)}
+            orgid={orgid!}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={handlePageChange}
+            notificationConfigs={notificationConfigs}
+          />
+        ) : (
+          <List
+            dataSource={filteredPolicySets}
+            pagination={{
+              current: currentPage,
+              pageSize: pageSize,
+              total: filteredPolicySets.length,
+              showSizeChanger: true,
+              pageSizeOptions: ["10", "20", "50"],
+              onChange: handlePageChange,
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} policy sets`,
+            }}
+            renderItem={(item) => {
+              const notifId = item.relationships?.notificationConfiguration?.data?.id;
+              return (
+                <PolicySetCard
+                  key={item.id}
+                  item={item}
+                  attachmentsCount={attachmentCounts[item.id] ?? 0}
+                  managePermission={managePermission}
+                  onEdit={openEdit}
+                  onDelete={(item) => setPendingDelete(item)}
+                  orgid={orgid!}
+                  notificationConfig={notifId ? notificationConfigs[notifId] : undefined}
+                />
+              );
+            }}
+          />
+        )}
+      </>
+    );
+  };
 
   return (
     <div>
       <SettingsPageHeader
-        title="Policy Sets"
-        description="Enforce organizational guardrails, configure policy sets, and manage compliance exemptions using Open Policy Agent (OPA)."
+        title="Policy sets"
+        description="Check every plan against OPA policies, and waive specific rules with exemptions."
+        divider={false}
         actions={
           activeTab === "sets" ? (
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => navigate(`/organizations/${orgid}/settings/policies/new`)}
+              onClick={openCreate}
               disabled={!managePermission}
               data-testid="add-policy-set-btn"
             >
-              New Policy Set
+              Create policy set
             </Button>
           ) : null
         }
@@ -222,130 +284,29 @@ export const PolicySetsSettings: React.FC<Props> = ({
       <Tabs
         activeKey={activeTab}
         onChange={(key) => setSearchParams({ tab: key })}
-        style={{ marginBottom: 16 }}
         items={[
           {
             key: "sets",
-            label: `Policy Sets (${policySets.length})`,
-            children: (
-              <>
-                {loading ? (
-                  <Loading />
-                ) : policySets.length === 0 ? (
-                  <Card styles={{ body: { padding: 0 } }}>
-                    <div style={{ padding: "40px 0", textAlign: "center" }}>
-                      <SafetyCertificateOutlined
-                        style={{ fontSize: 48, color: token.colorTextTertiary, marginBottom: 16 }}
-                      />
-                      <Typography.Title level={4}>No Policy Sets Configured</Typography.Title>
-                      <Paragraph type="secondary" style={{ maxWidth: 450, margin: "0 auto 16px" }}>
-                        Create your first policy set to validate Terraform and OpenTofu plans automatically with Rego rules.
-                      </Paragraph>
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => navigate(`/organizations/${orgid}/settings/policies/new`)}
-                        disabled={!managePermission}
-                      >
-                        Create Policy Set
-                      </Button>
-                    </div>
-                  </Card>
-                ) : (
-                  <div>
-                    <PolicySetFilter
-                      searchQuery={searchQuery}
-                      onSearchChange={handleSearchChange}
-                      categoryFilter={categoryFilter}
-                      onCategoryChange={handleCategoryChange}
-                      scopeFilter={scopeFilter}
-                      onScopeChange={handleScopeChange}
-                      viewMode={viewMode}
-                      onViewModeChange={setViewMode}
-                      onResetFilters={handleResetFilters}
-                      hasActiveFilters={hasActiveFilters}
-                    />
-
-                    {filteredPolicySets.length === 0 ? (
-                      <Card style={{ textAlign: "center", padding: "40px 0" }}>
-                        <Empty
-                          description="No policy sets match your search and filter criteria."
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        >
-                          <Button onClick={handleResetFilters} data-testid="empty-clear-filters-btn">
-                            Clear Filters
-                          </Button>
-                        </Empty>
-                      </Card>
-                    ) : viewMode === "compact" ? (
-                      <PolicySetTable
-                        policySets={filteredPolicySets}
-                        attachmentCounts={attachmentCounts}
-                        managePermission={managePermission}
-                        onEdit={(id) =>
-                          navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
-                        }
-                        onDelete={(item) => setPendingDelete(item)}
-                        orgid={orgid!}
-                        currentPage={currentPage}
-                        pageSize={pageSize}
-                        onPageChange={handlePageChange}
-                        notificationConfigs={notificationConfigs}
-                      />
-                    ) : (
-                      <List
-                        dataSource={filteredPolicySets}
-                        pagination={{
-                          current: currentPage,
-                          pageSize: pageSize,
-                          total: filteredPolicySets.length,
-                          showSizeChanger: true,
-                          pageSizeOptions: ["10", "20", "50"],
-                          onChange: handlePageChange,
-                          showTotal: (total, range) =>
-                            `${range[0]}-${range[1]} of ${total} policy sets`,
-                        }}
-                        renderItem={(item) => {
-                          const notifId = item.relationships?.notificationConfiguration?.data?.id;
-                          return (
-                            <PolicySetCard
-                              key={item.id}
-                              item={item}
-                              attachmentsCount={attachmentCounts[item.id] ?? 0}
-                              managePermission={managePermission}
-                              onEdit={(id) =>
-                                navigate(`/organizations/${orgid}/settings/policies/edit/${id}`)
-                              }
-                              onDelete={(item) => setPendingDelete(item)}
-                              orgid={orgid!}
-                              notificationConfig={notifId ? notificationConfigs[notifId] : undefined}
-                            />
-                          );
-                        }}
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            ),
+            label: `Policy sets (${policySets.length})`,
+            children: renderPolicySets(),
           },
           {
             key: "exemptions",
-            label: "Policy Exemptions",
+            label: "Exemptions",
             children: <PolicyExemptionsSettings managePermission={managePermission} />,
           },
         ]}
       />
 
-      {pendingDelete && (
-        <DeleteConfirmationModal
-          open={true}
-          title="Delete Policy Set"
-          description={`Are you sure you want to delete policy set "${pendingDelete.attributes?.name}"? Workspaces relying on this policy set will no longer be evaluated against it.`}
-          onConfirm={() => handleDelete(pendingDelete.id)}
-          onCancel={() => setPendingDelete(null)}
-        />
-      )}
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete policy set"
+        message={`Workspaces will no longer be checked against ${pendingDelete?.attributes?.name}. Its attachments, parameters and exemptions are deleted too. This cannot be undone.`}
+        confirmValue={pendingDelete?.attributes?.name}
+        okText="Delete policy set"
+        onConfirm={() => handleDelete(pendingDelete.id)}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

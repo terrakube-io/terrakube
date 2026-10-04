@@ -1,4 +1,6 @@
 import { useState } from "react";
+import "@/modules/organizations/utils/orgIcon.css";
+import "./IconSelector.css";
 import { Input, Popover } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { faIcons, getFaIcon } from "../../config/iconList";
@@ -32,22 +34,16 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
   };
 
   const content = (
-    <div style={{ width: "min(600px, calc(100vw - 32px))", maxHeight: 400, overflowY: "auto" }}>
+    <div className="icon-selector-panel" style={{ "--org-icon-color": color } as React.CSSProperties}>
       <Input
         aria-label="Search icons"
         placeholder="Search icons..."
         prefix={<SearchOutlined />}
         value={searchText}
         onChange={(e) => setSearchText(e.target.value)}
-        style={{ marginBottom: 8 }}
+        className="icon-selector-search"
       />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 8,
-        }}
-      >
+      <div className="icon-selector-grid">
         {filteredIcons.map((icon) => {
           const IconComponent = faIcons[icon as keyof typeof faIcons];
           return (
@@ -62,37 +58,12 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
               tabIndex={0}
               role="button"
               aria-label={`Select ${icon} icon`}
-              style={{
-                padding: 6,
-                cursor: "pointer",
-                textAlign: "center",
-                border: selectedIcon === icon ? "1px solid var(--tk-accent)" : "1px solid #d9d9d9",
-                borderRadius: 4,
-                height: 60,
-                width: "100%",
-                maxWidth: 130,
-                minWidth: 0,
-                boxSizing: "border-box",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto",
-              }}
+              className={
+                selectedIcon === icon ? "icon-selector-option icon-selector-option-selected" : "icon-selector-option"
+              }
             >
-              <IconComponent style={{ fontSize: 24, color }} />
-              <div
-                style={{
-                  fontSize: 9,
-                  marginTop: 2,
-                  color: "#666",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  width: "100%",
-                }}
-              >
-                {icon}
-              </div>
+              <IconComponent className="org-icon" />
+              <div className="icon-selector-option-label">{icon}</div>
             </div>
           );
         })}
@@ -104,23 +75,11 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
 
   return (
     <Popover content={content} trigger="click" placement="bottomLeft">
-      <div
-        style={{
-          border: "1px solid #d9d9d9",
-          borderRadius: 4,
-          padding: "4px 11px",
-          cursor: "pointer",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 32,
-          minWidth: 32,
-        }}
-      >
+      <div className="icon-selector-trigger" style={{ "--org-icon-color": color } as React.CSSProperties}>
         {SelectedIconComponent ? (
-          <SelectedIconComponent style={{ fontSize: 20, color }} />
+          <SelectedIconComponent className="org-icon" />
         ) : (
-          <span style={{ color: "#bfbfbf" }}>Select an icon</span>
+          <span className="icon-selector-placeholder">Select an icon</span>
         )}
       </div>
     </Popover>

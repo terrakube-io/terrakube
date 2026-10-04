@@ -1,15 +1,8 @@
 import React, { useEffect } from "react";
-import { Col, Form, Radio, Row, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
-import {
-  InfoCircleOutlined,
-  CrownOutlined,
-  EditOutlined,
-  EyeOutlined,
-  CodeOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
+import { Checkbox, Form, Typography } from "antd";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
-import "./Settings.css";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import "./TeamsTagsVariables.css";
 
 type TeamPermissionsV2Props = {
   managePermissions: boolean;
@@ -22,7 +15,7 @@ type PermissionCategory = {
   permissions: {
     name: string;
     label: string;
-    tooltip: string;
+    help: string;
   }[];
 };
 
@@ -79,108 +72,78 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
   custom: {},
 };
 
-const roleDescriptions: Record<TeamRole, { label: string; color: string; icon: React.ReactNode; description: string }> =
-  {
-    admin: {
-      label: "Admin",
-      color: "red",
-      icon: <CrownOutlined />,
-      description:
-        "Full control over all resources including workspace settings, team permissions, and infrastructure changes.",
-    },
-    write: {
-      label: "Write",
-      color: "orange",
-      icon: <EditOutlined />,
-      description: "Can plan and apply runs, manage workspaces, and read/write state and variables.",
-    },
-    plan: {
-      label: "Plan",
-      color: "blue",
-      icon: <CodeOutlined />,
-      description:
-        "Can queue plans to propose infrastructure changes, but cannot apply them. Changes require approval from a Write or Admin user.",
-    },
-    read: {
-      label: "Read",
-      color: "default",
-      icon: <EyeOutlined />,
-      description: "Can view workspaces, runs, state, and variables. Cannot make any changes.",
-    },
-    custom: {
-      label: "Custom",
-      color: "purple",
-      icon: <SettingOutlined />,
-      description: "Fine-grained permission control. Select individual permissions below.",
-    },
-  };
-
-const roleAccents: Record<TeamRole, string> = {
-  admin: "#f5222d",
-  write: "#fa8c16",
-  plan: "#1677ff",
-  read: "#8c8c8c",
-  custom: "#722ed1",
+// Shared with the team list so a role reads the same everywhere.
+// Tag colors meet 4.5:1 in both themes (antd orange does not); custom is neutral.
+export const teamRoles: Record<TeamRole, { label: string; color: string; description: string }> = {
+  admin: {
+    label: "Admin",
+    color: "red",
+    description: "Full control over all resources, including workspace settings, team permissions and infrastructure.",
+  },
+  write: {
+    label: "Write",
+    color: "magenta",
+    description: "Can plan and apply runs, manage workspaces, and read and write state and variables.",
+  },
+  plan: {
+    label: "Plan",
+    color: "blue",
+    description: "Can queue plans but not apply them; a Write or Admin member has to approve.",
+  },
+  read: {
+    label: "Read",
+    color: "default",
+    description: "Can view workspaces, runs, state and variables, but not change anything.",
+  },
+  custom: {
+    label: "Custom",
+    color: "default",
+    description: "Only the permissions you choose below.",
+  },
 };
 
 const permissionCategories: PermissionCategory[] = [
   {
-    category: "Run Access",
+    category: "Run access",
     permissions: [
-      {
-        name: "planJob",
-        label: "Plan Runs",
-        tooltip: "Queue Terraform/OpenTofu plans in workspaces",
-      },
+      { name: "planJob", label: "Plan runs", help: "Queue plans in workspaces." },
       {
         name: "approveJob",
-        label: "Apply Runs",
-        tooltip: "Approve and apply Terraform/OpenTofu plans, causing changes to real infrastructure",
+        label: "Apply runs",
+        help: "Approve and apply plans, which changes real infrastructure.",
       },
     ],
   },
   {
-    category: "Resource Management",
+    category: "Resource management",
     permissions: [
       {
         name: "manageWorkspace",
-        label: "Manage Workspaces",
-        tooltip: "Create, update, and delete workspaces and projects",
+        label: "Manage workspaces",
+        help: "Create, update and delete workspaces and projects.",
       },
-      {
-        name: "manageModule",
-        label: "Manage Modules",
-        tooltip: "Publish and delete modules in the private registry",
-      },
+      { name: "manageModule", label: "Manage modules", help: "Publish and delete modules in the private registry." },
       {
         name: "manageProvider",
-        label: "Manage Providers",
-        tooltip: "Publish and delete providers in the private registry",
+        label: "Manage providers",
+        help: "Publish and delete providers in the private registry.",
       },
-      {
-        name: "manageTemplate",
-        label: "Manage Templates",
-        tooltip: "Create, update, and delete workflow templates",
-      },
+      { name: "manageTemplate", label: "Manage templates", help: "Create, update and delete workflow templates." },
       {
         name: "manageCollection",
-        label: "Manage Collections",
-        tooltip: "Create, update, and delete variable collections",
+        label: "Manage collections",
+        help: "Create, update and delete variable collections.",
       },
     ],
   },
   {
-    category: "Infrastructure Settings",
+    category: "Infrastructure settings",
     permissions: [
-      {
-        name: "manageState",
-        label: "Manage State",
-        tooltip: "Download, upload, and view Terraform/OpenTofu state files",
-      },
+      { name: "manageState", label: "Manage state", help: "Download, upload and view state files." },
       {
         name: "manageVcs",
-        label: "Manage VCS & SSH",
-        tooltip: "Create, update, and delete VCS connections and SSH keys",
+        label: "Manage VCS and SSH keys",
+        help: "Create, update and delete VCS connections and SSH keys.",
       },
     ],
   },
@@ -198,113 +161,50 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
     }
   }, [role, form]);
 
-  const renderCategory = (category: PermissionCategory) => (
-    <div key={category.category}>
-      <Typography.Title level={5} style={{ marginBottom: 8 }}>
-        {category.category}
-      </Typography.Title>
-      <Table
-        dataSource={category.permissions}
-        columns={[
-          {
-            title: "Permission",
-            key: "label",
-            render: (_: any, record: any) => (
-              <Space>
-                <span>{record.label}</span>
-                <Tooltip title={record.tooltip}>
-                  <Typography.Text type="secondary" style={{ cursor: "help" }}>
-                    <InfoCircleOutlined />
-                  </Typography.Text>
-                </Tooltip>
-              </Space>
-            ),
-          },
-          {
-            title: "Access",
-            key: "access",
-            align: "right" as const,
-            width: 120,
-            render: (_: any, record: any) => {
-              if (role !== "custom") {
-                const granted = rolePermissionMatrix[role]?.[record.name] ?? false;
-                return <Tag color={granted ? "green" : "default"}>{granted ? "Granted" : "Denied"}</Tag>;
-              }
-              return (
-                <Form.Item name={record.name} valuePropName="checked" noStyle>
-                  <Switch disabled={!managePermissions} />
-                </Form.Item>
-              );
-            },
-          },
-        ]}
-        rowKey="name"
-        pagination={false}
-        bordered
-        size="small"
-      />
-    </div>
-  );
-
   return (
     <>
-      <SettingsSection
-        maxWidth={960}
-        title="Role"
-        description="Choose a preset role or select Custom for fine-grained control."
-      >
-        <Form.Item name="role" initialValue="custom" style={{ marginBottom: 0 }}>
-          <Radio.Group disabled={!managePermissions} style={{ width: "100%" }}>
-            <Row gutter={[16, 16]}>
-              {(Object.entries(roleDescriptions) as [TeamRole, (typeof roleDescriptions)["admin"]][]).map(
-                ([key, desc]) => (
-                  <Col key={key} xs={24} md={12}>
-                    <Radio
-                      value={key}
-                      className="execution-mode-option role-option"
-                      style={{ "--role-accent": roleAccents[key] } as React.CSSProperties}
-                    >
-                      <Space align="center">
-                        <Tag color={desc.color} icon={desc.icon}>
-                          {desc.label}
-                        </Tag>
-                        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                          {desc.description}
-                        </Typography.Text>
-                      </Space>
-                    </Radio>
-                  </Col>
-                )
-              )}
-            </Row>
-          </Radio.Group>
+      <SettingsSection title="Role" description="A preset role sets every permission; Custom lets you pick them.">
+        <Form.Item name="role" initialValue="custom">
+          <RadioChoices
+            disabled={!managePermissions}
+            aria-label="Role"
+            options={(Object.entries(teamRoles) as [TeamRole, (typeof teamRoles)["admin"]][]).map(([value, r]) => ({
+              value,
+              label: r.label,
+              help: r.description,
+            }))}
+          />
         </Form.Item>
       </SettingsSection>
 
       <SettingsSection
-        maxWidth={960}
         title="Permissions"
         description={
-          role !== "custom" ? (
-            <>
-              Determined by the <Tag color={roleDescriptions[role].color}>{roleDescriptions[role].label}</Tag> role.
-            </>
-          ) : (
-            "Select individual permissions for this team. This provides the most granular control but requires careful configuration."
-          )
+          role !== "custom"
+            ? `Set by the ${teamRoles[role].label} role. Choose Custom to change them.`
+            : "Choose what members of this team can do across the organization."
         }
       >
-        <Row gutter={[24, 24]}>
-          <Col xs={24} md={12}>
-            <Space orientation="vertical" size={24} style={{ width: "100%" }}>
-              {renderCategory(permissionCategories[0])}
-              {renderCategory(permissionCategories[2])}
-            </Space>
-          </Col>
-          <Col xs={24} md={12}>
-            {renderCategory(permissionCategories[1])}
-          </Col>
-        </Row>
+        {permissionCategories.map((category) => (
+          <div key={category.category} className="team-permission-group" role="group" aria-label={category.category}>
+            <Typography.Title level={5}>{category.category}</Typography.Title>
+            {category.permissions.map((permission) =>
+              // Preset roles show their permissions without registering the fields, so the
+              // submitted payload stays role-only, as before.
+              role === "custom" ? (
+                <Form.Item key={permission.name} name={permission.name} valuePropName="checked" extra={permission.help}>
+                  <Checkbox disabled={!managePermissions}>{permission.label}</Checkbox>
+                </Form.Item>
+              ) : (
+                <Form.Item key={permission.name} extra={permission.help}>
+                  <Checkbox disabled checked={rolePermissionMatrix[role][permission.name] ?? false}>
+                    {permission.label}
+                  </Checkbox>
+                </Form.Item>
+              )
+            )}
+          </div>
+        ))}
       </SettingsSection>
     </>
   );

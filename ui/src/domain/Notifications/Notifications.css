@@ -1,0 +1,96 @@
+/* Channel picker: radio cards for Slack, Teams and webhook. */
+.channel-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.channel-picker-option {
+  position: relative;
+  width: 168px;
+  padding: 14px 12px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--tk-bg-container);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.channel-picker-option[aria-checked="true"] {
+  border-color: var(--tk-accent);
+  box-shadow: 0 0 0 1px var(--tk-accent);
+}
+
+.channel-picker-option .channel-picker-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--tk-accent);
+  font-size: 16px;
+}
+
+.channel-picker-option .channel-picker-icon {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--tk-text-primary);
+  font-size: 24px;
+}
+
+.channel-picker-label {
+  font-weight: 600;
+}
+
+.channel-picker-description {
+  margin-top: 2px;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+/* Secondary lines in lists and group headers. */
+.ant-typography.notification-meta-text {
+  font-size: 13px;
+}
+
+.ant-typography.notification-delivery-meta {
+  margin-left: 8px;
+}
+
+.ant-avatar.notification-channel-avatar {
+  background-color: var(--ant-color-fill-secondary);
+  color: var(--tk-text-primary);
+}
+
+.notification-inherited-section {
+  margin-top: 32px;
+}
+
+.notification-scope-alert {
+  max-width: 680px;
+}
+
+.notification-trigger-groups {
+  margin-bottom: 24px;
+}
+
+.notification-trigger-group {
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+}
+
+.notification-trigger-group-header {
+  margin-bottom: 8px;
+}
+
+.anticon.notification-trigger-hint {
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  cursor: help;
+}
+
+.notification-test-block {
+  width: 100%;
+  margin-bottom: 32px;
+}

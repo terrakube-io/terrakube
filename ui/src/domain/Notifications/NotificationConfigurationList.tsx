@@ -1,5 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Avatar, Button, List, message, Tag, Typography } from "antd";
+import "./Notifications.css";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -11,6 +12,7 @@ import { EditNotificationConfiguration } from "./EditNotificationConfiguration";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type Props = {
   orgId: string;
@@ -150,10 +152,10 @@ export const NotificationConfigurationList = ({
     axiosInstance
       .delete(`notification_configuration/${id}`, { headers: { "Content-Type": undefined } })
       .then(() => {
-        message.success("Notification configuration deleted successfully");
+        message.success("Notification deleted");
         load();
       })
-      .catch((err) => message.error(getErrorMessage(err) || "Failed to delete notification configuration"));
+      .catch((err) => message.error(getErrorMessage(err) || "Could not delete the notification"));
   };
 
   if (mode !== "list") {
@@ -163,6 +165,7 @@ export const NotificationConfigurationList = ({
         workspaceId={workspaceId}
         mode={mode}
         configId={editingId}
+        managePermission={managePermission}
         onDone={() => {
           closeEditor();
           load();
@@ -171,13 +174,68 @@ export const NotificationConfigurationList = ({
     );
   }
 
-  const renderChannelAvatar = (channelType: NotificationConfiguration["attributes"]["channelType"]) => {
-    const meta = CHANNEL_META[channelType];
+  const renderItem = (item: NotificationConfiguration, inherited: boolean) => {
+    const meta = CHANNEL_META[item.attributes.channelType];
     const ChannelIcon = meta.icon;
+    const name = item.attributes.name;
     return (
-      <Avatar style={{ backgroundColor: `${meta.color}1a` }} icon={<ChannelIcon style={{ color: meta.color }} />} />
+      <List.Item
+        actions={
+          inherited
+            ? undefined
+            : [
+                <Button
+                  key="edit"
+                  icon={<EditOutlined />}
+                  disabled={!managePermission}
+                  aria-label={`Edit ${name}`}
+                  onClick={() => openEdit(item.id)}
+                >
+                  Edit
+                </Button>,
+                <Button
+                  key="delete"
+                  icon={<DeleteOutlined />}
+                  disabled={!managePermission}
+                  aria-label={`Delete ${name}`}
+                  onClick={() => setPendingDelete(item)}
+                >
+                  Delete
+                </Button>,
+              ]
+        }
+      >
+        <List.Item.Meta
+          avatar={<Avatar shape="square" className="notification-channel-avatar" icon={<ChannelIcon />} />}
+          title={name}
+          description={
+            <>
+              <div>
+                <Tag>{meta.label}</Tag>
+                {!item.attributes.active && <Tag color="warning">Disabled</Tag>}
+              </div>
+              {item.attributes.description && (
+                <Typography.Text type="secondary" className="notification-meta-text">
+                  {item.attributes.description}
+                </Typography.Text>
+              )}
+            </>
+          }
+        />
+      </List.Item>
     );
   };
+
+  const addButton = (primary: boolean) => (
+    <Button
+      type={primary ? "primary" : "default"}
+      icon={<PlusOutlined />}
+      disabled={!managePermission}
+      onClick={openCreate}
+    >
+      Add notification
+    </Button>
+  );
 
   return (
     <div>
@@ -189,133 +247,68 @@ export const NotificationConfigurationList = ({
             title="Notifications"
             description={
               workspaceId
-                ? "Notifications configured specifically for this workspace, plus any organization-wide defaults - both apply together."
-                : "Organization-wide defaults. These apply to every workspace in the organization, in addition to whatever that workspace configures for itself."
+                ? "Messages sent when this workspace's runs change state."
+                : "Messages sent when runs in any workspace of this organization change state."
             }
-            actions={
-              <Button type="primary" icon={<PlusOutlined />} disabled={!managePermission} onClick={openCreate}>
-                {workspaceId ? "Add notification for this workspace" : "Add organization-wide default"}
-              </Button>
-            }
+            divider={false}
+            actions={addButton(true)}
           />
           <Loading loading={loading} description="Loading notifications...">
-            {workspaceId && (
-              <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                This workspace's notifications
-              </Typography.Title>
-            )}
-            <List
-              itemLayout="horizontal"
-              dataSource={primaryConfigs}
-              locale={{
-                emptyText: workspaceId ? "No notifications configured specifically for this workspace." : " ",
-              }}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      icon={<EditOutlined />}
-                      shape="round"
-                      type="primary"
-                      disabled={!managePermission}
-                      onClick={() => openEdit(item.id)}
-                    >
-                      Edit
-                    </Button>,
-                    <Button
-                      icon={<DeleteOutlined />}
-                      shape="round"
-                      type="primary"
-                      danger
-                      disabled={!managePermission}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      Delete
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={renderChannelAvatar(item.attributes.channelType)}
-                    title={item.attributes.name}
-                    description={
-                      <>
-                        <div>
-                          <Tag
-                            color={CHANNEL_META[item.attributes.channelType].color}
-                            icon={(() => {
-                              const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                              return <Icon />;
-                            })()}
-                          >
-                            {CHANNEL_META[item.attributes.channelType].label}
-                          </Tag>
-                          {workspaceId && <Tag color="purple">This workspace</Tag>}
-                          {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                        </div>
-                        {item.attributes.description && (
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {item.attributes.description}
-                          </Typography.Text>
-                        )}
-                      </>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-
-            {workspaceId && (
+            {workspaceId ? (
               <>
-                <Typography.Title level={5} style={{ marginTop: 20, marginBottom: 4 }}>
-                  Also applies here (organization-wide)
-                </Typography.Title>
-                <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
-                  Managed at the organization level - edit these from the organization's notification settings.
-                </Typography.Text>
+                <section>
+                  <Typography.Title level={4}>This workspace ({primaryConfigs.length})</Typography.Title>
+                  {primaryConfigs.length === 0 ? (
+                    <Typography.Paragraph type="secondary">
+                      No notifications set for this workspace only.
+                    </Typography.Paragraph>
+                  ) : (
+                    <List
+                      itemLayout="horizontal"
+                      dataSource={primaryConfigs}
+                      renderItem={(item) => renderItem(item, false)}
+                    />
+                  )}
+                </section>
+                <section className="notification-inherited-section">
+                  <Typography.Title level={4}>Organization-wide ({inheritedConfigs.length})</Typography.Title>
+                  {inheritedConfigs.length === 0 ? (
+                    <Typography.Paragraph type="secondary">No organization-wide notifications.</Typography.Paragraph>
+                  ) : (
+                    <>
+                      <Typography.Paragraph type="secondary">
+                        These also apply here. Change them in the organization&apos;s notification settings.
+                      </Typography.Paragraph>
+                      <List
+                        itemLayout="horizontal"
+                        dataSource={inheritedConfigs}
+                        renderItem={(item) => renderItem(item, true)}
+                      />
+                    </>
+                  )}
+                </section>
+              </>
+            ) : primaryConfigs.length === 0 ? (
+              <EmptyState simple description="No notifications yet. Add one to get a message when runs change state.">
+                {managePermission && addButton(false)}
+              </EmptyState>
+            ) : (
+              <section>
+                <Typography.Title level={4}>Organization-wide ({primaryConfigs.length})</Typography.Title>
                 <List
                   itemLayout="horizontal"
-                  dataSource={inheritedConfigs}
-                  locale={{ emptyText: "No organization-wide defaults apply here." }}
-                  renderItem={(item) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        avatar={renderChannelAvatar(item.attributes.channelType)}
-                        title={item.attributes.name}
-                        description={
-                          <>
-                            <div>
-                              <Tag
-                                color={CHANNEL_META[item.attributes.channelType].color}
-                                icon={(() => {
-                                  const Icon = CHANNEL_META[item.attributes.channelType].icon;
-                                  return <Icon />;
-                                })()}
-                              >
-                                {CHANNEL_META[item.attributes.channelType].label}
-                              </Tag>
-                              <Tag>Org default</Tag>
-                              {!item.attributes.active && <Tag color="default">Disabled</Tag>}
-                            </div>
-                            {item.attributes.description && (
-                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                {item.attributes.description}
-                              </Typography.Text>
-                            )}
-                          </>
-                        }
-                      />
-                    </List.Item>
-                  )}
+                  dataSource={primaryConfigs}
+                  renderItem={(item) => renderItem(item, false)}
                 />
-              </>
+              </section>
             )}
           </Loading>
 
           <DeleteConfirmationModal
             open={pendingDelete !== null}
-            title="Delete notification configuration"
-            message={`This will permanently delete the notification configuration "${pendingDelete?.attributes.name}".`}
-            okText="Delete"
+            title="Delete notification"
+            message={`Runs stop sending messages for ${pendingDelete?.attributes.name}. This cannot be undone.`}
+            okText="Delete notification"
             onConfirm={() => {
               if (pendingDelete) {
                 onDelete(pendingDelete.id);

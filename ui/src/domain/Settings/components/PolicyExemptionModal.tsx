@@ -1,24 +1,11 @@
 import React, { useEffect, useState } from "react";
-import {
-  Button,
-  DatePicker,
-  Form,
-  Input,
-  Modal,
-  Radio,
-  Select,
-  Space,
-  Switch,
-  Typography,
-  message,
-} from "antd";
-import {
-  CalendarOutlined,
-  ClockCircleOutlined,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
+import { Button, DatePicker, Flex, Form, Input, Modal, Select, Space, Switch, Typography, message } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import "@/components/modals/CrudFormModal/CrudFormModal.css";
+import "../PolicySets.css";
+import "./PolicyComponents.css";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -236,193 +223,138 @@ export const PolicyExemptionModal: React.FC<PolicyExemptionModalProps> = ({
 
   return (
     <Modal
-      title={
-        <Space>
-          <SafetyCertificateOutlined style={{ color: "#1677ff" }} />
-          <span>{mode === "create" ? "Create Policy Exemption" : "Edit Policy Exemption"}</span>
-        </Space>
-      }
+      className="form-modal"
+      title={mode === "create" ? "Create exemption" : "Edit exemption"}
       open={visible}
       onCancel={onCancel}
-      footer={null}
       destroyOnHidden
-      width={640}
+      width={600}
+      footer={
+        <Flex gap="small">
+          <Button type="primary" loading={submitting} onClick={() => form.submit()}>
+            {mode === "create" ? "Create exemption" : "Save exemption"}
+          </Button>
+          <Button onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+        </Flex>
+      }
     >
-      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
-        <Form.Item
-          name="policySetId"
-          label="Policy Set"
-          rules={[{ required: true, message: "Please select a policy set" }]}
-        >
+      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
+        <Form.Item name="policySetId" label="Policy set" rules={[{ required: true, message: "Choose a policy set" }]}>
           <Select
-            placeholder="Select a Policy Set"
+            placeholder="Choose a policy set"
             loading={loadingRefs}
             showSearch
-            optionFilterProp="children"
+            optionFilterProp="label"
             disabled={mode === "edit"}
-          >
-            {policySets.map((ps) => (
-              <Select.Option key={ps.id} value={ps.id}>
-                {ps.attributes?.name || ps.id}
-              </Select.Option>
-            ))}
-          </Select>
+            options={policySets.map((ps) => ({ value: ps.id, label: ps.attributes?.name || ps.id }))}
+          />
         </Form.Item>
 
         <Form.Item
           name="ruleId"
           label="Rule ID"
-          rules={[{ required: true, message: "Please specify the Rego rule ID" }]}
-          extra="The unique rule name or identifier evaluated by OPA (e.g. aws_s3_bucket_no_public_access)."
+          rules={[{ required: true, message: "Enter the rule ID to waive" }]}
+          extra="The rule name as OPA reports it in policy check results."
         >
-          <Input placeholder="e.g. aws_s3_bucket_no_public_access" disabled={mode === "edit"} />
+          <Input className="policy-mono" placeholder="aws_s3_bucket_no_public_access" disabled={mode === "edit"} />
         </Form.Item>
 
-        <Form.Item
-          name="scopeType"
-          label="Exemption Scope"
-          rules={[{ required: true, message: "Please select an exemption scope" }]}
-        >
-          <Radio.Group disabled={Boolean(lockedScope) || mode === "edit"}>
-            <Radio value="ORGANIZATION">Organization-Wide</Radio>
-            <Radio value="PROJECT">Project-Scoped</Radio>
-            <Radio value="WORKSPACE">Workspace-Scoped</Radio>
-          </Radio.Group>
+        <Form.Item name="scopeType" label="Scope" rules={[{ required: true, message: "Choose a scope" }]}>
+          <RadioChoices
+            disabled={Boolean(lockedScope) || mode === "edit"}
+            options={[
+              { value: "ORGANIZATION", label: "Organization-wide", help: "Waives the rule in every workspace." },
+              { value: "PROJECT", label: "Project", help: "Waives the rule in the workspaces of one project." },
+              { value: "WORKSPACE", label: "Workspace", help: "Waives the rule in one workspace." },
+            ]}
+          />
         </Form.Item>
 
         {scopeType === "PROJECT" && (
-          <Form.Item
-            name="projectId"
-            label="Target Project"
-            rules={[{ required: true, message: "Please select a project" }]}
-          >
+          <Form.Item name="projectId" label="Project" rules={[{ required: true, message: "Choose a project" }]}>
             <Select
-              placeholder="Select project"
+              placeholder="Choose a project"
               loading={loadingRefs}
               showSearch
-              optionFilterProp="children"
+              optionFilterProp="label"
               disabled={mode === "edit"}
-            >
-              {projects.map((proj) => (
-                <Select.Option key={proj.id} value={proj.id}>
-                  {proj.attributes?.name || proj.id}
-                </Select.Option>
-              ))}
-            </Select>
+              options={projects.map((proj) => ({ value: proj.id, label: proj.attributes?.name || proj.id }))}
+            />
           </Form.Item>
         )}
 
         {scopeType === "WORKSPACE" && (
-          <Form.Item
-            name="workspaceId"
-            label="Target Workspace"
-            rules={[{ required: true, message: "Please select a workspace" }]}
-          >
+          <Form.Item name="workspaceId" label="Workspace" rules={[{ required: true, message: "Choose a workspace" }]}>
             <Select
-              placeholder="Select workspace"
+              placeholder="Choose a workspace"
               loading={loadingRefs}
               showSearch
-              optionFilterProp="children"
+              optionFilterProp="label"
               disabled={Boolean(lockedScope) || mode === "edit"}
-            >
-              {workspaces.map((ws) => (
-                <Select.Option key={ws.id} value={ws.id}>
-                  {ws.attributes?.name || ws.id}
-                </Select.Option>
-              ))}
-            </Select>
+              options={workspaces.map((ws) => ({ value: ws.id, label: ws.attributes?.name || ws.id }))}
+            />
           </Form.Item>
         )}
 
         <Form.Item
           name="ticketReference"
-          label="Ticket Reference"
-          rules={[{ required: true, message: "Please provide a ticket reference" }]}
-          extra="Audited issue tracker or change ticket (e.g. SEC-8842 or Jira link)."
+          label="Ticket reference"
+          rules={[{ required: true, message: "Enter the ticket that approved this exemption" }]}
+          extra="The issue or change ticket that approved this exemption."
         >
-          <Input placeholder="e.g. SEC-8842" />
+          <Input placeholder="SEC-8842" />
         </Form.Item>
 
         <Form.Item
           name="justification"
           label="Justification"
           rules={[
-            { required: true, message: "Please enter a justification" },
-            { max: 2048, message: "Justification cannot exceed 2048 characters" },
+            { required: true, message: "Explain why the rule is waived" },
+            { max: 2048, message: "Keep the justification under 2048 characters" },
           ]}
-          extra="Detailed explanation of why this compliance waiver was granted."
         >
-          <TextArea
-            rows={3}
-            placeholder="Describe the technical context and security review rationale..."
-            maxLength={2048}
-            showCount
-          />
+          <TextArea rows={3} placeholder="Why this rule does not apply here" maxLength={2048} showCount />
         </Form.Item>
 
-        <div style={{ marginBottom: 16 }}>
-          <Space align="center" style={{ marginBottom: 12 }}>
-            <Form.Item name="isIndefinite" valuePropName="checked" noStyle>
-              <Switch
-                checked={isIndefinite}
-                onChange={toggleIndefinite}
-              />
-            </Form.Item>
-            <Text
-              strong
-              style={{ cursor: "pointer", userSelect: "none" }}
-              onClick={() => toggleIndefinite(!isIndefinite)}
-            >
-              Permanent / Indefinite Exemption (No Expiration Date)
-            </Text>
-          </Space>
+        <Space align="center" className="policy-exemption-indefinite">
+          <Form.Item name="isIndefinite" valuePropName="checked" noStyle>
+            <Switch checked={isIndefinite} onChange={toggleIndefinite} aria-label="Never expires" />
+          </Form.Item>
+          <Text className="policy-exemption-indefinite-label" onClick={() => toggleIndefinite(!isIndefinite)}>
+            Never expires
+          </Text>
+        </Space>
 
-          {!isIndefinite && (
-            <div>
-              <Form.Item
-                name="expiresAt"
-                label="Expiration Date"
-                rules={[{ required: !isIndefinite, message: "Please pick an expiration date" }]}
-                style={{ marginBottom: 8 }}
-              >
-                <DatePicker
-                  style={{ width: "100%" }}
-                  showTime
-                  disabledDate={(current) => current && current <= dayjs().startOf("day")}
-                  placeholder="Select expiration date & time"
-                  prefix={<CalendarOutlined />}
-                />
-              </Form.Item>
-
-              <Space wrap style={{ marginTop: 4 }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  <ClockCircleOutlined /> Quick Presets:
-                </Text>
-                <Button size="small" onClick={() => handleQuickDuration(30)}>
-                  +30 Days
-                </Button>
-                <Button size="small" onClick={() => handleQuickDuration(60)}>
-                  +60 Days
-                </Button>
-                <Button size="small" onClick={() => handleQuickDuration(90)}>
-                  +90 Days
-                </Button>
-                <Button size="small" onClick={() => handleQuickDuration(365)}>
-                  +1 Year
-                </Button>
+        {!isIndefinite && (
+          <Form.Item
+            name="expiresAt"
+            label="Expires on"
+            rules={[{ required: !isIndefinite, message: "Pick an expiration date" }]}
+            extra={
+              <Space wrap size={4} className="policy-exemption-durations">
+                {[
+                  [30, "30 days"],
+                  [60, "60 days"],
+                  [90, "90 days"],
+                  [365, "1 year"],
+                ].map(([days, label]) => (
+                  <Button key={days} size="small" onClick={() => handleQuickDuration(days as number)}>
+                    {label}
+                  </Button>
+                ))}
               </Space>
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24 }}>
-          <Button onClick={onCancel} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button type="primary" htmlType="submit" loading={submitting}>
-            {mode === "create" ? "Create Exemption" : "Save Changes"}
-          </Button>
-        </div>
+            }
+          >
+            <DatePicker
+              className="policy-exemption-expiry"
+              showTime
+              disabledDate={(current) => current && current <= dayjs().startOf("day")}
+              placeholder="Choose a date and time"
+            />
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   );

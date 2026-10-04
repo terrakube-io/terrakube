@@ -1,0 +1,24 @@
+/* Settings form around a code editor: fields stay in the 680px column, the editor takes the content width. */
+.settings-form.editor-form {
+  max-width: none;
+}
+
+.editor-form-fields {
+  max-width: 680px;
+}
+
+.editor-form-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.editor-form .code-editor {
+  margin-bottom: 24px;
+}
+
+/* Starting-point tiles: flat, the border marks hover and focus (Tone Not Shadow). */
+.ant-card.template-card.template-card-flat,
+.ant-card.template-card.template-card-flat:hover {
+  box-shadow: none;
+  transform: none;
+}

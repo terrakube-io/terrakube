@@ -1,5 +1,5 @@
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, List, message } from "antd";
+import { CloudServerOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Form, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
@@ -8,16 +8,14 @@ import "./Settings.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Loading } from "@/components/feedback/Loading";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import AgentFormModal, { AddAgentFormValues, UpdateAgentFormValues } from "./components/AgentFormModal";
+import AgentFormModal, { AddAgentFormValues } from "./components/AgentFormModal";
+import ResourceCard from "./components/ResourceCard";
 
 type Params = {
   orgid: string;
 };
-
-type AddAgentForm = AddAgentFormValues;
-
-type UpdateAgentForm = UpdateAgentFormValues;
 
 type Props = {
   managePermission?: boolean;
@@ -25,40 +23,41 @@ type Props = {
 
 export const AgentSettings = ({ managePermission = true }: Props) => {
   const { orgid } = useParams<Params>();
-  const [Agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [visible, setVisible] = useState(false);
-  const [AgentName, setAgentName] = useState<string>();
-  const [mode, setMode] = useState("create");
-  const [AgentId] = useState([]);
+  const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
-  const [form] = Form.useForm<AddAgentForm | UpdateAgentForm>();
-
-  const onCancel = () => {
-    setVisible(false);
-  };
+  const [form] = Form.useForm<AddAgentFormValues>();
 
   const onNew = () => {
     form.resetFields();
     setVisible(true);
-    setAgentName("");
-    setMode("create");
   };
 
-  const onDelete = (id: string) => {
+  const onDelete = (agent: Agent) => {
     axiosInstance
-      .delete(`organization/${orgid}/agent/${id}`)
-      .then(() => {
-        message.success("Agent pool deleted successfully");
-        loadAgents();
+      .get(`organization/${orgid}/workspace?filter[workspace]=agent.id==${agent.id}&fields[workspace]=name`)
+      .then((response) => {
+        const workspaces = response.data.data?.length ?? 0;
+        if (workspaces > 0) {
+          message.error(
+            `${agent.attributes.name} is used by ${workspaces} workspace${workspaces === 1 ? "" : "s"}. Move them to another agent pool first.`
+          );
+          return;
+        }
+        return axiosInstance.delete(`organization/${orgid}/agent/${agent.id}`).then(() => {
+          message.success(`Agent pool ${agent.attributes.name} deleted`);
+          loadAgents();
+        });
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not delete the agent pool: ${getErrorMessage(err)}`);
       });
   };
 
-  const onCreate = (values: AddAgentForm) => {
+  const onCreate = (values: AddAgentFormValues) => {
     const body = {
       data: {
         type: "agent",
@@ -70,50 +69,23 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
       },
     };
 
+    setSaving(true);
     axiosInstance
       .post(`organization/${orgid}/agent`, body, {
         headers: {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
-        message.success("Agent pool created successfully");
-        loadAgents();
-        setVisible(false);
-        form.resetFields();
-      })
-      .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
-  };
-
-  const onUpdate = (values: UpdateAgentForm) => {
-    const body = {
-      data: {
-        type: "agent",
-        id: AgentId,
-        attributes: {
-          description: values.description,
-          url: values.url,
-        },
-      },
-    };
-
-    axiosInstance
-      .patch(`organization/${orgid}/agent/${AgentId}`, body, {
-        headers: {
-          "Content-Type": "application/vnd.api+json",
-        },
-      })
       .then(() => {
-        message.success("Agent pool updated successfully");
+        message.success(`Agent pool ${values.name} added`);
         loadAgents();
         setVisible(false);
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
-      });
+        message.error(`Could not add the agent pool: ${getErrorMessage(err)}`);
+      })
+      .finally(() => setSaving(false));
   };
 
   const loadAgents = () => {
@@ -127,7 +99,7 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load agents");
+          message.error(`Could not load agent pools: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
@@ -136,6 +108,56 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
     setLoading(true);
     loadAgents();
   }, [orgid]);
+
+  const renderList = () => {
+    if (loading) return <Loading loading description="Loading agent pools..." />;
+    if (agents.length === 0) {
+      return (
+        <EmptyState simple description="No agent pools yet. Jobs run on the default executor.">
+          {managePermission && (
+            <Button icon={<PlusOutlined />} onClick={onNew}>
+              Add an agent pool
+            </Button>
+          )}
+        </EmptyState>
+      );
+    }
+    return (
+      <>
+        <Typography.Title level={4} className="resource-list-title">
+          Agent pools ({agents.length})
+        </Typography.Title>
+        <div className="resource-list">
+          {agents.map((item) => (
+            <ResourceCard
+              key={item.id}
+              icon={<CloudServerOutlined />}
+              name={item.attributes.name}
+              actions={
+                <Tooltip title="Delete">
+                  <Button
+                    icon={<DeleteOutlined />}
+                    disabled={!managePermission}
+                    aria-label={`Delete agent pool ${item.attributes.name}`}
+                    onClick={() => setPendingDelete(item)}
+                  />
+                </Tooltip>
+              }
+            >
+              {item.attributes.description && (
+                <Typography.Text className="resource-card-meta">{item.attributes.description}</Typography.Text>
+              )}
+              {item.attributes.url && (
+                <Typography.Text className="resource-mono resource-card-meta" copyable>
+                  {item.attributes.url}
+                </Typography.Text>
+              )}
+            </ResourceCard>
+          ))}
+        </div>
+      </>
+    );
+  };
 
   return (
     <div className="setting">
@@ -146,56 +168,22 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/getting-started/deployment/self-hosted-agents"
             title="Agents"
-            description="Terrakube uses these agents to execute terraform commands. Terrakube allow to have one or multiple agents to run jobs, you can have as many agents as you want for a single organization."
+            description="Agent pools run jobs for the workspaces assigned to them."
+            divider={false}
             actions={
-              <Button
-                type="primary"
-                onClick={onNew}
-                htmlType="button"
-                icon={<PlusOutlined />}
-                disabled={!managePermission}
-              >
-                Create agent pool
+              <Button type="primary" onClick={onNew} icon={<PlusOutlined />} disabled={!managePermission}>
+                Add an agent pool
               </Button>
             }
           />
-          <br></br>
-          {loading ? (
-            <Loading loading description="Loading agents..." />
-          ) : (
-            <List
-              itemLayout="horizontal"
-              dataSource={Agents}
-              renderItem={(item) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      icon={<DeleteOutlined />}
-                      type="link"
-                      danger
-                      disabled={!managePermission}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      Delete
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta description={item.attributes.description} title={item.attributes.name} />
-                </List.Item>
-              )}
-            />
-          )}
+          {renderList()}
 
           <AgentFormModal
             open={visible}
-            mode={mode === "create" ? "create" : "edit"}
-            agentName={AgentName}
             form={form}
-            onCancel={onCancel}
-            onSubmit={(values) => {
-              if (mode === "create") onCreate(values as AddAgentForm);
-              else onUpdate(values);
-            }}
+            saving={saving}
+            onCancel={() => setVisible(false)}
+            onSubmit={onCreate}
           />
 
           <DeleteConfirmationModal
@@ -203,12 +191,13 @@ export const AgentSettings = ({ managePermission = true }: Props) => {
             title="Delete agent pool"
             message={
               <>
-                Deleting the agent pool <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                <strong>{pendingDelete?.attributes.name}</strong> can only be deleted when no workspace is assigned to
+                it. The agent itself keeps running until you shut it down. This cannot be undone.
               </>
             }
-            okText="Delete"
+            okText="Delete agent pool"
             onConfirm={() => {
-              if (pendingDelete) onDelete(pendingDelete.id);
+              if (pendingDelete) onDelete(pendingDelete);
               setPendingDelete(null);
             }}
             onCancel={() => setPendingDelete(null)}

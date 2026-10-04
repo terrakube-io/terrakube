@@ -104,8 +104,8 @@ function SortableHeader({
     >
       {label}
       <span className="organization-sort-carets">
-        <CaretUpOutlined style={{ color: isAsc ? "var(--tk-accent)" : undefined }} />
-        <CaretDownOutlined style={{ color: isDesc ? "var(--tk-accent)" : undefined }} />
+        <CaretUpOutlined className={isAsc ? "organization-sort-caret-active" : undefined} />
+        <CaretDownOutlined className={isDesc ? "organization-sort-caret-active" : undefined} />
       </span>
     </span>
   );
@@ -147,7 +147,7 @@ function OrganizationRow({ organization }: { organization: OrganizationModel }) 
               <span
                 key={entry.value}
                 className="organization-status-badge"
-                style={{ color: entry.color }}
+                style={{ "--organization-status-color": entry.color } as React.CSSProperties}
                 title={`${entry.label}: ${statusCounts[entry.value]}`}
               >
                 {entry.icon}
@@ -209,7 +209,7 @@ export default function OrganizationTable({ organizations }: Props) {
         placeholder="Search organizations..."
         allowClear
         onChange={(e) => setSearchTerm(e.target.value)}
-        style={{ maxWidth: 320, marginBottom: 16 }}
+        className="organization-search"
       />
       <div className="organization-list">
         <div className="organization-list-header">

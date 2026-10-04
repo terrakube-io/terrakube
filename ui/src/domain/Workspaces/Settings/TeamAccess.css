@@ -1,0 +1,69 @@
+.team-access {
+  width: 100%;
+}
+
+.team-access .team-access-icon {
+  color: var(--tk-text-secondary);
+}
+
+.team-access .ant-space.team-access-count {
+  margin-bottom: 12px;
+}
+
+.team-access .ant-table-wrapper.team-access-table {
+  margin-bottom: 32px;
+}
+
+.team-access .ant-tag.team-access-role-tag {
+  cursor: default;
+}
+
+.team-access .ant-btn.team-access-change-role {
+  padding: 0;
+  height: auto;
+}
+
+.team-access-permission-heading {
+  white-space: nowrap;
+}
+
+.team-access .team-access-permission {
+  color: var(--tk-text-secondary);
+  font-size: 16px;
+}
+
+.team-access .team-access-permission--granted {
+  color: var(--tk-status-success);
+}
+
+.team-access .ant-card.team-access-grant {
+  max-width: 640px;
+  margin-bottom: 16px;
+}
+
+.team-access .ant-space.team-access-custom-permissions {
+  margin-bottom: 8px;
+}
+
+.team-access .ant-form-item.team-access-flush-item {
+  margin-bottom: 0;
+}
+
+.ant-select.team-access-role-select {
+  width: 100%;
+}
+
+.ant-select.team-access-role-select--compact {
+  width: 160px;
+}
+
+/* Options render in the select popup, outside .team-access */
+.ant-space.team-access-role-option {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.ant-typography.team-access-role-option-description {
+  font-size: 12px;
+  white-space: normal;
+}

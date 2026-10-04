@@ -1,17 +1,11 @@
 import React from "react";
-import { Table, Tag, Space, Typography, Button } from "antd";
+import { Button, Flex, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import {
-  BellOutlined,
-  BranchesOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  FolderOutlined,
-  GlobalOutlined,
-  TeamOutlined,
-} from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, GlobalOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
-import { renderEnforcementTag } from "./PolicySetCard";
+import { attachmentsLabel, enforcementLabel, renderEnforcementTag } from "./policySetLabels";
+import "../PolicySets.css";
+import "./PolicyComponents.css";
 
 const { Text } = Typography;
 
@@ -42,141 +36,125 @@ export const PolicySetTable: React.FC<Props> = ({
 }) => {
   const columns: ColumnsType<any> = [
     {
-      title: "Policy Set",
+      title: "Policy set",
       dataIndex: ["attributes", "name"],
       key: "name",
-      sorter: (a, b) =>
-        (a.attributes?.name || "").localeCompare(b.attributes?.name || ""),
+      sorter: (a, b) => (a.attributes?.name || "").localeCompare(b.attributes?.name || ""),
       render: (_: string, record: any) => {
         const attrs = record.attributes || {};
         return (
-          <Space direction="vertical" size={2} style={{ maxWidth: 360 }}>
+          <div className="policy-cell-stack">
             <Link
               to={`/organizations/${orgid}/settings/policies/edit/${record.id}`}
-              style={{ fontWeight: 600, fontSize: 14 }}
+              className="policy-set-table-link"
               data-testid={`policy-set-table-link-${record.id}`}
             >
               {attrs.name}
             </Link>
             {attrs.description && (
-              <Text
-                type="secondary"
-                ellipsis={{ tooltip: attrs.description }}
-                style={{ fontSize: 12, maxWidth: 340 }}
-              >
+              <Text type="secondary" className="policy-cell-secondary" ellipsis={{ tooltip: attrs.description }}>
                 {attrs.description}
               </Text>
             )}
-          </Space>
+          </div>
         );
       },
     },
     {
-      title: "Enforcement Level",
+      title: "Enforcement",
       dataIndex: ["attributes", "enforcementLevel"],
       key: "enforcementLevel",
-      width: 180,
+      width: 170,
       render: (level: string, record: any) => {
         const attrs = record.attributes || {};
         return (
-          <Space direction="vertical" size={4}>
+          <Flex vertical gap={4} align="flex-start">
             {renderEnforcementTag(level)}
-            {attrs.shadowEnforcementLevel && (
-              <Tag color="default">Shadow: {attrs.shadowEnforcementLevel}</Tag>
-            )}
-          </Space>
+            {attrs.shadowEnforcementLevel && <Tag>Shadow: {enforcementLabel(attrs.shadowEnforcementLevel)}</Tag>}
+          </Flex>
         );
       },
     },
     {
-      title: "Scope / Attachments",
+      title: "Scope",
       key: "scope",
-      width: 180,
+      width: 190,
       render: (_: any, record: any) => {
         const attrs = record.attributes || {};
-        const count = attachmentCounts[record.id] ?? 0;
         const notifId = record.relationships?.notificationConfiguration?.data?.id;
         const notif = notifId && notificationConfigs ? notificationConfigs[notifId] : null;
         return (
-          <Space direction="vertical" size={4}>
+          <div className="policy-cell-stack">
             {attrs.global ? (
-              <Tag color="gold" icon={<GlobalOutlined />}>
-                Global
-              </Tag>
+              <span>
+                <GlobalOutlined /> Global
+              </span>
             ) : (
-              <Tag color="cyan">
-                {count} {count === 1 ? "Attachment" : "Attachments"}
-              </Tag>
+              <span>{attachmentsLabel(attachmentCounts[record.id] ?? 0)}</span>
             )}
             {attrs.overrideTeam && (
-              <Tag color="geekblue" icon={<TeamOutlined />}>
+              <Text type="secondary" className="policy-cell-secondary">
                 Override: {attrs.overrideTeam}
-              </Tag>
+              </Text>
             )}
             {notif && (
-              <Tag color="purple" icon={<BellOutlined />} data-testid={`policy-set-table-notif-${record.id}`}>
+              <Text
+                type="secondary"
+                className="policy-cell-secondary"
+                ellipsis={{ tooltip: notif.name }}
+                data-testid={`policy-set-table-notif-${record.id}`}
+              >
                 {notif.name}
-              </Tag>
+              </Text>
             )}
-          </Space>
+          </div>
         );
       },
     },
     {
-      title: "Repository / Source",
+      title: "Source",
       key: "repository",
       render: (_: any, record: any) => {
         const attrs = record.attributes || {};
+        const ref = [attrs.branch, attrs.folder].filter(Boolean).join(" · ");
         return (
-          <Space direction="vertical" size={2} style={{ fontSize: 12 }}>
+          <div className="policy-cell-stack">
             {attrs.repository && (
-              <Text ellipsis={{ tooltip: attrs.repository }} style={{ maxWidth: 220 }}>
+              <Text className="policy-mono" ellipsis={{ tooltip: attrs.repository }}>
                 {attrs.repository}
               </Text>
             )}
-            <Space size={8} wrap>
-              {attrs.branch && (
-                <span>
-                  <BranchesOutlined /> {attrs.branch}
-                </span>
-              )}
-              {attrs.folder && (
-                <span>
-                  <FolderOutlined /> {attrs.folder}
-                </span>
-              )}
-            </Space>
-          </Space>
+            {ref && (
+              <Text type="secondary" className="policy-mono" ellipsis={{ tooltip: ref }}>
+                {ref}
+              </Text>
+            )}
+          </div>
         );
       },
     },
     {
       title: "Actions",
       key: "actions",
-      width: 150,
+      width: 96,
       align: "right",
       render: (_: any, record: any) => (
-        <Space size={4}>
+        <Flex gap={8} justify="flex-end">
           <Button
-            type="text"
             icon={<EditOutlined />}
             onClick={() => onEdit(record.id)}
             disabled={!managePermission}
+            aria-label={`Edit ${record.attributes?.name}`}
             data-testid={`table-edit-policy-set-btn-${record.id}`}
-          >
-            Edit
-          </Button>
+          />
           <Button
-            type="text"
-            danger
             icon={<DeleteOutlined />}
             onClick={() => onDelete(record)}
             disabled={!managePermission}
+            aria-label={`Delete ${record.attributes?.name}`}
             data-testid={`table-delete-policy-set-btn-${record.id}`}
-          >
-            Delete
-          </Button>
-        </Space>
+          />
+        </Flex>
       ),
     },
   ];
@@ -186,6 +164,8 @@ export const PolicySetTable: React.FC<Props> = ({
       rowKey="id"
       columns={columns}
       dataSource={policySets}
+      tableLayout="fixed"
+      scroll={{ x: 720 }}
       pagination={{
         current: currentPage,
         pageSize: pageSize,
@@ -193,8 +173,7 @@ export const PolicySetTable: React.FC<Props> = ({
         showSizeChanger: true,
         pageSizeOptions: ["10", "20", "50"],
         onChange: onPageChange,
-        showTotal: (total, range) =>
-          `${range[0]}-${range[1]} of ${total} policy sets`,
+        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} policy sets`,
       }}
       data-testid="policy-sets-compact-table"
     />

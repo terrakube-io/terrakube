@@ -13,5 +13,16 @@
 
 /* Dark mode for organization card */
 [data-theme="dark"] .org-card-title {
-  color: var(--tk-accent);
+  color: var(--tk-link);
+}
+
+/* The whole card is the link; it keeps the card's own text colours (outranks the dark-mode link colour in global.css). */
+.organization-grid a.org-card-link,
+.organization-grid a.org-card-link:hover {
+  display: block;
+  color: inherit;
+}
+
+.org-card {
+  width: 100%;
 }

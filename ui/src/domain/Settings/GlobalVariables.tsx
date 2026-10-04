@@ -1,13 +1,15 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Collapse, Form, message, Space, Table, Tag } from "antd";
+import { DeleteOutlined, EditOutlined, LockOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Flex, Form, message, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { CreateVariableForm, UpdateVariableForm, Variable } from "../types";
 import "./Settings.css";
+import "./TeamsTagsVariables.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import GlobalVariableFormModal from "./components/GlobalVariableFormModal";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
@@ -27,55 +29,57 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
   const [pendingDelete, setPendingDelete] = useState<Variable | null>(null);
   const [form] = Form.useForm<CreateVariableForm>();
 
-  const VARIABLES_COLUMS = (onEdit: (id: string) => void) => [
+  const columns = [
     {
       title: "Key",
-      dataIndex: "key",
-      width: "35%",
       key: "key",
+      // Same width in both tables so the columns line up.
+      width: 320,
       sorter: (a: Variable, b: Variable) => a.attributes.key.localeCompare(b.attributes.key),
       defaultSortOrder: "ascend" as const,
-      render: (_: any, record: Variable) => {
-        return (
-          <Space>
-            {record.attributes.key}
-            {record.attributes.hcl && <Tag color="blue">HCL</Tag>}
-            {record.attributes.sensitive && <Tag color="orange">Sensitive</Tag>}
-          </Space>
-        );
-      },
+      render: (_: unknown, record: Variable) => (
+        <Space size={4} wrap>
+          <span className="settings-list-mono global-variable-key">{record.attributes.key}</span>
+          {record.attributes.hcl && <Tag>HCL</Tag>}
+          {record.attributes.sensitive && <Tag icon={<LockOutlined />}>Sensitive</Tag>}
+        </Space>
+      ),
     },
     {
       title: "Value",
-      dataIndex: "value",
       key: "value",
-      width: "40%",
-      render: (_: any, record: Variable) => {
-        return record.attributes.sensitive ? <i>Sensitive - write only</i> : <div>{record.attributes.value}</div>;
-      },
+      render: (_: unknown, record: Variable) =>
+        record.attributes.sensitive ? (
+          <span className="global-variable-value global-variable-value-sensitive">Sensitive, write-only</span>
+        ) : (
+          <span className="settings-list-mono global-variable-value">{record.attributes.value}</span>
+        ),
     },
     {
-      title: "Actions",
-      key: "action",
-      width: "25%",
-      render: (_: any, record: Variable) => {
-        return (
-          <div>
-            <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(record.id)} disabled={!managePermission}>
-              Edit
-            </Button>
+      title: <span className="settings-list-sr-only">Actions</span>,
+      key: "actions",
+      align: "right" as const,
+      render: (_: unknown, record: Variable) => (
+        <Flex gap="small" justify="flex-end">
+          <Tooltip title="Edit variable">
+            <Button
+              icon={<EditOutlined />}
+              aria-label={`Edit variable ${record.attributes.key}`}
+              disabled={!managePermission}
+              onClick={() => onEdit(record.id)}
+            />
+          </Tooltip>
+          <Tooltip title="Delete variable">
             <Button
               danger
-              type="link"
               icon={<DeleteOutlined />}
+              aria-label={`Delete variable ${record.attributes.key}`}
               disabled={!managePermission}
               onClick={() => setPendingDelete(record)}
-            >
-              Delete
-            </Button>
-          </div>
-        );
-      },
+            />
+          </Tooltip>
+        </Flex>
+      ),
     },
   ];
   const onCancel = () => {
@@ -85,17 +89,22 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
     setMode("edit");
     setVariableId(id);
     setVisible(true);
-    axiosInstance.get(`organization/${orgid}/globalvar/${id}`).then((response) => {
-      setVariableKey(response.data.data.attributes.key);
-      form.setFieldsValue({
-        key: response.data.data.attributes.key,
-        value: response.data.data.attributes.value,
-        hcl: response.data.data.attributes.hcl,
-        sensitive: response.data.data.attributes.sensitive,
-        category: response.data.data.attributes.category,
-        description: response.data.data.attributes.description,
+    axiosInstance
+      .get(`organization/${orgid}/globalvar/${id}`)
+      .then((response) => {
+        setVariableKey(response.data.data.attributes.key);
+        form.setFieldsValue({
+          key: response.data.data.attributes.key,
+          value: response.data.data.attributes.value,
+          hcl: response.data.data.attributes.hcl,
+          sensitive: response.data.data.attributes.sensitive,
+          category: response.data.data.attributes.category,
+          description: response.data.data.attributes.description,
+        });
+      })
+      .catch((err) => {
+        message.error(`Could not load the variable: ${getErrorMessage(err)}`);
       });
-    });
   };
 
   const onNew = () => {
@@ -113,7 +122,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         loadGlobalVariables();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not delete the variable: ${getErrorMessage(err)}`);
       });
   };
 
@@ -145,7 +154,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not create the variable: ${getErrorMessage(err)}`);
       });
   };
 
@@ -177,7 +186,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         form.resetFields();
       })
       .catch((err) => {
-        message.error(getErrorMessage(err));
+        message.error(`Could not save the variable: ${getErrorMessage(err)}`);
       });
   };
 
@@ -192,7 +201,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         if (isPermissionError(err)) {
           setError(getErrorMessage(err));
         } else {
-          message.error("Failed to load global variables");
+          message.error(`Could not load global variables: ${getErrorMessage(err)}`);
         }
         setLoading(false);
       });
@@ -213,8 +222,9 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
         <>
           <SettingsPageHeader
             docUrl="https://docs.terrakube.io/user-guide/organizations/global-variables"
-            title="Global Variables"
-            description="Global Variables allow you to define and apply variables one time across multiple workspaces within an organization."
+            title="Global variables"
+            description="Applied to every workspace in this organization, unless a workspace sets the same key."
+            divider={false}
             actions={
               <Button
                 type="primary"
@@ -223,42 +233,44 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
                 icon={<PlusOutlined />}
                 disabled={!managePermission}
               >
-                Create global variable
+                Create variable
               </Button>
             }
           />
-          <Loading loading={loading} description="Loading Global Variables...">
-            <Collapse
-              defaultActiveKey={["TERRAFORM", "ENV"]}
-              items={[
-                {
-                  key: "TERRAFORM",
-                  label: `Terraform Variables (${terraformVariables.length})`,
-                  children: (
+          <Loading loading={loading} description="Loading global variables...">
+            {globalVariables.length === 0 ? (
+              <EmptyState simple description="No global variables yet.">
+                {managePermission && (
+                  <Button icon={<PlusOutlined />} onClick={onNew}>
+                    Create variable
+                  </Button>
+                )}
+              </EmptyState>
+            ) : (
+              [
+                { title: "Terraform variables", items: terraformVariables },
+                { title: "Environment variables", items: envVariables },
+              ].map((group) => (
+                <section key={group.title} className="settings-list-section">
+                  <Typography.Title level={4} className="settings-list-count">
+                    {group.title} ({group.items.length})
+                  </Typography.Title>
+                  {group.items.length === 0 ? (
+                    <Typography.Text type="secondary" className="settings-list-empty">
+                      No {group.title.toLowerCase()} yet.
+                    </Typography.Text>
+                  ) : (
                     <Table
-                      dataSource={terraformVariables}
-                      columns={VARIABLES_COLUMS(onEdit)}
-                      rowKey="key"
+                      dataSource={group.items}
+                      columns={columns}
+                      rowKey="id"
                       pagination={false}
-                      locale={{ emptyText: "No terraform variables defined yet." }}
+                      scroll={{ x: "max-content" }}
                     />
-                  ),
-                },
-                {
-                  key: "ENV",
-                  label: `Environment Variables (${envVariables.length})`,
-                  children: (
-                    <Table
-                      dataSource={envVariables}
-                      columns={VARIABLES_COLUMS(onEdit)}
-                      rowKey="key"
-                      pagination={false}
-                      locale={{ emptyText: "No environment variables defined yet." }}
-                    />
-                  ),
-                },
-              ]}
-            />
+                  )}
+                </section>
+              ))
+            )}
           </Loading>
 
           <GlobalVariableFormModal
@@ -279,11 +291,11 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
             title="Delete global variable"
             message={
               <>
-                Deleting the global variable <strong>{pendingDelete?.attributes.key}</strong> cannot be undone. It will
-                no longer be used in future runs.
+                The global variable <strong>{pendingDelete?.attributes.key}</strong> will no longer be passed to runs in
+                any workspace. This cannot be undone.
               </>
             }
-            okText="Delete"
+            okText="Delete variable"
             onConfirm={() => {
               if (pendingDelete) onDelete(pendingDelete.id);
               setPendingDelete(null);
