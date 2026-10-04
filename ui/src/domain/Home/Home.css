@@ -24,13 +24,6 @@
   overflow-y: auto;
 }
 
-/* Narrow viewports: leave a row for the fixed drawer trigger so it never covers the breadcrumb or title. */
-@media (max-width: 767px) {
-  .app-content-scroll {
-    padding-top: 44px;
-  }
-}
-
 .avatar-hover-effect {
   cursor: pointer;
   color: rgba(255, 255, 255, 0.65);
@@ -38,4 +31,20 @@
 
 .avatar-hover-effect:hover {
   color: #fff;
+}
+
+/* Phone: the sidebar is a fixed drawer, so stack the mobile top bar above the content. */
+@media (max-width: 767.98px) {
+  .layout.ant-layout.ant-layout-has-sider {
+    flex-direction: column;
+  }
+
+  /* antd sets width: 0 on the content beside a sider (row layout only). */
+  .layout.ant-layout.ant-layout-has-sider > .ant-layout {
+    width: auto;
+  }
+}
+
+.app-footer {
+  text-align: center;
 }

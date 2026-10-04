@@ -1,3 +1,5 @@
+import "./ApprovalAttribution.css";
+
 type Props = {
   approvedBy?: string | null;
   approvedAt?: string | null;
@@ -5,7 +7,7 @@ type Props = {
 
 export const ApprovalAttribution = ({ approvedBy, approvedAt }: Props) =>
   approvedBy ? (
-    <span style={{ display: "block" }}>
+    <span className="approval-attribution">
       Approved by <b>{approvedBy}</b>
       {approvedAt && (
         <>

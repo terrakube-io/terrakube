@@ -26,6 +26,7 @@ import { getOrgIdFromPathname } from "../../config/orgId";
 import organizationService from "@/modules/organizations/organizationService";
 import { OrganizationSummaryProvider } from "@/modules/organizations/OrganizationSummaryContext";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
 const { Footer } = Layout;
 
 type AppRouteContext = {
@@ -171,6 +172,10 @@ const AppLayout = () => {
   const backendError = useSyncExternalStore(subscribeBackendStatus, getBackendError);
   const { colorScheme, themeMode } = useTheme();
   const segments = location.pathname.split("/").filter(Boolean);
+  const urlOrgId = getOrgIdFromPathname(location.pathname);
+  const urlOrgName = useOrganizationName(urlOrgId);
+  // On organization URLs the name always belongs to the id in the URL, never to a previously visited organization.
+  const currentOrgName = urlOrgId ? (urlOrgName ?? "") : organizationName;
   const noOrgContext =
     segments.length === 0 ||
     segments[0] === "settings" ||
@@ -247,7 +252,7 @@ const AppLayout = () => {
     <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
       <Layout className="layout mh-100">
         <AppSidebar
-          organizationName={organizationName}
+          organizationName={currentOrgName}
           setOrganizationName={setOrganizationName}
           organizations={orgs}
           onOrgChange={handleOrgChange}
@@ -268,10 +273,10 @@ const AppLayout = () => {
               />
             ) : (
               <ErrorBoundary key={location.pathname}>
-                <Outlet context={{ organizationName, setOrganizationName, setWorkspaceManageState }} />
+                <Outlet context={{ organizationName: currentOrgName, setOrganizationName, setWorkspaceManageState }} />
               </ErrorBoundary>
             )}
-            <Footer style={{ textAlign: "center" }}>
+            <Footer className="app-footer">
               Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
             </Footer>
           </div>

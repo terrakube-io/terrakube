@@ -5,7 +5,7 @@ import {
   SafetyCertificateOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Flex, Typography, Tag, theme } from "antd";
+import { Button, Flex, Typography, Tag } from "antd";
 import { DateTime } from "luxon";
 import { UserToken } from "@/modules/user/types";
 import { formatOrdinalDate, relativeTime } from "@/modules/utils/dates";
@@ -17,8 +17,6 @@ type Props = {
 };
 
 export default function TokenGridItem({ token, onDelete, loading }: Props) {
-  const { token: themeToken } = theme.useToken();
-
   const expiryDate =
     token.createdDate && (token.days > 0 || token.hours > 0 || token.minutes > 0)
       ? DateTime.fromISO(token.createdDate).plus({ days: token.days, hours: token.hours, minutes: token.minutes })
@@ -29,15 +27,7 @@ export default function TokenGridItem({ token, onDelete, loading }: Props) {
   const status = expired ? "expired" : expiryDate ? "expiring" : "never";
 
   return (
-    <div
-      className="token-item"
-      data-status={status}
-      style={{
-        border: `1px solid ${themeToken.colorBorder}`,
-        borderRadius: themeToken.borderRadiusLG,
-        backgroundColor: themeToken.colorBgContainer,
-      }}
-    >
+    <div className="token-item" data-status={status}>
       <span className="token-item-icon" aria-hidden="true">
         {expired ? <ExclamationCircleOutlined /> : <SafetyCertificateOutlined />}
       </span>

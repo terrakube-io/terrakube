@@ -18,8 +18,16 @@ const darkThemeTokens = {
   // Text - high contrast
   colorText: "#e6edf3",
   colorTextSecondary: "#8b949e",
-  colorTextTertiary: "#6e7681",
-  colorTextQuaternary: "#484f58",
+  // Descriptions and secondary text: antd's default falls below 4.5:1.
+  colorTextDescription: "#8b949e",
+  // Tertiary text (help lines), placeholders and select arrows: the GitHub-dark defaults fall below 4.5:1 / 3:1.
+  colorTextTertiary: "#7d8590",
+  colorTextQuaternary: "#7d8590",
+  colorTextPlaceholder: "#7d8590",
+
+  // Status: antd's dark derivations give 3.3–4.0:1 for error and info text on their tinted tags.
+  colorError: "#f85149",
+  colorInfo: "#4493f8",
 
   // Fill colors
   colorFill: "#21262d",
@@ -63,6 +71,10 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
           darkItemSelectedBg: isTerrakube ? "#2d1548" : "#0d2942",
           darkItemHoverBg: isTerrakube ? "#2a1f3d" : "#16232f",
           darkSubMenuItemBg: "#161b22",
+          // Danger items ("Delete module"): antd's colorError is below 4.5:1 on the menu surfaces.
+          dangerItemColor: "#ff7875",
+          dangerItemHoverColor: "#ff7875",
+          dangerItemSelectedColor: "#ff7875",
         },
         Card: {
           colorBgContainer: "#161b22",
@@ -85,7 +97,14 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
         Table: {
           colorBgContainer: "#161b22",
           headerBg: "#1c2128",
+          headerSortActiveBg: "#21262d",
+          headerSortHoverBg: "#21262d",
           rowHoverBg: "#21262d",
+        },
+        Avatar: {
+          // Default avatars: graphite tile, light glyph (antd uses the placeholder grey with white).
+          colorTextPlaceholder: "#30363d",
+          colorTextLightSolid: "#e6edf3",
         },
         Modal: {
           contentBg: "#1c2128",
@@ -96,6 +115,9 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
         },
         Dropdown: {
           colorBgElevated: "#1c2128",
+          // Danger menu items use colorError for the text and, on hover, as the fill under colorTextLightSolid.
+          colorError: "#ff7875",
+          colorTextLightSolid: "#0d1117",
         },
         Popover: {
           colorBgElevated: "#1c2128",
@@ -123,7 +145,7 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
           itemColor: "#8b949e",
           linkColor: "#8b949e",
           linkHoverColor: "#e6edf3",
-          separatorColor: "#6e7681",
+          separatorColor: "#7d8590",
         },
         Typography: {
           colorText: "#e6edf3",
@@ -147,6 +169,9 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
         Pagination: {
           itemActiveBg: "#21262d",
           itemBg: "#0d1117",
+          // antd puts colorPrimary text on the active page (1.8:1 on #21262d); the accent stays on its border.
+          itemActiveColor: "#e6edf3",
+          itemActiveColorHover: "#e6edf3",
         },
       },
     };
@@ -156,14 +181,40 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
     algorithm: theme.defaultAlgorithm,
     token: {
       colorPrimary,
+      // Descriptions and secondary text: antd's default (0.45 alpha) falls below 4.5:1.
+      colorTextDescription: "rgba(0, 0, 0, 0.65)",
+      // Links follow the accent (antd defaults to its own blue); blue's accent is too light for text.
+      colorLink: isTerrakube ? colorPrimary : "#0958d9",
+      // Hover/active steps of both link palettes are below 4.5:1 on white (purple #b37feb is 2.9:1).
+      colorLinkHover: isTerrakube ? "#531dab" : "#0958d9",
+      colorLinkActive: isTerrakube ? "#531dab" : "#0958d9",
+      // Tertiary text (0.45 alpha) is 3.4:1 on white.
+      colorTextTertiary: "rgba(0, 0, 0, 0.55)",
+      // Select arrows and other quaternary icons (0.25 alpha) are 1.8:1; placeholders follow quaternary by default.
+      colorTextQuaternary: "rgba(0, 0, 0, 0.45)",
+      colorTextPlaceholder: "rgba(0, 0, 0, 0.55)",
+      // Disabled text keeps the faint grey so disabled controls still read as disabled.
+      colorTextDisabled: "rgba(0, 0, 0, 0.25)",
     },
     components: {
+      Avatar: {
+        // Default avatars: white glyph on antd's placeholder grey is 1.8:1.
+        colorTextPlaceholder: "#737373",
+      },
       Menu: {
         darkItemBg: "#161b22",
         darkPopupBg: "#161b22",
         darkSubMenuItemBg: "#161b22",
         darkItemSelectedBg: isTerrakube ? "#2d1548" : "#0d2942",
         darkItemHoverBg: isTerrakube ? "#2a1f3d" : "#16232f",
+        // Danger items ("Delete module"): antd's colorError is 3.3:1 on white.
+        dangerItemColor: "#cf1322",
+        dangerItemHoverColor: "#cf1322",
+        dangerItemSelectedColor: "#cf1322",
+      },
+      Dropdown: {
+        // Danger menu items use colorError for the text and, on hover, as the fill under white text.
+        colorError: "#cf1322",
       },
       Layout: {
         headerBg: "#1e2837",

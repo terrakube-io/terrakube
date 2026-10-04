@@ -204,6 +204,9 @@ export type FlatJob = {
   via?: JobVia;
   prNumber?: number;
   prCommentError?: string;
+  createdDate?: string;
+  updatedDate?: string;
+  templateReference?: string;
 };
 // VCS
 
@@ -307,11 +310,13 @@ export type ModuleAttributes = {
   versions: string[];
   registryPath: string;
   tagPrefix?: string;
+  updatedDate?: string;
 } & AuditFieldBase;
 
 export type ModuleVersionAttributes = {
   version: string;
   commit: string;
+  gitTag?: string;
   status?: VersionStatusValue;
   deprecationMessage?: string | null;
 };

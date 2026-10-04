@@ -1,5 +1,5 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, useNavigate } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import AppSidebar from "../AppSidebar";
 import * as sidebarPreference from "../sidebarPreference";
 import { FlatOrganization } from "@/domain/types";
@@ -131,12 +131,15 @@ describe("settings context", () => {
     expect(await screen.findByText("General")).toBeInTheDocument();
     expect(screen.getByText("Teams")).toBeInTheDocument();
     expect(screen.getByText("Tags")).toBeInTheDocument();
-    expect(screen.getByText("Global Variables")).toBeInTheDocument();
-    expect(screen.getByText("Variable Collections")).toBeInTheDocument();
-    expect(screen.getByText("VCS Providers")).toBeInTheDocument();
-    expect(screen.getByText("SSH Keys")).toBeInTheDocument();
+    expect(screen.getByText("Global variables")).toBeInTheDocument();
+    expect(screen.getByText("Variable collections")).toBeInTheDocument();
+    expect(screen.getByText("VCS providers")).toBeInTheDocument();
+    expect(screen.getByText("SSH keys")).toBeInTheDocument();
     expect(screen.getByText("Agents")).toBeInTheDocument();
-    expect(screen.getByText("Federated Credentials")).toBeInTheDocument();
+    expect(screen.getByText("Federated credentials")).toBeInTheDocument();
+    expect(screen.getByText("Policy sets")).toBeInTheDocument();
+    expect(screen.getByText("Organization settings")).toBeInTheDocument();
+    expect(screen.getByText("Version control")).toBeInTheDocument();
     expect(screen.getByText("Templates")).toBeInTheDocument();
     expect(screen.getByText("Actions")).toBeInTheDocument();
     expect(screen.queryByText("Projects")).not.toBeInTheDocument();
@@ -159,12 +162,12 @@ describe("settings context", () => {
     expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
-  it("does not show a collapse trigger (force-expanded)", async () => {
+  it("can be collapsed here too, like every other page", async () => {
     renderSidebar(`${orgPath}/settings/general`);
     await screen.findByText("General");
 
-    expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Expand sidebar")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Collapse sidebar"));
+    expect(screen.getByLabelText("Expand sidebar")).toBeInTheDocument();
   });
 });
 
@@ -251,13 +254,13 @@ describe("workspace-settings context", () => {
 
     expect(await screen.findByText("General")).toBeInTheDocument();
     expect(screen.getByText("Locking")).toBeInTheDocument();
-    expect(screen.getByText("SSH Key")).toBeInTheDocument();
+    expect(screen.getByText("SSH key")).toBeInTheDocument();
     expect(screen.getByText("Webhook")).toBeInTheDocument();
-    expect(screen.getByText("State Shared")).toBeInTheDocument();
-    expect(screen.getByText("Team Access")).toBeInTheDocument();
-    expect(screen.getByText("Destruction and Deletion")).toBeInTheDocument();
-    expect(screen.getByText("Back to Workspace")).toBeInTheDocument();
-    expect(screen.queryByText("Global Variables")).not.toBeInTheDocument();
+    expect(screen.getByText("State shared")).toBeInTheDocument();
+    expect(screen.getByText("Team access")).toBeInTheDocument();
+    expect(screen.getByText("Destruction and deletion")).toBeInTheDocument();
+    expect(screen.getByText("Back to workspace")).toBeInTheDocument();
+    expect(screen.queryByText("Global variables")).not.toBeInTheDocument();
     expect(screen.queryByText("Teams")).not.toBeInTheDocument();
     expect(screen.queryByText("Overview")).not.toBeInTheDocument();
   });
@@ -273,17 +276,17 @@ describe("workspace-settings context", () => {
   it("links back to the workspace overview from the back link", async () => {
     renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
 
-    const backLink = await screen.findByText("Back to Workspace");
+    const backLink = await screen.findByText("Back to workspace");
 
     expect(backLink.closest("a")).toHaveAttribute("href", workspacePath);
   });
 
-  it("does not show a collapse trigger (force-expanded)", async () => {
+  it("can be collapsed here too, like every other page", async () => {
     renderSidebar(`${workspacePath}/settings`, { workspaceManageState: true });
     await screen.findByText("General");
 
-    expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Expand sidebar")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Collapse sidebar"));
+    expect(screen.getByLabelText("Expand sidebar")).toBeInTheDocument();
   });
 });
 
@@ -317,95 +320,71 @@ describe("user-settings context", () => {
     expect(backLink.closest("a")).toHaveAttribute("href", "/");
   });
 
-  it("does not show a collapse trigger (force-expanded)", async () => {
+  it("can be collapsed here too, like every other page", async () => {
     renderSidebar("/settings/tokens");
     await screen.findByText("Tokens");
 
-    expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Expand sidebar")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Collapse sidebar"));
+    expect(screen.getByLabelText("Expand sidebar")).toBeInTheDocument();
   });
 });
 
-describe("narrow viewport drawer", () => {
-  let narrow: boolean;
-  let listeners: Array<() => void>;
+describe("narrow viewport (below md)", () => {
   const originalMatchMedia = window.matchMedia;
 
-  function resize(toNarrow: boolean) {
-    narrow = toNarrow;
-    act(() => listeners.forEach((listener) => listener()));
-  }
-
   beforeEach(() => {
-    sessionStorage.clear();
     localStorage.clear();
-    narrow = true;
-    listeners = [];
     window.matchMedia = ((query: string) => ({
-      get matches() {
-        return query === "(max-width: 767px)" ? narrow : false;
-      },
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
-      removeEventListener: (_type: string, listener: () => void) => {
-        listeners = listeners.filter((l) => l !== listener);
-      },
-      dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia;
+      ...originalMatchMedia(query),
+      matches: query.includes("767.98px"),
+    })) as typeof window.matchMedia;
   });
 
   afterEach(() => {
     window.matchMedia = originalMatchMedia;
   });
 
-  const trigger = () => screen.getByRole("button", { name: /navigation/i });
-  const sidebar = () => document.getElementById("app-sidebar")!;
+  it("shows an open-navigation toggle instead of the collapse trigger, even in settings", async () => {
+    renderSidebar(`${orgPath}/settings/general`);
+    await screen.findByText("Teams");
 
-  it("starts closed, with the hidden menu out of the tab order", async () => {
-    renderSidebar(`${orgPath}/workspaces`);
-
-    expect(trigger()).toHaveAttribute("aria-expanded", "false");
-    expect(trigger()).toHaveAttribute("aria-controls", "app-sidebar");
-    expect(sidebar()).toHaveAttribute("inert");
+    const toggle = screen.getByLabelText("Open navigation");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
   });
 
-  it("opens from a keyboard-reachable button and closes on the backdrop", async () => {
-    const { container } = renderSidebar(`${orgPath}/workspaces`);
+  it("opens the drawer from the toggle and closes it with Escape, returning focus to the toggle", async () => {
+    renderSidebar(`${workspacePath}/settings/general`);
+    await screen.findByText("Locking");
+    const toggle = screen.getByLabelText("Open navigation");
 
-    expect(trigger().tagName).toBe("BUTTON");
-    fireEvent.click(trigger());
-    expect(trigger()).toHaveAttribute("aria-expanded", "true");
-    expect(sidebar()).not.toHaveAttribute("inert");
+    fireEvent.click(toggle);
 
-    fireEvent.click(container.querySelector(".app-sidebar-backdrop")!);
-    expect(trigger()).toHaveAttribute("aria-expanded", "false");
-  });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector(".app-sidebar--open")).toBeInTheDocument();
+    expect(screen.getByLabelText("Close navigation")).toHaveFocus();
 
-  it("closes on Escape and returns focus to the trigger", async () => {
-    renderSidebar(`${orgPath}/workspaces`);
-
-    fireEvent.click(trigger());
     fireEvent.keyDown(document, { key: "Escape" });
 
-    expect(trigger()).toHaveAttribute("aria-expanded", "false");
-    expect(trigger()).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector(".app-sidebar--open")).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
   });
 
-  it("closes when the route changes", async () => {
-    function NavigateAway() {
-      const navigate = useNavigate();
-      return (
-        <button type="button" onClick={() => navigate(`${orgPath}/registry`)}>
-          go
-        </button>
-      );
-    }
+  it("closes the drawer when a navigation item is followed", async () => {
+    renderSidebar(`${orgPath}/settings/general`);
+    await screen.findByText("Teams");
+    fireEvent.click(screen.getByLabelText("Open navigation"));
+
+    fireEvent.click(screen.getByText("Teams"));
+
+    expect(await screen.findByLabelText("Open navigation")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByLabelText("Open navigation")).toHaveFocus();
+  });
+
+  it("makes the top bar and the page behind the open drawer inert, but not the backdrop", async () => {
     render(
-      <MemoryRouter initialEntries={[`${orgPath}/workspaces`]}>
-        <NavigateAway />
+      <MemoryRouter initialEntries={[`${orgPath}/settings/general`]}>
         <AppSidebar
           organizationName="Acme Corp"
           setOrganizationName={jest.fn()}
@@ -413,39 +392,122 @@ describe("narrow viewport drawer", () => {
           onOrgChange={jest.fn()}
           workspaceManageState={true}
         />
+        <main data-testid="content">
+          <button type="button">Page action</button>
+        </main>
       </MemoryRouter>
     );
+    await screen.findByText("Teams");
+    const toggle = screen.getByLabelText("Open navigation");
+    const content = screen.getByTestId("content");
+    expect(content).not.toHaveAttribute("inert");
 
-    fireEvent.click(trigger());
-    fireEvent.click(screen.getByRole("button", { name: "go" }));
+    fireEvent.click(toggle);
 
-    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(content).toHaveAttribute("inert");
+    expect(toggle.closest("header")).toHaveAttribute("inert");
+    expect(document.querySelector(".app-sidebar-backdrop")).not.toHaveAttribute("inert");
+    expect(document.getElementById("app-sidebar")).not.toHaveAttribute("inert");
+
+    fireEvent.click(document.querySelector(".app-sidebar-backdrop")!);
+
+    expect(content).not.toHaveAttribute("inert");
+    expect(toggle.closest("header")).not.toHaveAttribute("inert");
+    expect(toggle).toHaveFocus();
   });
 
-  it("closes when the current page is selected again", async () => {
-    renderSidebar(`${orgPath}/workspaces`);
+  const renderWithPage = (showSidebar = true) => (
+    <MemoryRouter initialEntries={[`${orgPath}/settings/general`]}>
+      {showSidebar && (
+        <AppSidebar
+          organizationName="Acme Corp"
+          setOrganizationName={jest.fn()}
+          organizations={organizations}
+          onOrgChange={jest.fn()}
+          workspaceManageState={true}
+        />
+      )}
+      <main data-testid="content" />
+    </MemoryRouter>
+  );
 
-    fireEvent.click(trigger());
-    fireEvent.click(await screen.findByText("Workspaces"));
+  it("removes inert from the page when the sidebar unmounts with the drawer open", async () => {
+    const { rerender } = render(renderWithPage());
+    await screen.findByText("Teams");
+    fireEvent.click(screen.getByLabelText("Open navigation"));
+    expect(screen.getByTestId("content")).toHaveAttribute("inert");
 
-    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    rerender(renderWithPage(false));
+
+    expect(screen.getByTestId("content")).not.toHaveAttribute("inert");
   });
 
-  it("keeps the stored desktop preference when the viewport goes narrow and back", async () => {
+  it("removes inert and moves focus into the sidebar when the window grows to desktop with the drawer open", async () => {
+    let mobile = true;
+    const listeners: ((event: { matches: boolean }) => void)[] = [];
+    window.matchMedia = ((query: string) => ({
+      ...originalMatchMedia(query),
+      get matches() {
+        return query.includes("767.98px") && mobile;
+      },
+      addEventListener: (_type: string, listener: (event: { matches: boolean }) => void) => {
+        if (query.includes("767.98px")) listeners.push(listener);
+      },
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    render(renderWithPage());
+    await screen.findByText("Teams");
+    fireEvent.click(screen.getByLabelText("Open navigation"));
+    expect(screen.getByTestId("content")).toHaveAttribute("inert");
+
+    mobile = false;
+    act(() => listeners.forEach((listener) => listener({ matches: false })));
+
+    expect(screen.getByTestId("content")).not.toHaveAttribute("inert");
+    expect(screen.queryByLabelText("Open navigation")).not.toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.getElementById("app-sidebar")).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("leaves the drawer open when Escape was already handled or comes from a dropdown", async () => {
+    renderSidebar(`${orgPath}/settings/general`);
+    await screen.findByText("Teams");
+    fireEvent.click(screen.getByLabelText("Open navigation"));
+
+    const handled = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    handled.preventDefault();
+    act(() => {
+      document.dispatchEvent(handled);
+    });
+    const dropdown = document.createElement("div");
+    dropdown.className = "ant-select-dropdown";
+    document.body.appendChild(dropdown);
+    fireEvent.keyDown(dropdown, { key: "Escape" });
+    dropdown.remove();
+
+    expect(screen.getByLabelText("Open navigation")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("ignores a stored collapsed preference so the drawer shows full labels", async () => {
     localStorage.setItem("terrakube.sidebarCollapsed", "true");
-    const setSpy = jest.spyOn(sidebarPreference, "setStoredSidebarCollapsed");
-    // An earlier test's spy on the same function may still hold its calls.
-    setSpy.mockClear();
     renderSidebar(`${orgPath}/workspaces`);
+    await screen.findByText("Workspaces");
 
-    fireEvent.click(trigger());
-    resize(false);
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+  });
+});
 
-    expect(screen.queryByRole("button", { name: /navigation/i })).not.toBeInTheDocument();
-    expect(sidebar()).not.toHaveAttribute("inert");
-    expect(sidebar()).toHaveClass("ant-layout-sider-collapsed");
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument();
-    expect(setSpy).not.toHaveBeenCalled();
-    setSpy.mockRestore();
+describe("active settings item", () => {
+  it.each([
+    [`${orgPath}/settings/teams`, "Teams"],
+    [`${workspacePath}/settings/locking`, "Locking"],
+    ["/settings/theme", "Theme"],
+  ])("marks the current section on %s with aria-current", async (path, label) => {
+    renderSidebar(path);
+
+    const link = (await screen.findByText(label)).closest("a");
+
+    expect(link).toHaveAttribute("aria-current", "page");
+    expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 });

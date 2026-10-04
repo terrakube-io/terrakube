@@ -1,5 +1,7 @@
-import { Input, Modal, Space, Typography } from "antd";
-import { useState } from "react";
+import { Button, Flex, Input, Modal, Space, Typography } from "antd";
+import { useEffect, useState } from "react";
+import "../CrudFormModal/CrudFormModal.css";
+import "./DeleteConfirmationModal.css";
 
 type Props = {
   open: boolean;
@@ -7,6 +9,7 @@ type Props = {
   message: React.ReactNode;
   confirmValue?: string;
   okText?: string;
+  confirmLoading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -17,10 +20,16 @@ export default function DeleteConfirmationModal({
   message,
   confirmValue,
   okText = "Delete",
+  confirmLoading,
   onConfirm,
   onCancel,
 }: Props) {
   const [confirmation, setConfirmation] = useState("");
+
+  // Also when the parent closes it: a reopened dialog must not keep the previous answer.
+  useEffect(() => {
+    if (!open) setConfirmation("");
+  }, [open]);
 
   const close = (action: () => void) => {
     action();
@@ -29,21 +38,37 @@ export default function DeleteConfirmationModal({
 
   return (
     <Modal
+      className="form-modal"
       title={title}
       open={open}
-      okText={okText}
-      okButtonProps={{ danger: true, disabled: confirmValue !== undefined && confirmation !== confirmValue }}
-      onOk={() => close(onConfirm)}
       onCancel={() => close(onCancel)}
+      footer={
+        <Flex gap="small">
+          <Button
+            type="primary"
+            danger
+            loading={confirmLoading}
+            disabled={confirmValue !== undefined && confirmation !== confirmValue}
+            onClick={() => close(onConfirm)}
+          >
+            {okText}
+          </Button>
+          <Button onClick={() => close(onCancel)}>Cancel</Button>
+        </Flex>
+      }
     >
-      <Space orientation="vertical" style={{ width: "100%" }}>
+      <Space orientation="vertical" className="delete-confirmation-body">
         <Typography.Text>{message}</Typography.Text>
         {confirmValue !== undefined && (
           <>
             <Typography.Text>
               Type <Typography.Text strong>{confirmValue}</Typography.Text> to confirm.
             </Typography.Text>
-            <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder={confirmValue} />
+            <Input
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              aria-label="Type the name to confirm"
+            />
           </>
         )}
       </Space>

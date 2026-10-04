@@ -1,0 +1,25 @@
+.settings-page-header-title.ant-typography {
+  margin: 0;
+}
+
+.settings-page-header-description.ant-typography {
+  display: block;
+  max-width: 720px;
+  margin: 8px 0 0;
+}
+
+.settings-page-header-doc-link.ant-typography {
+  white-space: nowrap;
+}
+
+.settings-page-header-doc-icon {
+  font-size: 12px;
+}
+
+.settings-page-header-divider.ant-divider {
+  margin: 16px 0 24px;
+}
+
+.settings-page-header-spacer {
+  margin-bottom: 24px;
+}

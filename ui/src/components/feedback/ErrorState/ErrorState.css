@@ -1,0 +1,16 @@
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: max(60vh, 100%);
+  width: 100%;
+}
+
+/* .anticon resets color to inherit; the extra class wins over it regardless of stylesheet order. */
+.anticon.error-state-icon-muted {
+  color: var(--tk-text-tertiary);
+}
+
+.anticon.error-state-icon-error {
+  color: var(--ant-color-error);
+}

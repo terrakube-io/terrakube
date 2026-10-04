@@ -38,12 +38,7 @@ describe("PolicyStatusTag", () => {
     render(
       <MemoryRouter>
         <div onClick={parentClickHandler}>
-          <PolicyStatusTag
-            status="COMPLIANT"
-            organizationId="org-1"
-            workspaceId="ws-1"
-            clickable
-          />
+          <PolicyStatusTag status="COMPLIANT" organizationId="org-1" workspaceId="ws-1" clickable />
         </div>
       </MemoryRouter>
     );
@@ -60,12 +55,7 @@ describe("PolicyStatusTag", () => {
   it("renders non-interactive tag when clickable is false", () => {
     render(
       <MemoryRouter>
-        <PolicyStatusTag
-          status="COMPLIANT"
-          organizationId="org-1"
-          workspaceId="ws-1"
-          clickable={false}
-        />
+        <PolicyStatusTag status="COMPLIANT" organizationId="org-1" workspaceId="ws-1" clickable={false} />
       </MemoryRouter>
     );
 
@@ -80,6 +70,6 @@ describe("PolicyStatusTag", () => {
     // A color prop would make Ant paint the tag inline and bypass the contrast-safe CSS.
     expect(tag).toHaveClass("tk-status-tag", "extra");
     expect(tag.style.backgroundColor).toBe("");
-    expect(tag.style.getPropertyValue("--status-color")).toBe("#FB0136");
+    expect(tag.style.getPropertyValue("--status-color")).toBe("var(--tk-status-error)");
   });
 });

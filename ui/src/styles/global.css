@@ -13,13 +13,14 @@
 }
 
 /* The sidebar and its menus style their own links; the help and user menus render in a portal, so name them too. */
-[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)) {
+[data-theme="dark"] a:where(:not(.ant-btn, .ant-btn *, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)) {
   color: var(--tk-link);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
-[data-theme="dark"] a:where(:not(.ant-btn, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)):hover {
+[data-theme="dark"]
+  a:where(:not(.ant-btn, .ant-btn *, .app-sidebar *, .help-menu-dropdown *, .user-menu-dropdown *)):hover {
   color: var(--tk-link-hover);
   text-decoration: underline;
 }
@@ -211,13 +212,14 @@
     box-shadow 0.2s cubic-bezier(0.3, 0, 0.5, 1);
 }
 
-[data-theme="dark"] .ant-btn-default {
+/* Danger and disabled default buttons keep antd's own colors. */
+[data-theme="dark"] .ant-btn-default:not(:disabled, .ant-btn-dangerous) {
   background-color: var(--tk-bg-elevated);
   border-color: var(--tk-border-primary);
   color: var(--tk-text-primary);
 }
 
-[data-theme="dark"] .ant-btn-default:hover {
+[data-theme="dark"] .ant-btn-default:not(:disabled, .ant-btn-dangerous):hover {
   background-color: var(--tk-fill-secondary);
   border-color: #8b949e;
   color: #fff;
@@ -225,6 +227,11 @@
 
 [data-theme="dark"] .ant-btn-primary {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* Inline link buttons (className="link") sit flush with the text around them. */
+.ant-btn.link {
+  padding: 0;
 }
 
 /* --- Tables --- */
@@ -364,13 +371,14 @@
 
 /*
  * Status tags: tinted pill, text darkened (light) or lightened (dark) from the status hue so it clears 4.5:1.
- * The 60%/70% text mix and 12%/15% tint were checked against the surfaces tags sit on: #fff and #f5f5f5 in
- * light, --tk-bg-base and --tk-bg-elevated in dark. The tightest cases are orange on #f5f5f5 (4.83:1) and
- * #FB0136 on --tk-bg-elevated (4.60:1), so re-check contrast when changing these percentages or those surfaces.
+ * The 75%/70% text mix and 12%/15% tint were checked against the surfaces tags sit on: #fff and #f5f5f5 in
+ * light, --tk-bg-base and --tk-bg-elevated in dark. Inputs are the --tk-status-* tokens plus #6e6e6e (neutral)
+ * and #c026d3 (no changes); the tightest case is #c026d3 on #f5f5f5 (5.67:1) and in dark (4.67:1), so re-check
+ * contrast when changing these percentages, surfaces or hues.
  */
 .ant-tag.tk-status-tag {
-  --status-color: #8c8c8c;
-  color: color-mix(in srgb, var(--status-color) 60%, #000);
+  --status-color: #6e6e6e;
+  color: color-mix(in srgb, var(--status-color) 75%, #000);
   background: color-mix(in srgb, var(--status-color) 12%, transparent);
   border-color: color-mix(in srgb, var(--status-color) 40%, transparent);
 }
@@ -518,4 +526,148 @@
 [data-theme="dark"] .ant-card:hover {
   border-color: #8b949e;
   box-shadow: var(--tk-shadow-md);
+}
+
+/* ==========================================================================
+   Dark mode contrast fixes (audit 2026-10-04)
+   ========================================================================== */
+
+/* List headers and group rows: #30363d left secondary text at 3.97:1; use the elevated surface. */
+[data-theme="dark"] .organization-list-header,
+[data-theme="dark"] .workspace-list-header,
+[data-theme="dark"] .workspace-group-divider {
+  background: var(--tk-bg-elevated);
+}
+
+/* Active sort arrows and outlined radio buttons use colorPrimary, which is 1.8–2.7:1 on graphite. */
+[data-theme="dark"] .ant-table-column-sorter-up.active,
+[data-theme="dark"] .ant-table-column-sorter-down.active {
+  color: var(--tk-link);
+}
+
+[data-theme="dark"]
+  .ant-radio-group:not(.ant-radio-group-solid)
+  .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: var(--tk-link);
+  border-color: var(--tk-link);
+}
+
+/* Empty-table text: antd renders it in the disabled grey. */
+[data-theme="dark"] .ant-table-placeholder,
+[data-theme="dark"] .ant-empty-description {
+  color: var(--tk-text-secondary);
+}
+
+/* Solid destructive buttons keep white text above 4.5:1; red text elsewhere stays the lighter error tone. */
+[data-theme="dark"] .ant-btn-color-dangerous.ant-btn-variant-solid:not(:disabled) {
+  background: #da3633;
+}
+
+[data-theme="dark"] .ant-btn-color-dangerous.ant-btn-variant-solid:not(:disabled):hover {
+  background: #e5534b;
+}
+
+/* Black single-colour provider logos rendered as <img>. */
+[data-theme="dark"] img[src$="/providers/terraform.svg"] {
+  filter: invert(0.85);
+}
+
+/* Status tag text: antd's dark preset reds and blues sit at 3.9–4.2:1 on their tinted backgrounds. */
+[data-theme="dark"] .ant-tag.ant-tag.ant-tag-error:not(.ant-tag-disabled) {
+  color: #ff7b72;
+}
+
+[data-theme="dark"] .ant-tag.ant-tag.ant-tag-processing:not(.ant-tag-disabled) {
+  color: #58a6ff;
+}
+
+/* Sort arrows keep full-opacity tertiary grey (antd fades them to 0.65). */
+[data-theme="dark"] .ant-table-column-sorter {
+  color: var(--tk-text-tertiary);
+}
+
+[data-theme="dark"] .ant-table-wrapper .ant-table-tbody > tr.ant-table-placeholder {
+  color: var(--tk-text-secondary);
+}
+
+/* Inline code inside help text inherits the tertiary grey; keep it readable on its grey chip. */
+[data-theme="dark"] .ant-form-item-extra code {
+  color: var(--tk-text-primary);
+}
+
+/* Default user avatar: graphite tile, light glyph. */
+[data-theme="dark"] .user-menu-avatar {
+  background-color: var(--tk-fill-secondary) !important;
+  color: var(--tk-text-primary) !important;
+}
+
+/* Link-style buttons use a derived purple (4.2:1); match regular links. */
+[data-theme="dark"] .ant-btn-color-link.ant-btn-variant-link:not(:disabled) {
+  color: var(--tk-link);
+}
+
+/* Empty-state illustration: antd paints it from fill tokens that equal or undercut the dark surface. */
+[data-theme="dark"] .ant-empty-image svg ellipse {
+  fill: var(--tk-fill-primary);
+}
+
+[data-theme="dark"] .ant-empty-image svg g[stroke] {
+  stroke: var(--tk-text-quaternary);
+}
+
+[data-theme="dark"] .ant-empty-image svg g[stroke] path[fill] {
+  fill: var(--tk-bg-elevated);
+}
+
+/* Colour swatches: a very dark pick would vanish into the dark trigger. */
+[data-theme="dark"] .ant-color-picker-color-block {
+  box-shadow: inset 0 0 0 1px var(--tk-border-primary);
+}
+
+/* ==========================================================================
+   Light mode contrast fixes (audit 2026-10-04)
+   Most fixes are antd tokens in themeConfig.ts; these are the spots tokens cannot reach.
+   ========================================================================== */
+
+/* Inactive sort arrows: antd fades the icon grey to 2.1:1 (headerIconColor is not a public token). */
+[data-theme="light"] .ant-table-column-sorter {
+  color: var(--tk-text-tertiary);
+}
+
+/* Active sort arrows use colorPrimary, which is 3.2:1 on white with the blue scheme. */
+[data-theme="light"] .ant-table-column-sorter-up.active,
+[data-theme="light"] .ant-table-column-sorter-down.active {
+  color: var(--tk-link);
+}
+
+/* Empty-table text: antd renders it in the disabled grey (1.8:1). */
+[data-theme="light"] .ant-table-wrapper .ant-table-tbody > tr.ant-table-placeholder {
+  color: var(--tk-text-secondary);
+}
+
+/* Status tag text: antd's light presets for success (2.2:1), warning (1.8:1), error (3.0:1) and processing (3.7:1)
+   on their tints. Five selectors to outrank antd's .ant-tag.ant-tag-success:not(.ant-tag-disabled).ant-tag-filled. */
+[data-theme="light"] .ant-tag.ant-tag:is(.ant-tag-success, .ant-tag-green):not(.ant-tag-disabled) {
+  color: var(--tk-status-success);
+}
+
+[data-theme="light"] .ant-tag.ant-tag:is(.ant-tag-warning, .ant-tag-gold, .ant-tag-orange):not(.ant-tag-disabled) {
+  color: var(--tk-status-warning);
+}
+
+[data-theme="light"] .ant-tag.ant-tag.ant-tag-error:not(.ant-tag-disabled) {
+  color: var(--tk-status-error);
+}
+
+[data-theme="light"] .ant-tag.ant-tag.ant-tag-processing:not(.ant-tag-disabled) {
+  color: var(--tk-status-info);
+}
+
+/* Typography type="danger" / "warning" use colorError / colorWarning text: 3.3:1 and 2.2:1 on white. */
+[data-theme="light"] .ant-typography.ant-typography-danger {
+  color: var(--tk-status-error);
+}
+
+[data-theme="light"] .ant-typography.ant-typography-warning {
+  color: var(--tk-status-warning);
 }

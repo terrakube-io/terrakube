@@ -1,11 +1,14 @@
 import { ErrorInformation } from "@/modules/api/types";
-import { Breadcrumb, Typography, Flex, Spin, theme } from "antd";
+import { Breadcrumb, Typography, Flex, Layout, Skeleton, Spin } from "antd";
 import { ErrorState } from "@/components/feedback/ErrorState";
-import { Content } from "antd/es/layout/layout";
 import "./PageWrapper.css";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import clsx from "classnames";
+import { getOrgIdFromPathname } from "@/config/orgId";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
+
+const { Content } = Layout;
 
 export type PageWidth = "fluid" | "reading" | "form";
 
@@ -16,6 +19,7 @@ type Props = {
   error?: ErrorInformation | string;
   loading?: boolean;
   loadingText?: string;
+  /** On organization URLs the first crumb is the organization: its label is resolved from the id in the URL. */
   breadcrumbs?: {
     label: string;
     path?: string;
@@ -37,9 +41,8 @@ export default function PageWrapper({
   width = "fluid",
   showTitle = true,
 }: Props) {
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
+  const orgId = getOrgIdFromPathname(useLocation().pathname);
+  const orgName = useOrganizationName(orgId);
 
   useEffect(() => {
     document.title = title ? `${title} · Terrakube` : "Terrakube";
@@ -56,13 +59,23 @@ export default function PageWrapper({
       {breadcrumbs && (
         <Breadcrumb
           className="page-wrapper-crumbs"
-          items={breadcrumbs.map((bc) => ({
-            key: bc.path ?? bc.label,
-            title: bc.path ? <NavLink to={bc.path}>{bc.label}</NavLink> : bc.label,
-          }))}
+          items={breadcrumbs.map((bc, index) => {
+            const isOrgCrumb = orgId && index === 0;
+            if (isOrgCrumb && !orgName) {
+              return {
+                key: "organization",
+                title: <Skeleton.Input active size="small" className="page-wrapper-crumb-skeleton" />,
+              };
+            }
+            const label = isOrgCrumb ? orgName! : bc.label;
+            return {
+              key: bc.path ?? label,
+              title: bc.path ? <NavLink to={bc.path}>{label}</NavLink> : label,
+            };
+          })}
         />
       )}
-      <div className="page-wrapper-content" style={{ background: colorBgContainer }}>
+      <div className="page-wrapper-content">
         <div className={clsx("page-wrapper-inner", `page-wrapper-inner-${width}`)}>
           {(showTitle || actions) && (
             <Flex justify="space-between" flex={1} wrap>

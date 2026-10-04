@@ -1,6 +1,7 @@
 import { DisconnectOutlined, FileSearchOutlined, LockOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Result, Space } from "antd";
 import { LinkButton } from "@/components/navigation/LinkButton";
+import "./ErrorState.css";
 
 export type ErrorStateProps = {
   title?: React.ReactNode;
@@ -13,13 +14,13 @@ export type ErrorStateProps = {
 const resultIcon = (status?: number | string): React.ReactNode | undefined => {
   switch (String(status)) {
     case "404":
-      return <FileSearchOutlined style={{ color: "var(--tk-text-tertiary)" }} />;
+      return <FileSearchOutlined className="error-state-icon-muted" />;
     case "403":
-      return <LockOutlined style={{ color: "var(--tk-text-tertiary)" }} />;
+      return <LockOutlined className="error-state-icon-muted" />;
     case "502":
     case "503":
     case "504":
-      return <DisconnectOutlined style={{ color: "var(--ant-color-error)" }} />;
+      return <DisconnectOutlined className="error-state-icon-error" />;
     default:
       return undefined;
   }
@@ -42,15 +43,7 @@ const defaultTitle = (status?: number | string): string => {
 
 export default function ErrorState({ title, message, status, onRetry, showHomeLink = true }: ErrorStateProps) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "max(60vh, 100%)",
-        width: "100%",
-      }}
-    >
+    <div className="error-state">
       <Result
         status="error"
         icon={resultIcon(status)}

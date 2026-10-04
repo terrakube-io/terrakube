@@ -6,3 +6,4 @@ export { useStructuredOutputStream } from "./useStructuredOutputStream";
 export { useJobStatusSubscription } from "./useJobStatusSubscription";
 export { useOrganizationJobStatusSubscription } from "./useOrganizationJobStatusSubscription";
 export { useStepLog } from "./useStepLog";
+export { useOrganizationName, cacheOrganizationName } from "./useOrganizationName";

@@ -4,6 +4,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  background-color: var(--tk-bg-layout);
   background-image: url(/background-image.svg);
   background-repeat: no-repeat;
   background-position: center 110px;
@@ -13,9 +14,10 @@
 .login-card {
   max-width: 400px;
   width: 100%;
+  background-color: var(--tk-bg-container);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--tk-border-secondary);
   padding: 48px 40px;
   text-align: center;
   display: flex;
@@ -27,13 +29,4 @@
   width: 200px;
   margin: 0 auto 8px;
   display: block;
-}
-
-/* Logo text color */
-.login-logo {
-  color: #0a0a0a;
-}
-
-[data-theme="dark"] .login-logo {
-  color: #ffffff;
 }

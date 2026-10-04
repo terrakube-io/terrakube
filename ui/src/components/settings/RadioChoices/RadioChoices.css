@@ -1,0 +1,12 @@
+.radio-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-choices-help {
+  display: block;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}

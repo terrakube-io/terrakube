@@ -1,4 +1,4 @@
-import { Button, ConfigProvider, Typography, theme } from "antd";
+import { Button, ConfigProvider, Typography } from "antd";
 import { useState } from "react";
 import { mgr } from "../../config/authConfig";
 import { getUiRedirectUri } from "../../config/basePath";
@@ -10,6 +10,7 @@ import {
   getThemeConfig,
 } from "../../config/themeConfig";
 import logo from "./logo.svg";
+import logoDark from "./logo-dark.svg";
 import "./Login.css";
 
 const { Title, Text } = Typography;
@@ -20,13 +21,12 @@ const Login = () => {
 
   return (
     <ConfigProvider theme={getThemeConfig(savedScheme, savedThemeMode)}>
-      <LoginContent />
+      <LoginContent themeMode={savedThemeMode} />
     </ConfigProvider>
   );
 };
 
-const LoginContent = () => {
-  const { token } = theme.useToken();
+const LoginContent = ({ themeMode }: { themeMode: ThemeMode }) => {
   const [signinError, setSigninError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
@@ -41,9 +41,9 @@ const LoginContent = () => {
   };
 
   return (
-    <div className="login-container" style={{ backgroundColor: token.colorBgLayout }}>
-      <div className="login-card" style={{ backgroundColor: token.colorBgContainer }}>
-        <img src={logo} alt="Terrakube" className="login-logo" />
+    <div className="login-container">
+      <div className="login-card">
+        <img src={themeMode === "dark" ? logoDark : logo} alt="Terrakube" className="login-logo" />
         <Title level={3}>Sign in to Terrakube</Title>
         <Text type="secondary">Click below to continue with your identity provider.</Text>
         <Button type="primary" block size="large" loading={isSigningIn} onClick={handleSignIn}>
