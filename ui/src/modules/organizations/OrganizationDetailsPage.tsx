@@ -64,7 +64,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     debouncedSearch,
     filterState.status,
     filterState.policyStatus,
-    filterState.tagIds,
+    filterState.tagFilters,
     filterState.projectId,
     sortOption,
     pageSize,
@@ -79,7 +79,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
       search: debouncedSearch,
       status: filterState.status,
       policyStatus: filterState.policyStatus,
-      tagIds: filterState.tagIds,
+      tagFilters: filterState.tagFilters,
       projectId: filterState.projectId,
       sort: sortOption,
     };
@@ -90,7 +90,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     debouncedSearch,
     filterState.status,
     filterState.policyStatus,
-    filterState.tagIds,
+    filterState.tagFilters,
     filterState.projectId,
     sortOption,
   ]);
@@ -251,8 +251,8 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             policyCounts={policyCounts}
             search={filterState.search}
             onSearchChange={filterState.setSearch}
-            tagIds={filterState.tagIds}
-            onTagIdsChange={filterState.setTagIds}
+            tagFilters={filterState.tagFilters}
+            onTagFiltersChange={filterState.setTagFilters}
             projectId={filterState.projectId}
             onProjectIdChange={filterState.setProjectId}
             groupByProject={filterState.groupByProject}
@@ -264,6 +264,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             organizationId={id}
             workspaces={workspaces}
             groups={showGrouped ? groups : undefined}
+            tags={tags}
             onSelectProject={filterState.setProjectId}
             sortOption={sortOption}
             onSortChange={handleSortChange}

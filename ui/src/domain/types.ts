@@ -451,6 +451,8 @@ export type ApiWorkspaceTag = {
   attributes: {
     tagId: string;
     name: string;
+    // Key-only tags (the original feature, and anything created before values existed) have no value.
+    value?: string | null;
   } & AuditFieldBase;
   relationships: any;
   type: string;
