@@ -88,6 +88,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* Filter Buttons (Tags) */
@@ -126,7 +127,7 @@
 
 /* Popover Content */
 .filter-popover-content {
-  width: 500px;
+  width: min(500px, calc(100vw - 32px));
   padding: 16px;
 }
 
@@ -250,7 +251,7 @@
 }
 
 .workspace-project-select {
-  width: 220px;
+  width: min(220px, 100%);
   flex-shrink: 0;
 }
 
@@ -327,4 +328,15 @@
 [data-theme="dark"] .workspace-status-pill {
   background: var(--tk-bg-elevated);
   border-color: var(--tk-border-primary);
+}
+
+@media (max-width: 767px) {
+  .workspace-filter-projects-row,
+  .workspace-filter-container--compact .workspace-filter-search-row {
+    flex-wrap: wrap;
+  }
+
+  .workspace-sort-select {
+    min-width: 0;
+  }
 }

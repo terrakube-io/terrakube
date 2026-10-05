@@ -70,7 +70,7 @@ export default function PageWrapper({
                 {showTitle && <Typography.Title className="page-wrapper-title">{title}</Typography.Title>}
                 {showTitle && subTitle && <Typography.Text type="secondary">{subTitle}</Typography.Text>}
               </div>
-              {actions}
+              {actions && <div className="page-wrapper-actions">{actions}</div>}
             </Flex>
           )}
 

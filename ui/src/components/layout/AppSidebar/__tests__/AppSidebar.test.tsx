@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import AppSidebar from "../AppSidebar";
 import * as sidebarPreference from "../sidebarPreference";
 import { FlatOrganization } from "@/domain/types";
@@ -323,5 +323,129 @@ describe("user-settings context", () => {
 
     expect(screen.queryByLabelText("Collapse sidebar")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Expand sidebar")).not.toBeInTheDocument();
+  });
+});
+
+describe("narrow viewport drawer", () => {
+  let narrow: boolean;
+  let listeners: Array<() => void>;
+  const originalMatchMedia = window.matchMedia;
+
+  function resize(toNarrow: boolean) {
+    narrow = toNarrow;
+    act(() => listeners.forEach((listener) => listener()));
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    narrow = true;
+    listeners = [];
+    window.matchMedia = ((query: string) => ({
+      get matches() {
+        return query === "(max-width: 767px)" ? narrow : false;
+      },
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
+      removeEventListener: (_type: string, listener: () => void) => {
+        listeners = listeners.filter((l) => l !== listener);
+      },
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  const trigger = () => screen.getByRole("button", { name: /navigation/i });
+  const sidebar = () => document.getElementById("app-sidebar")!;
+
+  it("starts closed, with the hidden menu out of the tab order", async () => {
+    renderSidebar(`${orgPath}/workspaces`);
+
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(trigger()).toHaveAttribute("aria-controls", "app-sidebar");
+    expect(sidebar()).toHaveAttribute("inert");
+  });
+
+  it("opens from a keyboard-reachable button and closes on the backdrop", async () => {
+    const { container } = renderSidebar(`${orgPath}/workspaces`);
+
+    expect(trigger().tagName).toBe("BUTTON");
+    fireEvent.click(trigger());
+    expect(trigger()).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar()).not.toHaveAttribute("inert");
+
+    fireEvent.click(container.querySelector(".app-sidebar-backdrop")!);
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes on Escape and returns focus to the trigger", async () => {
+    renderSidebar(`${orgPath}/workspaces`);
+
+    fireEvent.click(trigger());
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(trigger()).toHaveFocus();
+  });
+
+  it("closes when the route changes", async () => {
+    function NavigateAway() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate(`${orgPath}/registry`)}>
+          go
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={[`${orgPath}/workspaces`]}>
+        <NavigateAway />
+        <AppSidebar
+          organizationName="Acme Corp"
+          setOrganizationName={jest.fn()}
+          organizations={organizations}
+          onOrgChange={jest.fn()}
+          workspaceManageState={true}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByRole("button", { name: "go" }));
+
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes when the current page is selected again", async () => {
+    renderSidebar(`${orgPath}/workspaces`);
+
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByText("Workspaces"));
+
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps the stored desktop preference when the viewport goes narrow and back", async () => {
+    localStorage.setItem("terrakube.sidebarCollapsed", "true");
+    const setSpy = jest.spyOn(sidebarPreference, "setStoredSidebarCollapsed");
+    // An earlier test's spy on the same function may still hold its calls.
+    setSpy.mockClear();
+    renderSidebar(`${orgPath}/workspaces`);
+
+    fireEvent.click(trigger());
+    resize(false);
+
+    expect(screen.queryByRole("button", { name: /navigation/i })).not.toBeInTheDocument();
+    expect(sidebar()).not.toHaveAttribute("inert");
+    expect(sidebar()).toHaveClass("ant-layout-sider-collapsed");
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument();
+    expect(setSpy).not.toHaveBeenCalled();
+    setSpy.mockRestore();
   });
 });
