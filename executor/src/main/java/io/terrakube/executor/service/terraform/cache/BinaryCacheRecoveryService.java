@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -39,6 +40,8 @@ public class BinaryCacheRecoveryService {
     // Never evicted - the number of distinct product/version pairs one pod ever sees is small.
     private final ConcurrentMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
+    // Explicit: two constructors, neither primary, so Spring can't infer which to use.
+    @Autowired
     public BinaryCacheRecoveryService(TerraformState terraformState, MeterRegistry meterRegistry) {
         this(terraformState, meterRegistry, new BinaryArchiveLocator(System.getProperty("user.home")));
     }
