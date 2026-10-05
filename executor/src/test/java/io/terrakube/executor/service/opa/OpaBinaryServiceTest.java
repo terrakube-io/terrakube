@@ -77,6 +77,8 @@ class OpaBinaryServiceTest {
         assertEquals("0.68.0", opaBinaryService.normalizeAndValidateVersion("V0.68.0"));
         assertEquals("1.2.3", opaBinaryService.normalizeAndValidateVersion("  v1.2.3  "));
         assertEquals("1.0.0-rc1", opaBinaryService.normalizeAndValidateVersion("1.0.0-rc1"));
+        assertEquals("1", opaBinaryService.normalizeAndValidateVersion("1"));
+        assertEquals("1.2.3-rc.1", opaBinaryService.normalizeAndValidateVersion("1.2.3-rc.1"));
 
         // Custom default in constructor
         OpaBinaryService customDefaultService = new OpaBinaryService(terraformState, redisTemplate, "0.68.0");
@@ -88,6 +90,9 @@ class OpaBinaryServiceTest {
         assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("../opa"));
         assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("invalid version"));
         assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("1.0.0; rm -rf /"));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("1.2."));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("1.2.3-"));
+        assertThrows(IllegalArgumentException.class, () -> opaBinaryService.normalizeAndValidateVersion("1..2"));
     }
 
     @Test

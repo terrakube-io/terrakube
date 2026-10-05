@@ -22,7 +22,7 @@ public class OpaBinaryService {
     private static final String DEFAULT_OPA_VERSION = "1.20.2";
     private static final String REDIS_OPA_UPLOAD_LOCK_PREFIX = "opa-binary-uploading:";
     private static final Duration REDIS_OPA_UPLOAD_LOCK_TTL = Duration.ofSeconds(120);
-    private static final Pattern SEMVER_PATTERN = Pattern.compile("^[0-9]+(\\.[0-9]+)*(-[a-zA-Z0-9.]+)?$");
+    private static final Pattern SEMVER_PATTERN = Pattern.compile("^[0-9]++(?:\\.[0-9]++)*+(?:-[a-zA-Z0-9.]++)?+$");
 
     private final TerraformState terraformState;
     private final RedisTemplate<String, Object> redisTemplate;
