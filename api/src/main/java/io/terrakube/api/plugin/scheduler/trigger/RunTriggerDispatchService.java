@@ -4,6 +4,7 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
@@ -11,6 +12,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -46,6 +50,10 @@ import java.util.Set;
 @AllArgsConstructor
 public class RunTriggerDispatchService {
 
+    private static final Set<String> TERRAFORM_STATE_FLOWS = Set.of(
+            FlowType.terraformApply.toString(),
+            FlowType.terraformDestroy.toString());
+
     /**
      * Flow types that change remote state. A run made only of plans leaves nothing for a
      * dependent to react to, so it does not fire triggers. Mirrors the qualification
@@ -59,11 +67,13 @@ public class RunTriggerDispatchService {
     private final JobRepository jobRepository;
     private final StepRepository stepRepository;
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
+    private final HistoryRepository historyRepository;
     private final TclService tclService;
     private final RunTriggerJobWriter jobWriter;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
     private final RunTriggerProperties properties;
+    private final RunTriggerDispatchMetrics runTriggerDispatchMetrics;
 
     /**
      * Fans out from a job that has just completed. Takes the id rather than the entity because
@@ -128,22 +138,75 @@ public class RunTriggerDispatchService {
     }
 
     /**
-     * True when at least one step that actually ran changed remote state. Steps are checked
-     * individually rather than trusting the job status: a plan/apply template whose apply was
-     * never executed still finishes as completed, and has nothing downstream to react to.
+     * True when at least one step that actually ran changed remote state.
+     * 1. A state-changing flow type (apply, destroy, customScripts) must have completed.
+     * 2. For Terraform flows (apply, destroy), state identity (serial, md5) is compared
+     *    against the baseline immediately prior to this state's write time.
+     *    If serial did not increase and md5 did not change, remote state was untouched.
      */
     private boolean changedState(Job job) {
         List<Step> steps = stepRepository.findByJobId(job.getId());
+        boolean hasStateChangingFlow = false;
+        boolean hasTerraformFlow = false;
+
         for (Step step : steps) {
             if (step.getStatus() != JobStatus.completed) {
                 continue;
             }
             String flowType = tclService.getFlowTypeForStep(job, step.getStepNumber());
-            if (flowType != null && STATE_CHANGING_FLOWS.contains(flowType)) {
-                return true;
+            if (flowType != null) {
+                if (TERRAFORM_STATE_FLOWS.contains(flowType)) {
+                    hasTerraformFlow = true;
+                    hasStateChangingFlow = true;
+                } else if (STATE_CHANGING_FLOWS.contains(flowType)) {
+                    hasStateChangingFlow = true;
+                }
             }
         }
-        return false;
+
+        if (!hasStateChangingFlow) {
+            return false;
+        }
+
+        if (!hasTerraformFlow) {
+            return true;
+        }
+
+        Optional<History> jobHistory = historyRepository
+                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(
+                        job.getWorkspace(), String.valueOf(job.getId()));
+
+        if (jobHistory.isEmpty()) {
+            runTriggerDispatchMetrics.stateIdentityFallback();
+            log.debug("Job {} completed state-changing flow but no history record was found, falling back to true", job.getId());
+            return true;
+        }
+
+        Optional<History> baseline = historyRepository
+                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(
+                        job.getWorkspace(), jobHistory.get().getCreatedDate());
+
+        if (baseline.isEmpty()) {
+            log.debug("Job {} produced the first state record for workspace {}", job.getId(), job.getWorkspace().getId());
+            return true;
+        }
+
+        // Backward compatibility fallback for legacy history records written before real serial/md5
+        // were captured (where serial was 1 and md5 was "0").
+        if (jobHistory.get().getSerial() <= 1 && "0".equals(jobHistory.get().getMd5())) {
+            runTriggerDispatchMetrics.stateIdentityFallback();
+            log.debug("Job {} produced legacy state record (serial <= 1, md5 = 0), falling back to true", job.getId());
+            return true;
+        }
+
+        boolean serialChanged = jobHistory.get().getSerial() > baseline.get().getSerial();
+        boolean md5Changed = !Objects.equals(jobHistory.get().getMd5(), "0")
+                && !Objects.equals(jobHistory.get().getMd5(), baseline.get().getMd5());
+
+        boolean changed = serialChanged || md5Changed;
+        log.debug("Job {} state evaluation: serialChanged={}, md5Changed={}, changed={}",
+                job.getId(), serialChanged, md5Changed, changed);
+        return changed;
     }
 
     /**

@@ -17,6 +17,8 @@ import io.terrakube.client.model.organization.workspace.history.HistoryAttribute
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
+import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.service.mode.TerraformJob;
 
@@ -54,6 +56,9 @@ public class GcpTerraformStateImpl implements TerraformState {
     TerraformStatePathService terraformStatePathService;
 
     @NonNull TerrakubeClient terrakubeClient;
+
+    @Builder.Default
+    private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -170,10 +175,11 @@ public class GcpTerraformStateImpl implements TerraformState {
             History newHistory = new History();
             newHistory.setType("history");
             HistoryAttributes historyAttributes = new HistoryAttributes();
+            TerraformStateMetadata metadata = terraformStateMetadataService.extractMetadata(rawState);
             historyAttributes.setJobReference(terraformJob.getJobId());
-            historyAttributes.setSerial(1);
-            historyAttributes.setMd5("0");
-            historyAttributes.setLineage("0");
+            historyAttributes.setSerial(metadata.getSerial());
+            historyAttributes.setMd5(metadata.getMd5());
+            historyAttributes.setLineage(metadata.getLineage());
             historyAttributes.setOutput(terraformStatePathService.getStateJsonPath(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename));
             newHistory.setAttributes(historyAttributes);
             historyRequest.setData(newHistory);
