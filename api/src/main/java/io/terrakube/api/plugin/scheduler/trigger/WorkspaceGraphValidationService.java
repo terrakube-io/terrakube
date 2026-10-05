@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.trigger;
 
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
 import lombok.RequiredArgsConstructor;
@@ -29,16 +30,21 @@ import java.util.UUID;
 public class WorkspaceGraphValidationService {
 
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final RunTriggerProperties properties;
 
     /**
-     * Rejects a new enabled edge once its source workspace is already at the outbound fan-out
-     * limit. Create-only: a workspace already over the limit keeps every existing edge
-     * dispatching (dispatch itself no longer truncates) and just can't add more. Re-enabling a
-     * disabled edge isn't checked - PRECOMMIT only sees the row already flushed to its new
-     * value, with no cheap way to tell "always enabled" apart from "just flipped on".
+     * Rejects an edge that would push its source workspace's outbound fan-out past the limit -
+     * on create, on a disabled edge being enabled, and on an edge being repointed to this
+     * source, all of which {@link io.terrakube.api.rs.hooks.trigger.WorkspaceRunTriggerHook}
+     * resolves from the operation and {@code ChangeSpec} before calling this. Dispatch itself
+     * applies no cap of its own any more, so this is the only gate.
      *
-     * @param enabled whether the edge being created will dispatch at all; disabled edges are never limited
+     * <p>Locks the source workspace's row first: two concurrent creations against the same
+     * source would otherwise both read the count before either commits and together land over
+     * the limit.
+     *
+     * @param enabled whether the edge will dispatch at all; disabled edges are never limited
      */
     public void validateFanOutLimit(UUID sourceId, boolean enabled) {
         if (sourceId == null || !enabled) {
@@ -46,8 +52,12 @@ public class WorkspaceGraphValidationService {
         }
 
         int limit = properties.getMaxDependentsPerApply();
-        // The row under validation is already flushed by PRECOMMIT and counted here, so compare
-        // directly against the limit rather than adding one.
+        if (limit <= 0) {
+            return; // 0 or negative means no cap, rather than "reject everything"
+        }
+
+        workspaceRepository.lockForUpdate(sourceId);
+
         long currentlyEnabled = workspaceRunTriggerRepository
                 .countBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(sourceId);
 
@@ -56,10 +66,10 @@ public class WorkspaceGraphValidationService {
                             + "edges, above the limit of {}",
                     sourceId, currentlyEnabled, limit);
             throw new FanOutLimitExceededException(String.format(
-                    "This workspace already has %d enabled run trigger(s), at the configured limit of %d. "
+                    "This workspace would have %d enabled run trigger(s), above the configured limit of %d. "
                             + "Disable or delete an existing one, or raise io.terrakube.run-trigger.max-dependents-per-apply, "
                             + "before adding another.",
-                    currentlyEnabled - 1, limit));
+                    currentlyEnabled, limit));
         }
     }
 

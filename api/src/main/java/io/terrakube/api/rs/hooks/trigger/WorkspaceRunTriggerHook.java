@@ -46,11 +46,29 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
                 trigger.getSourceWorkspace().getId(),
                 trigger.getDestinationWorkspace().getId());
 
-        // Create-only - see WorkspaceGraphValidationService.validateFanOutLimit for why.
-        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+        if (fanOutLimitApplies(operation, changes)) {
             graphValidationService.validateFanOutLimit(
                     trigger.getSourceWorkspace().getId(),
                     trigger.isEnabled());
         }
+    }
+
+    /**
+     * True on create, and on an update that either flips {@code enabled} to true or repoints
+     * {@code sourceWorkspace} - both ways an edge can start counting against a source it
+     * previously didn't. Elide invokes this hook once per changed field, with {@code changes}
+     * holding that one field's {@code ChangeSpec}, so the two update cases are checked
+     * independently rather than as one combined change.
+     */
+    private boolean fanOutLimitApplies(LifeCycleHookBinding.Operation operation, Optional<ChangeSpec> changes) {
+        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+            return true;
+        }
+        if (operation != LifeCycleHookBinding.Operation.UPDATE) {
+            return false;
+        }
+        return changes.filter(c -> "enabled".equals(c.getFieldName()) && Boolean.TRUE.equals(c.getModified()))
+                .or(() -> changes.filter(c -> "sourceWorkspace".equals(c.getFieldName())))
+                .isPresent();
     }
 }

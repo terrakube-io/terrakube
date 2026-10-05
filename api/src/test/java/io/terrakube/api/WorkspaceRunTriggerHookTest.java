@@ -1,6 +1,7 @@
 package io.terrakube.api;
 
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.core.security.ChangeSpec;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.trigger.WorkspaceRunTriggerHook;
@@ -61,16 +62,49 @@ class WorkspaceRunTriggerHookTest {
         verify(graphValidationService).validateFanOutLimit(trigger.getSourceWorkspace().getId(), true);
     }
 
-    /** An update still has to stay acyclic, but isn't blocked by the fan-out limit. */
+    /** An update that touches neither enabled nor sourceWorkspace still stays acyclic-checked only. */
     @Test
-    void updateChecksCycleButNotFanOut() {
+    void updateOfAnUnrelatedFieldChecksCycleButNotFanOut() {
         WorkspaceRunTrigger trigger = trigger(true);
 
         hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
-                trigger, null, Optional.empty());
+                trigger, null, Optional.of(new ChangeSpec(null, "template", null, null)));
 
         verify(graphValidationService).validateAcyclic(any(), any(), any(), any());
         verify(graphValidationService, never()).validateFanOutLimit(any(), anyBoolean());
+    }
+
+    /** Re-enabling a disabled edge is exactly the case the create-only check used to miss. */
+    @Test
+    void updateFlippingEnabledToTrueChecksFanOut() {
+        WorkspaceRunTrigger trigger = trigger(true);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "enabled", false, true)));
+
+        verify(graphValidationService).validateFanOutLimit(trigger.getSourceWorkspace().getId(), true);
+    }
+
+    /** Flipping enabled off is never a fan-out risk, regardless of the ChangeSpec shape. */
+    @Test
+    void updateFlippingEnabledToFalseSkipsFanOut() {
+        WorkspaceRunTrigger trigger = trigger(false);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "enabled", true, false)));
+
+        verify(graphValidationService, never()).validateFanOutLimit(any(), anyBoolean());
+    }
+
+    /** A superuser repointing sourceWorkspace must count against the new source too. */
+    @Test
+    void updateChangingSourceWorkspaceChecksFanOut() {
+        WorkspaceRunTrigger trigger = trigger(true);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "sourceWorkspace", UUID.randomUUID(), trigger.getSourceWorkspace())));
+
+        verify(graphValidationService).validateFanOutLimit(trigger.getSourceWorkspace().getId(), true);
     }
 
     @Test
