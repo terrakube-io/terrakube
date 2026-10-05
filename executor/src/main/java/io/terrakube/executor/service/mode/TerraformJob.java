@@ -34,6 +34,7 @@ public class TerraformJob {
     private boolean refresh;
     private boolean refreshOnly;
     private boolean ignoreError;
+    private boolean requireSavedPlan;
     @ToString.Exclude
     private String moduleSshKey;
     private String commitId;
