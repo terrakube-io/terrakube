@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 public class StepOutputReader {
 
     private static final Pattern ANSI_PATTERN = Pattern.compile(
-            "[\\u001b\\u009b][\\[()#;?]*+(?:\\d{1,4}(?:;\\d{1,4})*+)?+[0-9A-ORZcf-nq-uy=><~]");
+            "[\\u001b\\u009b][\\[()#;?]*+(?:\\d{1,4}(?:;\\d{1,4})*+)?[0-9A-ORZcf-nq-uy=><~]");
 
     private final StorageTypeService storageTypeService;
     private final StreamingService streamingService;

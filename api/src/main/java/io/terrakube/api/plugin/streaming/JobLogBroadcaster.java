@@ -97,7 +97,7 @@ public class JobLogBroadcaster {
                     return;
                 }
 
-                List<MapRecord> records = reader.readAfter(jobId, lastId, properties.getSseJobIdleTimeout());
+                List<MapRecord> records = reader.readAfter(jobId, lastId.get(), properties.getSseJobIdleTimeout());
 
                 if (records.isEmpty()) {
                     emptyReads++;
