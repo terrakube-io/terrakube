@@ -393,9 +393,10 @@ class RunTriggerDispatchServiceTest {
         verify(jobWriter).persist(any(), any(), any(), eq(3));
     }
 
+    /** Dispatch applies no fan-out cap of its own any more - WorkspaceGraphValidationService does. */
     @Test
-    void fanOutIsCappedAndTheSurvivingSubsetIsStable() {
-        properties.setMaxDependentsPerApply(3);
+    void everyEnabledTriggerDispatchesRegardlessOfCount() {
+        properties.setMaxOutboundTriggersPerWorkspace(3);
         Job completed = completedJob(0);
         stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
 
@@ -405,22 +406,8 @@ class RunTriggerDispatchServiceTest {
         triggersFromSource(triggers);
 
         subject.dispatchFor(COMPLETED_JOB_ID);
-        ArgumentCaptor<Workspace> first = ArgumentCaptor.forClass(Workspace.class);
-        verify(jobWriter, times(3)).persist(first.capture(), any(), any(), anyInt());
-        List<String> firstRun = first.getAllValues().stream().map(Workspace::getName).toList();
 
-        // Same graph, same apply: the cap must not pick a different arbitrary subset.
-        List<WorkspaceRunTrigger> shuffled = new ArrayList<>(List.of(triggers));
-        java.util.Collections.reverse(shuffled);
-        doReturn(shuffled).when(triggerRepository).findEnabledBySourceWorkspaceId(SOURCE_ID);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-        ArgumentCaptor<Workspace> second = ArgumentCaptor.forClass(Workspace.class);
-        verify(jobWriter, times(6)).persist(second.capture(), any(), any(), anyInt());
-        List<String> secondRun = second.getAllValues().subList(3, 6).stream()
-                .map(Workspace::getName).toList();
-
-        assertThat(secondRun).containsExactlyInAnyOrderElementsOf(firstRun);
+        verify(jobWriter, times(5)).persist(any(), any(), any(), anyInt());
     }
 
     @Test

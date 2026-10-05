@@ -2,9 +2,11 @@ package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.Workspace;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -45,4 +47,9 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
                 .filter(w -> normalizedSource.equalsIgnoreCase(io.terrakube.api.plugin.vcs.RepoUrlNormalizer.normalize(w.getSource())))
                 .toList();
     }
+
+    /** Locks the workspace's row for the rest of the transaction, as a plain SELECT ... FOR UPDATE. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT w FROM workspace w WHERE w.id = :id")
+    Optional<Workspace> lockForUpdate(@Param("id") UUID id);
 }

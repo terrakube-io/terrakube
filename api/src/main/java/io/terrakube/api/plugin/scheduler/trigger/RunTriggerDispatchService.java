@@ -18,7 +18,6 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -117,15 +116,15 @@ public class RunTriggerDispatchService {
             return;
         }
 
+        // No cap here: WorkspaceGraphValidationService.validateFanOutLimit keeps a workspace
+        // from ever acquiring more than the configured limit, so every edge below dispatches.
         List<WorkspaceRunTrigger> triggers = workspaceRunTriggerRepository
                 .findEnabledBySourceWorkspaceId(completedJob.getWorkspace().getId());
         if (triggers.isEmpty()) {
             return;
         }
 
-        List<WorkspaceRunTrigger> dispatchable = applyFanOutLimit(triggers, completedJob);
-
-        for (WorkspaceRunTrigger trigger : dispatchable) {
+        for (WorkspaceRunTrigger trigger : triggers) {
             // Per-dependent isolation: one workspace missing a template, or failing to
             // schedule, must not cost the dependents that come after it in the list.
             try {
@@ -207,27 +206,6 @@ public class RunTriggerDispatchService {
         log.debug("Job {} state evaluation: serialChanged={}, md5Changed={}, changed={}",
                 job.getId(), serialChanged, md5Changed, changed);
         return changed;
-    }
-
-    /**
-     * Caps the fan-out, keeping a stable prefix so that a graph over the limit dispatches the
-     * same dependents on every apply instead of a different arbitrary subset each time.
-     */
-    private List<WorkspaceRunTrigger> applyFanOutLimit(List<WorkspaceRunTrigger> triggers, Job completedJob) {
-        int limit = properties.getMaxDependentsPerApply();
-        if (triggers.size() <= limit) {
-            return triggers;
-        }
-
-        List<WorkspaceRunTrigger> ordered = triggers.stream()
-                .sorted(Comparator.comparing(t -> t.getDestinationWorkspace().getId()))
-                .toList();
-        List<WorkspaceRunTrigger> skipped = ordered.subList(limit, ordered.size());
-        log.warn("Workspace {} has {} enabled run triggers, above the limit of {}. Job {} will not "
-                        + "dispatch to: {}",
-                completedJob.getWorkspace().getName(), triggers.size(), limit, completedJob.getId(),
-                skipped.stream().map(RunTriggerDispatchService::destinationName).toList());
-        return ordered.subList(0, limit);
     }
 
     private void enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
