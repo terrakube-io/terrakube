@@ -51,7 +51,7 @@ public class WorkspaceGraphValidationService {
             return;
         }
 
-        int limit = properties.getMaxDependentsPerApply();
+        int limit = properties.getMaxOutboundTriggersPerWorkspace();
         if (limit <= 0) {
             return; // 0 or negative means no cap, rather than "reject everything"
         }
@@ -67,7 +67,7 @@ public class WorkspaceGraphValidationService {
                     sourceId, currentlyEnabled, limit);
             throw new FanOutLimitExceededException(String.format(
                     "This workspace would have %d enabled run trigger(s), above the configured limit of %d. "
-                            + "Disable or delete an existing one, or raise io.terrakube.run-trigger.max-dependents-per-apply, "
+                            + "Disable or delete an existing one, or raise io.terrakube.run-trigger.max-outbound-triggers-per-workspace, "
                             + "before adding another.",
                     currentlyEnabled, limit));
         }

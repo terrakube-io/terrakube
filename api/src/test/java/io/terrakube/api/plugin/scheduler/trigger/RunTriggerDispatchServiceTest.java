@@ -255,7 +255,7 @@ class RunTriggerDispatchServiceTest {
     /** Dispatch applies no fan-out cap of its own any more - WorkspaceGraphValidationService does. */
     @Test
     void everyEnabledTriggerDispatchesRegardlessOfCount() {
-        properties.setMaxDependentsPerApply(3);
+        properties.setMaxOutboundTriggersPerWorkspace(3);
         Job completed = completedJob(0);
         stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
 

@@ -168,7 +168,7 @@ class WorkspaceGraphValidationServiceTests {
 
     @Test
     void acceptsAnEnabledEdgeUnderTheLimit() {
-        properties.setMaxDependentsPerApply(5);
+        properties.setMaxOutboundTriggersPerWorkspace(5);
         enabledCount(a, 3);
         assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
     }
@@ -176,14 +176,14 @@ class WorkspaceGraphValidationServiceTests {
     /** The edge that fills the limit, not one past it, must be accepted. */
     @Test
     void acceptsAnEnabledEdgeExactlyAtTheLimit() {
-        properties.setMaxDependentsPerApply(5);
+        properties.setMaxOutboundTriggersPerWorkspace(5);
         enabledCount(a, 5);
         assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
     }
 
     @Test
     void rejectsAnEnabledEdgeOneOverTheLimit() {
-        properties.setMaxDependentsPerApply(5);
+        properties.setMaxOutboundTriggersPerWorkspace(5);
         enabledCount(a, 6);
         FanOutLimitExceededException thrown = assertThrows(FanOutLimitExceededException.class,
                 () -> service.validateFanOutLimit(a, true));
@@ -194,7 +194,7 @@ class WorkspaceGraphValidationServiceTests {
     /** A disabled edge never contributes to dispatch, so it is never limited. */
     @Test
     void neverLimitsADisabledEdgeEvenOverTheCount() {
-        properties.setMaxDependentsPerApply(5);
+        properties.setMaxOutboundTriggersPerWorkspace(5);
         enabledCount(a, 50);
         assertDoesNotThrow(() -> service.validateFanOutLimit(a, false));
     }
@@ -207,18 +207,18 @@ class WorkspaceGraphValidationServiceTests {
     /** 0 or negative is "no cap", not "reject every creation". */
     @Test
     void zeroOrNegativeLimitDisablesTheFanOutCheck() {
-        properties.setMaxDependentsPerApply(0);
+        properties.setMaxOutboundTriggersPerWorkspace(0);
         enabledCount(a, 1_000);
         assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
 
-        properties.setMaxDependentsPerApply(-1);
+        properties.setMaxOutboundTriggersPerWorkspace(-1);
         assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
     }
 
     /** Locks the source row before counting, so two concurrent creations can't both pass. */
     @Test
     void locksTheSourceWorkspaceBeforeCounting() {
-        properties.setMaxDependentsPerApply(5);
+        properties.setMaxOutboundTriggersPerWorkspace(5);
         enabledCount(a, 3);
         service.validateFanOutLimit(a, true);
         verify(workspaceRepository).lockForUpdate(a);
