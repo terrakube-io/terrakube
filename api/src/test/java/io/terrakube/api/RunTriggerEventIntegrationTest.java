@@ -3,8 +3,10 @@ package io.terrakube.api;
 import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventDispatchService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventTransactions;
+import io.terrakube.api.repository.RunCascadeRepository;
 import io.terrakube.api.repository.RunTriggerEventRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
+import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
@@ -60,8 +62,12 @@ public class RunTriggerEventIntegrationTest extends ServerApplicationTests {
     @Autowired
     private RunTriggerEventTransactions runTriggerEventTransactions;
 
+    @Autowired
+    private RunCascadeRepository runCascadeRepository;
+
     private Set<Integer> jobsBefore;
     private Set<UUID> triggersBefore;
+    private Set<UUID> cascadesBefore;
 
     @BeforeEach
     public void setup() {
@@ -70,12 +76,18 @@ public class RunTriggerEventIntegrationTest extends ServerApplicationTests {
         jobsBefore = jobRepository.findAll().stream().map(Job::getId).collect(Collectors.toSet());
         triggersBefore = triggerRepository.findAll().stream()
                 .map(WorkspaceRunTrigger::getId).collect(Collectors.toSet());
+        cascadesBefore = runCascadeRepository.findAll().stream()
+                .map(RunCascade::getId).collect(Collectors.toSet());
     }
 
     // See RunTriggerDispatchIntegrationTest.cleanup for why soft-delete, not delete, and why
-    // only rows created during this test are touched.
+    // only rows created during this test are touched - including a cascade, which would
+    // otherwise survive into the next test class's fresh context and refire there.
     @AfterEach
     public void cleanup() {
+        runCascadeRepository.findAll().stream()
+                .filter(cascade -> !cascadesBefore.contains(cascade.getId()))
+                .forEach(runCascadeRepository::delete);
         triggerRepository.findAll().stream()
                 .filter(trigger -> !triggersBefore.contains(trigger.getId()))
                 .forEach(triggerRepository::delete);

@@ -9,6 +9,7 @@ import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
@@ -61,6 +62,7 @@ class RunTriggerDispatchServiceTest {
     ScheduleJobService scheduleJobService;
     RunTriggerProperties properties;
     RunTriggerDispatchMetrics runTriggerDispatchMetrics;
+    RunCascadeCoordinatorService cascadeCoordinatorService;
     RunTriggerDispatchService subject;
 
     private int nextJobId;
@@ -77,6 +79,14 @@ class RunTriggerDispatchServiceTest {
         properties = new RunTriggerProperties();
         runTriggerDispatchMetrics = mock(RunTriggerDispatchMetrics.class);
         nextJobId = 1000;
+
+        // Transparent by default: every test below predates ANY/ALL and exercises EACH, which
+        // shouldDispatch always allows anyway - these stubs just let ensureCascade/recordDispatch/
+        // recomputeStatus run without NPEs on a mock. RunCascadeCoordinatorServiceTest covers the
+        // coordinator's own gating logic directly.
+        cascadeCoordinatorService = mock(RunCascadeCoordinatorService.class);
+        lenient().doReturn(new RunCascade()).when(cascadeCoordinatorService).ensureCascade(any());
+        lenient().doReturn(true).when(cascadeCoordinatorService).shouldDispatch(any(), any());
 
         Date now = new Date();
         Date earlier = new Date(now.getTime() - 60_000);
@@ -109,7 +119,7 @@ class RunTriggerDispatchServiceTest {
 
         subject = new RunTriggerDispatchService(jobRepository, stepRepository, triggerRepository,
                 historyRepository, tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties,
-                runTriggerDispatchMetrics);
+                runTriggerDispatchMetrics, cascadeCoordinatorService);
     }
 
     // ---------------------------------------------------------------- fixtures

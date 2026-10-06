@@ -3,8 +3,10 @@ package io.terrakube.api;
 import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventDispatchService;
 import io.terrakube.api.repository.HistoryRepository;
+import io.terrakube.api.repository.RunCascadeRepository;
 import io.terrakube.api.repository.RunTriggerEventRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
+import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
@@ -72,9 +74,13 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
     @Autowired
     private HistoryRepository historyRepository;
 
+    @Autowired
+    private RunCascadeRepository runCascadeRepository;
+
     private Set<Integer> jobsBefore;
     private Set<UUID> triggersBefore;
     private Set<UUID> historyBefore;
+    private Set<UUID> cascadesBefore;
 
     @BeforeEach
     public void setup() {
@@ -85,6 +91,8 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
                 .map(WorkspaceRunTrigger::getId).collect(Collectors.toSet());
         historyBefore = historyRepository.findAll().stream()
                 .map(History::getId).collect(Collectors.toSet());
+        cascadesBefore = runCascadeRepository.findAll().stream()
+                .map(RunCascade::getId).collect(Collectors.toSet());
     }
 
     /**
@@ -101,6 +109,14 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
      */
     @AfterEach
     public void cleanup() {
+        // First: a leftover cascade (and the Quartz trigger for any job it dispatched) would
+        // otherwise survive into the next test class's fresh Spring context and refire there,
+        // colliding with a node this test already created. Deletes its edges/nodes/attempts
+        // with it via the migration's onDelete=CASCADE.
+        runCascadeRepository.findAll().stream()
+                .filter(cascade -> !cascadesBefore.contains(cascade.getId()))
+                .forEach(runCascadeRepository::delete);
+
         // Only this test's edges: run-trigger-scenarios.xml seeds a graph that the suite and
         // the dev environment share, and deleteAll would take it with them.
         triggerRepository.findAll().stream()

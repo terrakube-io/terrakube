@@ -90,11 +90,11 @@
         <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="destination_workspace_id"
             constraintName="fk_run_cascade_edge_destination" referencedTableName="workspace"
             referencedColumnNames="id" />
-        <!-- No delete cascade/restrict: the live trigger can be removed independently of any
-             cascade snapshot that was copied from it. -->
+        <!-- SET NULL, not CASCADE/RESTRICT: the live trigger can be deleted independently of
+             any cascade snapshot copied from it - the snapshot just loses its traceability link. -->
         <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="source_trigger_id"
             constraintName="fk_run_cascade_edge_source_trigger" referencedTableName="workspace_run_trigger"
-            referencedColumnNames="id" />
+            referencedColumnNames="id" onDelete="SET NULL" />
         <createIndex tableName="run_cascade_edge" indexName="idx_run_cascade_edge_cascade">
             <column name="cascade_id" />
         </createIndex>

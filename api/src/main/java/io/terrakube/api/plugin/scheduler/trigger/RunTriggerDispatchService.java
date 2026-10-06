@@ -8,6 +8,7 @@ import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
+import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
@@ -44,6 +45,10 @@ import java.util.Set;
  * <p>The reads it does need no outer transaction: the completed job materialises its workspace
  * and organization eagerly, and the dispatch query fetches destination, organization and
  * template through its entity graph.
+ *
+ * <p>{@link RunCascadeCoordinatorService} is consulted per edge for {@code ANY}/{@code ALL}
+ * readiness and cascade bookkeeping, but owns none of the enqueue mechanics above - {@code EACH}
+ * is never gated by it at all, which is what keeps this unchanged for every edge that predates it.
  */
 @Slf4j
 @Service
@@ -74,6 +79,7 @@ public class RunTriggerDispatchService {
     private final ScheduleJobService scheduleJobService;
     private final RunTriggerProperties properties;
     private final RunTriggerDispatchMetrics runTriggerDispatchMetrics;
+    private final RunCascadeCoordinatorService cascadeCoordinatorService;
 
     /**
      * Fans out from a job that has just completed. Takes the id rather than the entity because
@@ -107,6 +113,11 @@ public class RunTriggerDispatchService {
             return;
         }
 
+        // Always, regardless of what follows: a node that produced no further change still
+        // succeeded, and must not stay RUNNING forever waiting for a fan-out that was never
+        // coming. A no-op for a job outside any cascade, which is still most of them today.
+        cascadeCoordinatorService.resolveNode(completedJob);
+
         if (!changedState(completedJob)) {
             log.debug("Job {} changed no state, no run trigger dispatched", completedJobId);
             return;
@@ -134,17 +145,32 @@ public class RunTriggerDispatchService {
         // with backoff instead of marking the outbox event PROCESSED. Re-running the loop is
         // safe because enqueue() is idempotent per (destination, completedJob) - see below.
         boolean partialFailure = false;
+
+        // Snapshots the whole reachable subgraph once, up front, so an ALL join further down
+        // the graph can see every parent it depends on - not just the ones below this one edge.
+        RunCascade cascade = cascadeCoordinatorService.ensureCascade(completedJob);
+
         for (WorkspaceRunTrigger trigger : triggers) {
             // Per-dependent isolation: one workspace missing a template, or failing to
             // schedule, must not cost the dependents that come after it in the list.
             try {
-                enqueue(trigger, completedJob, nextDepth);
+                // EACH (the only mode before this) is unconditionally true here - never gated.
+                if (!cascadeCoordinatorService.shouldDispatch(cascade, trigger)) {
+                    continue;
+                }
+                Job created = enqueue(trigger, completedJob, nextDepth);
+                if (created != null) {
+                    cascadeCoordinatorService.recordDispatch(cascade, trigger, created);
+                }
             } catch (Exception e) {
                 partialFailure = true;
                 log.error("Could not enqueue run triggered by job {} on workspace {}: {}",
                         completedJobId, destinationName(trigger), e.getMessage(), e);
             }
         }
+
+        cascadeCoordinatorService.recomputeStatus(cascade.getId());
+
         if (partialFailure) {
             throw new RunTriggerDispatchPartialFailureException(
                     "One or more run triggers failed to dispatch for job " + completedJobId);
@@ -223,7 +249,8 @@ public class RunTriggerDispatchService {
         return changed;
     }
 
-    private void enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
+    /** @return the job created, or null if this dependent had no template to run and was skipped. */
+    private Job enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
         Workspace destination = trigger.getDestinationWorkspace();
 
         // Idempotency key for this fan-out edge: a RunTriggerEvent can be reclaimed and
@@ -243,7 +270,7 @@ public class RunTriggerDispatchService {
         if (templateReference == null || templateReference.isBlank()) {
             log.warn("Run trigger {} has no template and workspace {} has no default template, skipping",
                     trigger.getId(), destination.getName());
-            return;
+            return null;
         }
 
         Job savedJob = jobWriter.persist(destination, templateReference, completedJob, depth);
@@ -257,6 +284,7 @@ public class RunTriggerDispatchService {
 
         log.info("Job {} triggered job {} on workspace {} (depth {})",
                 completedJob.getId(), savedJob.getId(), destination.getName(), depth);
+        return savedJob;
     }
 
     /**
