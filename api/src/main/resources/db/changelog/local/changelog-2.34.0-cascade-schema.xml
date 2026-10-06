@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Per-edge policy (terrakube-io/terrakube#3629). Both default to today's behavior, so
+         every existing edge keeps dispatching exactly as it does now. -->
+    <changeSet id="2-34-0-run-trigger-synchronization-policy" author="jake">
+        <addColumn tableName="workspace_run_trigger">
+            <column name="synchronization_mode" type="varchar(20)" defaultValue="EACH">
+                <constraints nullable="false" />
+            </column>
+        </addColumn>
+        <addColumn tableName="workspace_run_trigger">
+            <column name="on_destroy" type="varchar(20)" defaultValue="TRIGGER">
+                <constraints nullable="false" />
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="2-34-0-run-cascade" author="jake">
+        <createTable tableName="run_cascade">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="origin_job_id" type="BIGINT">
+                <constraints nullable="false" />
+            </column>
+            <column name="organization_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="status" type="varchar(20)" defaultValue="RUNNING">
+                <constraints nullable="false" />
+            </column>
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="run_cascade" baseColumnNames="origin_job_id"
+            constraintName="fk_run_cascade_origin_job" referencedTableName="job"
+            referencedColumnNames="id" />
+        <addForeignKeyConstraint baseTableName="run_cascade" baseColumnNames="organization_id"
+            constraintName="fk_run_cascade_organization" referencedTableName="organization"
+            referencedColumnNames="id" />
+        <!-- One cascade per originating job - the coordinator's idempotency key. -->
+        <addUniqueConstraint tableName="run_cascade" columnNames="origin_job_id"
+            constraintName="uk_run_cascade_origin_job" />
+        <createIndex tableName="run_cascade" indexName="idx_run_cascade_organization">
+            <column name="organization_id" />
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-34-0-run-cascade-edge" author="jake">
+        <createTable tableName="run_cascade_edge">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="cascade_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="source_workspace_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="destination_workspace_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="synchronization_mode" type="varchar(20)">
+                <constraints nullable="false" />
+            </column>
+            <column name="on_destroy" type="varchar(20)">
+                <constraints nullable="false" />
+            </column>
+            <!-- Traceability only - nullable because the live edge can be deleted later. -->
+            <column name="source_trigger_id" type="varchar(36)" />
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <!-- Cascade-deletes with the cascade: a snapshot has no meaning outside its cascade. -->
+        <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="cascade_id"
+            constraintName="fk_run_cascade_edge_cascade" referencedTableName="run_cascade"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="source_workspace_id"
+            constraintName="fk_run_cascade_edge_source" referencedTableName="workspace"
+            referencedColumnNames="id" />
+        <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="destination_workspace_id"
+            constraintName="fk_run_cascade_edge_destination" referencedTableName="workspace"
+            referencedColumnNames="id" />
+        <!-- No delete cascade/restrict: the live trigger can be removed independently of any
+             cascade snapshot that was copied from it. -->
+        <addForeignKeyConstraint baseTableName="run_cascade_edge" baseColumnNames="source_trigger_id"
+            constraintName="fk_run_cascade_edge_source_trigger" referencedTableName="workspace_run_trigger"
+            referencedColumnNames="id" />
+        <createIndex tableName="run_cascade_edge" indexName="idx_run_cascade_edge_cascade">
+            <column name="cascade_id" />
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-34-0-run-cascade-node" author="jake">
+        <createTable tableName="run_cascade_node">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="cascade_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="workspace_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="depth" type="int">
+                <constraints nullable="false" />
+            </column>
+            <column name="status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false" />
+            </column>
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="run_cascade_node" baseColumnNames="cascade_id"
+            constraintName="fk_run_cascade_node_cascade" referencedTableName="run_cascade"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <addForeignKeyConstraint baseTableName="run_cascade_node" baseColumnNames="workspace_id"
+            constraintName="fk_run_cascade_node_workspace" referencedTableName="workspace"
+            referencedColumnNames="id" />
+        <!-- A diamond's join workspace is still one node per cascade, not one per incoming edge. -->
+        <addUniqueConstraint tableName="run_cascade_node" columnNames="cascade_id, workspace_id"
+            constraintName="uk_run_cascade_node_cascade_workspace" />
+        <!-- "Which cascades is this workspace currently part of" for the UI's workspace view. -->
+        <createIndex tableName="run_cascade_node" indexName="idx_run_cascade_node_workspace">
+            <column name="workspace_id" />
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-34-0-run-cascade-node-attempt" author="jake">
+        <createTable tableName="run_cascade_node_attempt">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="node_id" type="varchar(36)">
+                <constraints nullable="false" />
+            </column>
+            <column name="job_id" type="BIGINT">
+                <constraints nullable="false" />
+            </column>
+            <column name="attempt_number" type="int">
+                <constraints nullable="false" />
+            </column>
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <addForeignKeyConstraint baseTableName="run_cascade_node_attempt" baseColumnNames="node_id"
+            constraintName="fk_run_cascade_node_attempt_node" referencedTableName="run_cascade_node"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <addForeignKeyConstraint baseTableName="run_cascade_node_attempt" baseColumnNames="job_id"
+            constraintName="fk_run_cascade_node_attempt_job" referencedTableName="job"
+            referencedColumnNames="id" />
+        <createIndex tableName="run_cascade_node_attempt" indexName="idx_run_cascade_node_attempt_node">
+            <column name="node_id" />
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

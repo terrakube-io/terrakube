@@ -14,6 +14,8 @@ import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -39,6 +41,9 @@ import java.util.UUID;
  * any member of the organization so the dependency graph is discoverable, while creating or
  * changing an edge requires manage rights on the destination - see
  * {@code TeamManageWorkspaceTrigger}.
+ *
+ * <p>{@code synchronizationMode} and {@code onDestroy} are declared here per edge but read by
+ * the cascade coordinator, not by this class - today's dispatch path ignores both.
  */
 @ReadPermission(expression = "team view workspace trigger")
 @CreatePermission(expression = "team manage workspace trigger")
@@ -107,6 +112,16 @@ public class WorkspaceRunTrigger extends GenericAuditFields {
     /** Lets an edge be turned off without losing its configuration. */
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
+
+    /** How the destination waits when it has more than one enabled upstream edge. Per-edge, not global. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "synchronization_mode", nullable = false)
+    private RunTriggerSynchronizationMode synchronizationMode = RunTriggerSynchronizationMode.EACH;
+
+    /** What a destroy on the source does to this edge's destination. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "on_destroy", nullable = false)
+    private RunTriggerOnDestroyPolicy onDestroy = RunTriggerOnDestroyPolicy.TRIGGER;
 
     /**
      * Derives the owning organization from the destination workspace.
