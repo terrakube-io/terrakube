@@ -525,6 +525,88 @@ export type RunTriggerRow = {
   templateName?: string;
 };
 
+// Run cascades - one upstream job's completion propagating a run across dependent workspaces.
+// See io.terrakube.api.rs.cascade on the backend.
+export enum RunCascadeStatus {
+  Running = "RUNNING",
+  Completed = "COMPLETED",
+  Degraded = "DEGRADED",
+  Blocked = "BLOCKED",
+  Cancelled = "CANCELLED",
+  Failed = "FAILED",
+}
+
+export enum RunCascadeNodeStatus {
+  Pending = "PENDING",
+  Ready = "READY",
+  Running = "RUNNING",
+  Succeeded = "SUCCEEDED",
+  Failed = "FAILED",
+  Skipped = "SKIPPED",
+  Blocked = "BLOCKED",
+  Cancelled = "CANCELLED",
+}
+
+export type RunCascade = {
+  id: string;
+  attributes: RunCascadeAttributes;
+  relationships: {
+    originJob: RelationshipItem;
+    organization: RelationshipItem;
+  };
+};
+
+export type RunCascadeAttributes = {
+  status: RunCascadeStatus;
+} & AuditFieldBase;
+
+export type RunCascadeNode = {
+  id: string;
+  attributes: RunCascadeNodeAttributes;
+  relationships: {
+    cascade: RelationshipItem;
+    workspace: RelationshipItem;
+  };
+};
+
+export type RunCascadeNodeAttributes = {
+  depth: number;
+  status: RunCascadeNodeStatus;
+} & AuditFieldBase;
+
+export type RunCascadeEdge = {
+  id: string;
+  attributes: RunCascadeEdgeAttributes;
+  relationships: {
+    cascade: RelationshipItem;
+    sourceWorkspace: RelationshipItem;
+    destinationWorkspace: RelationshipItem;
+    sourceTrigger?: RelationshipItem;
+  };
+};
+
+export type RunCascadeEdgeAttributes = {
+  synchronizationMode: string;
+  onDestroy: string;
+} & AuditFieldBase;
+
+/** One cascade node as the graph renders it, with its workspace name already resolved. */
+export type RunCascadeNodeView = {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  depth: number;
+  status: RunCascadeNodeStatus;
+};
+
+/** One cascade as the cascade list table renders it. */
+export type RunCascadeRow = {
+  id: string;
+  status: RunCascadeStatus;
+  originJobId: string;
+  createdDate?: string;
+};
+
 // Projects
 export type Project = {
   id: string;

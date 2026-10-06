@@ -45,6 +45,13 @@ export const axiosRegistry = axios.create({
   withCredentials: sendCookiesWithRequests,
 });
 
+// Plain (non-JSON:API) admin action endpoints under /admin/v1 - same origin-only baseURL as
+// axiosRegistry, since these live outside the /api/v1 Elide prefix too.
+export const axiosAdmin = axios.create({
+  baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+  withCredentials: sendCookiesWithRequests,
+});
+
 /**
  * Client for auxiliary Job Details data (structured context, archived step logs, reconciliation
  * polls). Same auth as {@link axiosInstance}, but its 404/429/5xx/timeout/network failures are
@@ -71,6 +78,7 @@ function rejectError(error: any) {
 axiosInstance.interceptors.request.use(attachAuthToken, rejectError);
 axiosGraphQL.interceptors.request.use(attachAuthToken, rejectError);
 axiosRegistry.interceptors.request.use(attachAuthToken, rejectError);
+axiosAdmin.interceptors.request.use(attachAuthToken, rejectError);
 axiosAuxiliary.interceptors.request.use(attachAuthToken, rejectError);
 
 // Shared response interceptor that enriches 403 errors with a clear message
@@ -119,6 +127,7 @@ function handleAuxiliaryResponseError(error: AxiosError) {
 axiosInstance.interceptors.response.use(handleResponseSuccess, handleResponseError);
 axiosGraphQL.interceptors.response.use(handleResponseSuccess, handleResponseError);
 axiosRegistry.interceptors.response.use(handleResponseSuccess, handleResponseError);
+axiosAdmin.interceptors.response.use(handleResponseSuccess, handleResponseError);
 axiosAuxiliary.interceptors.response.use((response) => response, handleAuxiliaryResponseError);
 
 /**

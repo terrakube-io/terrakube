@@ -1,4 +1,5 @@
 import {
+  ApartmentOutlined,
   ApiOutlined,
   AppstoreOutlined,
   BankOutlined,
@@ -435,6 +436,15 @@ export default function AppSidebar({
                   </Link>
                 ),
                 icon: <NodeIndexOutlined />,
+              },
+              {
+                key: "cascades",
+                label: (
+                  <Link to={`${workspaceBasePath}/cascades`} onClick={() => handleOrgMenuClick("cascades")}>
+                    Cascades
+                  </Link>
+                ),
+                icon: <ApartmentOutlined />,
               },
               {
                 key: "settings",

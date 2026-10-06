@@ -396,6 +396,14 @@ const router = createBrowserRouter(
           element: <WorkspaceDetailsRoute selectedTab="7" />,
         },
         {
+          path: "/workspaces/:id/cascades",
+          element: <WorkspaceDetailsRoute selectedTab="8" />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/cascades",
+          element: <WorkspaceDetailsRoute selectedTab="8" />,
+        },
+        {
           path: "/workspaces/:id/settings",
           element: <WorkspaceDetailsRoute selectedTab="6" />,
         },

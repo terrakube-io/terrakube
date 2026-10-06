@@ -60,6 +60,7 @@ import { formatDateTime, formatDuration, relativeTime } from "@/modules/utils/da
 import { computeWorkspaceMetrics, FINISHED_JOB_STATUSES } from "./workspaceMetrics";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
+const Cascades = lazy(() => import("../Workspaces/Cascades").then((m) => ({ default: m.Cascades })));
 const WorkspaceSettings = lazy(() =>
   import("./Settings/WorkspaceSettings").then((m) => ({ default: m.WorkspaceSettings }))
 );
@@ -74,6 +75,7 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "5": "Schedules",
   "6": "Settings",
   "7": "Run triggers",
+  "8": "Cascades",
 };
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {
@@ -309,6 +311,9 @@ export const WorkspaceDetails = ({
         break;
       case "7":
         navigate(`/organizations/${organizationId}/workspaces/${id}/run-triggers`);
+        break;
+      case "8":
+        navigate(`/organizations/${organizationId}/workspaces/${id}/cascades`);
         break;
       default:
         break;
@@ -836,6 +841,12 @@ export const WorkspaceDetails = ({
             workspaceName={workspaceName}
             manageWorkspace={manageWorkspace}
           />
+        );
+      case "8":
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <Cascades organizationId={organizationId!} workspaceId={id!} workspaceName={workspaceName} />
+          </Suspense>
         );
       case "6":
         return (
