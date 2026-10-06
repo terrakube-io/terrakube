@@ -5,6 +5,11 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
+import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
@@ -26,8 +31,13 @@ import lombok.Setter;
  * One edge of a cascade's reachable subgraph, as it stood when the cascade was created. A
  * snapshot, not a live reference: the real {@link WorkspaceRunTrigger} it was copied from can
  * change or be deleted after this row is written, and a running cascade must keep evaluating
- * against the shape it started with.
+ * against the shape it started with. Read-only from the API, same write lock as {@link RunCascade}.
  */
+@Include(name = "runCascadeEdge", rootLevel = false)
+@ReadPermission(expression = "team view run cascade edge")
+@CreatePermission(expression = "user is a super service")
+@UpdatePermission(expression = "user is a super service")
+@DeletePermission(expression = "user is a super service")
 @Getter
 @Setter
 @Entity(name = "run_cascade_edge")

@@ -5,6 +5,11 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
+import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -22,7 +27,13 @@ import lombok.Setter;
  * One workspace's position within a cascade's reachable subgraph. One row per (cascade,
  * workspace) pair - a diamond's join workspace gets a single node, not one per parent, which is
  * what lets {@code ANY}/{@code ALL} evaluate it once instead of once per incoming edge.
+ * Read-only from the API, same write lock as {@link RunCascade}.
  */
+@Include(name = "runCascadeNode", rootLevel = false)
+@ReadPermission(expression = "team view run cascade node")
+@CreatePermission(expression = "user is a super service")
+@UpdatePermission(expression = "user is a super service")
+@DeletePermission(expression = "user is a super service")
 @Getter
 @Setter
 @Entity(name = "run_cascade_node")
