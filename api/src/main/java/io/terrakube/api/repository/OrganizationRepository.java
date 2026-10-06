@@ -27,10 +27,9 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
     /**
      * Locks the organization's row for the rest of the transaction. A plain
-     * {@code SELECT ... FOR UPDATE} rather than a database-specific advisory lock, since every
-     * organization row already exists and this needs to work on every RDBMS Terrakube supports.
-     * Bounded to 5s: an unbounded wait would hold a connection from the pool indefinitely under
-     * contention, rather than failing the request predictably.
+     * {@code SELECT ... FOR UPDATE} rather than a database-specific advisory lock, for
+     * portability. Bounded to 5s so contention fails the request instead of holding a pool
+     * connection indefinitely.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))

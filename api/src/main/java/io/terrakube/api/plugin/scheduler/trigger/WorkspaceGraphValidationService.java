@@ -25,12 +25,9 @@ import java.util.UUID;
  * The runtime cascade limit bounds the damage, but a graph that cannot loop in the first
  * place is better than one that stops looping after ten hops.
  *
- * <p>Cycle checks serialize on the organization row rather than a database-specific advisory
- * lock, since every organization row already exists and this needs to work on every RDBMS
- * Terrakube supports. That means two edge mutations anywhere in the same organization briefly
- * block each other even when their graphs are disjoint, and contend with administrative updates
- * to the organization itself - a deliberate trade-off of portability and simplicity over
- * per-subgraph concurrency.
+ * <p>Cycle checks lock the organization row rather than a database-specific advisory lock, for
+ * portability - at the cost of serializing all edge mutations in an organization, even across
+ * disjoint subgraphs.
  */
 @Slf4j
 @Service
@@ -86,15 +83,9 @@ public class WorkspaceGraphValidationService {
      * Rejects an edge that would close a loop.
      *
      * <p>Locks the organization's row before reading the graph, so two concurrent edge
-     * mutations in the same organization can't each validate against a graph the other hasn't
-     * committed yet and together close a cycle neither saw. Independent organizations never
-     * block each other.
-     *
-     * <p>Fails closed if the organization can't be locked - including a disabled organization,
-     * which {@code @SQLRestriction} makes invisible to this query. A disabled org's workspaces
-     * are normally unreachable earlier in the stack, but this service has to be correct on its
-     * own rather than by arrangement with its callers, so an edge it can't validate is rejected
-     * rather than silently let through.
+     * mutations can't each validate against a graph the other hasn't committed yet and
+     * together close a cycle neither saw. Fails closed if the organization can't be locked -
+     * including a disabled one, which {@code @SQLRestriction} makes invisible to this query.
      *
      * @param organizationId owner of the graph
      * @param triggerId      the edge being written, excluded from the graph so an update is

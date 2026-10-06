@@ -5,8 +5,7 @@ import org.apache.hc.core5.http.HttpStatus;
 
 /**
  * Raised when a run trigger's organization can't be locked for graph validation - deleted,
- * disabled, or otherwise unresolvable. Answered as 400 rather than silently skipping validation:
- * an edge this service can't check the graph for is rejected, not let through.
+ * disabled, or otherwise unresolvable. Answered as 400: the edge is rejected, not let through.
  */
 public class OrganizationUnresolvableException extends HttpStatusException {
 
