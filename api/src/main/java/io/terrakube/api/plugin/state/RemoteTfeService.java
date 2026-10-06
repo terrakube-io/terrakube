@@ -525,7 +525,7 @@ public class RemoteTfeService {
             attributes.put("tag-names", workspaceTagNames(workspaceTags, tagNames));
 
             if (workspace.getFolder() != null
-                    && (workspace.getVcs() != null || workspace.getSsh() != null)
+                    && !workspace.getFolder().trim().isEmpty()
                     && !workspace.getFolder().split(",")[0].equals("/")) {
                 attributes.put("working-directory", workspace.getFolder().split(",")[0]);
             }
