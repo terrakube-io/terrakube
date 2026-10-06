@@ -14,6 +14,8 @@ public enum RunCascadeNodeStatus {
     FAILED,
     /** Terminal: never ran because a dependency it needed under ALL/ANY didn't resolve in its favor. */
     SKIPPED,
-    /** Waiting on an operator - e.g. a BLOCK on_destroy policy rejected the run upstream of this node. */
-    BLOCKED
+    /** Waiting on an operator - a required parent failed, or a BLOCK on_destroy policy rejected the run upstream. */
+    BLOCKED,
+    /** Terminal: an operator cancelled the cascade before this node ran. */
+    CANCELLED
 }
