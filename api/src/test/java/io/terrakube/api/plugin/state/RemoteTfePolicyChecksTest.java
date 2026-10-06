@@ -7,6 +7,7 @@ import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckList;
 import io.terrakube.api.plugin.state.model.runs.RunsData;
+import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
@@ -412,5 +413,18 @@ class RemoteTfePolicyChecksTest {
 
         ResponseEntity<String> outputResponse = remoteTfeController.getPolicyCheckOutput("polchk-" + evalId, null);
         assertEquals(HttpStatus.OK, outputResponse.getStatusCode());
+    }
+
+    @Test
+    void updateWorkspaceReturnsNotFoundWhenWorkspaceDoesNotExist() {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.empty());
+
+        WorkspaceData requestData = new WorkspaceData();
+        ResponseEntity<WorkspaceData> response = remoteTfeController.updateWorkspace(
+                workspaceId.toString(), requestData, null);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        assertNotNull(response.getBody());
     }
 }

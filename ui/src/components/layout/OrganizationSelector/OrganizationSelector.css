@@ -37,12 +37,13 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background-color: white;
+  /* Graphite in both themes, continuous with the sidebar it opens from. */
+  background-color: #1c2128;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 4px !important;
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.45);
+  padding: 4px;
   z-index: 1000;
-  border: 1px solid #e0e0e0;
+  border: 1px solid #30363d;
   min-width: 100%;
 }
 
@@ -58,38 +59,39 @@
 .org-selector-empty {
   padding: 12px;
   text-align: center;
-  color: #8c8c8c;
+  color: #8b949e;
   font-size: 13px;
 }
 
 .org-selector-item {
-  padding: 0 12px !important;
-  margin: 0 !important;
+  padding: 0 12px;
+  margin: 0;
   cursor: pointer;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  position: relative !important;
-  color: #1a1a1a !important;
-  font-size: 14px !important;
-  line-height: 1 !important;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+  color: #e6edf3;
+  font-size: 14px;
+  line-height: 1;
   transition:
     background-color 0.15s ease,
     border-radius 0.15s ease;
-  text-decoration: none !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  border-radius: 6px !important;
-  border-bottom: none !important;
+  text-decoration: none;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 6px;
+  border-bottom: none;
 }
 
 .org-selector-item:hover {
-  background-color: #f5f5f5 !important;
+  background-color: #262c36;
+  color: #e6edf3;
 }
 
 .org-selector-item.selected {
-  background-color: var(--ant-color-primary-bg) !important;
-  color: #1a1a1a !important;
+  background-color: color-mix(in srgb, var(--tk-accent) 28%, #1c2128);
+  color: #ffffff;
 }
 
 .org-selector-item-name {
@@ -97,11 +99,11 @@
   flex: 1;
 }
 
-.org-selector-check {
-  color: var(--ant-color-primary) !important;
-  font-size: 14px !important;
-  position: absolute !important;
-  right: 12px !important;
+.org-selector-item .org-selector-check {
+  color: #ffffff;
+  font-size: 14px;
+  position: absolute;
+  right: 12px;
 }
 
 .org-selector-icon {
@@ -122,66 +124,52 @@
 }
 
 .org-selector-manage-link {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  gap: 8px !important;
-  padding: 0 12px !important;
-  margin: 0 !important;
-  margin-top: 4px !important;
-  border-top: none !important;
-  color: #1a1a1a !important;
-  text-decoration: none !important;
-  font-size: 14px !important;
-  line-height: 1 !important;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  margin: 0;
+  margin-top: 4px;
+  border-top: 1px solid #30363d;
+  color: #8b949e;
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   transition: background-color 0.15s ease;
-  white-space: nowrap !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  border-radius: 6px !important;
+  white-space: nowrap;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 0 0 6px 6px;
 }
 
 .org-selector-manage-link:hover {
-  background-color: #f5f5f5 !important;
+  background-color: #262c36;
+  color: #e6edf3;
 }
 
-.org-selector-manage-icon {
-  color: #656a76 !important;
-  font-size: 14px !important;
+.org-selector-manage-link .org-selector-manage-icon {
+  color: #8b949e;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
-/* Dark mode styles */
-[data-theme="dark"] .org-selector-dropdown {
-  background-color: #1c2128 !important;
-  border-color: #30363d !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+/* The search field sits on graphite too, whatever the app theme. */
+.org-selector-search.ant-input-affix-wrapper {
+  background-color: #0d1117;
+  border-color: #30363d;
+  color: #e6edf3;
 }
 
-[data-theme="dark"] .org-selector-item {
-  color: #e6edf3 !important;
+.org-selector-search .ant-input {
+  background-color: transparent;
+  color: #e6edf3;
 }
 
-[data-theme="dark"] .org-selector-item:hover {
-  background-color: #21262d !important;
-}
-
-[data-theme="dark"] .org-selector-item.selected {
-  background-color: var(--ant-color-primary-bg) !important;
-  color: #e6edf3 !important;
-}
-
-[data-theme="dark"] .org-selector-manage-link {
-  color: #e6edf3 !important;
-}
-
-[data-theme="dark"] .org-selector-manage-link:hover {
-  background-color: #21262d !important;
-}
-
-[data-theme="dark"] .org-selector-manage-icon {
-  color: #8b949e !important;
+.org-selector-search .ant-input::placeholder,
+.org-selector-search .anticon {
+  color: #8b949e;
 }
 
 .org-selector-dropdown--top {

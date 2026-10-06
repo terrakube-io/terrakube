@@ -91,4 +91,13 @@ class StepOutputReaderTest {
     void stripAnsiToleratesNull() {
         assertThat(subject.stripAnsi(null)).isNull();
     }
+
+    @Test
+    void stripAnsiRemovesVariousTerminalSequences() {
+        assertThat(subject.stripAnsi("\u001b[1mBold Text\u001b[0m")).isEqualTo("Bold Text");
+        assertThat(subject.stripAnsi("\u001b[38;5;196mRed Text\u001b[0m")).isEqualTo("Red Text");
+        assertThat(subject.stripAnsi("\u001b[2KLine Cleared")).isEqualTo("Line Cleared");
+        assertThat(subject.stripAnsi("\u001b7Saved Cursor\u001b8")).isEqualTo("Saved Cursor");
+        assertThat(subject.stripAnsi("\u001b(0\u001b(B")).isEmpty();
+    }
 }

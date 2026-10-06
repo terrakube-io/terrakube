@@ -108,7 +108,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
   const onDelete = (id: string) => {
     axiosInstance
       .delete(`organization/${orgid}/globalvar/${id}`)
-      .then((response) => {
+      .then(() => {
         message.success("Global variable deleted successfully");
         loadGlobalVariables();
       })
@@ -138,7 +138,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
         message.success("Global variable created successfully");
         loadGlobalVariables();
         setVisible(false);
@@ -170,7 +170,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
         message.success("Global variable updated successfully");
         loadGlobalVariables();
         setVisible(false);
@@ -265,6 +265,7 @@ export const GlobalVariablesSettings = ({ managePermission = true }: Props) => {
             open={visible}
             mode={mode === "create" ? "create" : "edit"}
             variableKey={variableKey}
+            existingKeys={globalVariables.map((v) => v.attributes.key)}
             form={form}
             onCancel={onCancel}
             onSubmit={(values) => {

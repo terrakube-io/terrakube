@@ -15,6 +15,7 @@ import java.util.UUID;
 @CreatePermission(expression = "user is a superuser OR team manage workspace tag")
 @UpdatePermission(expression = "user is a superuser OR team manage workspace tag")
 @DeletePermission(expression = "user is a superuser OR team manage workspace tag")
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include(rootLevel = false)
 @Getter
 @Setter

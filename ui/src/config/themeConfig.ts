@@ -48,6 +48,7 @@ export const getThemeConfig = (colorScheme: ColorSchemeOption, themeMode: ThemeM
         ...darkThemeTokens,
         colorPrimaryBg: isTerrakube ? "#1a0a2e" : "#0d2942",
         colorPrimaryBgHover: isTerrakube ? "#2d1548" : "#113a5d",
+        colorLink: isTerrakube ? "#b37feb" : "#58a6ff",
       },
       components: {
         Layout: {

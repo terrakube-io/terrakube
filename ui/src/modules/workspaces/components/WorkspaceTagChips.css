@@ -1,0 +1,97 @@
+/* WorkspaceTagChips.css */
+
+/* Rows and cards lay a positioned link over themselves; the chips must sit above it to be reachable */
+.workspace-tag-chip,
+.workspace-tag-chip-toggle {
+  position: relative;
+  z-index: 1;
+}
+
+/* The key on the tag's colour, the value on a mix of it with the page background, so the value text keeps
+   full contrast in both themes. Qualified with .ant-tag to outrank antd's own single-class tag rules. */
+.ant-tag.workspace-tag-chip {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 180px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--tag-color) 22%, var(--tk-bg-container));
+}
+
+.workspace-tag-chip .workspace-tag-label-key,
+.workspace-tag-chip .workspace-tag-label-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-tag-chip .workspace-tag-label-key {
+  background: var(--tag-color);
+  color: var(--tag-key-text);
+}
+
+.workspace-tag-chip .workspace-tag-label-value {
+  color: var(--tk-text-primary);
+}
+
+/* A button dressed as an antd Tag */
+.workspace-tag-chip-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  background: var(--tk-fill-secondary);
+  color: var(--tk-text-secondary);
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+
+[data-theme="dark"] .workspace-tag-chip-toggle {
+  border-radius: 2em;
+}
+
+/* Accent text on the tinted ground falls short of 4.5:1 in the dark theme, so only the edge takes it */
+.workspace-tag-chip-toggle:hover {
+  background: var(--tk-accent-tint);
+  border-color: var(--tk-link);
+  color: var(--tk-text-primary);
+}
+
+.workspace-tag-chip-toggle:focus-visible {
+  outline: 2px solid var(--tk-link);
+  outline-offset: 1px;
+}
+
+.workspace-tag-chip-overflow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 260px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* The popover has room for long values */
+.workspace-tag-chip-overflow .ant-tag.workspace-tag-chip {
+  max-width: 100%;
+  height: auto;
+}
+
+.workspace-tag-chip-overflow .workspace-tag-chip .workspace-tag-label-key,
+.workspace-tag-chip-overflow .workspace-tag-chip .workspace-tag-label-value {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

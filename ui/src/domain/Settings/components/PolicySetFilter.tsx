@@ -53,6 +53,7 @@ export const PolicySetFilter: React.FC<Props> = ({
       <Col xs={24} lg={18}>
         <Space wrap size={10} style={{ width: "100%" }}>
           <Input
+            aria-label="Search policy sets by name or description"
             placeholder="Search by name or description..."
             prefix={<SearchOutlined style={{ color: "rgba(0,0,0,0.45)" }} />}
             allowClear

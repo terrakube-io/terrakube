@@ -1,9 +1,80 @@
 .token-list {
-  margin-top: 20px;
+  margin-top: 32px;
 
   .list-header {
     margin-bottom: 20px !important;
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 600;
   }
+}
+
+/* Icon tile, name with status tags and meta line, delete action pinned top right. */
+.token-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+}
+
+.token-item-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--token-status-bg);
+  color: var(--token-status-fg);
+  font-size: 20px;
+}
+
+.token-item-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.token-item-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.token-item-status {
+  color: var(--token-status-fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.token-item-meta {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+/* Status colors: antd's warning/error text tokens fall below 4.5:1 at 13px,
+   so the text uses darker (light mode) or lighter (dark mode) steps of the same palettes. */
+.token-item {
+  --token-status-bg: var(--tk-fill-primary);
+  --token-status-fg: var(--tk-text-secondary);
+}
+
+.token-item[data-status="expiring"] {
+  --token-status-bg: #fff7e6;
+  --token-status-fg: #ad6800;
+}
+
+.token-item[data-status="expired"] {
+  --token-status-bg: #fff1f0;
+  --token-status-fg: #cf1322;
+}
+
+[data-theme="dark"] .token-item[data-status="expiring"] {
+  --token-status-bg: rgba(216, 150, 20, 0.15);
+  --token-status-fg: #d89614;
+}
+
+[data-theme="dark"] .token-item[data-status="expired"] {
+  --token-status-bg: rgba(255, 120, 117, 0.12);
+  --token-status-fg: #ff7875;
 }

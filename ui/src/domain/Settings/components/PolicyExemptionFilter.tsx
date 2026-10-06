@@ -58,6 +58,7 @@ export const PolicyExemptionFilter: React.FC<PolicyExemptionFilterProps> = ({
     <Row gutter={[16, 16]} style={{ marginBottom: 16 }} align="middle">
       <Col xs={24} sm={12} md={8}>
         <Input
+          aria-label="Search exemptions by rule, ticket, or reason"
           placeholder="Search exemptions by rule, ticket, reason..."
           prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />}
           value={searchQuery}

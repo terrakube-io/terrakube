@@ -21,7 +21,6 @@ import {
   theme,
   Typography,
 } from "antd";
-import { Buffer } from "buffer";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws } from "@/config/iconList";
@@ -44,6 +43,14 @@ import VersionStatusModal, {
   versionStatusChangeMessage,
 } from "@/components/modals/VersionStatusModal";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+
+type ModuleDetails = {
+  submodules: string[];
+  variables: { name: string; type: string | null; description: string | null; defaultValue: string | null }[];
+  outputs: { name: string; description: string | null }[];
+  resources: { type: string; name: string }[];
+  readme: string | null;
+};
 
 const Markdown = lazy(async () => {
   const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
@@ -85,7 +92,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState("loading...");
-  const [hclObject, setHclObject] = useState<any>(null);
+  const [details, setDetails] = useState<ModuleDetails | null>(null);
   const [inputs, setInputs] = useState("Inputs");
   const [loadingInputs, setLoadingInputs] = useState("loading...");
   const [loadingOutputs, setLoadingOutputs] = useState("loading...");
@@ -164,7 +171,11 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const showVersion = (path: string, selected: string, versions: ModuleVersionItem[]) => {
     setVersion(selected);
     if (versions.find((v) => v.version === selected)?.status === "removed") {
-      setHclObject(null);
+      setDetails(null);
+      setSubmodules([]);
+      setInputs("Inputs");
+      setOutputs("Outputs");
+      setResources("Resources");
       setMarkdown("_The README is not available because this version was removed from the registry._");
       setLoadingInputs("Not available for removed versions");
       setLoadingOutputs("Not available for removed versions");
@@ -172,7 +183,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       return;
     }
     setMarkdown("loading...");
-    loadReadme(path, selected);
     loadModuleDetails(path, selected);
   };
 
@@ -184,73 +194,11 @@ export const ModuleDetails = ({ organizationName }: Props) => {
     }
   };
 
-  // if submodule is empty then load the submodules dropdown list
-  // if submodule is empty then load the root module
-  // if submodule is not empty then load the specific submodule tf files
-  async function readFiles(url: string, submodule = "") {
-    const { unzip } = await import("unzipit");
-    const { entries } = await unzip(url);
-    let hclString = "";
-    const modules: string[] = [];
-
-    for (const [name, entry] of Object.entries(entries)) {
-      if (submodule === "") {
-        if (name.includes("modules/")) {
-          const moduleName = name.split("/")[1];
-          if (!modules.includes(moduleName) && moduleName !== "") {
-            modules.push(moduleName);
-          }
-        }
-        if (name.includes(".tf") && !name.includes("/")) {
-          const contentText = await entry.text();
-          hclString += "\n" + contentText;
-        }
-        setSubmodules(modules.sort());
-      } else {
-        if (name.includes(".tf") && name.includes("modules/" + submodule + "/")) {
-          const contentText = await entry.text();
-          hclString += "\n" + contentText;
-        }
-        if (name.includes("modules/" + submodule + "/README.md")) {
-          const readme = await entry.text();
-          setMarkdown(readme);
-        }
-      }
-    }
-
-    const hcl = await import("hcl2-parser");
-    const hclResult = hcl.parseToObject(hclString);
-    if (hclResult) {
-      setHclObject(hclResult[0]);
-      if (hclResult[0]?.variable) {
-        setInputs(`Inputs (${Object.keys(hclResult[0]?.variable)?.length})`);
-      } else {
-        setInputs("Inputs");
-        setLoadingInputs("No inputs");
-      }
-      if (hclResult[0]?.output) {
-        setOutputs(`Outputs (${Object.keys(hclResult[0]?.output)?.length})`);
-      } else {
-        setOutputs("Outputs");
-        setLoadingOutputs("No outputs");
-      }
-      if (hclResult[0]?.resource) {
-        setResources(`Resources (${Object.keys(hclResult[0]?.resource)?.length})`);
-      } else {
-        setResources("Resources");
-        setLoadingResources("No resources");
-      }
-    }
-  }
-
   const onClickSubmodule = (e: { key: string }) => {
     setMarkdown("loading...");
     setSubmodule(e.key);
     setSubmodulePath("//modules/" + e.key);
     loadModuleDetails(module!.attributes.registryPath, version, e.key);
-    if (markdown === "loading...") {
-      setMarkdown("");
-    }
   };
 
   const handleClickBack = () => {
@@ -258,7 +206,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
     setSubmodule("");
     setSubmodulePath("");
     loadModuleDetails(module!.attributes.registryPath, version, "");
-    loadReadme(module!.attributes.registryPath, version);
   };
 
   const onDelete = (id: string) => {
@@ -272,15 +219,6 @@ export const ModuleDetails = ({ organizationName }: Props) => {
         message.error("Error deleting module " + error);
       });
   };
-
-  async function loadReadmeFile(text: string) {
-    if (text != null) {
-      const textReadme = Buffer.from(text, "base64").toString();
-      setMarkdown(textReadme);
-    } else {
-      setMarkdown("");
-    }
-  }
 
   useEffect(() => {
     setLoading(true);
@@ -306,32 +244,34 @@ export const ModuleDetails = ({ organizationName }: Props) => {
       });
   }, [orgid, id]);
 
-  const loadModuleDetails = async (path: string, version: string, submodule = "") => {
+  // The registry unpacks the module archive and parses the HCL; the browser only renders the result.
+  const loadModuleDetails = (path: string, version: string, submodule = "") => {
     setLoadingInputs("loading...");
     setLoadingOutputs("loading...");
     setLoadingResources("loading...");
-    setHclObject(null);
+    setDetails(null);
     axiosInstance
-      .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/modules/v1/${path}/${version}/download`)
+      .get<ModuleDetails>(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/modules/v1/${path}/${version}/details`, {
+        params: submodule ? { submodule } : undefined,
+      })
       .then((resp) => {
-        readFiles(resp.headers["x-terraform-get"], submodule);
+        const data = resp.data;
+        setDetails(data);
+        if (submodule === "") setSubmodules(data.submodules);
+        setMarkdown(data.readme ?? "");
+        setInputs(data.variables.length ? `Inputs (${data.variables.length})` : "Inputs");
+        setOutputs(data.outputs.length ? `Outputs (${data.outputs.length})` : "Outputs");
+        setResources(data.resources.length ? `Resources (${data.resources.length})` : "Resources");
+        if (!data.variables.length) setLoadingInputs("No inputs");
+        if (!data.outputs.length) setLoadingOutputs("No outputs");
+        if (!data.resources.length) setLoadingResources("No resources");
       })
       .catch((err) => {
         console.error("Error loading module details:", err);
+        setMarkdown("");
         setLoadingInputs("Failed to load");
         setLoadingOutputs("Failed to load");
         setLoadingResources("Failed to load");
-      });
-  };
-
-  const loadReadme = (path: string, version: string) => {
-    axiosInstance
-      .get(`${window._env_.REACT_APP_REGISTRY_URI}/terraform/readme/v1/${path}/${version}/download`)
-      .then((resp) => {
-        loadReadmeFile(resp.data.content);
-      })
-      .catch(() => {
-        setMarkdown("");
       });
   };
 
@@ -482,7 +422,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       label: inputs,
                       key: "2",
                       children:
-                        hclObject && hclObject?.variable ? (
+                        details && details.variables.length ? (
                           <Space orientation="vertical">
                             <h3>Inputs</h3>
                             <span>These variables should be set in the module block when using this module.</span>
@@ -550,7 +490,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                 </tr>
                               </thead>
                               <tbody>
-                                {Object.keys(hclObject?.variable).map((keyName, i) => (
+                                {details.variables.map((variable, i) => (
                                   <tr
                                     key={i}
                                     style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
@@ -564,7 +504,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                       }}
                                     >
                                       <Typography.Text copyable strong>
-                                        {keyName}
+                                        {variable.name}
                                       </Typography.Text>
                                     </td>
                                     <td
@@ -575,15 +515,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                         border: `1px solid ${colorBorder}`,
                                       }}
                                     >
-                                      <span
-                                        style={{
-                                          padding: "4px 8px",
-                                          borderRadius: "4px",
-                                          display: "inline-block",
-                                        }}
-                                      >
-                                        {hclObject?.variable[keyName][0]?.type?.replace(/{|}|\$/g, "")}
-                                      </span>
+                                      <code style={{ whiteSpace: "pre-wrap" }}>{variable.type}</code>
                                     </td>
                                     <td
                                       style={{
@@ -593,10 +525,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                         border: `1px solid ${colorBorder}`,
                                       }}
                                     >
-                                      {JSON.stringify(hclObject?.variable[keyName][0]?.description)?.replaceAll(
-                                        '"',
-                                        ""
-                                      )}
+                                      {variable.description}
                                     </td>
                                     <td
                                       style={{
@@ -606,7 +535,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                         border: `1px solid ${colorBorder}`,
                                       }}
                                     >
-                                      {JSON.stringify(hclObject?.variable[keyName][0]?.default)}
+                                      <code style={{ whiteSpace: "pre-wrap" }}>{variable.defaultValue}</code>
                                     </td>
                                   </tr>
                                 ))}
@@ -621,7 +550,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       label: outputs,
                       key: "3",
                       children:
-                        hclObject && hclObject?.output ? (
+                        details && details.outputs.length ? (
                           <Space orientation="vertical">
                             <h3>Outputs</h3>
                             <span>These outputs are returned by this module.</span>
@@ -665,7 +594,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                 </tr>
                               </thead>
                               <tbody>
-                                {Object.keys(hclObject?.output).map((keyName, i) => (
+                                {details.outputs.map((output, i) => (
                                   <tr
                                     key={i}
                                     style={{ backgroundColor: i % 2 === 0 ? colorBgContainer : colorFillTertiary }}
@@ -679,7 +608,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                       }}
                                     >
                                       <Typography.Text copyable strong>
-                                        {keyName}
+                                        {output.name}
                                       </Typography.Text>
                                     </td>
                                     <td
@@ -690,7 +619,7 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                                         border: `1px solid ${colorBorder}`,
                                       }}
                                     >
-                                      {JSON.stringify(hclObject?.output[keyName][0]?.description)?.replaceAll('"', "")}
+                                      {output.description}
                                     </td>
                                   </tr>
                                 ))}
@@ -705,21 +634,19 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                       label: resources,
                       key: "5",
                       children:
-                        hclObject && hclObject?.resource ? (
+                        details && details.resources.length ? (
                           <Space orientation="vertical">
                             <h3>Resources</h3>
                             <span>This is the list of resources this module can create.</span>
-                            <span>This module defines {Object.keys(hclObject?.resource)?.length} resources.</span>
+                            <span>This module defines {details.resources.length} resources.</span>
                             <ul>
-                              {Object.keys(hclObject?.resource).map((resourceType, i) =>
-                                Object.keys(hclObject?.resource[resourceType]).map((resourceName, j) => (
-                                  <li key={`${i}-${j}`}>
-                                    <Tag>
-                                      {resourceType}.{resourceName}
-                                    </Tag>
-                                  </li>
-                                ))
-                              )}
+                              {details.resources.map((resource, i) => (
+                                <li key={i}>
+                                  <Tag>
+                                    {resource.type}.{resource.name}
+                                  </Tag>
+                                </li>
+                              ))}
                             </ul>
                           </Space>
                         ) : (

@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { WorkspaceTagFilter } from "@/modules/workspaces/types";
 
 export function useWorkspaceFilterState() {
   const [status, setStatus] = useState<string>(sessionStorage.getItem("filterValue") || "All");
   const [policyStatus, setPolicyStatusState] = useState<string>(sessionStorage.getItem("policyFilter") || "All");
   const [search, setSearch] = useState<string>(sessionStorage.getItem("searchValue") || "");
-  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [tagFilters, setTagFilters] = useState<WorkspaceTagFilter[]>([]);
   const [projectId, setProjectIdState] = useState<string | null>(sessionStorage.getItem("projectFilter") || null);
   const [groupByProject, setGroupByProjectState] = useState<boolean>(
     localStorage.getItem("groupByProject") !== "false"
@@ -32,8 +33,8 @@ export function useWorkspaceFilterState() {
     setPolicyStatus,
     search,
     setSearch,
-    tagIds,
-    setTagIds,
+    tagFilters,
+    setTagFilters,
     projectId,
     setProjectId,
     groupByProject,

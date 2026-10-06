@@ -265,6 +265,7 @@ export const PolicySetParameters: React.FC<Props> = ({
 
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
         <Input
+          aria-label="Search parameters by key or description"
           placeholder="Search parameters by key or description..."
           prefix={<SearchOutlined />}
           value={searchQuery}

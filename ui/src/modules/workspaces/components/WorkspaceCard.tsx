@@ -8,7 +8,7 @@ import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import VcsLogo from "@/components/display/VcsLogo";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
-import WorkspaceCardTags from "@/modules/workspaces/components/WorkspaceCardTags";
+import WorkspaceTagChips from "@/modules/workspaces/components/WorkspaceTagChips";
 import { TagModel } from "@/modules/organizations/types";
 import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
 import IacTypeLogo from "./IacTypeLogo";
@@ -40,7 +40,7 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
                       {item.projectName}
                     </Tag>
                   )}
-                  <WorkspaceCardTags tags={tags} item={item} />
+                  <WorkspaceTagChips bindings={item.tags} tags={tags} />
                 </Flex>
               </Col>
             </Row>

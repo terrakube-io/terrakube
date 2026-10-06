@@ -124,4 +124,65 @@
         </insert>
 
     </changeSet>
+
+    <changeSet author="demo-data" id="demo-4-key-value-tags">
+        <!--
+        ********************
+        ***KEY/VALUE TAGS***
+        ********************
+        The tags above are key-only. These two keys carry a value on every workspace, so the UI
+        filter, the card/table chips and `terraform init` with `tags = { env = "..." }` all have
+        something to work with:
+
+            simple_tag1 : development, networking, env=production,  team=infra
+            simple_tag2 : development, networking, env=development, team=platform
+            simple_tag3 : development,             env=development
+        -->
+        <insert tableName="tag">
+            <column name="id"               value="3e8b0c3a-6a0c-4d5e-9d6a-2b4f9a1c7d10" />
+            <column name="name"             value="env" />
+            <column name="organization_id"  value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+        <insert tableName="tag">
+            <column name="id"               value="9c1f5d42-8e73-4a61-bb28-5d0c7f36a4e1" />
+            <column name="name"             value="team" />
+            <column name="organization_id"  value="d9b58bd3-f3fc-4056-a026-1163297e80a8" />
+        </insert>
+
+        <insert tableName="workspacetag">
+            <column name="id"               value="b1d6e9a4-7c52-4f83-9a17-0c3e8d5b6f21" />
+            <column name="tag_id"           value="3e8b0c3a-6a0c-4d5e-9d6a-2b4f9a1c7d10" />
+            <column name="workspace_id"     value="c20633b2-82cc-4105-9806-16e23ad0e1df" />
+            <column name="tag_value"        value="production" />
+        </insert>
+
+        <insert tableName="workspacetag">
+            <column name="id"               value="c42a7b18-3d96-4e05-8b7c-1f9d2a6e4c83" />
+            <column name="tag_id"           value="9c1f5d42-8e73-4a61-bb28-5d0c7f36a4e1" />
+            <column name="workspace_id"     value="c20633b2-82cc-4105-9806-16e23ad0e1df" />
+            <column name="tag_value"        value="infra" />
+        </insert>
+
+        <insert tableName="workspacetag">
+            <column name="id"               value="d73c8f25-9b41-4a6d-8e02-5c7b3a1f9d64" />
+            <column name="tag_id"           value="3e8b0c3a-6a0c-4d5e-9d6a-2b4f9a1c7d10" />
+            <column name="workspace_id"     value="5a7873bd-9fd3-4193-b3df-33ba586fb146" />
+            <column name="tag_value"        value="development" />
+        </insert>
+
+        <insert tableName="workspacetag">
+            <column name="id"               value="e05d1a36-4f87-4b92-9c63-7a2e8b4d1c95" />
+            <column name="tag_id"           value="9c1f5d42-8e73-4a61-bb28-5d0c7f36a4e1" />
+            <column name="workspace_id"     value="5a7873bd-9fd3-4193-b3df-33ba586fb146" />
+            <column name="tag_value"        value="platform" />
+        </insert>
+
+        <insert tableName="workspacetag">
+            <column name="id"               value="f16e2b47-5a98-4c03-8d74-9b3f6c2e5a87" />
+            <column name="tag_id"           value="3e8b0c3a-6a0c-4d5e-9d6a-2b4f9a1c7d10" />
+            <column name="workspace_id"     value="24480d33-2649-4c34-aabd-cbc988eb6265" />
+            <column name="tag_value"        value="development" />
+        </insert>
+    </changeSet>
 </databaseChangeLog>

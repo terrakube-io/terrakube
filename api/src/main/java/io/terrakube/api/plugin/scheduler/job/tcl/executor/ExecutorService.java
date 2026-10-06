@@ -149,6 +149,7 @@ public class ExecutorService {
         executorContext.setOnFailureList(flow.getOnFailure());
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
+        executorContext.setRequireSavedPlan(flow.isRequireSavedPlan());
         executorContext.setTerraformVersion(job.getWorkspace().getTerraformVersion());
         if (job.getOverrideSource() == null) {
             executorContext.setSource(job.getWorkspace().getSource());

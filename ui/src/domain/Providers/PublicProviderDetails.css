@@ -1,0 +1,109 @@
+.public-provider-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.public-provider-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  font-size: 24px;
+}
+
+.public-provider-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.public-provider-title {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  min-width: 0;
+}
+
+.public-provider-title h2.ant-typography {
+  margin: 0;
+}
+
+.public-provider-tier {
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.public-provider-by {
+  flex-basis: 100%;
+}
+
+.public-provider-section {
+  margin-top: 32px;
+}
+
+.public-provider-section h4.ant-typography {
+  margin-bottom: 4px;
+}
+
+.public-provider-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--tk-text-primary);
+}
+
+.public-provider-version {
+  width: 240px;
+}
+
+/* Version facts: downloads, source and publish date side by side. */
+.public-provider-facts {
+  display: grid;
+  /* Source gets the spare width so the repository path stays on one line. */
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 16px 40px;
+  margin: 20px 0 0;
+  padding: 16px 20px;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 8px;
+  background: var(--tk-fill-secondary);
+}
+
+.public-provider-facts dt {
+  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--tk-text-primary);
+}
+
+.public-provider-facts dd {
+  margin: 0;
+  color: var(--tk-text-secondary);
+  overflow-wrap: break-word;
+}
+
+.public-provider-snippet {
+  margin: 0 0 12px;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 560px) {
+  .public-provider-facts {
+    grid-template-columns: 1fr;
+  }
+}
