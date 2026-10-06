@@ -21,11 +21,15 @@ final class RunTriggerEventBackoff {
      */
     static long nextDelayMillis(int attemptCount, int initialSeconds, int maxSeconds) {
         int attempts = Math.max(attemptCount, 1);
+        long safeInitial = Math.max(initialSeconds, 0);
+        long safeMax = Math.max(maxSeconds, 0);
         // Guard against overflow before maxSeconds caps it anyway.
-        long exponential = attempts >= 32 ? Long.MAX_VALUE : (long) initialSeconds << (attempts - 1);
-        long cappedSeconds = Math.min(exponential, maxSeconds);
+        long exponential = attempts >= 32 ? Long.MAX_VALUE : safeInitial << (attempts - 1);
+        long cappedSeconds = Math.min(exponential, safeMax);
         // Full jitter: uniform random delay between 0 and the capped value, so a correlated
         // batch of failures doesn't all retry on the same handful of backoff tiers at once.
+        // Clamped to >= 0 above: a misconfigured non-positive bound retries immediately
+        // instead of throwing from ThreadLocalRandom.nextLong requiring a positive bound.
         long jitteredSeconds = ThreadLocalRandom.current().nextLong(cappedSeconds + 1);
         return jitteredSeconds * 1000L;
     }

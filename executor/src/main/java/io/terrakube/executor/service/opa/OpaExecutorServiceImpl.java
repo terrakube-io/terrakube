@@ -290,6 +290,9 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             stderrThread.join(TimeUnit.SECONDS.toMillis(5));
             exitCode = process.exitValue();
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             log.error("Failed to execute opa process: {}", e.getMessage(), e);
             OpaEvaluationResult errorResult = OpaEvaluationResult.builder()
                     .policySetId(policyContext.getPolicyId())

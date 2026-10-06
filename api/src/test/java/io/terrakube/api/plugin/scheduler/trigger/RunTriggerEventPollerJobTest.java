@@ -91,4 +91,29 @@ class RunTriggerEventPollerJobTest {
         verify(runTriggerEventRepository, never()).findDueForProcessing(any(), any(), any());
         verify(runTriggerEventTransactions, never()).sweepStuckProcessingRows(any(), any(Integer.class));
     }
+
+    /** PageRequest rejects a size below 1; a misconfigured batch size must not crash every tick. */
+    @Test
+    void zeroOrNegativeBatchSizeFallsBackToOneInsteadOfThrowing() throws Exception {
+        properties.setEventPollerBatchSize(0);
+        doReturn(List.of()).when(runTriggerEventRepository)
+                .findDueForProcessing(any(), any(), any(Pageable.class));
+
+        subject.execute(jobExecutionContext);
+
+        verify(runTriggerEventRepository).findDueForProcessing(eq(RunTriggerEventStatus.PENDING), any(),
+                eq(org.springframework.data.domain.PageRequest.of(0, 1)));
+    }
+
+    /** A lease of zero or less must not make the sweep reclaim rows still actively being worked. */
+    @Test
+    void zeroOrNegativeLeaseSecondsStillSweepsInsteadOfThrowing() throws Exception {
+        properties.setEventLeaseSeconds(0);
+        doReturn(List.of()).when(runTriggerEventRepository)
+                .findDueForProcessing(any(), any(), any(Pageable.class));
+
+        subject.execute(jobExecutionContext);
+
+        verify(runTriggerEventTransactions).sweepStuckProcessingRows(any(), eq(properties.getEventMaxAttempts()));
+    }
 }

@@ -42,4 +42,17 @@ class RunTriggerEventBackoffTest {
         long delay = RunTriggerEventBackoff.nextDelayMillis(Integer.MAX_VALUE, 5, 900);
         assertThat(delay).isBetween(0L, 900_000L);
     }
+
+    /** A misconfigured non-positive bound must retry immediately, not throw. */
+    @Test
+    void zeroOrNegativeMaxSecondsRetriesImmediatelyInsteadOfThrowing() {
+        assertThat(RunTriggerEventBackoff.nextDelayMillis(4, 5, 0)).isEqualTo(0L);
+        assertThat(RunTriggerEventBackoff.nextDelayMillis(4, 5, -900)).isEqualTo(0L);
+    }
+
+    @Test
+    void zeroOrNegativeInitialSecondsRetriesImmediatelyInsteadOfThrowing() {
+        assertThat(RunTriggerEventBackoff.nextDelayMillis(1, 0, 900)).isEqualTo(0L);
+        assertThat(RunTriggerEventBackoff.nextDelayMillis(1, -5, 900)).isEqualTo(0L);
+    }
 }

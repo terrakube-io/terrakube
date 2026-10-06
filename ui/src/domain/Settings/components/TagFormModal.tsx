@@ -2,6 +2,7 @@ import { InfoCircleOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
 import { Form, Input } from "antd";
 import { CrudFormModal } from "@/components/modals/CrudFormModal";
+import { TAG_KEY_MAX_LENGTH } from "@/modules/workspaces/utils/tagLimits";
 
 export type TagFormValues = {
   name: string;
@@ -20,7 +21,7 @@ export default function TagFormModal({ open, mode, tagName, form, onCancel, onSu
   return (
     <CrudFormModal<TagFormValues>
       open={open}
-      title={mode === "edit" ? "Edit tag " + tagName : "Create new tag"}
+      title={mode === "edit" ? "Edit tag key " + tagName : "Create new tag key"}
       okText="Save tag"
       form={form}
       formName="tag"
@@ -30,13 +31,13 @@ export default function TagFormModal({ open, mode, tagName, form, onCancel, onSu
       <Form.Item
         name="name"
         tooltip={{
-          title: "Must be a valid tag name",
+          title: "The key of a tag. Workspaces set their own value for it.",
           icon: <InfoCircleOutlined />,
         }}
-        label="Name"
+        label="Key"
         rules={[{ required: true }]}
       >
-        <Input />
+        <Input maxLength={TAG_KEY_MAX_LENGTH} />
       </Form.Item>
     </CrudFormModal>
   );

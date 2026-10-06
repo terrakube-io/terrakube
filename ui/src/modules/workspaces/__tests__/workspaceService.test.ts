@@ -146,7 +146,7 @@ describe("workspaceService.listWorkspacePage", () => {
                         lastJobStatus: "running",
                         lastJobDate: "2026-09-03T12:00:00Z",
                         locked: false,
-                        workspaceTag: { edges: [{ node: { tagId: "tag-1" } }] },
+                        workspaceTag: { edges: [{ node: { tagId: "tag-1", value: "prod" } }] },
                         project: { edges: [{ node: { id: "project-1", name: "Platform" } }] },
                       },
                     },
@@ -180,7 +180,7 @@ describe("workspaceService.listWorkspacePage", () => {
       search: "platform",
       status: "running",
       policyStatus: "NON_COMPLIANT",
-      tagIds: ["tag-1"],
+      tagFilters: [{ tagId: "tag-1", value: "prod" }],
       projectId: "project-1",
       sort: "lastRun_desc",
     });
@@ -193,14 +193,14 @@ describe("workspaceService.listWorkspacePage", () => {
           first: "20",
           after: "20",
           filter:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running";policyComplianceStatus=="NON_COMPLIANT"',
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=="tag-1";workspaceTag.value=="prod";project.id=="project-1";lastJobStatus=="running";policyComplianceStatus=="NON_COMPLIANT"',
           sort: "-lastJobDate,-id",
           statusAll:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";policyComplianceStatus=="NON_COMPLIANT"',
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=="tag-1";workspaceTag.value=="prod";project.id=="project-1";policyComplianceStatus=="NON_COMPLIANT"',
           policyAll:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running"',
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=="tag-1";workspaceTag.value=="prod";project.id=="project-1";lastJobStatus=="running"',
           policy_UNKNOWN:
-            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=in=("tag-1");project.id=="project-1";lastJobStatus=="running";(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)',
+            '(name=ini="*platform*",description=ini="*platform*");workspaceTag.tagId=="tag-1";workspaceTag.value=="prod";project.id=="project-1";lastJobStatus=="running";(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)',
         }),
       }),
       { dataWrapped: true, contentType: "application/json" }
@@ -217,9 +217,208 @@ describe("workspaceService.listWorkspacePage", () => {
       expect.objectContaining({
         id: "ws-1",
         normalizedSource: "https://github.com/acme/platform",
-        tags: ["tag-1"],
+        tags: [{ tagId: "tag-1", value: "prod" }],
         projectId: "project-1",
       })
+    );
+  });
+
+  // Elide resolves every predicate on workspaceTag against one join alias, so an AND of two tag filters
+  // cannot be written as a single RSQL expression. The service resolves the ids of each filter first.
+  function tagMatchResponse(matches: string[][]) {
+    return {
+      isError: false,
+      responseCode: 200,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: Object.fromEntries(
+                matches.map((ids, index) => [
+                  `p${index}`,
+                  { edges: ids.map((id) => ({ node: { id } })), pageInfo: { totalRecords: ids.length } },
+                ])
+              ),
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  const emptyPageResponse = {
+    isError: false,
+    responseCode: 200,
+    data: {
+      organization: {
+        edges: [
+          { node: { name: "Acme", workspace: { edges: [], pageInfo: { hasNextPage: false, totalRecords: 0 } } } },
+        ],
+      },
+    },
+  };
+
+  it("ands several tag filters by intersecting the ids each one matches", async () => {
+    mockApiPost
+      .mockResolvedValueOnce(
+        tagMatchResponse([
+          ["ws-1", "ws-2"],
+          ["ws-2", "ws-3"],
+        ])
+      )
+      .mockResolvedValueOnce(emptyPageResponse);
+
+    await workspaceService.listWorkspacePage(
+      {
+        organizationId: "org-and",
+        first: 20,
+        after: 0,
+        tagFilters: [{ tagId: "tag-env", value: "prod" }, { tagId: "tag-team" }],
+        sort: "name_asc",
+      },
+      false
+    );
+
+    const [, idQuery] = mockApiPost.mock.calls[0];
+    expect(idQuery.variables.p0).toBe('workspaceTag.tagId=="tag-env";workspaceTag.value=="prod"');
+    expect(idQuery.variables.p1).toBe('workspaceTag.tagId=="tag-team"');
+
+    const [, pageQuery] = mockApiPost.mock.calls[1];
+    expect(pageQuery.variables.filter).toBe('id=in=("ws-2")');
+  });
+
+  it("asks for nothing when the tag filters have no workspace in common", async () => {
+    mockApiPost.mockResolvedValueOnce(tagMatchResponse([["ws-1"], ["ws-2"]])).mockResolvedValueOnce(emptyPageResponse);
+
+    const result = await workspaceService.listWorkspacePage(
+      {
+        organizationId: "org-disjoint",
+        first: 20,
+        after: 0,
+        search: "api",
+        tagFilters: [
+          { tagId: "tag-env", value: "prod" },
+          { tagId: "tag-team", value: "infra" },
+        ],
+        sort: "name_asc",
+      },
+      false
+    );
+
+    const [, pageQuery] = mockApiPost.mock.calls[1];
+    expect(pageQuery.variables.filter).toBe('(name=ini="*api*",description=ini="*api*");id=isnull=true');
+    expect(result.data?.workspaces).toEqual([]);
+    expect(result.data?.organizationName).toBe("Acme");
+  });
+
+  it("reuses the resolved ids across page turns instead of resolving them again", async () => {
+    mockApiPost
+      .mockResolvedValueOnce(tagMatchResponse([["ws-1", "ws-2"], ["ws-2"]]))
+      .mockResolvedValue(emptyPageResponse);
+
+    const request = {
+      organizationId: "org-cache",
+      first: 20,
+      after: 0,
+      tagFilters: [{ tagId: "tag-env", value: "prod" }, { tagId: "tag-team" }],
+      sort: "name_asc" as const,
+    };
+    await workspaceService.listWorkspacePage(request, false);
+    await workspaceService.listWorkspacePage({ ...request, after: 20 }, false);
+
+    // One resolution, two page requests.
+    expect(mockApiPost).toHaveBeenCalledTimes(3);
+    expect(mockApiPost.mock.calls[2][1].variables.filter).toBe('id=in=("ws-2")');
+  });
+
+  const andRequest = (organizationId: string) => ({
+    organizationId,
+    first: 20,
+    after: 0,
+    tagFilters: [{ tagId: "tag-env", value: "prod" }, { tagId: "tag-team" }],
+    sort: "name_asc" as const,
+  });
+
+  it("fails the page instead of showing no workspaces when resolving the ids fails", async () => {
+    mockApiPost.mockResolvedValueOnce({
+      isError: true,
+      responseCode: 200,
+      error: { status: "GraphQL request failed", message: "boom" },
+    });
+
+    const result = await workspaceService.listWorkspacePage(andRequest("org-error"), false);
+
+    expect(result.isError).toBe(true);
+    expect(result.error.message).toBe("boom");
+    // The page itself is not requested with a filter that would match nothing
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not keep a failed resolution, so the next request tries again", async () => {
+    mockApiPost
+      .mockResolvedValueOnce({ isError: true, responseCode: 500, error: { message: "boom" } })
+      .mockResolvedValueOnce(tagMatchResponse([["ws-1"], ["ws-1"]]))
+      .mockResolvedValueOnce(emptyPageResponse);
+
+    await workspaceService.listWorkspacePage(andRequest("org-retry"), false);
+    await workspaceService.listWorkspacePage(andRequest("org-retry"), false);
+
+    expect(mockApiPost.mock.calls[2][1].variables.filter).toBe('id=in=("ws-1")');
+  });
+
+  it("refuses an AND of tag filters that matches more workspaces than can be sent back", async () => {
+    const many = Array.from({ length: 1001 }, (_, index) => `ws-${index}`);
+    mockApiPost.mockResolvedValueOnce(tagMatchResponse([many, many]));
+
+    const result = await workspaceService.listWorkspacePage(andRequest("org-many"), false);
+
+    expect(result.isError).toBe(true);
+    expect(result.error.status).toBe("Too many matching workspaces");
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to intersect a tag filter whose matches did not fit in one page", async () => {
+    const truncated = tagMatchResponse([["ws-1"], ["ws-1"]]);
+    truncated.data.organization.edges[0].node.p0.pageInfo.totalRecords = 10001;
+    mockApiPost.mockResolvedValueOnce(truncated);
+
+    const result = await workspaceService.listWorkspacePage(andRequest("org-truncated"), false);
+
+    expect(result.isError).toBe(true);
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves the ids again once the cache is cleared", async () => {
+    mockApiPost
+      .mockResolvedValueOnce(tagMatchResponse([["ws-1"], ["ws-1"]]))
+      .mockResolvedValueOnce(emptyPageResponse)
+      .mockResolvedValueOnce(tagMatchResponse([["ws-2"], ["ws-2"]]))
+      .mockResolvedValueOnce(emptyPageResponse);
+
+    await workspaceService.listWorkspacePage(andRequest("org-clear"), false);
+    workspaceService.clearTagFilterCache();
+    await workspaceService.listWorkspacePage(andRequest("org-clear"), false);
+
+    expect(mockApiPost.mock.calls[3][1].variables.filter).toBe('id=in=("ws-2")');
+  });
+
+  it("sends a single tag filter as one query, without resolving ids", async () => {
+    mockApiPost.mockResolvedValueOnce(emptyPageResponse);
+
+    await workspaceService.listWorkspacePage(
+      {
+        organizationId: "org-single",
+        first: 20,
+        after: 0,
+        tagFilters: [{ tagId: "tag-env", value: "prod" }],
+        sort: "name_asc",
+      },
+      false
+    );
+
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+    expect(mockApiPost.mock.calls[0][1].variables.filter).toBe(
+      'workspaceTag.tagId=="tag-env";workspaceTag.value=="prod"'
     );
   });
 });

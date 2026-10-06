@@ -32,8 +32,9 @@ export const IconSelector = ({ value, color = "#000000", onChange }: IconSelecto
   };
 
   const content = (
-    <div style={{ width: 600, maxHeight: 400, overflowY: "auto" }}>
+    <div style={{ width: "min(600px, calc(100vw - 32px))", maxHeight: 400, overflowY: "auto" }}>
       <Input
+        aria-label="Search icons"
         placeholder="Search icons..."
         prefix={<SearchOutlined />}
         value={searchText}

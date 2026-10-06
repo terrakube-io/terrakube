@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * One Redis {@code XREAD} loop for a single job's log stream, fanning each record out to every
@@ -36,7 +37,7 @@ public class JobLogBroadcaster {
     private final AtomicBoolean finished = new AtomicBoolean(false);
     private final AtomicBoolean onEmptyFired = new AtomicBoolean(false);
 
-    private volatile RecordId lastId = RecordId.of("0-0");
+    private final AtomicReference<RecordId> lastId = new AtomicReference<>(RecordId.of("0-0"));
 
     public JobLogBroadcaster(String jobId, RedisStreamReader reader, JobStatusCache jobStatusCache,
                              LogsProperties properties, Runnable onEmpty) {
@@ -64,8 +65,8 @@ public class JobLogBroadcaster {
     public Subscription subscribe(String stepId, SseEmitter emitter, RecordId resumeFrom) {
         Subscription subscription = new Subscription(stepId, emitter);
         synchronized (lifecycleLock) {
-            if (!started.get() && isOlder(resumeFrom, lastId)) {
-                lastId = resumeFrom;
+            if (!started.get() && isOlder(resumeFrom, lastId.get())) {
+                lastId.set(resumeFrom);
             }
             subscriptions.add(subscription);
         }
@@ -96,7 +97,7 @@ public class JobLogBroadcaster {
                     return;
                 }
 
-                List<MapRecord> records = reader.readAfter(jobId, lastId, properties.getSseJobIdleTimeout());
+                List<MapRecord> records = reader.readAfter(jobId, lastId.get(), properties.getSseJobIdleTimeout());
 
                 if (records.isEmpty()) {
                     emptyReads++;
@@ -123,7 +124,7 @@ public class JobLogBroadcaster {
 
     private void dispatch(List<MapRecord> records) {
         for (MapRecord record : records) {
-            lastId = record.getId();
+            lastId.set(record.getId());
             StringRecord stringRecord = StringRecord.of(record);
             String stepId = stringRecord.getValue().get("stepId");
             String output = stringRecord.getValue().get("output");
@@ -137,7 +138,7 @@ public class JobLogBroadcaster {
 
     private void trySend(Subscription subscription, String output) {
         try {
-            subscription.emitter.send(SseEmitter.event().id(lastId.getValue()).data(output));
+            subscription.emitter.send(SseEmitter.event().id(lastId.get().getValue()).data(output));
         } catch (IOException | IllegalStateException e) {
             removeSubscriber(subscription);
         }
@@ -187,9 +188,11 @@ public class JobLogBroadcaster {
     }
 
     private static boolean isOlder(RecordId a, RecordId b) {
-        if (a.getTimestamp() != b.getTimestamp()) {
-            return a.getTimestamp() < b.getTimestamp();
+        long aTs = a.getTimestamp().longValue();
+        long bTs = b.getTimestamp().longValue();
+        if (aTs != bTs) {
+            return aTs < bTs;
         }
-        return a.getSequence() < b.getSequence();
+        return a.getSequence().longValue() < b.getSequence().longValue();
     }
 }

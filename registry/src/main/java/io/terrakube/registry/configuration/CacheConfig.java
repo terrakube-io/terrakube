@@ -29,6 +29,9 @@ public class CacheConfig {
     /** The deprecation warning of one provider, sent with every /versions response. */
     public static final String PROVIDER_WARNINGS_CACHE = "getProviderWarnings";
 
+    /** Parsed inputs/outputs/resources of one module version (and submodule). Immutable per version. */
+    public static final String MODULE_DETAILS_CACHE = "getModuleDetails";
+
     @Bean
     public CacheManager cacheManager(OpenRegistryProperties openRegistryProperties) {
         Duration versionsTtl = Duration.ofSeconds(openRegistryProperties.getModuleVersionsCacheTtlSeconds());
@@ -36,7 +39,7 @@ public class CacheConfig {
 
         // Naming the caches keeps the manager static: an unknown @Cacheable name then fails loudly.
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(MODULE_VERSIONS_CACHE,
-                MODULE_VERSION_PATH_CACHE, MODULE_VERSION_REMOVED_CACHE, PROVIDER_WARNINGS_CACHE);
+                MODULE_VERSION_PATH_CACHE, MODULE_VERSION_REMOVED_CACHE, PROVIDER_WARNINGS_CACHE, MODULE_DETAILS_CACHE);
         cacheManager.setCaffeine(Caffeine.newBuilder().recordStats()
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .maximumSize(1000));

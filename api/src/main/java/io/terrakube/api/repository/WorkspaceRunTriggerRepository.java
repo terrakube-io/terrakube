@@ -58,4 +58,12 @@ public interface WorkspaceRunTriggerRepository extends JpaRepository<WorkspaceRu
 
     /** Whether a workspace has anything to dispatch to - checked before writing a RunTriggerEvent. */
     boolean existsBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(UUID sourceWorkspaceId);
+
+    /**
+     * How many enabled edges already fan out from a workspace, for the configuration-time cap
+     * that keeps dispatch from ever having to drop one at runtime. Mirrors
+     * {@link #findEnabledBySourceWorkspaceId} exactly except for the projection, so the number
+     * being checked is the number dispatch will actually see.
+     */
+    long countBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(UUID sourceWorkspaceId);
 }

@@ -223,6 +223,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             <div style={{ marginBottom: 16 }}>
               <Select
                 showSearch
+                aria-label="Search workspace by name"
                 placeholder="Search workspace by name"
                 filterOption={false}
                 onSearch={fetchWorkspaceOptions}

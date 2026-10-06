@@ -1,9 +1,9 @@
 .page-wrapper {
-  padding: 0 50px;
+  padding: 0 clamp(16px, 4vw, 50px);
 }
 .page-wrapper-content {
   min-height: 600px;
-  padding: 24px;
+  padding: clamp(12px, 3vw, 24px);
 }
 
 .page-wrapper-inner {
@@ -43,4 +43,20 @@
   .active {
     font-weight: bold;
   }
+}
+
+@media (max-width: 767px) {
+  .page-wrapper-inner-fluid {
+    width: 100%;
+  }
+}
+
+/* The page's primary action must stay on screen at any width: the button row wraps under the title. */
+.page-wrapper-actions {
+  max-width: 100%;
+}
+
+.page-wrapper-actions > .ant-space,
+.page-wrapper-actions > .ant-flex {
+  flex-wrap: wrap;
 }

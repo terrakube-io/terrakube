@@ -6,12 +6,16 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.Exceptions;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 
@@ -181,18 +185,64 @@ public class PublicRegistryProxyService {
                     .uri("/v1/providers/{namespace}/{name}/versions", namespace, name)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofMillis(500))
-                            .filter(throwable -> !(throwable instanceof WebClientResponseException.NotFound)))
+                    .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofMillis(500)).filter(PublicRegistryProxyService::isRetryable))
                     .block(Duration.ofSeconds(30));
             
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(response);
         } catch (Exception e) {
-            log.error("Error getting provider versions: ", e);
-            return ResponseEntity.internalServerError()
-                    .body("{\"error\": \"Failed to get provider versions: " + e.getMessage() + "\"}");
+            return registryError(e, "provider versions " + namespace + "/" + name);
         }
+    }
+
+    /**
+     * Get provider details from Terraform Registry: the latest version when version is null.
+     * GET /v1/providers/{namespace}/{name}[/{version}]
+     */
+    public ResponseEntity<String> getProvider(String namespace, String name, String version) {
+        log.info("Getting provider details: namespace={}, name={}, version={}", namespace, name, version);
+
+        try {
+            WebClient.RequestHeadersSpec<?> request = version == null
+                    ? webClient.get().uri("/v1/providers/{namespace}/{name}", namespace, name)
+                    : webClient.get().uri("/v1/providers/{namespace}/{name}/{version}", namespace, name, version);
+            String response = request
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofMillis(500)).filter(PublicRegistryProxyService::isRetryable))
+                    .block(Duration.ofSeconds(30));
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(response);
+        } catch (Exception e) {
+            return registryError(e, "provider " + namespace + "/" + name + (version == null ? "" : " " + version));
+        }
+    }
+
+    // Only a registry outage or a network error is worth retrying; a 4xx (400, 403, 404, 429) answers the same again.
+    private static boolean isRetryable(Throwable throwable) {
+        if (throwable instanceof WebClientResponseException e) {
+            return e.getStatusCode().is5xxServerError();
+        }
+        return throwable instanceof WebClientRequestException || throwable instanceof IOException;
+    }
+
+    // A registry 4xx (such as 404 for an unknown provider) is passed through for the UI to explain; anything else
+    // is a 502 with a fixed body, since a 5xx from this API shows the UI's global error screen.
+    private ResponseEntity<String> registryError(Exception e, String what) {
+        Throwable cause = Exceptions.unwrap(e);
+        if (cause instanceof WebClientResponseException response && response.getStatusCode().is4xxClientError()) {
+            log.warn("Registry returned {} for {}", response.getStatusCode(), what);
+            return ResponseEntity.status(response.getStatusCode())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(response.getResponseBodyAsString());
+        }
+        log.error("Error getting {} from the public registry: ", what, e);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\": \"The public registry is unavailable. Try again later.\"}");
     }
 
     /**

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.zeroturnaround.zip.ZipUtil;
@@ -57,10 +58,11 @@ public class LocalStorageServiceImpl implements StorageService {
             String moduleVersion) {
         String pathModule = String.format(MODULE_LOCATION_ZIP, organizationName, moduleName, providerName, moduleVersion);
         File localOutputDirectory = new File(FileUtils.getUserDirectoryPath().concat(pathModule));
-        try {
-            return IOUtils.toByteArray(new FileInputStream(localOutputDirectory));
+        try (FileInputStream in = new FileInputStream(localOutputDirectory)) {
+            return IOUtils.toByteArray(in);
         } catch (IOException e) {
-            return new byte[0];
+            // Same contract as the cloud backends: a failed read is an error, never an empty archive.
+            throw new StorageUnavailableException("Failed to read module ZIP " + localOutputDirectory, e);
         }
     }
 }

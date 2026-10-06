@@ -6,6 +6,7 @@ import {
   TerraformRegistrySearchResult,
   TerraformRegistryProviderVersions,
   TerraformRegistryProviderDownload,
+  TerraformRegistryProviderDetails,
 } from "./types";
 import { VersionStatus } from "@/components/modals/VersionStatusModal";
 
@@ -203,7 +204,21 @@ export const getProviderVersions = async (
   namespace: string,
   name: string
 ): Promise<TerraformRegistryProviderVersions> => {
-  const response = await axiosRegistry.get(`/registry/v1/providers/${namespace}/${name}/versions`);
+  const response = await axiosRegistry.get(
+    `/registry/v1/providers/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/versions`
+  );
+  return response.data;
+};
+
+export const getPublicProvider = async (
+  namespace: string,
+  name: string,
+  version?: string
+): Promise<TerraformRegistryProviderDetails> => {
+  const path =
+    `/registry/v1/providers/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}` +
+    (version ? `/${encodeURIComponent(version)}` : "");
+  const response = await axiosRegistry.get(path);
   return response.data;
 };
 

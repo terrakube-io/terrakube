@@ -3,18 +3,19 @@ import {
   CheckCircleOutlined,
   CloudOutlined,
   DownloadOutlined,
-  LoadingOutlined,
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Input, List, Modal, Select, Space, Spin, Steps, Tabs, Typography, message } from "antd";
+import { Button, Card, Input, List, Modal, Space, Tabs, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { IconContext } from "react-icons";
 import { FaAws, FaGoogle } from "@/config/iconList";
 import { VscAzure } from "react-icons/vsc";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import { importProvider, getProviderVersions, listProviders } from "../Providers/providerService";
+import { listProviders } from "../Providers/providerService";
+import { formatCount } from "@/modules/utils/formatCount";
+import "./PublicRegistrySearch.css";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
 
@@ -94,46 +95,27 @@ type ModuleSearchResponse = {
 // Modal state type
 type ModalState = {
   visible: boolean;
-  type: "provider" | "module";
-  item: TerraformRegistryProvider | TerraformRegistryModule | null;
-};
-
-// Import progress state
-type ImportProgress = {
-  step: number;
-  status: "waiting" | "process" | "finish" | "error";
-  message: string;
-};
-
-type VersionInfo = {
-  version: string;
-  protocols: string[];
-  platforms: { os: string; arch: string }[];
+  type: "module";
+  item: TerraformRegistryModule | null;
 };
 
 export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const { orgid } = useParams<Params>();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"modules" | "providers">("modules");
-  const [searchQuery, setSearchQuery] = useState("");
+  // Tab and query live in the URL so returning from a provider page restores the results.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "providers" ? "providers" : "modules";
+  const searchQuery = searchParams.get("q") ?? "";
   const [providers, setProviders] = useState<TerraformRegistryProvider[]>([]);
   const [modules, setModules] = useState<TerraformRegistryModule[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalState, setModalState] = useState<ModalState>({
     visible: false,
-    type: "provider",
+    type: "module",
     item: null,
   });
   const [importing, setImporting] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [availableVersions, setAvailableVersions] = useState<VersionInfo[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<string>("");
-  const [importProgress, setImportProgress] = useState<ImportProgress[]>([
-    { step: 0, status: "waiting", message: "Create provider" },
-    { step: 1, status: "waiting", message: "Create version" },
-    { step: 2, status: "waiting", message: "Add platform implementations" },
-  ]);
 
   // Existing items in the organization's registry
   const [existingProviders, setExistingProviders] = useState<Set<string>>(new Set());
@@ -217,7 +199,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         logo_url: item.logo_url,
       }));
 
-      setProviders(mappedProviders);
+      // Official and partner providers first, then by downloads, as on the Terraform Registry.
+      const tierRank = (tier: string) => ["official", "partner"].indexOf(tier) + 1 || 3;
+      setProviders(mappedProviders.sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || b.downloads - a.downloads));
     } catch (error) {
       console.error("Error searching providers:", error);
       message.error("Failed to search providers");
@@ -253,133 +237,35 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     }
   };
 
-  const handleSearch = (value: string) => {
-    setSearchQuery(value);
+  useEffect(() => {
     if (activeTab === "providers") {
-      searchProviders(value);
+      searchProviders(searchQuery);
     } else {
-      searchModules(value);
+      searchModules(searchQuery);
     }
+  }, [activeTab, searchQuery]);
+
+  const handleSearch = (value: string) => {
+    // Unchanged params do not re-run the effect, so search again explicitly (e.g. after a failure).
+    if (value === searchQuery) {
+      if (activeTab === "providers") searchProviders(value);
+      else searchModules(value);
+      return;
+    }
+    setSearchParams({ tab: activeTab, ...(value.trim() ? { q: value } : {}) }, { replace: true });
   };
 
   const handleTabChange = (key: string) => {
-    setActiveTab(key as "modules" | "providers");
-    if (searchQuery) {
-      if (key === "providers") {
-        searchProviders(searchQuery);
-      } else {
-        searchModules(searchQuery);
-      }
-    }
+    setSearchParams({ tab: key, ...(searchQuery ? { q: searchQuery } : {}) }, { replace: true });
   };
 
-  const openAddModal = async (
-    type: "provider" | "module",
-    item: TerraformRegistryProvider | TerraformRegistryModule
-  ) => {
-    setModalState({ visible: true, type, item });
-    setImportProgress([
-      { step: 0, status: "waiting", message: "Create provider" },
-      { step: 1, status: "waiting", message: "Create version" },
-      { step: 2, status: "waiting", message: "Add platform implementations" },
-    ]);
-
-    if (type === "provider") {
-      const provider = item as TerraformRegistryProvider;
-      setLoadingVersions(true);
-      setAvailableVersions([]);
-      setSelectedVersion("");
-
-      try {
-        const versionsData = await getProviderVersions(provider.namespace, provider.name);
-        setAvailableVersions(versionsData.versions || []);
-        if (versionsData.versions?.length > 0) {
-          setSelectedVersion(versionsData.versions[0].version);
-        }
-      } catch (error) {
-        console.error("Error fetching versions:", error);
-        message.error("Failed to fetch available versions");
-      } finally {
-        setLoadingVersions(false);
-      }
-    }
+  const openAddModal = (item: TerraformRegistryModule) => {
+    setModalState({ visible: true, type: "module", item });
   };
 
   const closeModal = () => {
-    setModalState({ visible: false, type: "provider", item: null });
-    setAvailableVersions([]);
-    setSelectedVersion("");
+    setModalState({ visible: false, type: "module", item: null });
     setImporting(false);
-    setImportProgress([
-      { step: 0, status: "waiting", message: "Create provider" },
-      { step: 1, status: "waiting", message: "Create version" },
-      { step: 2, status: "waiting", message: "Add platform implementations" },
-    ]);
-  };
-
-  const updateProgress = (stepIndex: number, status: "waiting" | "process" | "finish" | "error", msg?: string) => {
-    setImportProgress((prev) =>
-      prev.map((p, i) => (i === stepIndex ? { ...p, status, message: msg || p.message } : p))
-    );
-  };
-
-  const handleAddProvider = async () => {
-    if (!modalState.item || modalState.type !== "provider") return;
-    if (!selectedVersion) {
-      message.error("Please select a version");
-      return;
-    }
-
-    const provider = modalState.item as TerraformRegistryProvider;
-    setImporting(true);
-
-    // Reset progress
-    setImportProgress([
-      { step: 0, status: "process", message: "Creating provider..." },
-      { step: 1, status: "waiting", message: "Create version" },
-      { step: 2, status: "waiting", message: "Add platform implementations" },
-    ]);
-
-    try {
-      // Step 1: Create provider
-      updateProgress(0, "process", "Creating provider...");
-
-      // Get version info for platforms
-      const versionInfo = availableVersions.find((v) => v.version === selectedVersion);
-      const platformCount = versionInfo?.platforms?.length || 0;
-
-      // Build a meaningful description from available data
-      const desc =
-        provider.description ||
-        (provider.source ? `Source: ${provider.source}` : "") ||
-        `${provider.namespace}/${provider.name}`;
-      // Pass pre-fetched versions to avoid duplicate API call
-      const prefetchedVersions = { versions: availableVersions };
-      await importProvider(orgid!, provider.namespace, provider.name, selectedVersion, desc, prefetchedVersions);
-
-      updateProgress(0, "finish", "Provider created");
-      updateProgress(1, "finish", "Version created");
-      updateProgress(2, "finish", `${platformCount} platform(s) added`);
-
-      message.success(`Provider ${provider.namespace}/${provider.name} v${selectedVersion} added successfully`);
-
-      // Update existing providers set (name is now stored as just the short name)
-      setExistingProviders((prev) => new Set([...prev, provider.name.toLowerCase()]));
-
-      // Small delay to show completion
-      setTimeout(() => {
-        closeModal();
-        navigate(`/organizations/${orgid}/registry?tab=providers`);
-      }, 1000);
-    } catch (error: any) {
-      console.error("Error importing provider:", error);
-      const currentStep = importProgress.findIndex((p) => p.status === "process");
-      if (currentStep >= 0) {
-        updateProgress(currentStep, "error", `Failed: ${error.message || "Unknown error"}`);
-      }
-      message.error(error.message || "Failed to add provider");
-      setImporting(false);
-    }
   };
 
   const handleAddModule = async () => {
@@ -421,19 +307,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     }
   };
 
-  const formatDownloads = (downloads: number): string => {
-    if (downloads >= 1_000_000_000) {
-      return `${(downloads / 1_000_000_000).toFixed(1)}B`;
-    }
-    if (downloads >= 1_000_000) {
-      return `${(downloads / 1_000_000).toFixed(1)}M`;
-    }
-    if (downloads >= 1_000) {
-      return `${(downloads / 1_000).toFixed(1)}K`;
-    }
-    return downloads.toString();
-  };
-
   const renderProviderLogo = (provider: TerraformRegistryProvider) => {
     if (provider.logo_url) {
       return (
@@ -470,84 +343,33 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     }
   };
 
-  const renderProviderCard = (provider: TerraformRegistryProvider) => {
-    const alreadyImported = isProviderImported(provider);
-
-    return (
-      <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-        <div className="module-card-body">
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <div
-              style={{
-                flexShrink: 0,
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {renderProviderLogo(provider)}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Typography.Text strong style={{ fontSize: 16, color: "#222b3d" }}>
-                  {provider.namespace} / {provider.name}
-                </Typography.Text>
-                {alreadyImported && (
-                  <Typography.Text
-                    type="secondary"
-                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}
-                  >
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                    In your Registry
-                  </Typography.Text>
-                )}
-              </div>
-              <div className="module-card-desc">{provider.description || "No description available"}</div>
-            </div>
-            {!alreadyImported && (
-              <Button
-                icon={<PlusOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openAddModal("provider", provider);
-                }}
-                style={{ flexShrink: 0 }}
-              >
-                Add
-              </Button>
-            )}
-          </div>
-        </div>
-        {/* Footer with separator */}
-        <div
-          style={{
-            borderTop: "1px solid #f0f0f0",
-            padding: "10px 24px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Space size={16}>
-            <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
-              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-                {formatDownloads(provider.downloads)}
-              </Typography.Text>
-            </Space>
-          </Space>
-          <Space size={6}>
-            {renderProviderLogo(provider)}
-            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-              provider
-            </Typography.Text>
-          </Space>
-        </div>
-      </Card>
-    );
-  };
+  // The card opens the provider page, where the version is chosen and the provider is added.
+  const renderProviderCard = (provider: TerraformRegistryProvider) => (
+    <Link
+      to={`/organizations/${orgid}/registry/public/providers/${provider.namespace}/${provider.name}`}
+      state={{ search: `?${searchParams.toString()}` }}
+      className="public-provider-card"
+    >
+      <span className="public-provider-card-logo" aria-hidden="true">
+        {renderProviderLogo(provider)}
+      </span>
+      <span className="public-provider-card-body">
+        <span className="public-provider-card-name">{provider.name}</span>
+        <span className="public-provider-card-by">by {provider.namespace}</span>
+        <span className="public-provider-card-meta">
+          <Tag className="public-provider-card-tier">{provider.tier || "community"}</Tag>
+          <span>
+            <DownloadOutlined /> {formatCount(provider.downloads)}
+          </span>
+          {isProviderImported(provider) && (
+            <span className="public-provider-card-imported">
+              <CheckCircleOutlined /> In your registry
+            </span>
+          )}
+        </span>
+      </span>
+    </Link>
+  );
 
   const renderModuleCard = (module: TerraformRegistryModule) => {
     const alreadyImported = isModuleImported(module);
@@ -590,7 +412,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
                 icon={<PlusOutlined />}
                 onClick={(e) => {
                   e.stopPropagation();
-                  openAddModal("module", module);
+                  openAddModal(module);
                 }}
                 style={{ flexShrink: 0 }}
               >
@@ -613,7 +435,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             <Space size={4}>
               <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
               <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-                {formatDownloads(module.downloads)}
+                {formatCount(module.downloads)}
               </Typography.Text>
             </Space>
           </Space>
@@ -628,19 +450,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     );
   };
 
-  const getModalTitle = () => {
-    return modalState.type === "provider" ? "Add provider to organization" : "Add module to organization";
-  };
-
-  const getModalItemName = () => {
-    if (!modalState.item) return "";
-    if (modalState.type === "provider") {
-      const provider = modalState.item as TerraformRegistryProvider;
-      return `${provider.namespace} / ${provider.name}`;
-    }
-    const module = modalState.item as TerraformRegistryModule;
-    return `${module.namespace} / ${module.name}`;
-  };
+  const getModalItemName = () => (modalState.item ? `${modalState.item.namespace} / ${modalState.item.name}` : "");
 
   const tabItems = [
     {
@@ -691,6 +501,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     >
       <div style={{ marginTop: 24 }}>
         <Search
+          aria-label="Search Terraform Registry"
           placeholder="Search Terraform Registry..."
           allowClear
           enterButton={
@@ -699,6 +510,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             </>
           }
           size="large"
+          defaultValue={searchQuery}
           onSearch={handleSearch}
           loading={loading}
           style={{ marginBottom: 24 }}
@@ -707,111 +519,34 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
       </div>
 
       <Modal
-        title={getModalTitle()}
+        title="Add module to organization"
         open={modalState.visible}
         onCancel={importing ? undefined : closeModal}
         closable={!importing}
         maskClosable={!importing}
         width={560}
-        footer={
-          importing
-            ? null
-            : [
-                <Button key="cancel" onClick={closeModal}>
-                  Cancel
-                </Button>,
-                <Button
-                  key="add"
-                  type="primary"
-                  loading={loadingVersions}
-                  disabled={modalState.type === "provider" && !selectedVersion}
-                  onClick={modalState.type === "provider" ? handleAddProvider : handleAddModule}
-                >
-                  Import {modalState.type === "provider" ? "Provider" : "Module"}
-                </Button>,
-              ]
-        }
+        footer={[
+          <Button key="cancel" onClick={closeModal} disabled={importing}>
+            Cancel
+          </Button>,
+          <Button key="add" type="primary" loading={importing} onClick={handleAddModule}>
+            Import Module
+          </Button>,
+        ]}
       >
-        {importing ? (
-          <div style={{ padding: "20px 0" }}>
-            <Typography.Title level={5} style={{ marginBottom: 24 }}>
-              Importing {getModalItemName()}...
-            </Typography.Title>
-            <Steps
-              direction="vertical"
-              size="small"
-              current={importProgress.findIndex((p) => p.status === "process")}
-              items={importProgress.map((p) => ({
-                title: p.message,
-                status: p.status,
-                icon:
-                  p.status === "process" ? (
-                    <LoadingOutlined />
-                  ) : p.status === "finish" ? (
-                    <CheckCircleOutlined />
-                  ) : undefined,
-              }))}
-            />
-          </div>
-        ) : (
-          <>
-            <Typography.Paragraph>
-              Import this {modalState.type} from the public Terraform Registry to your private registry in{" "}
-              <strong>{organizationName}</strong>.
-            </Typography.Paragraph>
-
-            <div style={{ background: "#f5f5f5", padding: 16, borderRadius: 8, marginBottom: 16 }}>
-              <Typography.Text strong style={{ fontSize: 16 }}>
-                {getModalItemName()}
-              </Typography.Text>
-              {modalState.type === "provider" && modalState.item && (
-                <Typography.Paragraph type="secondary" style={{ margin: "8px 0 0 0" }}>
-                  {(modalState.item as TerraformRegistryProvider).description || "No description"}
-                </Typography.Paragraph>
-              )}
-            </div>
-
-            {modalState.type === "provider" && (
-              <div style={{ marginBottom: 16 }}>
-                <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
-                  Select Version
-                </Typography.Text>
-                {loadingVersions ? (
-                  <div style={{ textAlign: "center", padding: 20 }}>
-                    <Spin />
-                  </div>
-                ) : (
-                  <Select
-                    style={{ width: "100%" }}
-                    placeholder="Select a version"
-                    value={selectedVersion}
-                    onChange={setSelectedVersion}
-                    options={[...availableVersions]
-                      .sort((a, b) => {
-                        // Sort by semver descending (latest first)
-                        const pa = a.version.split(".").map(Number);
-                        const pb = b.version.split(".").map(Number);
-                        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-                          const diff = (pb[i] || 0) - (pa[i] || 0);
-                          if (diff !== 0) return diff;
-                        }
-                        return 0;
-                      })
-                      .map((v) => ({
-                        value: v.version,
-                        label: `v${v.version}`,
-                      }))}
-                  />
-                )}
-              </div>
-            )}
-
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              This will create the {modalState.type} in your private registry, allowing you to use it in your Terraform
-              configurations with your organization's registry URL.
-            </Typography.Paragraph>
-          </>
-        )}
+        <Typography.Paragraph>
+          Import this module from the public Terraform Registry to your private registry in{" "}
+          <strong>{organizationName}</strong>.
+        </Typography.Paragraph>
+        <div style={{ background: "#f5f5f5", padding: 16, borderRadius: 8, marginBottom: 16 }}>
+          <Typography.Text strong style={{ fontSize: 16 }}>
+            {getModalItemName()}
+          </Typography.Text>
+        </div>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          This will create the module in your private registry, allowing you to use it in your Terraform configurations
+          with your organization&apos;s registry URL.
+        </Typography.Paragraph>
       </Modal>
     </PageWrapper>
   );

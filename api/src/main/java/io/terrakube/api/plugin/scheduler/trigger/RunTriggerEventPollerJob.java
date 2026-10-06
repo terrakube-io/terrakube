@@ -48,15 +48,20 @@ public class RunTriggerEventPollerJob implements Job {
             return;
         }
 
-        long leaseMillis = properties.getEventLeaseSeconds() * 1000L;
+        // Floored at 1s: a lease of zero or less would make every tick reclaim rows another
+        // replica is still actively processing, not just ones a crashed claimant abandoned.
+        long leaseMillis = Math.max(properties.getEventLeaseSeconds(), 1) * 1000L;
         runTriggerEventTransactions.sweepStuckProcessingRows(
                 new Date(System.currentTimeMillis() - leaseMillis), properties.getEventMaxAttempts());
         processDueEvents();
     }
 
     private void processDueEvents() {
+        // PageRequest rejects a size below 1; a misconfigured batch size falls back to one
+        // row a tick rather than throwing on every single poll.
+        int batchSize = Math.max(properties.getEventPollerBatchSize(), 1);
         List<RunTriggerEvent> due = runTriggerEventRepository.findDueForProcessing(RunTriggerEventStatus.PENDING,
-                new Date(), PageRequest.of(0, properties.getEventPollerBatchSize()));
+                new Date(), PageRequest.of(0, batchSize));
 
         for (RunTriggerEvent event : due) {
             // process() never throws: one event's problem must not stop the rest of the batch.

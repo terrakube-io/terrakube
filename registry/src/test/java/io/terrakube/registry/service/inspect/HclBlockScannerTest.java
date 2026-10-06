@@ -1,0 +1,189 @@
+package io.terrakube.registry.service.inspect;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class HclBlockScannerTest {
+
+    private static final String MODULE = """
+            # A comment with a brace { that must not open anything
+            terraform {
+              required_providers {
+                aws = { source = "hashicorp/aws", version = ">= 5.0" }
+              }
+            }
+
+            variable "name" {
+              type        = string
+              description = "Bucket name, may contain \\"quotes\\""
+              default     = "acme-${var.env}-logs" // trailing comment }
+            }
+
+            variable "tags" {
+              type = object({
+                team = string
+                cost = optional(number, 0)
+              })
+              description = <<-EOT
+                Tags applied to every resource.
+                One } brace inside the heredoc.
+              EOT
+              default = {
+                team = "platform"
+              }
+
+              validation {
+                condition     = length(var.tags.team) > 0
+                error_message = "team is required"
+              }
+            }
+
+            variable "interp" {
+              type    = string
+              default = "${lookup(var.m, "k")} and %{ if true }x%{ endif }"
+            }
+
+            output "arn" {
+              description = "The bucket ARN"
+              value       = aws_s3_bucket.this.arn
+            }
+
+            resource "aws_s3_bucket" "this" {
+              bucket = var.name
+            }
+
+            resource "aws_s3_bucket_policy" "this" {
+              bucket = aws_s3_bucket.this.id
+              policy = jsonencode({ Statement = [] })
+            }
+
+            data "aws_caller_identity" "current" {}
+
+            locals {
+              suffix = "}"
+            }
+            """;
+
+    @Test
+    void findsEveryTopLevelBlockWithItsLabels() {
+        List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks(MODULE);
+
+        assertThat(blocks).extracting(HclBlockScanner.Block::type)
+                .containsExactly("terraform", "variable", "variable", "variable", "output", "resource", "resource", "data", "locals");
+        assertThat(blocks.get(5).labels()).containsExactly("aws_s3_bucket", "this");
+        assertThat(blocks.get(6).label(1)).isEqualTo("this");
+        assertThat(blocks.get(7).labels()).containsExactly("aws_caller_identity", "current");
+    }
+
+    @Test
+    void readsRawAttributesAndIgnoresNestedBlocks() {
+        HclBlockScanner.Block tags = HclBlockScanner.topLevelBlocks(MODULE).get(2);
+        Map<String, String> attributes = HclBlockScanner.attributes(tags.body());
+
+        assertThat(attributes).containsOnlyKeys("type", "description", "default");
+        assertThat(attributes.get("type")).startsWith("object({").endsWith("})").contains("optional(number, 0)");
+        assertThat(attributes.get("default")).isEqualTo("{\n    team = \"platform\"\n  }");
+        assertThat(HclBlockScanner.unquote(attributes.get("description")))
+                .isEqualTo("Tags applied to every resource.\nOne } brace inside the heredoc.");
+    }
+
+    @Test
+    void stringsWithTemplatesAndEscapesDoNotBreakNesting() {
+        List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks(MODULE);
+        Map<String, String> name = HclBlockScanner.attributes(blocks.get(1).body());
+        Map<String, String> interp = HclBlockScanner.attributes(blocks.get(3).body());
+
+        assertThat(HclBlockScanner.unquote(name.get("description"))).isEqualTo("Bucket name, may contain \"quotes\"");
+        assertThat(name.get("default")).isEqualTo("\"acme-${var.env}-logs\"");
+        assertThat(interp.get("default")).isEqualTo("\"${lookup(var.m, \"k\")} and %{ if true }x%{ endif }\"");
+    }
+
+    @Test
+    void acceptsUnquotedAndMixedBlockLabels() {
+        List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks("""
+                variable region { default = "eu" }
+                output region { value = var.region }
+                resource null_resource "example" {}
+                """);
+
+        assertThat(blocks).extracting(HclBlockScanner.Block::type)
+                .containsExactly("variable", "output", "resource");
+        assertThat(blocks.get(0).labels()).containsExactly("region");
+        assertThat(blocks.get(1).labels()).containsExactly("region");
+        assertThat(blocks.get(2).labels()).containsExactly("null_resource", "example");
+    }
+
+    @Test
+    void templatesPreserveExpressionsAndFollowingBlocks() {
+        for (String expression : List.of(
+                "\"${replace(\"}\", \"x\", \"y\")}\"",
+                "\"$${\"",
+                "\"%%{\"",
+                "\"${jsonencode({ a = \"}\", b = \"${var.name}\" })}\"",
+                "\"%{ if var.name == \"}\" }yes%{ endif }\"",
+                "\"${ /* } */ var.name}\"",
+                "\"${\nvar.name // }\n}\"")) {
+            List<HclBlockScanner.Block> blocks = HclBlockScanner.topLevelBlocks(
+                    "locals {\n value = " + expression + "\n}\n"
+                            + "variable \"region\" { default = \"eu\" }\n"
+                            + "output \"region\" { value = var.region }\n");
+
+            assertThat(blocks).as(expression).extracting(HclBlockScanner.Block::type)
+                    .containsExactly("locals", "variable", "output");
+            assertThat(HclBlockScanner.attributes(blocks.get(0).body()).get("value"))
+                    .as(expression).isEqualTo(expression);
+            assertThat(HclBlockScanner.attributes(blocks.get(1).body()).get("default"))
+                    .isEqualTo("\"eu\"");
+        }
+    }
+
+    @Test
+    void unquoteLeavesNonStringExpressionsAlone() {
+        assertThat(HclBlockScanner.unquote("list(string)")).isEqualTo("list(string)");
+        assertThat(HclBlockScanner.unquote(null)).isNull();
+        assertThat(HclBlockScanner.unquote("\"a\\\\b\"")).isEqualTo("a\\b");
+    }
+
+    @Test
+    void indentedHeredocKeepsRelativeIndentation() {
+        assertThat(HclBlockScanner.unquote("<<-EOT\n    object({\n      id = string\n\n    })\n  EOT"))
+                .isEqualTo("object({\n  id = string\n\n})");
+        assertThat(HclBlockScanner.unquote("<<EOT\n  kept\nEOT")).isEqualTo("  kept");
+    }
+
+    @Test
+    void unquoteResolvesEscapesInOnePass() {
+        // HCL source "C:\\new\\tmp": an escaped backslash followed by n is not a newline
+        assertThat(HclBlockScanner.unquote("\"C:\\\\new\\\\tmp\"")).isEqualTo("C:\\new\\tmp");
+        assertThat(HclBlockScanner.unquote("\"a\\tb\\r\\nc\"")).isEqualTo("a\tb\r\nc");
+        assertThat(HclBlockScanner.unquote("\"\\u00e9 \\U0001F600\"")).isEqualTo("\u00e9 \uD83D\uDE00");
+        assertThat(HclBlockScanner.unquote("\"\\u+0e9 \\x \\\"")).isEqualTo("\\u+0e9 \\x \\");
+    }
+
+    @Test
+    void quotedHeredocMarkerStillEndsTheHeredoc() {
+        String source = "variable \"a\" {\n  description = <<-\"EOT\"\n    text\n  EOT\n}\nvariable \"b\" {}\n";
+
+        assertThat(HclBlockScanner.topLevelBlocks(source)).extracting(b -> b.label(0)).containsExactly("a", "b");
+    }
+
+    @Test
+    void deepNestingIsRejectedInsteadOfOverflowingTheStack() {
+        String blocks = "a {".repeat(20_000);
+        String templates = "x = \"" + "${\"".repeat(20_000);
+
+        for (String source : new String[]{blocks, templates}) {
+            assertThatThrownBy(() -> HclBlockScanner.topLevelBlocks(source))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));
+        }
+        assertThat(HclBlockScanner.topLevelBlocks("a {".repeat(64) + "}".repeat(64))).hasSize(1);
+    }
+}

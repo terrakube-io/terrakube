@@ -23,7 +23,8 @@ class CacheConfigTest {
                 CacheConfig.MODULE_VERSIONS_CACHE,
                 CacheConfig.MODULE_VERSION_PATH_CACHE,
                 CacheConfig.MODULE_VERSION_REMOVED_CACHE,
-                CacheConfig.PROVIDER_WARNINGS_CACHE);
+                CacheConfig.PROVIDER_WARNINGS_CACHE,
+                CacheConfig.MODULE_DETAILS_CACHE);
         cacheManager.getCacheNames().forEach(name -> assertThat(cacheManager.getCache(name)).isNotNull());
     }
 

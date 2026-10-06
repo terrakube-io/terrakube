@@ -9,6 +9,8 @@ import {
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
+import { TagModel } from "@/modules/organizations/types";
+import WorkspaceTagChips from "@/modules/workspaces/components/WorkspaceTagChips";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
@@ -33,6 +35,8 @@ type Props = {
   organizationId: string;
   workspaces: WorkspaceListItem[];
   groups?: WorkspaceGroup[];
+  /** Organization tags, used to turn the tag ids on each row into names. */
+  tags?: TagModel[];
   onSelectProject: (projectId: string | null) => void;
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
@@ -102,10 +106,12 @@ function WorkspaceRow({
   item,
   organizationId,
   onSelectProject,
+  tags,
 }: {
   item: WorkspaceListItem;
   organizationId: string;
   onSelectProject: (projectId: string | null) => void;
+  tags: TagModel[];
 }) {
   return (
     <div className="workspace-row">
@@ -126,6 +132,8 @@ function WorkspaceRow({
           <Typography.Text className="workspace-name" ellipsis title={item.name}>
             {item.name}
           </Typography.Text>
+          {/* The other columns have fixed widths, so the tags open from an icon and leave the room to the name */}
+          <WorkspaceTagChips bindings={item.tags} tags={tags} collapsed />
         </div>
         {item.projectName && (
           <div className="workspace-name-line2">
@@ -191,6 +199,7 @@ export default function WorkspaceTable({
   organizationId,
   workspaces,
   groups,
+  tags = [],
   onSelectProject,
   sortOption,
   onSortChange,
@@ -299,6 +308,7 @@ export default function WorkspaceTable({
                     item={item}
                     organizationId={organizationId}
                     onSelectProject={onSelectProject}
+                    tags={tags}
                   />
                 ))}
                 {!isControlled && group.items.length > GROUP_PREVIEW_SIZE && (
@@ -316,7 +326,13 @@ export default function WorkspaceTable({
             );
           })
         : pagedWorkspaces.map((item) => (
-            <WorkspaceRow key={item.id} item={item} organizationId={organizationId} onSelectProject={onSelectProject} />
+            <WorkspaceRow
+              key={item.id}
+              item={item}
+              organizationId={organizationId}
+              onSelectProject={onSelectProject}
+              tags={tags}
+            />
           ))}
 
       {(!isGrouped || isControlled) && (

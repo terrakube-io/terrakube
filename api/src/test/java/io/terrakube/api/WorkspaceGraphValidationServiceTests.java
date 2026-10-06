@@ -1,28 +1,44 @@
 package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.trigger.CyclicDependencyException;
+import io.terrakube.api.plugin.scheduler.trigger.FanOutLimitExceededException;
+import io.terrakube.api.plugin.scheduler.trigger.OrganizationUnresolvableException;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerProperties;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
+import io.terrakube.api.repository.OrganizationRepository;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
+import io.terrakube.api.rs.Organization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Cycle detection over the run trigger graph. Uses ids only, so no database is needed.
+ * Cycle detection and the outbound fan-out limit over the run trigger graph. Uses ids only, so
+ * no database is needed.
  */
 class WorkspaceGraphValidationServiceTests {
 
     private WorkspaceRunTriggerRepository repository;
+    private WorkspaceRepository workspaceRepository;
+    private OrganizationRepository organizationRepository;
+    private RunTriggerProperties properties;
     private WorkspaceGraphValidationService service;
 
     private final UUID org = UUID.randomUUID();
@@ -34,7 +50,14 @@ class WorkspaceGraphValidationServiceTests {
     @BeforeEach
     void setUp() {
         repository = mock(WorkspaceRunTriggerRepository.class);
-        service = new WorkspaceGraphValidationService(repository);
+        workspaceRepository = mock(WorkspaceRepository.class);
+        lenient().when(workspaceRepository.lockForUpdate(any())).thenReturn(Optional.empty());
+        organizationRepository = mock(OrganizationRepository.class);
+        // The lock is granted by default; the one test that cares about a missing organization
+        // overrides this.
+        lenient().when(organizationRepository.lockForUpdate(any())).thenReturn(Optional.of(new Organization()));
+        properties = new RunTriggerProperties();
+        service = new WorkspaceGraphValidationService(repository, workspaceRepository, organizationRepository, properties);
     }
 
     private TriggerEdge edge(UUID id, UUID source, UUID destination) {
@@ -145,5 +168,109 @@ class WorkspaceGraphValidationServiceTests {
         assertDoesNotThrow(() -> service.validateAcyclic(null, null, a, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, null, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, null));
+    }
+
+    // ---------------------------------------------------------------- organization lock
+
+    /** The lock must be acquired before the graph is read - ordering only; real contention is WorkspaceGraphLockConcurrencyTest. */
+    @Test
+    void acquiresTheOrganizationLockBeforeReadingTheGraph() {
+        graph();
+        assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, b));
+
+        InOrder ordered = inOrder(organizationRepository, repository);
+        ordered.verify(organizationRepository).lockForUpdate(org);
+        ordered.verify(repository).findEdgesByOrganizationId(org);
+    }
+
+    /** A self-reference is rejected without ever touching the database. */
+    @Test
+    void rejectsASelfTriggerWithoutTakingTheLock() {
+        assertThrows(CyclicDependencyException.class, () -> service.validateAcyclic(org, null, a, a));
+        verify(organizationRepository, never()).lockForUpdate(any());
+    }
+
+    /**
+     * A deleted or disabled organization (disabled is invisible to lockForUpdate via
+     * {@code @SQLRestriction}) fails closed rather than silently skipping validation.
+     */
+    @Test
+    void failsClosedWhenTheOrganizationCannotBeLocked() {
+        when(organizationRepository.lockForUpdate(org)).thenReturn(Optional.empty());
+        assertThrows(OrganizationUnresolvableException.class,
+                () -> service.validateAcyclic(org, null, a, b));
+        verify(repository, never()).findEdgesByOrganizationId(any());
+    }
+
+    // ---------------------------------------------------------------- fan-out limit
+
+    private void enabledCount(UUID source, long count) {
+        when(repository.countBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(source))
+                .thenReturn(count);
+    }
+
+    @Test
+    void acceptsAnEnabledEdgeUnderTheLimit() {
+        properties.setMaxOutboundTriggersPerWorkspace(5);
+        enabledCount(a, 3);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+    }
+
+    /** The edge that fills the limit, not one past it, must be accepted. */
+    @Test
+    void acceptsAnEnabledEdgeExactlyAtTheLimit() {
+        properties.setMaxOutboundTriggersPerWorkspace(5);
+        enabledCount(a, 5);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+    }
+
+    @Test
+    void rejectsAnEnabledEdgeOneOverTheLimit() {
+        properties.setMaxOutboundTriggersPerWorkspace(5);
+        enabledCount(a, 6);
+        FanOutLimitExceededException thrown = assertThrows(FanOutLimitExceededException.class,
+                () -> service.validateFanOutLimit(a, true));
+        assertTrue(thrown.getMessage().contains("6"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("5"), thrown.getMessage());
+    }
+
+    /** A disabled edge never contributes to dispatch, so it is never limited. */
+    @Test
+    void neverLimitsADisabledEdgeEvenOverTheCount() {
+        properties.setMaxOutboundTriggersPerWorkspace(5);
+        enabledCount(a, 50);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, false));
+    }
+
+    @Test
+    void ignoresAMissingSourceForTheFanOutCheck() {
+        assertDoesNotThrow(() -> service.validateFanOutLimit(null, true));
+    }
+
+    /** 0 or negative is "no cap", not "reject every creation". */
+    @Test
+    void zeroOrNegativeLimitDisablesTheFanOutCheck() {
+        properties.setMaxOutboundTriggersPerWorkspace(0);
+        enabledCount(a, 1_000);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+
+        properties.setMaxOutboundTriggersPerWorkspace(-1);
+        assertDoesNotThrow(() -> service.validateFanOutLimit(a, true));
+    }
+
+    /** Locks the source row before counting, so two concurrent creations can't both pass. */
+    @Test
+    void locksTheSourceWorkspaceBeforeCounting() {
+        properties.setMaxOutboundTriggersPerWorkspace(5);
+        enabledCount(a, 3);
+        service.validateFanOutLimit(a, true);
+        verify(workspaceRepository).lockForUpdate(a);
+    }
+
+    @Test
+    void neverLocksForADisabledOrMissingSource() {
+        service.validateFanOutLimit(null, true);
+        service.validateFanOutLimit(a, false);
+        verify(workspaceRepository, never()).lockForUpdate(any());
     }
 }

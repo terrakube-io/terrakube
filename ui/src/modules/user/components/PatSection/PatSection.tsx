@@ -1,3 +1,4 @@
+import { ExportOutlined } from "@ant-design/icons";
 import { Alert, Button, Flex, Spin, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -37,14 +38,31 @@ export const Tokens = () => {
     <div className="pat-section">
       <SettingsPageHeader
         title="Tokens"
-        docUrl="https://docs.terrakube.io/user-guide/organizations/api-tokens"
-        description="Your API tokens can be used to access the Terrakube API and perform all the actions your user account is entitled to. Treat them like passwords: they grant access to your account without a username, password, or two-factor authentication."
+        divider={false}
         actions={
           <Button type="primary" onClick={() => setVisible(true)}>
             Create an API token
           </Button>
         }
       />
+      <div className="pat-intro">
+        <Typography.Paragraph>
+          Your API tokens can be used to access the Terrakube API and perform all the actions your user account is
+          entitled to. For more information, see the{" "}
+          <Typography.Link
+            href="https://docs.terrakube.io/user-guide/organizations/api-tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            user API tokens documentation <ExportOutlined />
+          </Typography.Link>
+          .
+        </Typography.Paragraph>
+        <Typography.Paragraph>
+          Treat these tokens like passwords, as they can be used to access your account without a username, password, or
+          two-factor authentication.
+        </Typography.Paragraph>
+      </div>
 
       {error && (
         <Alert className="alert" title="Failed to load tokens. Please try again later" type="error" showIcon banner />

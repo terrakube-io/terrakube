@@ -1,9 +1,16 @@
 package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface OrganizationRepository extends JpaRepository<Organization, UUID> {
@@ -17,4 +24,15 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
     // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
     // uniqueness check must use this list form and filter out the entity being validated.
     List<Organization> findAllByName(String name);
+
+    /**
+     * Locks the organization's row for the rest of the transaction. A plain
+     * {@code SELECT ... FOR UPDATE} rather than a database-specific advisory lock, for
+     * portability. Bounded to 5s so contention fails the request instead of holding a pool
+     * connection indefinitely.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
+    @Query("SELECT o FROM organization o WHERE o.id = :id")
+    Optional<Organization> lockForUpdate(@Param("id") UUID id);
 }

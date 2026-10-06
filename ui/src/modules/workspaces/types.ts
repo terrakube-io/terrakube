@@ -1,5 +1,17 @@
 import { JobStatus } from "../../domain/types";
 
+/** A tag on a workspace. Key-only tags keep the value empty. */
+export type WorkspaceTagBinding = {
+  tagId: string;
+  value?: string | null;
+};
+
+/** One row of the tag filter: a key, optionally narrowed to a value. */
+export type WorkspaceTagFilter = {
+  tagId: string;
+  value?: string;
+};
+
 export type WorkspaceListItem = {
   id: string;
   lastRun?: string;
@@ -11,7 +23,7 @@ export type WorkspaceListItem = {
   source: string;
   normalizedSource?: string;
   terraformVersion?: string;
-  tags?: string[];
+  tags?: WorkspaceTagBinding[];
   projectId?: string;
   projectName?: string;
   locked?: boolean;
@@ -45,7 +57,7 @@ export type WorkspacePageRequest = {
   search?: string;
   status?: string;
   policyStatus?: string;
-  tagIds?: string[];
+  tagFilters?: WorkspaceTagFilter[];
   projectId?: string | null;
   sort:
     | "name_asc"

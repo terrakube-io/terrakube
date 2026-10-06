@@ -2,6 +2,7 @@ package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventDispatchService;
+import io.terrakube.api.repository.HistoryRepository;
 import io.terrakube.api.repository.RunTriggerEventRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.rs.job.Job;
@@ -9,6 +10,7 @@ import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerEvent;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.AfterEach;
@@ -67,8 +69,12 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
     @Autowired
     private RunTriggerEventDispatchService runTriggerEventDispatchService;
 
+    @Autowired
+    private HistoryRepository historyRepository;
+
     private Set<Integer> jobsBefore;
     private Set<UUID> triggersBefore;
+    private Set<UUID> historyBefore;
 
     @BeforeEach
     public void setup() {
@@ -77,6 +83,8 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
         jobsBefore = jobRepository.findAll().stream().map(Job::getId).collect(Collectors.toSet());
         triggersBefore = triggerRepository.findAll().stream()
                 .map(WorkspaceRunTrigger::getId).collect(Collectors.toSet());
+        historyBefore = historyRepository.findAll().stream()
+                .map(History::getId).collect(Collectors.toSet());
     }
 
     /**
@@ -98,6 +106,9 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
         triggerRepository.findAll().stream()
                 .filter(trigger -> !triggersBefore.contains(trigger.getId()))
                 .forEach(triggerRepository::delete);
+        historyRepository.findAll().stream()
+                .filter(history -> !historyBefore.contains(history.getId()))
+                .forEach(historyRepository::delete);
         jobRepository.findAll().stream()
                 .filter(job -> !jobsBefore.contains(job.getId()))
                 .forEach(job -> {
@@ -185,6 +196,43 @@ public class RunTriggerDispatchIntegrationTest extends ServerApplicationTests {
         assertThat(downstream.getOrganization().getId()).isEqualTo(destination.getOrganization().getId());
         // Status is not asserted: the Quartz trigger fires at once and the scheduler owns it
         // from here. Provenance is what this test is about, and it never changes.
+    }
+
+    @Test
+    void completingAnApplyWithUnchangedStateCreatesNothing() throws Exception {
+        Workspace source = workspace(WORKSPACE_SOURCE);
+        Workspace destination = workspace(WORKSPACE_DESTINATION);
+        destination.setDefaultTemplate(TEMPLATE_PLAN_APPLY);
+        workspaceRepository.save(destination);
+        trigger(source, destination);
+
+        // Baseline history for source workspace
+        History baseline = new History();
+        baseline.setWorkspace(source);
+        baseline.setJobReference("99");
+        baseline.setSerial(2);
+        baseline.setMd5("md5-state-identical");
+        baseline.setLineage("lineage-test");
+        baseline.setOutput("https://output-baseline");
+        historyRepository.saveAndFlush(baseline);
+
+        Thread.sleep(50);
+
+        Job upstream = runningJob(source, JobStatus.completed);
+
+        // New history for upstream job with IDENTICAL serial and md5 (0 resources changed)
+        History current = new History();
+        current.setWorkspace(source);
+        current.setJobReference(String.valueOf(upstream.getId()));
+        current.setSerial(2);
+        current.setMd5("md5-state-identical");
+        current.setLineage("lineage-test");
+        current.setOutput("https://output-current");
+        historyRepository.saveAndFlush(current);
+
+        reconcileAndProcess(upstream.getId());
+
+        assertThat(triggeredJobsOn(destination)).isEmpty();
     }
 
     /**

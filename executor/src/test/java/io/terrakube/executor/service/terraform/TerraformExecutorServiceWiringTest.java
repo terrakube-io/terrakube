@@ -13,6 +13,7 @@ import io.terrakube.executor.service.executor.JobExecutionWatchdog;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
@@ -47,6 +48,7 @@ class TerraformExecutorServiceWiringTest {
         @Bean TerraformOutputsService terraformOutputsService() { return Mockito.mock(TerraformOutputsService.class); }
         @Bean RedisTemplate redisTemplate() { return Mockito.mock(RedisTemplate.class); }
         @Bean StructuredOutputPersistenceQueue structuredOutputPersistenceQueue() { return Mockito.mock(StructuredOutputPersistenceQueue.class); }
+        @Bean BinaryCacheRecoveryService binaryCacheRecoveryService() { return Mockito.mock(BinaryCacheRecoveryService.class); }
         @Bean OpaExecutorService opaExecutorService() { return Mockito.mock(OpaExecutorService.class); }
         @Bean WorkspaceSecurity workspaceSecurity() { return Mockito.mock(WorkspaceSecurity.class); }
         @Bean TerrakubeClient terrakubeClient() { return Mockito.mock(TerrakubeClient.class); }
@@ -96,6 +98,7 @@ class TerraformExecutorServiceWiringTest {
         @Bean TerraformOutputsService terraformOutputsService() { return Mockito.mock(TerraformOutputsService.class); }
         @Bean RedisTemplate redisTemplate() { return Mockito.mock(RedisTemplate.class); }
         @Bean StructuredOutputPersistenceQueue structuredOutputPersistenceQueue() { return Mockito.mock(StructuredOutputPersistenceQueue.class); }
+        @Bean BinaryCacheRecoveryService binaryCacheRecoveryService() { return Mockito.mock(BinaryCacheRecoveryService.class); }
     }
 
     @Test

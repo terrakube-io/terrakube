@@ -15,7 +15,11 @@ const workspaces: WorkspaceListItem[] = [
     lastStatus: JobStatus.Running,
     lastRun: "2024-06-01T00:00:00.000Z",
     terraformVersion: "1.8.0",
-    tags: ["tag-1", "tag-2"],
+    tags: [
+      { tagId: "tag-1", value: "prod" },
+      { tagId: "tag-2", value: null },
+      { tagId: "tag-3", value: "alice" },
+    ],
     projectId: "proj-1",
     projectName: "platform",
     locked: true,
@@ -33,9 +37,16 @@ const workspaces: WorkspaceListItem[] = [
   },
 ];
 
+const organizationTags = [
+  { id: "tag-1", name: "env" },
+  { id: "tag-2", name: "networking" },
+  { id: "tag-3", name: "owner" },
+];
+
 const defaultProps = {
   organizationId: "org-1",
   workspaces,
+  tags: organizationTags,
   onSelectProject: jest.fn(),
   sortOption: "status" as const,
   onSortChange: jest.fn(),
@@ -79,11 +90,19 @@ describe("WorkspaceTable", () => {
     expect(line2).toContainElement(screen.getByText("platform"));
   });
 
-  it("does not render the workspace description or tag pills in the row", () => {
+  it("does not render the workspace description in the row", () => {
     renderTable();
     expect(screen.queryByText("Handles invoice generation and payment webhooks")).not.toBeInTheDocument();
-    expect(screen.queryByText("tag-1")).not.toBeInTheDocument();
     expect(document.querySelector(".workspace-name-line3")).not.toBeInTheDocument();
+  });
+
+  // Next to the name rather than on a line of their own, so the row is no taller than one without tags
+  it("opens the tags from an icon beside the name, without the chips themselves", () => {
+    const { container } = renderTable();
+    const line1 = container.querySelector(".workspace-name-line1");
+
+    expect(line1).toContainElement(screen.getByRole("button", { name: "Show 3 tags" }));
+    expect(screen.queryByTitle("env = prod")).not.toBeInTheDocument();
   });
 
   it("calls onSelectProject with the project id when the project chip is clicked", () => {

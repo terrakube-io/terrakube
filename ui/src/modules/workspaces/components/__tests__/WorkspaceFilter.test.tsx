@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import WorkspaceFilter from "../WorkspaceFilter";
 import organizationService from "@/modules/organizations/organizationService";
+import { WorkspaceTagFilter } from "@/modules/workspaces/types";
 
 jest.mock("@/modules/organizations/organizationService", () => ({
   __esModule: true,
@@ -17,8 +18,8 @@ const baseProps = {
   onStatusChange: jest.fn(),
   search: "",
   onSearchChange: jest.fn(),
-  tagIds: [] as string[],
-  onTagIdsChange: jest.fn(),
+  tagFilters: [] as WorkspaceTagFilter[],
+  onTagFiltersChange: jest.fn(),
   projectId: null as string | null,
   onProjectIdChange: jest.fn(),
   groupByProject: true,
@@ -98,22 +99,84 @@ describe("WorkspaceFilter", () => {
     expect(baseProps.onStatusChange).toHaveBeenCalledWith("failed");
   });
 
-  it("shows a removable chip for each active tag filter, and removing one calls onTagIdsChange without it", async () => {
+  it("shows a removable chip for each active tag filter, and removing one calls onTagFiltersChange without it", async () => {
     mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
-    render(<WorkspaceFilter {...baseProps} compact tagIds={["tag-1"]} />);
+    render(<WorkspaceFilter {...baseProps} compact tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
 
-    await waitFor(() => expect(screen.getByText("billing")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle("billing = prod")).toBeInTheDocument());
 
     const closeIcon = document.querySelector(".ant-tag-close-icon");
     expect(closeIcon).not.toBeNull();
     fireEvent.click(closeIcon!);
 
-    expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
+  });
+
+  it("reopens the tag popover with the active values and applies them unchanged", async () => {
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
+    render(<WorkspaceFilter {...baseProps} compact tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
+
+    const valueInput = await screen.findByPlaceholderText("Any value");
+    expect(valueInput).toHaveValue("prod");
+
+    fireEvent.change(valueInput, { target: { value: "staging" } });
+    fireEvent.click(screen.getByText("Apply Filter"));
+
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([{ tagId: "tag-1", value: "staging" }]);
+  });
+
+  it("applies a tag row without a value as a key-only filter", async () => {
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
+    render(<WorkspaceFilter {...baseProps} compact tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
+    const valueInput = await screen.findByPlaceholderText("Any value");
+    fireEvent.change(valueInput, { target: { value: "  " } });
+    fireEvent.click(screen.getByText("Apply Filter"));
+
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([{ tagId: "tag-1", value: undefined }]);
+  });
+
+  // The card view has no row of active tag chips, so the popover is the only place to drop the tag filter
+  it("clears only the tag filters from the popover", async () => {
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
+    render(<WorkspaceFilter {...baseProps} tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear" }));
+
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
+    expect(baseProps.onStatusChange).not.toHaveBeenCalled();
+    expect(baseProps.onProjectIdChange).not.toHaveBeenCalled();
+  });
+
+  it("offers no Clear while no tag filter is applied", async () => {
+    render(<WorkspaceFilter {...baseProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
+
+    await screen.findByText("Apply Filter");
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  });
+
+  it("leaves an empty row when the last tag row is removed", async () => {
+    mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
+    render(<WorkspaceFilter {...baseProps} tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
+    expect(await screen.findByPlaceholderText("Any value")).toHaveValue("prod");
+    fireEvent.click(screen.getByLabelText("Remove this tag filter"));
+
+    expect(screen.getByPlaceholderText("Any value")).toHaveValue("");
+    fireEvent.click(screen.getByText("Apply Filter"));
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
   });
 
   it("legacy mode commits search on Enter, not on every keystroke", () => {
     render(<WorkspaceFilter {...baseProps} />);
-    const input = screen.getByPlaceholderText("Search by name...");
+    const input = screen.getByLabelText("Search workspaces by name");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
@@ -122,7 +185,7 @@ describe("WorkspaceFilter", () => {
 
   it("compact mode filters live as you type, without needing Enter", () => {
     render(<WorkspaceFilter {...baseProps} compact />);
-    const input = screen.getByPlaceholderText("Search by name...");
+    const input = screen.getByLabelText("Search workspaces by name");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
   });
@@ -157,15 +220,23 @@ describe("WorkspaceFilter", () => {
   });
 
   it("does not show a Clear all action when no filters are active", () => {
-    render(<WorkspaceFilter {...baseProps} compact status="All" tagIds={[]} projectId={null} />);
+    render(<WorkspaceFilter {...baseProps} compact status="All" tagFilters={[]} projectId={null} />);
     expect(screen.queryByText("Clear all")).not.toBeInTheDocument();
   });
 
   it("shows a Clear all action when a filter is active, and clicking it resets status, tags and project", () => {
-    render(<WorkspaceFilter {...baseProps} compact status="failed" tagIds={["tag-1"]} projectId="p1" />);
+    render(
+      <WorkspaceFilter
+        {...baseProps}
+        compact
+        status="failed"
+        tagFilters={[{ tagId: "tag-1", value: "prod" }]}
+        projectId="p1"
+      />
+    );
     fireEvent.click(screen.getByText("Clear all"));
     expect(baseProps.onStatusChange).toHaveBeenCalledWith("All");
-    expect(baseProps.onTagIdsChange).toHaveBeenCalledWith([]);
+    expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
     expect(baseProps.onProjectIdChange).toHaveBeenCalledWith(null);
   });
 

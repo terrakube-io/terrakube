@@ -13,12 +13,17 @@ import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
+import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
@@ -28,6 +33,7 @@ import org.springframework.data.redis.core.StreamOperations;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -67,6 +74,7 @@ class TerraformExecutorServiceImplTest {
     private final ExecutorFlagsProperties executorFlagsProperties = new ExecutorFlagsProperties();
     private final StructuredOutputProperties structuredOutputProperties = new StructuredOutputProperties();
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final BinaryCacheRecoveryService binaryCacheRecoveryService = Mockito.mock(BinaryCacheRecoveryService.class);
 
     private TerraformExecutorServiceImpl subject() {
         when(redisTemplate.opsForStream()).thenReturn(streamOperations);
@@ -90,7 +98,8 @@ class TerraformExecutorServiceImplTest {
                 structuredOutputPersistenceQueue,
                 executorFlagsProperties,
                 structuredOutputProperties,
-                meterRegistry);
+                meterRegistry,
+                binaryCacheRecoveryService);
     }
 
     private TerraformJob createJob() {
@@ -181,6 +190,46 @@ class TerraformExecutorServiceImplTest {
         subject.resolveTerraformVersion(terraformJob);
 
         assertEquals(">= 99.0.0", terraformJob.getTerraformVersion());
+    }
+
+    @Test
+    void skipsUploadingToCloudStorageWhenTheRecoveryServiceReportsTheBinaryAlreadyAvailable() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(new File(tempDir.toFile(), "terraform"), true, "s3"));
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        // A binary the recovery service already validated (existing-local or a restored S3 copy)
+        // was never freshly downloaded by the library, so there is nothing new to upload.
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), any(File.class));
+    }
+
+    @Test
+    void aBinaryCacheRecoveryFailureFailsTheJobBeforeRunningTerraformInit() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(binaryCacheRecoveryService.resolve("1.9.0", false))
+                .thenThrow(new BinaryCacheRecoveryException("Could not remove the invalid terraform 1.9.0 archive cache"));
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        // A cache that is known to be broken must never reach the shell invocation that produces
+        // the opaque "No such file or directory" failure the whole feature exists to avoid.
+        verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
     }
 
     @Test
@@ -345,6 +394,85 @@ class TerraformExecutorServiceImplTest {
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "false, missing",
+            "false, nonempty",
+            "true, missing",
+            "true, empty",
+            "true, directory"
+    })
+    void requiredSavedPlanStopsApplyWhenArtifactIsUnavailable(boolean downloaded, String artifact) throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob job = createJob();
+        job.setRequireSavedPlan(true);
+        job.setIgnoreError(true);
+        job.getVariables().put("message", "new-value");
+        Path savedPlan = tempDir.resolve("terraformLibrary.tfPlan");
+        switch (artifact) {
+            case "nonempty" -> Files.writeString(savedPlan, "left over from an earlier download");
+            case "empty" -> Files.createFile(savedPlan);
+            case "directory" -> Files.createDirectory(savedPlan);
+        }
+        when(terraformClient.init(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformState.downloadTerraformPlan("org", "workspace", "42", "1", tempDir.toFile()))
+                .thenReturn(downloaded);
+
+        ExecutorJobResult result = subject.apply(job, tempDir.toFile());
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        assertTrue(result.getOutputLog().contains("requireSavedPlan is enabled"));
+        verify(terraformClient, never()).apply(any(), any(), any());
+        verify(terraformClient, never()).planDetailExitCode(any(), any(), any());
+        verify(terraformState, never()).saveStateJson(any(), anyString(), anyString());
+        verify(applyStructuredOutputService, never()).seedFromPlan(anyString(), anyString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void requiredSavedPlanUsesSavedInputsAndDoesNotRetryFailedApply(boolean applySucceeds) throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob job = createJob();
+        job.setRequireSavedPlan(true);
+        job.getVariables().put("message", "new-value");
+        Files.writeString(tempDir.resolve("terraformLibrary.tfPlan"), "downloaded plan");
+        stubSuccessfulApply();
+        when(terraformState.downloadTerraformPlan("org", "workspace", "42", "1", tempDir.toFile()))
+                .thenReturn(true);
+        when(terraformClient.apply(any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(applySucceeds));
+        when(terraformClient.show(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.output(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(true));
+
+        ExecutorJobResult result = subject.apply(job, tempDir.toFile());
+
+        assertEquals(applySucceeds, result.isSuccessfulExecution());
+        // An empty variables map makes terraform-client apply terraformLibrary.tfPlan.
+        verify(terraformClient).apply(argThat(data -> data.getTerraformVariables().isEmpty()), any(), any());
+        verify(terraformClient, never()).planDetailExitCode(any(), any(), any());
+        verify(terraformState).saveStateJson(eq(job), anyString(), anyString());
+        verify(terraformOutputsService).publishOutputs(eq("org"), eq("42"), eq("1"), anyString());
+    }
+
+    @Test
+    void optionalSavedPlanPreservesStandaloneApplyWithWorkspaceVariables() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob job = createJob();
+        job.getVariables().put("message", "current-value");
+        stubSuccessfulApply();
+        when(terraformState.downloadTerraformPlan("org", "workspace", "42", "1", tempDir.toFile()))
+                .thenReturn(false);
+        when(terraformClient.show(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(false));
+
+        ExecutorJobResult result = subject.apply(job, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(terraformClient).apply(argThat(data -> data.getTerraformVariables().equals(job.getVariables())), any(), any());
     }
 
     // A command that printed part of the state to stdout before failing with an error on stderr.

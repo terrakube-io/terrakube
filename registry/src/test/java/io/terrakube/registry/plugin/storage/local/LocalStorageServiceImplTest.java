@@ -1,5 +1,6 @@
 package io.terrakube.registry.plugin.storage.local;
 
+import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import org.apache.commons.io.FileUtils;
@@ -97,7 +98,7 @@ class LocalStorageServiceImplTest {
     }
 
     @Test
-    void shouldReturnEmptyBytesWhenDownloadFails() throws IOException {
+    void shouldThrowWhenDownloadFails() throws IOException {
         LocalStorageServiceImpl localStorageService = LocalStorageServiceImpl.builder()
                 .gitService(mock(GitService.class))
                 .registryHostname("host")
@@ -106,9 +107,8 @@ class LocalStorageServiceImplTest {
         try (MockedStatic<FileUtils> fileUtilsMockedStatic = Mockito.mockStatic(FileUtils.class)) {
             fileUtilsMockedStatic.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toAbsolutePath().toString());
 
-            byte[] result = localStorageService.downloadModule("org", "module", "local", "non-existent");
-
-            assertEquals(0, result.length);
+            assertThrows(StorageUnavailableException.class,
+                    () -> localStorageService.downloadModule("org", "module", "local", "non-existent"));
         }
     }
 }
