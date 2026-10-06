@@ -52,6 +52,7 @@ class RunCascadeCoordinatorServiceTest {
     RunTriggerJobWriter jobWriter;
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
+    RunCascadeMetrics metrics;
     RunCascadeCoordinatorService subject;
 
     private int nextJobId;
@@ -68,6 +69,7 @@ class RunCascadeCoordinatorServiceTest {
         jobWriter = mock(RunTriggerJobWriter.class);
         jobNotificationTrigger = mock(JobNotificationTrigger.class);
         scheduleJobService = mock(ScheduleJobService.class);
+        metrics = mock(RunCascadeMetrics.class);
 
         // Identity save: these tests assert on the entities themselves, not on round-tripping
         // through a real database.
@@ -78,7 +80,7 @@ class RunCascadeCoordinatorServiceTest {
 
         subject = new RunCascadeCoordinatorService(runCascadeRepository, runCascadeNodeRepository,
                 runCascadeEdgeRepository, runCascadeNodeAttemptRepository, workspaceRunTriggerRepository,
-                properties, jobWriter, jobNotificationTrigger, scheduleJobService);
+                properties, jobWriter, jobNotificationTrigger, scheduleJobService, metrics);
     }
 
     @SuppressWarnings("unchecked")
@@ -235,6 +237,7 @@ class RunCascadeCoordinatorServiceTest {
 
         // One createNode call for join, not two - the second edge into it must see it already visited.
         verify(runCascadeNodeRepository).save(argThatNodeFor(join.getId()));
+        verify(metrics).cascadeStarted();
     }
 
     private RunCascadeNode argThatNodeFor(UUID workspaceId) {
@@ -540,6 +543,7 @@ class RunCascadeCoordinatorServiceTest {
         assertThat(node.getStatus()).isEqualTo(RunCascadeNodeStatus.RUNNING);
         verify(scheduleJobService).createJobContext(retryJob);
         verify(jobNotificationTrigger).notifyStatusChanged(retryJob);
+        verify(metrics).nodeRetried();
     }
 
     @Test
@@ -577,6 +581,7 @@ class RunCascadeCoordinatorServiceTest {
 
         assertThat(result).containsSame(resumedJob);
         assertThat(node.getStatus()).isEqualTo(RunCascadeNodeStatus.RUNNING);
+        verify(metrics).nodeResumed(true);
     }
 
     @Test
@@ -600,6 +605,7 @@ class RunCascadeCoordinatorServiceTest {
         assertThat(result).isEmpty();
         assertThat(node.getStatus()).isEqualTo(RunCascadeNodeStatus.PENDING);
         verify(jobWriter, never()).persist(any(), any(), any(), eq(node.getDepth()));
+        verify(metrics).nodeResumed(false);
     }
 
     @Test
@@ -632,5 +638,22 @@ class RunCascadeCoordinatorServiceTest {
         assertThat(blocked.getStatus()).isEqualTo(RunCascadeNodeStatus.CANCELLED);
         assertThat(running.getStatus()).isEqualTo(RunCascadeNodeStatus.RUNNING);
         assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.CANCELLED);
+        verify(metrics).cascadeCancelled();
+    }
+
+    @Test
+    void recomputeStatusReportsEachTransitionOnceNotOnEveryUnchangedCall() {
+        RunCascade cascade = cascade();
+        doReturn(Optional.of(cascade)).when(runCascadeRepository).findById(cascade.getId());
+
+        RunCascadeNode succeeded = new RunCascadeNode();
+        succeeded.setStatus(RunCascadeNodeStatus.SUCCEEDED);
+        doReturn(List.of(succeeded)).when(runCascadeNodeRepository).findByCascade_Id(cascade.getId());
+
+        subject.recomputeStatus(cascade.getId());
+        subject.recomputeStatus(cascade.getId());
+
+        assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.COMPLETED);
+        verify(metrics, org.mockito.Mockito.times(1)).cascadeStatusChanged(RunCascadeStatus.COMPLETED);
     }
 }

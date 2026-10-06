@@ -55,6 +55,7 @@ public class RunCascadeCoordinatorService {
     private final RunTriggerJobWriter jobWriter;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
+    private final RunCascadeMetrics metrics;
 
     /**
      * Marks this job's own node resolved, if it has one - a job outside any cascade (the common
@@ -173,6 +174,7 @@ public class RunCascadeCoordinatorService {
         recordAttempt(originNode, completedJob);
 
         snapshotReachableGraph(cascade, completedJob.getWorkspace(), completedJob.getCascadeDepth());
+        metrics.cascadeStarted();
         return cascade;
     }
 
@@ -259,6 +261,7 @@ public class RunCascadeCoordinatorService {
         if (cascade.getStatus() != newStatus) {
             cascade.setStatus(newStatus);
             runCascadeRepository.save(cascade);
+            metrics.cascadeStatusChanged(newStatus);
         }
     }
 
@@ -277,6 +280,7 @@ public class RunCascadeCoordinatorService {
         RunCascade cascade = node.getCascade();
         Job createdJob = dispatchNode(cascade, node);
         recomputeStatus(cascade.getId());
+        metrics.nodeRetried();
         return createdJob;
     }
 
@@ -299,21 +303,25 @@ public class RunCascadeCoordinatorService {
 
         if (!isReadyNow(cascade, node.getWorkspace())) {
             recomputeStatus(cascade.getId());
+            metrics.nodeResumed(false);
             return Optional.empty();
         }
 
         Job createdJob = dispatchNode(cascade, node);
         recomputeStatus(cascade.getId());
+        metrics.nodeResumed(true);
         return Optional.ofNullable(createdJob);
     }
 
     /**
      * Stops a cascade's future dispatch - every PENDING and BLOCKED node becomes CANCELLED.
      * Does not touch a RUNNING node's in-flight job; that is cancelled independently, the same
-     * way any other job is.
+     * way any other job is. Returns the cascade so a caller (the admin endpoint) can report its
+     * new status without a second lookup - {@code id}/{@code status} only, never a lazy
+     * association.
      */
     @Transactional
-    public void cancelCascade(UUID cascadeId) {
+    public RunCascade cancelCascade(UUID cascadeId) {
         RunCascade cascade = runCascadeRepository.findById(cascadeId)
                 .orElseThrow(() -> new IllegalArgumentException("No such cascade: " + cascadeId));
 
@@ -325,7 +333,9 @@ public class RunCascadeCoordinatorService {
         }
 
         cascade.setStatus(RunCascadeStatus.CANCELLED);
-        runCascadeRepository.save(cascade);
+        RunCascade saved = runCascadeRepository.save(cascade);
+        metrics.cascadeCancelled();
+        return saved;
     }
 
     /** Whether every edge this destination actually depends on would currently let it through. */
