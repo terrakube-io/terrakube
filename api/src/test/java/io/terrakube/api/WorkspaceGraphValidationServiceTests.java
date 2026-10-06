@@ -2,13 +2,17 @@ package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.trigger.CyclicDependencyException;
 import io.terrakube.api.plugin.scheduler.trigger.FanOutLimitExceededException;
+import io.terrakube.api.plugin.scheduler.trigger.OrganizationUnresolvableException;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerProperties;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
+import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
+import io.terrakube.api.rs.Organization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.Optional;
@@ -18,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -31,6 +37,7 @@ class WorkspaceGraphValidationServiceTests {
 
     private WorkspaceRunTriggerRepository repository;
     private WorkspaceRepository workspaceRepository;
+    private OrganizationRepository organizationRepository;
     private RunTriggerProperties properties;
     private WorkspaceGraphValidationService service;
 
@@ -44,9 +51,13 @@ class WorkspaceGraphValidationServiceTests {
     void setUp() {
         repository = mock(WorkspaceRunTriggerRepository.class);
         workspaceRepository = mock(WorkspaceRepository.class);
-        when(workspaceRepository.lockForUpdate(any())).thenReturn(Optional.empty());
+        lenient().when(workspaceRepository.lockForUpdate(any())).thenReturn(Optional.empty());
+        organizationRepository = mock(OrganizationRepository.class);
+        // The lock is granted by default; the one test that cares about a missing organization
+        // overrides this.
+        lenient().when(organizationRepository.lockForUpdate(any())).thenReturn(Optional.of(new Organization()));
         properties = new RunTriggerProperties();
-        service = new WorkspaceGraphValidationService(repository, workspaceRepository, properties);
+        service = new WorkspaceGraphValidationService(repository, workspaceRepository, organizationRepository, properties);
     }
 
     private TriggerEdge edge(UUID id, UUID source, UUID destination) {
@@ -157,6 +168,38 @@ class WorkspaceGraphValidationServiceTests {
         assertDoesNotThrow(() -> service.validateAcyclic(null, null, a, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, null, b));
         assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, null));
+    }
+
+    // ---------------------------------------------------------------- organization lock
+
+    /** The lock must be acquired before the graph is read - ordering only; real contention is WorkspaceGraphLockConcurrencyTest. */
+    @Test
+    void acquiresTheOrganizationLockBeforeReadingTheGraph() {
+        graph();
+        assertDoesNotThrow(() -> service.validateAcyclic(org, null, a, b));
+
+        InOrder ordered = inOrder(organizationRepository, repository);
+        ordered.verify(organizationRepository).lockForUpdate(org);
+        ordered.verify(repository).findEdgesByOrganizationId(org);
+    }
+
+    /** A self-reference is rejected without ever touching the database. */
+    @Test
+    void rejectsASelfTriggerWithoutTakingTheLock() {
+        assertThrows(CyclicDependencyException.class, () -> service.validateAcyclic(org, null, a, a));
+        verify(organizationRepository, never()).lockForUpdate(any());
+    }
+
+    /**
+     * A deleted or disabled organization (disabled is invisible to lockForUpdate via
+     * {@code @SQLRestriction}) fails closed rather than silently skipping validation.
+     */
+    @Test
+    void failsClosedWhenTheOrganizationCannotBeLocked() {
+        when(organizationRepository.lockForUpdate(org)).thenReturn(Optional.empty());
+        assertThrows(OrganizationUnresolvableException.class,
+                () -> service.validateAcyclic(org, null, a, b));
+        verify(repository, never()).findEdgesByOrganizationId(any());
     }
 
     // ---------------------------------------------------------------- fan-out limit

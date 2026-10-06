@@ -40,17 +40,36 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
             return;
         }
 
-        graphValidationService.validateAcyclic(
-                trigger.getOrganization().getId(),
-                trigger.getId(),
-                trigger.getSourceWorkspace().getId(),
-                trigger.getDestinationWorkspace().getId());
+        if (topologyChangeApplies(operation, changes)) {
+            graphValidationService.validateAcyclic(
+                    trigger.getOrganization().getId(),
+                    trigger.getId(),
+                    trigger.getSourceWorkspace().getId(),
+                    trigger.getDestinationWorkspace().getId());
+        }
 
         if (fanOutLimitApplies(operation, changes)) {
             graphValidationService.validateFanOutLimit(
                     trigger.getSourceWorkspace().getId(),
                     trigger.isEnabled());
         }
+    }
+
+    /**
+     * True on create, and on an update that changes which workspaces the edge connects - the
+     * only way an existing edge's place in the graph can change. A benign update (template,
+     * enabled) touches neither field, so it skips the organization lock and DFS entirely.
+     */
+    private boolean topologyChangeApplies(LifeCycleHookBinding.Operation operation, Optional<ChangeSpec> changes) {
+        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+            return true;
+        }
+        if (operation != LifeCycleHookBinding.Operation.UPDATE) {
+            return false;
+        }
+        return changes.filter(c -> "sourceWorkspace".equals(c.getFieldName())
+                        || "destinationWorkspace".equals(c.getFieldName()))
+                .isPresent();
     }
 
     /**

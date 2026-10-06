@@ -62,16 +62,39 @@ class WorkspaceRunTriggerHookTest {
         verify(graphValidationService).validateFanOutLimit(trigger.getSourceWorkspace().getId(), true);
     }
 
-    /** An update that touches neither enabled nor sourceWorkspace still stays acyclic-checked only. */
+    /** An update that touches neither topology nor fan-out fields checks neither. */
     @Test
-    void updateOfAnUnrelatedFieldChecksCycleButNotFanOut() {
+    void updateOfAnUnrelatedFieldChecksNeither() {
         WorkspaceRunTrigger trigger = trigger(true);
 
         hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
                 trigger, null, Optional.of(new ChangeSpec(null, "template", null, null)));
 
-        verify(graphValidationService).validateAcyclic(any(), any(), any(), any());
+        verify(graphValidationService, never()).validateAcyclic(any(), any(), any(), any());
         verify(graphValidationService, never()).validateFanOutLimit(any(), anyBoolean());
+    }
+
+    /** Repointing either end of an edge is the only way its place in the graph can change. */
+    @Test
+    void updateChangingSourceWorkspaceChecksCycle() {
+        WorkspaceRunTrigger trigger = trigger(true);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "sourceWorkspace", UUID.randomUUID(), trigger.getSourceWorkspace())));
+
+        verify(graphValidationService).validateAcyclic(trigger.getOrganization().getId(), trigger.getId(),
+                trigger.getSourceWorkspace().getId(), trigger.getDestinationWorkspace().getId());
+    }
+
+    @Test
+    void updateChangingDestinationWorkspaceChecksCycle() {
+        WorkspaceRunTrigger trigger = trigger(true);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "destinationWorkspace", UUID.randomUUID(), trigger.getDestinationWorkspace())));
+
+        verify(graphValidationService).validateAcyclic(trigger.getOrganization().getId(), trigger.getId(),
+                trigger.getSourceWorkspace().getId(), trigger.getDestinationWorkspace().getId());
     }
 
     /** Re-enabling a disabled edge is exactly the case the create-only check used to miss. */

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.trigger;
 
+import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository.TriggerEdge;
@@ -18,11 +19,15 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Keeps an organization's run trigger graph acyclic.
+ * Keeps an organization's run trigger graph acyclic, and bounds a workspace's outbound fan-out.
  *
  * A cycle would mean an apply on any of its workspaces re-triggering itself indefinitely.
  * The runtime cascade limit bounds the damage, but a graph that cannot loop in the first
  * place is better than one that stops looping after ten hops.
+ *
+ * <p>Cycle checks lock the organization row rather than a database-specific advisory lock, for
+ * portability - at the cost of serializing all edge mutations in an organization, even across
+ * disjoint subgraphs.
  */
 @Slf4j
 @Service
@@ -31,6 +36,7 @@ public class WorkspaceGraphValidationService {
 
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final OrganizationRepository organizationRepository;
     private final RunTriggerProperties properties;
 
     /**
@@ -76,6 +82,11 @@ public class WorkspaceGraphValidationService {
     /**
      * Rejects an edge that would close a loop.
      *
+     * <p>Locks the organization's row before reading the graph, so two concurrent edge
+     * mutations can't each validate against a graph the other hasn't committed yet and
+     * together close a cycle neither saw. Fails closed if the organization can't be locked -
+     * including a disabled one, which {@code @SQLRestriction} makes invisible to this query.
+     *
      * @param organizationId owner of the graph
      * @param triggerId      the edge being written, excluded from the graph so an update is
      *                       validated against its new shape rather than its old one
@@ -87,11 +98,18 @@ public class WorkspaceGraphValidationService {
             return;
         }
 
-        // Caught earlier by the security check and by a database constraint; repeated here so
-        // the service is correct on its own rather than by arrangement with its callers.
+        // Repeated here (also caught by the security check and a DB constraint) so the service
+        // is correct on its own. Checked before the lock: it never depends on the rest of the graph.
         if (sourceId.equals(destinationId)) {
             throw new CyclicDependencyException(
                     "A workspace cannot trigger itself.");
+        }
+
+        if (organizationRepository.lockForUpdate(organizationId).isEmpty()) {
+            throw new OrganizationUnresolvableException(String.format(
+                    "Could not validate this run trigger: organization %s could not be locked "
+                            + "(deleted, disabled, or otherwise unresolvable).",
+                    organizationId));
         }
 
         Map<UUID, Set<UUID>> adjacency = loadGraphExcluding(organizationId, triggerId);
