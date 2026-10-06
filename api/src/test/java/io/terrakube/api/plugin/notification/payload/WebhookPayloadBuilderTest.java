@@ -17,7 +17,7 @@ class WebhookPayloadBuilderTest {
                 "acme", "networking", 42, JobStatus.failed,
                 "https://terrakube.acme.com/organizations/acme/workspaces/networking/runs/42",
                 "abc123", "apply exited with code 1", "Prod Alerts",
-                "https://terrakube.acme.com/organizations/acme/workspaces/networking", NotificationMessageStyle.DETAILED);
+                "https://terrakube.acme.com/organizations/acme/workspaces/networking", NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         var root = new ObjectMapper().readTree(payload);

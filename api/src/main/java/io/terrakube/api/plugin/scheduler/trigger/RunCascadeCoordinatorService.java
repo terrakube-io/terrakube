@@ -56,6 +56,7 @@ public class RunCascadeCoordinatorService {
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
     private final RunCascadeMetrics metrics;
+    private final RunCascadeNotificationTrigger cascadeNotificationTrigger;
 
     /**
      * Marks this job's own node resolved, if it has one - a job outside any cascade (the common
@@ -262,6 +263,9 @@ public class RunCascadeCoordinatorService {
             cascade.setStatus(newStatus);
             runCascadeRepository.save(cascade);
             metrics.cascadeStatusChanged(newStatus);
+            if (newStatus != RunCascadeStatus.RUNNING) {
+                cascadeNotificationTrigger.notifyCascadeStatusChanged(cascade);
+            }
         }
     }
 
@@ -335,6 +339,7 @@ public class RunCascadeCoordinatorService {
         cascade.setStatus(RunCascadeStatus.CANCELLED);
         RunCascade saved = runCascadeRepository.save(cascade);
         metrics.cascadeCancelled();
+        cascadeNotificationTrigger.notifyCascadeStatusChanged(saved);
         return saved;
     }
 

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.rs.cascade.RunCascadeStatus;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -28,6 +29,9 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
 
     @Override
     public String build(NotificationContext context) {
+        if (context.cascadeStatus() != null) {
+            return buildCascadePayload(context);
+        }
         if (context.messageStyle() == NotificationMessageStyle.SIMPLE) {
             return buildCompactPayload(context);
         }
@@ -77,6 +81,57 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Teams payload", e);
         }
+    }
+
+    // Same card shape as the job-status path, with a cascade summary fact instead of a single
+    // failure reason, and no View Run action pointed at just the origin job.
+    private String buildCascadePayload(NotificationContext context) {
+        String statusLabel = cascadeStatusLabel(context.cascadeStatus());
+
+        List<Map<String, Object>> facts = new ArrayList<>();
+        facts.add(Map.of("title", "Organization", "value", context.organizationName()));
+        facts.add(Map.of("title", "Started by job", "value", "#" + context.jobId()));
+        if (context.configurationName() != null && !context.configurationName().isBlank()) {
+            facts.add(Map.of("title", "Notification", "value", context.configurationName()));
+        }
+
+        List<Map<String, Object>> body = new ArrayList<>();
+        if (context.workspaceUrl() != null && !context.workspaceUrl().isBlank()) {
+            body.add(Map.of("type", "TextBlock", "isSubtle", true, "text", "Cascade notification for ["
+                    + context.organizationName() + "/" + context.workspaceName() + "](" + context.workspaceUrl() + ")"));
+        }
+        body.add(Map.of("type", "TextBlock", "size", "Large", "weight", "Bolder",
+                "text", context.workspaceName() + " - " + statusLabel));
+        body.add(Map.of("type", "FactSet", "facts", facts));
+        if (context.cascadeSummary() != null && !context.cascadeSummary().isBlank()) {
+            body.add(Map.of("type", "TextBlock", "wrap", true, "text", context.cascadeSummary()));
+        }
+
+        Map<String, Object> card = new java.util.LinkedHashMap<>();
+        card.put("$schema", "http://adaptivecards.io/schemas/adaptive-card.json");
+        card.put("type", "AdaptiveCard");
+        card.put("version", "1.4");
+        card.put("body", body);
+
+        Map<String, Object> attachment = Map.of(
+                "contentType", "application/vnd.microsoft.card.adaptive",
+                "content", card);
+
+        try {
+            return objectMapper.writeValueAsString(Map.of("type", "message", "attachments", List.of(attachment)));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to render Teams payload", e);
+        }
+    }
+
+    private String cascadeStatusLabel(RunCascadeStatus status) {
+        return switch (status) {
+            case COMPLETED -> "Cascade Completed";
+            case DEGRADED -> "Cascade Degraded";
+            case BLOCKED -> "Cascade Blocked";
+            case CANCELLED -> "Cascade Cancelled";
+            default -> "Cascade " + status.name();
+        };
     }
 
     // SIMPLE-style configurations get a single-line card instead of the full one - no facts, no

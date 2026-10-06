@@ -53,6 +53,7 @@ class RunCascadeCoordinatorServiceTest {
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
     RunCascadeMetrics metrics;
+    RunCascadeNotificationTrigger cascadeNotificationTrigger;
     RunCascadeCoordinatorService subject;
 
     private int nextJobId;
@@ -70,6 +71,7 @@ class RunCascadeCoordinatorServiceTest {
         jobNotificationTrigger = mock(JobNotificationTrigger.class);
         scheduleJobService = mock(ScheduleJobService.class);
         metrics = mock(RunCascadeMetrics.class);
+        cascadeNotificationTrigger = mock(RunCascadeNotificationTrigger.class);
 
         // Identity save: these tests assert on the entities themselves, not on round-tripping
         // through a real database.
@@ -80,7 +82,8 @@ class RunCascadeCoordinatorServiceTest {
 
         subject = new RunCascadeCoordinatorService(runCascadeRepository, runCascadeNodeRepository,
                 runCascadeEdgeRepository, runCascadeNodeAttemptRepository, workspaceRunTriggerRepository,
-                properties, jobWriter, jobNotificationTrigger, scheduleJobService, metrics);
+                properties, jobWriter, jobNotificationTrigger, scheduleJobService, metrics,
+                cascadeNotificationTrigger);
     }
 
     @SuppressWarnings("unchecked")
@@ -300,10 +303,12 @@ class RunCascadeCoordinatorServiceTest {
         doReturn(List.of(pending, succeeded)).when(runCascadeNodeRepository).findByCascade_Id(cascade.getId());
         subject.recomputeStatus(cascade.getId());
         assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.RUNNING);
+        verify(cascadeNotificationTrigger, never()).notifyCascadeStatusChanged(any());
 
         doReturn(List.of(succeeded)).when(runCascadeNodeRepository).findByCascade_Id(cascade.getId());
         subject.recomputeStatus(cascade.getId());
         assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.COMPLETED);
+        verify(cascadeNotificationTrigger).notifyCascadeStatusChanged(cascade);
     }
 
     private Job job(Workspace workspace, int cascadeDepth) {
@@ -370,6 +375,7 @@ class RunCascadeCoordinatorServiceTest {
 
         assertThat(joinNode.getStatus()).isEqualTo(RunCascadeNodeStatus.BLOCKED);
         assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.BLOCKED);
+        verify(cascadeNotificationTrigger).notifyCascadeStatusChanged(cascade);
     }
 
     @Test
@@ -639,6 +645,7 @@ class RunCascadeCoordinatorServiceTest {
         assertThat(running.getStatus()).isEqualTo(RunCascadeNodeStatus.RUNNING);
         assertThat(cascade.getStatus()).isEqualTo(RunCascadeStatus.CANCELLED);
         verify(metrics).cascadeCancelled();
+        verify(cascadeNotificationTrigger).notifyCascadeStatusChanged(cascade);
     }
 
     @Test

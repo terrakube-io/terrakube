@@ -19,7 +19,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.completed,
                 WORKSPACE_URL + "/runs/42",
-                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -37,7 +37,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.completed,
                 WORKSPACE_URL + "/runs/42",
-                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
 
@@ -49,7 +49,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.completed,
                 WORKSPACE_URL + "/runs/42",
-                null, null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                null, null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
 
@@ -61,7 +61,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 43, JobStatus.failed,
                 WORKSPACE_URL + "/runs/43",
-                null, "apply exited with code 1", "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                null, "apply exited with code 1", "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
 
@@ -73,7 +73,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.completed,
                 WORKSPACE_URL + "/runs/42",
-                null, null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                null, null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -88,7 +88,7 @@ class TeamsPayloadBuilderTest {
     void omitsTheActionsListAndWorkspaceLinkWhenNeitherUrlIsPresent() throws Exception {
         NotificationContext context = new NotificationContext(
                 "acme", "(test notification)", 0, JobStatus.completed, null, null, null, "Test Notification", null,
-                NotificationMessageStyle.DETAILED);
+                NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -103,7 +103,7 @@ class TeamsPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.running,
                 WORKSPACE_URL + "/runs/42", "abc123", null, "Prod Alerts", WORKSPACE_URL,
-                NotificationMessageStyle.SIMPLE);
+                NotificationMessageStyle.SIMPLE, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);

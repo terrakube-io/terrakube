@@ -40,7 +40,9 @@ public class NotificationTestService {
                 null,
                 configurationName,
                 null,
-                messageStyle);
+                messageStyle,
+                null,
+                null);
 
         String payload = notificationPayloadRenderer.render(configuration.getChannelType(), context);
         notificationDeliveryService.deliver(configuration, payload);

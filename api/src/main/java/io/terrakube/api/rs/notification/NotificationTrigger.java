@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.cascade.RunCascadeStatus;
 import io.terrakube.api.rs.job.JobStatus;
 
 import com.yahoo.elide.annotation.Include;
@@ -35,6 +36,12 @@ public class NotificationTrigger extends GenericAuditFields {
     @Column(name = "job_status")
     @Enumerated(EnumType.STRING)
     private JobStatus jobStatus;
+
+    /** Mutually exclusive with {@link #jobStatus} - a row describes one job-run status or one
+     *  cascade outcome (COMPLETED/DEGRADED/BLOCKED/CANCELLED), never both. */
+    @Column(name = "cascade_status")
+    @Enumerated(EnumType.STRING)
+    private RunCascadeStatus cascadeStatus;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private NotificationConfiguration configuration;

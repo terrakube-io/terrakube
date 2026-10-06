@@ -64,7 +64,9 @@ public class PolicyNotificationService {
                             summaryReason,
                             config.getName(),
                             workspaceUrl,
-                            NotificationMessageStyle.DETAILED
+                            NotificationMessageStyle.DETAILED,
+                            null,
+                            null
                     );
 
                     String payload = notificationPayloadRenderer.render(config.getChannelType(), context);

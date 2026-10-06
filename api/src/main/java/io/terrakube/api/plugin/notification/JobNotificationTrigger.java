@@ -181,6 +181,8 @@ public class JobNotificationTrigger {
                 failureReason,
                 configuration.getName(),
                 workspaceUrl,
-                configuration.getMessageStyle());
+                configuration.getMessageStyle(),
+                null,
+                null);
     }
 }
