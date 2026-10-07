@@ -1,0 +1,16 @@
+/* Display criteria rows in the action editor. */
+.action-display-criteria {
+  margin-bottom: 16px;
+}
+
+.action-criteria-field {
+  flex: 1;
+}
+
+.action-criteria-settings {
+  margin-left: 24px;
+}
+
+.action-syntax-alert {
+  margin-bottom: 24px;
+}

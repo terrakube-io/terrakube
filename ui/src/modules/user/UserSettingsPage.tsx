@@ -9,9 +9,9 @@ export const UserSettingsPage = () => {
 
   return (
     <PageWrapper
-      title="Account Settings"
+      title="Account settings"
       showTitle={false}
-      breadcrumbs={[{ label: "Account Settings" }, { label: isTheme ? "Theme" : "Tokens" }]}
+      breadcrumbs={[{ label: "Account settings" }, { label: isTheme ? "Theme" : "Tokens" }]}
     >
       {isTheme ? <ThemeSection /> : <Tokens />}
     </PageWrapper>

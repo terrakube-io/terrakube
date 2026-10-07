@@ -1,25 +1,29 @@
-import { Tabs, Button, Dropdown, Input, Space } from "antd";
-import {
-  SearchOutlined,
-  CloudUploadOutlined,
-  DownOutlined,
-  AppstoreOutlined,
-  CloudServerOutlined,
-} from "@ant-design/icons";
+import { Flex, Input, Pagination, Segmented, Spin, Typography } from "antd";
+import { CloudUploadOutlined, ExportOutlined, SearchOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import { ModuleList } from "./ModuleList";
 import ModuleTable from "./components/ModuleTable";
 import { ProviderList } from "../Providers/ProviderList";
 import ProviderTable from "../Providers/components/ProviderTable";
 import axiosInstance from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
-import { FlatModule, FlatProvider } from "../types";
+import { FlatModule } from "../types";
+import { FlatProvider } from "../Providers/types";
 import { ErrorInformation } from "@/modules/api/types";
 import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
-import type { MenuProps } from "antd";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { compareVersionsDesc } from "./registryHelpers";
+import "./Module.css";
+
+const PAGE_SIZE = 10;
+
+const matches = (item: { name: string; description?: string }, filter: string) =>
+  item.name.toLowerCase().includes(filter) || !!item.description?.toLowerCase().includes(filter);
 
 type Params = {
   orgid: string;
@@ -61,16 +65,7 @@ async function fetchProviders(orgId: string): Promise<FlatProvider[]> {
 
   return data.map((p: any) => {
     const versions = providerVersions[p.id] || [];
-    // Sort semver descending to get latest
-    versions.sort((a: string, b: string) => {
-      const pa = a.split(".").map(Number);
-      const pb = b.split(".").map(Number);
-      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-        const diff = (pb[i] || 0) - (pa[i] || 0);
-        if (diff !== 0) return diff;
-      }
-      return 0;
-    });
+    versions.sort(compareVersionsDesc);
     return {
       id: p.id,
       ...p.attributes,
@@ -88,17 +83,20 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const { orgid } = useParams<Params>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchFilter, setSearchFilter] = useState("");
-  const [modules, setModules] = useState<FlatModule[]>([]);
-  const [providers, setProviders] = useState<FlatProvider[]>([]);
+  const [page, setPage] = useState(1);
+  // undefined until the tab's data has been fetched
+  const [modules, setModules] = useState<FlatModule[]>();
+  const [providers, setProviders] = useState<FlatProvider[]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
   const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
+  const { permissions } = useOrgPermissions();
 
   // Track which data has been loaded to avoid re-fetching
   const modulesLoaded = useRef(false);
   const providersLoaded = useRef(false);
 
-  const activeTab = searchParams.get("tab") || "modules";
+  const activeTab = searchParams.get("tab") === "providers" ? "providers" : "modules";
 
   const loadModules = useCallback(async () => {
     if (!orgid || modulesLoaded.current) return;
@@ -160,7 +158,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         }
 
         await Promise.all(promises);
-      } catch (err) {
+      } catch {
         setError({ title: "Failed to load registry data" });
       } finally {
         setLoading(false);
@@ -168,62 +166,90 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
     };
 
     init();
-  }, [orgid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orgid]);
 
-  const handleTabChange = (key: string) => {
-    setSearchParams({ tab: key });
-    // Lazy load the other tab's data on first switch
-    if (key === "providers") {
+  // Lazy load the other tab's data on first switch, whether from the control or Back/Forward.
+  useEffect(() => {
+    if (loading) return;
+    if (activeTab === "providers") {
       loadProviders();
     } else {
       loadModules();
     }
+  }, [activeTab, loading, loadModules, loadProviders]);
+
+  const handleTabChange = (key: string) => {
+    setSearchParams({ tab: key });
+    setPage(1);
   };
 
-  const publishMenuItems: MenuProps["items"] = [
-    {
-      key: "module",
-      label: <Link to={`/organizations/${orgid}/registry/create`}>Publish module</Link>,
-    },
-  ];
+  const filter = searchFilter.trim().toLowerCase();
+  const isModules = activeTab === "modules";
+  const items = isModules ? modules : providers;
+  const filtered = items?.filter((item) => matches(item, filter));
+  const pageItems = filtered?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) ?? [];
+  const noun = isModules ? "modules" : "providers";
 
-  const tabItems = [
-    {
-      key: "modules",
-      label: (
-        <span>
-          <AppstoreOutlined style={{ marginRight: 8 }} />
-          Modules
-        </span>
-      ),
-      children:
-        listViewMode === "compact" ? (
-          <ModuleTable modules={modules} searchFilter={searchFilter} />
+  const publishButton = permissions.manageModule && (
+    <LinkButton type="primary" icon={<CloudUploadOutlined />} to={`/organizations/${orgid}/registry/create`}>
+      Publish module
+    </LinkButton>
+  );
+  const searchButton = (type?: "primary") => (
+    <LinkButton
+      type={type}
+      icon={<SearchOutlined />}
+      to={`/organizations/${orgid}/registry/search${isModules ? "" : "?tab=providers"}`}
+    >
+      Search public registry
+    </LinkButton>
+  );
+
+  const renderItems = () => {
+    if (!filtered) return <Spin className="registry-loading" />;
+    if (items!.length === 0) {
+      return (
+        <EmptyState
+          description={
+            isModules
+              ? `There are no modules in ${organizationName} yet. Publish one from a Git repository, or add one from the public registry.`
+              : `There are no providers in ${organizationName} yet. Add one from the public registry.`
+          }
+        >
+          {isModules && publishButton ? publishButton : searchButton("primary")}
+        </EmptyState>
+      );
+    }
+    if (filtered.length === 0) return <EmptyState description={`No ${noun} match "${searchFilter.trim()}".`} />;
+    if (listViewMode === "compact") {
+      return isModules ? (
+        <ModuleTable modules={filtered as FlatModule[]} />
+      ) : (
+        <ProviderTable providers={filtered as FlatProvider[]} />
+      );
+    }
+    return (
+      <>
+        {isModules ? (
+          <ModuleList modules={pageItems as FlatModule[]} />
         ) : (
-          <ModuleList modules={modules} searchFilter={searchFilter} />
-        ),
-    },
-    {
-      key: "providers",
-      label: (
-        <span>
-          <CloudServerOutlined style={{ marginRight: 8 }} />
-          Providers
-        </span>
-      ),
-      children:
-        listViewMode === "compact" ? (
-          <ProviderTable providers={providers} searchFilter={searchFilter} />
-        ) : (
-          <ProviderList providers={providers} searchFilter={searchFilter} />
-        ),
-    },
-  ];
+          <ProviderList providers={pageItems as FlatProvider[]} />
+        )}
+        <Pagination
+          className="registry-pagination"
+          current={page}
+          pageSize={PAGE_SIZE}
+          total={filtered.length}
+          onChange={setPage}
+          hideOnSinglePage
+        />
+      </>
+    );
+  };
 
   return (
     <PageWrapper
       title="Registry"
-      subTitle={`Modules and providers in the ${organizationName} organization`}
       loadingText="Loading registry..."
       loading={loading}
       error={error}
@@ -232,31 +258,52 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
         { label: "Registry", path: `/organizations/${orgid}/registry` },
       ]}
       actions={
-        <Space>
-          <ListViewToggle value={listViewMode} onChange={setListViewMode} />
-          <Button type="default" icon={<SearchOutlined />}>
-            <Link to={`/organizations/${orgid}/registry/search`}>Search public registry</Link>
-          </Button>
-          <Dropdown menu={{ items: publishMenuItems }} trigger={["click"]}>
-            <Button type="primary" icon={<CloudUploadOutlined />}>
-              Publish <DownOutlined />
-            </Button>
-          </Dropdown>
-        </Space>
+        <Flex gap="small" align="center" wrap>
+          {searchButton()}
+          {publishButton}
+        </Flex>
       }
     >
-      <div>
+      <Typography.Paragraph type="secondary" className="registry-intro">
+        Private modules and providers that workspaces in {organizationName} can use.{" "}
+        <Typography.Link
+          href="https://docs.terrakube.io/user-guide/private-registry"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Documentation <ExportOutlined aria-label="opens in a new tab" />
+        </Typography.Link>
+      </Typography.Paragraph>
+      <div className="registry-filter">
+        <Segmented
+          aria-label="Show"
+          value={activeTab}
+          onChange={(key) => handleTabChange(key as string)}
+          options={[
+            { label: "Modules", value: "modules" },
+            { label: "Providers", value: "providers" },
+          ]}
+        />
         <Input
-          placeholder="Filter providers and modules..."
+          aria-label={`Search ${noun}`}
+          placeholder={`Search ${noun} by name or description`}
           prefix={<SearchOutlined />}
           allowClear
-          size="large"
           value={searchFilter}
-          onChange={(e) => setSearchFilter(e.target.value)}
-          style={{ width: "100%", maxWidth: 500, marginBottom: 24 }}
+          onChange={(e) => {
+            setSearchFilter(e.target.value);
+            setPage(1);
+          }}
+          className="registry-search"
         />
-        <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} size="large" />
+        <ListViewToggle value={listViewMode} onChange={setListViewMode} />
       </div>
+      {filtered && items!.length > 0 && (
+        <Typography.Title level={2} className="registry-count">
+          {isModules ? "Modules" : "Providers"} ({filtered.length})
+        </Typography.Title>
+      )}
+      {renderItems()}
     </PageWrapper>
   );
 };

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
 import projectService, { ProjectAccessModel } from "./projectService";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import "./Projects.css";
 
 type Props = {
   orgid: string;
@@ -174,15 +175,15 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                 size="small"
                 value={editingRole}
                 onChange={setEditingRole}
-                style={{ width: 200 }}
+                className="project-access-role-select"
                 options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
                 optionRender={(opt) => {
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} className="project-access-role-option">
                       <Tag color={r.color}>{r.label}</Tag>
-                      <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
+                      <Typography.Text type="secondary" className="project-access-role-description">
                         {r.description}
                       </Typography.Text>
                     </Space>
@@ -205,7 +206,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
         return (
           <Space>
             <Tooltip title={roleDescription(role)}>
-              <Tag color={roleColor(role)} style={{ cursor: "default" }}>
+              <Tag color={roleColor(role)} className="project-access-role-tag">
                 {role ?? "custom"}
               </Tag>
             </Tooltip>
@@ -213,7 +214,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
               <Button
                 type="link"
                 size="small"
-                style={{ padding: 0, height: "auto" }}
+                className="project-access-change-button"
                 onClick={() => onEditRole(record)}
               >
                 Change
@@ -246,7 +247,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   ];
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="project-settings-panel">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/projects/team-access"
         title="Team Access"
@@ -264,21 +265,21 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
               ? "No teams have been granted project-level access."
               : "You don't have permission to view or manage team assignments for this project.",
           }}
-          style={{ marginBottom: 32 }}
+          className="project-access-table"
         />
       </Spin>
 
       {canManage && (
         <>
           <h2>Add Team</h2>
-          <Form form={form} layout="inline" onFinish={onAdd} style={{ marginBottom: 8 }}>
+          <Form form={form} layout="inline" onFinish={onAdd} className="project-access-add-form">
             <Form.Item name="teamName" rules={[{ required: true, message: "Team name is required" }]}>
               <Select
                 showSearch
                 placeholder="Select a team"
                 optionFilterProp="label"
                 loading={loadingTeams}
-                style={{ minWidth: 220 }}
+                className="project-access-team-select"
                 options={teams.map((t) => ({
                   label: t.name,
                   value: t.name,
@@ -288,15 +289,15 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
             </Form.Item>
             <Form.Item name="role" initialValue="write" rules={[{ required: true }]}>
               <Select
-                style={{ width: 200 }}
+                className="project-access-role-select"
                 options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
                 optionRender={(opt) => {
                   const r = ROLES.find((x) => x.value === opt.value);
                   if (!r) return opt.label;
                   return (
-                    <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <Space orientation="vertical" size={2} className="project-access-role-option">
                       <Tag color={r.color}>{r.label}</Tag>
-                      <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
+                      <Typography.Text type="secondary" className="project-access-role-description">
                         {r.description}
                       </Typography.Text>
                     </Space>
@@ -317,7 +318,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
         </>
       )}
 
-      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 16 }}>
+      <Typography.Text type="secondary" className="project-access-footnote">
         Teams added here can manage workspaces in this project based on their assigned role.
         <br />
         This is additive — existing org-level and workspace-level permissions are not affected.

@@ -1,23 +1,19 @@
-import { Button, Col, Form, Input, Row, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, Form, Input, InputNumber, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { LinkButton } from "@/components/navigation/LinkButton";
-import axiosInstance from "../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { IdField } from "@/components/settings/IdField";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import "./Settings.css";
+import "./VariableCollections.css";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { CollectionVariableModal, CollectionVariableFormValues } from "./components";
-
-// Type definitions
-type Collection = {
-  id: string;
-  attributes: {
-    name: string;
-    description: string;
-    priority: number;
-  };
-};
+import { DangerZone } from "@/components/settings/DangerZone";
+import { deleteCollection } from "./deleteCollection";
 
 type Workspace = {
   id: string;
@@ -50,11 +46,12 @@ export const CreateEditCollection = ({
   const [addingVariable, setAddingVariable] = useState(false);
   const [variableMode, setVariableMode] = useState<"create" | "edit">("create");
   const [editingVariableId, setEditingVariableId] = useState<string>("");
+  const [pendingDelete, setPendingDelete] = useState<any>(null);
+  const [collectionName, setCollectionName] = useState("");
 
   // Use either the prop or URL parameter for collection ID
   const collectionid = propCollectionId || urlCollectionId;
 
-  // Load collection data if in edit mode
   // Load collection data if in edit mode
   useEffect(() => {
     setLoading(true);
@@ -66,40 +63,51 @@ export const CreateEditCollection = ({
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`),
-      ]).then(([workspacesRes, collectionRes, itemsRes, refsRes]) => {
-        setWorkspaces(workspacesRes.data.data);
+      ])
+        .then(([workspacesRes, collectionRes, itemsRes, refsRes]) => {
+          setWorkspaces(workspacesRes.data.data);
 
-        const collectionData = collectionRes.data.data;
-        collectionForm.setFieldsValue({
-          name: collectionData.attributes.name,
-          description: collectionData.attributes.description,
-          priority: collectionData.attributes.priority || 10,
+          const collectionData = collectionRes.data.data;
+          setCollectionName(collectionData.attributes.name);
+          collectionForm.setFieldsValue({
+            name: collectionData.attributes.name,
+            description: collectionData.attributes.description,
+            priority: collectionData.attributes.priority || 10,
+          });
+
+          setVariables(itemsRes.data.data);
+
+          const workspaceIds = refsRes.data.data
+            .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
+            .map((ref: any) => ref.relationships.workspace.data.id);
+          setSelectedWorkspaces(workspaceIds);
+
+          setLoading(false);
+        })
+        .catch((error) => {
+          message.error(`Could not load the variable collection: ${getErrorMessage(error)}`);
+          setLoading(false);
         });
-
-        setVariables(itemsRes.data.data);
-
-        const workspaceIds = refsRes.data.data
-          .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
-          .map((ref: any) => ref.relationships.workspace.data.id);
-        setSelectedWorkspaces(workspaceIds);
-
-        setLoading(false);
-      });
     } else {
       // For create mode, just load workspaces
-      axiosInstance.get(`organization/${orgid}/workspace`).then((response) => {
-        setWorkspaces(response.data.data);
-        setVariables([]);
-        setSelectedWorkspaces([]);
-        setLoading(false);
-      });
+      axiosInstance
+        .get(`organization/${orgid}/workspace`)
+        .then((response) => {
+          setWorkspaces(response.data.data);
+          setVariables([]);
+          setSelectedWorkspaces([]);
+          setLoading(false);
+        })
+        .catch((error) => {
+          message.error(`Could not load workspaces: ${getErrorMessage(error)}`);
+          setLoading(false);
+        });
     }
   }, [orgid, collectionid, mode, collectionForm]);
 
-  const handleSave = async () => {
+  const handleSave = async (values: { name: string; description?: string; priority?: number }) => {
     try {
       setSaveLoading(true);
-      const values = await collectionForm.validateFields();
 
       // Match exact payload format shown in example - without global field
       const collectionData = {
@@ -112,8 +120,6 @@ export const CreateEditCollection = ({
           },
         },
       };
-
-      console.log("Collection data to send:", JSON.stringify(collectionData));
 
       if (mode === "create") {
         // Create collection - use the format from the example
@@ -147,7 +153,10 @@ export const CreateEditCollection = ({
           );
         }
 
-        message.success("Collection created successfully");
+        message.success("Variable collection created");
+        // Variables can only be added to a saved collection.
+        navigate(`/organizations/${orgid}/settings/collection/edit/${newCollectionId}`);
+        return;
       } else if (mode === "edit" && collectionid) {
         // Update collection - match exact format without global field
         await axiosInstance.patch(
@@ -211,16 +220,27 @@ export const CreateEditCollection = ({
           }
         }
 
-        message.success("Collection updated successfully");
+        message.success("Variable collection updated");
       }
 
       // Navigate back to collection list
       navigate(`/organizations/${orgid}/settings/collection`);
     } catch (error) {
-      console.error("Failed to save collection:", error);
-      message.error("Failed to save collection");
+      message.error(`Could not save the variable collection: ${getErrorMessage(error)}`);
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const handleDeleteCollection = async () => {
+    try {
+      setLoading(true);
+      await deleteCollection(orgid, collectionid!);
+      message.success("Variable collection deleted");
+      navigate(`/organizations/${orgid}/settings/collection`);
+    } catch (error) {
+      message.error(`Could not delete the variable collection: ${getErrorMessage(error)}`);
+      setLoading(false);
     }
   };
 
@@ -280,17 +300,15 @@ export const CreateEditCollection = ({
           // Refresh variables
           const response = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`);
           setVariables(response.data.data);
-          message.success("Variable updated successfully");
+          message.success("Variable updated");
         } catch (error) {
-          console.error("Failed to update variable:", error);
-          message.error("Failed to update variable");
+          message.error(`Could not update the variable: ${getErrorMessage(error)}`);
         }
       }
 
       closeVariableModal();
     } catch (error) {
-      console.error("Failed to update variable:", error);
-      message.error("Failed to update variable");
+      message.error(`Could not update the variable: ${getErrorMessage(error)}`);
     } finally {
       setVariableLoading(false);
     }
@@ -339,10 +357,9 @@ export const CreateEditCollection = ({
           // Refresh variables
           const response = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`);
           setVariables(response.data.data);
-          message.success("Variable added successfully");
+          message.success("Variable added");
         } catch (error) {
-          console.error("Failed to add variable:", error);
-          message.error("Failed to add variable");
+          message.error(`Could not add the variable: ${getErrorMessage(error)}`);
         }
       } else {
         message.success("Variable added to collection");
@@ -350,8 +367,7 @@ export const CreateEditCollection = ({
 
       closeVariableModal();
     } catch (error) {
-      console.error("Failed to add variable:", error);
-      message.error("Failed to add variable");
+      message.error(`Could not add the variable: ${getErrorMessage(error)}`);
     } finally {
       setVariableLoading(false);
     }
@@ -377,7 +393,7 @@ export const CreateEditCollection = ({
       // Remove from local state if it's a temp variable
       if (variableId.startsWith("temp-")) {
         setVariables(variables.filter((v) => v.id !== variableId));
-        message.success("Variable removed");
+        message.success("Variable deleted");
         return;
       }
 
@@ -389,14 +405,13 @@ export const CreateEditCollection = ({
           // Refresh variables
           const response = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`);
           setVariables(response.data.data);
-          message.success("Variable removed successfully");
+          message.success("Variable deleted");
         } catch (error) {
-          console.error("Failed to remove variable:", error);
-          message.error("Failed to remove variable");
+          message.error(`Could not delete the variable: ${getErrorMessage(error)}`);
         }
       } else {
         setVariables(variables.filter((v) => v.id !== variableId));
-        message.success("Variable removed");
+        message.success("Variable deleted");
       }
     } finally {
       setLoading(false);
@@ -406,185 +421,192 @@ export const CreateEditCollection = ({
   const variableColumns = [
     {
       title: "Key",
-      dataIndex: "key",
       key: "key",
       render: (_: any, record: any) => (
-        <div>
-          {record.attributes.key}
-          <span style={{ marginLeft: "10px" }}>
-            <Tag color="blue">{record.attributes.category === "ENV" ? "Environment" : "Terraform"}</Tag>
-            {record.attributes.hcl && <Tag color="green">HCL</Tag>}
-            {record.attributes.sensitive && <Tag color="red">Sensitive</Tag>}
+        <>
+          <span className="collection-mono">{record.attributes.key}</span>
+          <span className="collection-variable-meta">
+            {record.attributes.category === "ENV" ? "Environment" : "Terraform"}
+            {record.attributes.hcl && <Tag>HCL</Tag>}
+            {record.attributes.sensitive && <Tag>Sensitive</Tag>}
           </span>
-        </div>
+        </>
       ),
     },
     {
       title: "Value",
-      dataIndex: "value",
       key: "value",
       render: (_: any, record: any) =>
-        record.attributes.sensitive ? <i>Sensitive - write only</i> : record.attributes.value,
-    },
-    {
-      title: "Category",
-      dataIndex: "category",
-      key: "category",
-      render: (_: any, record: any) => (record.attributes.category === "ENV" ? "Environment" : "Terraform"),
+        record.attributes.sensitive ? (
+          <Typography.Text type="secondary" italic>
+            Sensitive, write only
+          </Typography.Text>
+        ) : (
+          <span className="collection-mono">{record.attributes.value}</span>
+        ),
     },
     {
       title: "Actions",
       key: "actions",
+      width: 96,
       render: (_: any, record: any) => (
-        <Space>
-          <Button icon={<EditOutlined />} type="link" onClick={() => handleEditVariable(record)}>
-            Edit
-          </Button>
-          <Button icon={<DeleteOutlined />} type="link" danger onClick={() => handleRemoveVariable(record.id)}>
-            Delete
-          </Button>
+        <Space size="small">
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            aria-label={`Edit variable ${record.attributes.key}`}
+            onClick={() => handleEditVariable(record)}
+            disabled={!managePermission}
+          />
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            aria-label={`Delete variable ${record.attributes.key}`}
+            onClick={() => setPendingDelete(record)}
+            disabled={!managePermission}
+          />
         </Space>
       ),
     },
   ];
 
-  const variableListing = (
-    <div>
-      <div style={{ marginBottom: "15px" }}>
-        <Typography.Text>
-          You can add any number of variables. Terrakube will use these variables for jobs in the specified workspaces.
-        </Typography.Text>
-      </div>
+  const openNewVariable = () => {
+    setVariableMode("create");
+    setEditingVariableId("");
+    variableForm.resetFields();
+    setAddingVariable(true);
+  };
 
-      <div style={{ marginBottom: "30px" }}>
-        <Table
-          dataSource={variables}
-          columns={variableColumns}
-          rowKey="id"
-          pagination={false}
-          locale={{ emptyText: "There are no variables added." }}
-          style={{ marginBottom: "20px" }}
-          bordered
-        />
-
-        <Button
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setVariableMode("create");
-            setEditingVariableId("");
-            variableForm.resetFields();
-            setAddingVariable(true);
-          }}
-          style={{ marginBottom: "20px" }}
-        >
-          Add variable
-        </Button>
-
-        <CollectionVariableModal
-          open={addingVariable}
-          mode={variableMode}
-          form={variableForm}
-          confirmLoading={variableLoading}
-          onCancel={closeVariableModal}
-          onSubmit={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
-        />
-      </div>
-    </div>
+  const addVariableButton = (
+    <Button icon={<PlusOutlined />} onClick={openNewVariable} disabled={!managePermission}>
+      Add variable
+    </Button>
   );
 
   return (
     <div className="setting">
       <Spin spinning={loading}>
         <SettingsPageHeader
-          title={
-            mode === "create"
-              ? "Create a new organization variable collection"
-              : "Edit organization variable collection"
-          }
-          description="Variable collections allow you to define and apply variables one time across multiple workspaces within an organization."
+          title={mode === "create" ? "Create a variable collection" : "Edit variable collection"}
+          divider={false}
         />
 
-        <Form
+        <SettingsForm
           form={collectionForm}
-          layout="vertical"
-          initialValues={{
-            name: "",
-            description: "",
-            priority: 10,
-            scope: "specific",
-          }}
+          name="collection"
+          onFinish={handleSave}
+          initialValues={{ name: "", description: "", priority: 10 }}
+          saveLabel={mode === "create" ? "Create variable collection" : "Update variable collection"}
+          saveDisabled={!managePermission}
+          saving={saveLoading}
         >
-          <SettingsSection title="Configure settings" maxWidth={960}>
-            <Row gutter={16}>
-              <Col xs={24} md={16}>
-                <Form.Item
-                  name="name"
-                  label="Name"
-                  rules={[{ required: true, message: "Please enter a name for the collection" }]}
-                >
-                  <Input placeholder="Collection name" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={8}>
-                <Form.Item
-                  name="priority"
-                  label="Priority"
-                  rules={[{ required: true, message: "Please enter a priority" }]}
-                  tooltip="Higher number means higher priority. When variables with the same name exist in multiple collections, the one with higher priority will be used."
-                >
-                  <Input type="number" min={1} max={100} defaultValue={10} />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Form.Item name="description" label="Description (Optional)">
-              <Input.TextArea rows={3} placeholder="Describe the purpose of this collection" />
-            </Form.Item>
-          </SettingsSection>
-
-          <SettingsSection title="Variable collection scope" maxWidth={960}>
-            <div style={{ marginBottom: "10px" }}>
-              <Typography.Text strong>Apply to workspaces</Typography.Text>
-            </div>
-            <div style={{ color: "rgba(0,0,0,0.45)", fontSize: "14px", marginBottom: "10px" }}>
-              Only the selected workspaces will access this variable collection.
-            </div>
+          {mode === "edit" && collectionid && <IdField id="collection-id" value={collectionid} />}
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Enter a name for the collection" }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="Description">
+            <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+          </Form.Item>
+          <Form.Item
+            name="priority"
+            label="Priority"
+            rules={[{ required: true, message: "Enter a priority from 1 to 100" }]}
+            extra="When several collections set the same variable, the one with the higher priority wins."
+          >
+            <InputNumber min={1} max={100} precision={0} />
+          </Form.Item>
+          <Form.Item
+            label="Workspaces"
+            htmlFor="collection-workspaces"
+            extra="Only these workspaces receive the variables in this collection."
+          >
             <Select
+              id="collection-workspaces"
               mode="multiple"
-              style={{ width: "100%" }}
               placeholder="Select workspaces"
               value={selectedWorkspaces}
               onChange={setSelectedWorkspaces}
-              optionFilterProp="children"
+              optionFilterProp="label"
+              options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.attributes.name }))}
+            />
+          </Form.Item>
+        </SettingsForm>
+
+        {mode === "create" ? (
+          <section className="collection-variables">
+            <Typography.Title level={4} className="collections-heading">
+              Variables
+            </Typography.Title>
+            <Typography.Text type="secondary">You can add variables once the collection is created.</Typography.Text>
+          </section>
+        ) : (
+          <section className="collection-variables">
+            <SettingsSection
+              maxWidth={680}
+              title={`Variables (${variables.length})`}
+              description="Jobs in the selected workspaces receive these variables. Adding, editing or deleting a variable applies immediately."
+              extra={variables.length > 0 && addVariableButton}
             >
-              {workspaces.map((workspace) => (
-                <Select.Option key={workspace.id} value={workspace.id}>
-                  {workspace.attributes.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </SettingsSection>
+              {variables.length === 0 ? (
+                <EmptyState simple description="This collection has no variables yet.">
+                  {addVariableButton}
+                </EmptyState>
+              ) : (
+                <Table
+                  dataSource={variables}
+                  columns={variableColumns}
+                  rowKey="id"
+                  pagination={false}
+                  scroll={{ x: 520 }}
+                />
+              )}
+            </SettingsSection>
+          </section>
+        )}
 
-          <SettingsSection title="Variables" maxWidth="100%">
-            {mode === "create" ? (
-              <div style={{ marginBottom: "15px" }}>
-                <Typography.Text>Create the collection first. Then you can add variables to it.</Typography.Text>
-              </div>
-            ) : (
-              variableListing
-            )}
-          </SettingsSection>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "30px" }}>
-            <Space>
-              <LinkButton to={`/organizations/${orgid}/settings/collection`}>Cancel</LinkButton>
-              <Button type="primary" onClick={handleSave} loading={saveLoading} disabled={!managePermission}>
-                {mode === "create" ? "Create variable collection" : "Save Variable Collection"}
-              </Button>
-            </Space>
-          </div>
-        </Form>
+        {mode === "edit" && collectionName && (
+          <DangerZone
+            actionName="Delete this variable collection"
+            description="The collection, its variables and its workspace references are deleted. Its workspaces stop receiving these variables. This cannot be undone."
+            disabled={!managePermission}
+            confirmValue={collectionName}
+            confirmMessage={
+              <>
+                The collection <strong>{collectionName}</strong>, its variables and its workspace references will be
+                deleted, and its workspaces stop receiving these variables. This cannot be undone.
+              </>
+            }
+            onConfirm={handleDeleteCollection}
+          />
+        )}
       </Spin>
+
+      <CollectionVariableModal
+        open={addingVariable}
+        mode={variableMode}
+        form={variableForm}
+        confirmLoading={variableLoading}
+        onCancel={closeVariableModal}
+        onSubmit={variableMode === "edit" ? handleUpdateVariable : handleAddVariable}
+      />
+
+      <DeleteConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete variable"
+        message={
+          <>
+            Workspaces using this collection will no longer receive{" "}
+            <span className="collection-mono">{pendingDelete?.attributes.key}</span>. This cannot be undone.
+          </>
+        }
+        okText="Delete variable"
+        onConfirm={() => {
+          if (pendingDelete) handleRemoveVariable(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

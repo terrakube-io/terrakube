@@ -1,0 +1,125 @@
+/* Variable collections list (DESIGN.md, list page and resource card). */
+h4.ant-typography.collections-heading {
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.collections-search {
+  margin-bottom: 16px;
+}
+
+.collections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collections-pagination {
+  justify-content: center;
+  margin-top: 24px;
+}
+
+/* Whole card is the link to the collection; the delete button sits above the link overlay. */
+.collection-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  transition: border-color 150ms ease-out;
+}
+
+.collection-card:hover {
+  border-color: var(--tk-accent);
+}
+
+.collection-card:has(.collection-card-name:focus-visible) {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.collection-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+  font-size: 20px;
+}
+
+.collection-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+a.collection-card-name,
+a.collection-card-name:hover {
+  color: var(--tk-text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+a.collection-card-name:focus-visible {
+  outline: none;
+}
+
+a.collection-card-name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+}
+
+.collection-card-description {
+  color: var(--tk-text-primary);
+}
+
+.collection-card-meta {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.collection-card > .ant-btn {
+  position: relative;
+  z-index: 1;
+}
+
+/* Create / edit page. */
+.collection-variables {
+  max-width: 680px;
+  margin-top: 48px;
+}
+
+.collection-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.collection-variable-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.collection-variable-meta .ant-tag {
+  margin: 0;
+}

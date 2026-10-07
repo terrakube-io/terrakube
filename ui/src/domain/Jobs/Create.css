@@ -1,0 +1,12 @@
+.run-template--destroy {
+  color: var(--run-delete);
+}
+
+/* The planning options sit flush with the fields above them. */
+.run-create-options.ant-collapse-ghost > .ant-collapse-item > .ant-collapse-header {
+  padding-inline: 0;
+}
+
+.run-create-options.ant-collapse-ghost .ant-collapse-body {
+  padding-inline: 0;
+}

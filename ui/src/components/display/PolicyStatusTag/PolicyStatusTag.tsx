@@ -1,12 +1,14 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Tag, Tooltip } from "antd";
+import clsx from "classnames";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ExclamationCircleOutlined,
   QuestionCircleOutlined,
 } from "@ant-design/icons";
+import "./PolicyStatusTag.css";
 
 export type PolicyComplianceStatus = "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN" | string;
 
@@ -19,13 +21,6 @@ export type PolicyStatusTagProps = {
   style?: React.CSSProperties;
 };
 
-export const policyStatusColors: Record<string, string> = {
-  COMPLIANT: "#2eb039",
-  NON_COMPLIANT: "#FB0136",
-  EXEMPTED: "#108ee9",
-  UNKNOWN: "#8c8c8c",
-};
-
 export default function PolicyStatusTag({
   status,
   organizationId,
@@ -36,33 +31,33 @@ export default function PolicyStatusTag({
 }: PolicyStatusTagProps) {
   const normalizedStatus = status ? status.toUpperCase().replace("-", "_") : "UNKNOWN";
 
-  let color = "#8c8c8c";
+  // Unknown leaves --status-color unset: the tk-status-tag default in global.css is the neutral grey.
+  let color: string | undefined;
   let icon = <QuestionCircleOutlined />;
   let label = "Unknown";
   let testIdKey = "unknown";
 
   switch (normalizedStatus) {
     case "COMPLIANT":
-      color = "#2eb039";
+      color = "var(--tk-status-success)";
       icon = <CheckCircleOutlined />;
       label = "Compliant";
       testIdKey = "compliant";
       break;
     case "NON_COMPLIANT":
-      color = "#FB0136";
+      color = "var(--tk-status-error)";
       icon = <CloseCircleOutlined />;
       label = "Non-Compliant";
       testIdKey = "non-compliant";
       break;
     case "EXEMPTED":
-      color = "#108ee9";
+      color = "var(--tk-status-info)";
       icon = <ExclamationCircleOutlined />;
       label = "Exempted";
       testIdKey = "exempted";
       break;
     case "UNKNOWN":
     default:
-      color = "#8c8c8c";
       icon = <QuestionCircleOutlined />;
       label = "Unknown";
       testIdKey = "unknown";
@@ -74,15 +69,13 @@ export default function PolicyStatusTag({
   const tag = (
     <Tag
       icon={icon}
-      className={className ? `tk-status-tag ${className}` : "tk-status-tag"}
-      style={
-        {
-          "--status-color": color,
-          cursor: isInteractive ? "pointer" : "default",
-          marginInlineEnd: 0,
-          ...style,
-        } as React.CSSProperties
-      }
+      className={clsx(
+        "tk-status-tag",
+        "policy-status-tag",
+        isInteractive && "policy-status-tag-interactive",
+        className
+      )}
+      style={{ "--status-color": color, ...style } as React.CSSProperties}
       data-testid={`policy-status-tag-${testIdKey}`}
     >
       {label}
@@ -95,13 +88,7 @@ export default function PolicyStatusTag({
         <Link
           to={`/organizations/${organizationId}/workspaces/${workspaceId}/settings/policies`}
           onClick={(e) => e.stopPropagation()}
-          style={{
-            display: "inline-flex",
-            textDecoration: "none",
-            verticalAlign: "middle",
-            position: "relative",
-            zIndex: 2,
-          }}
+          className="policy-status-tag-link"
           aria-label={`Policy compliance: ${label}`}
         >
           {tag}
@@ -112,7 +99,7 @@ export default function PolicyStatusTag({
 
   return (
     <Tooltip title={`Policy compliance: ${label}`}>
-      <span style={{ display: "inline-flex", verticalAlign: "middle" }}>{tag}</span>
+      <span className="policy-status-tag-anchor">{tag}</span>
     </Tooltip>
   );
 }

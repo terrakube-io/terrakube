@@ -6,15 +6,14 @@ import {
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Input, List, Modal, Space, Tabs, Tag, Typography, message } from "antd";
+import { Button, Input, List, Modal, Tabs, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { IconContext } from "react-icons";
-import { FaAws, FaGoogle } from "@/config/iconList";
-import { VscAzure } from "react-icons/vsc";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { listProviders } from "../Providers/providerService";
 import { formatCount } from "@/modules/utils/formatCount";
+import { providerIcon } from "./registryHelpers";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import "./PublicRegistrySearch.css";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
@@ -102,6 +101,7 @@ type ModalState = {
 export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const { orgid } = useParams<Params>();
   const navigate = useNavigate();
+  const { permissions } = useOrgPermissions();
 
   // Tab and query live in the URL so returning from a provider page restores the results.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -309,38 +309,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
 
   const renderProviderLogo = (provider: TerraformRegistryProvider) => {
     if (provider.logo_url) {
-      return (
-        <img src={provider.logo_url} alt={provider.name} style={{ width: 32, height: 32, objectFit: "contain" }} />
-      );
+      return <img src={provider.logo_url} alt={provider.name} />;
     }
-    return <CloudOutlined style={{ fontSize: 32 }} />;
-  };
-
-  const renderModuleProviderIcon = (providerName: string) => {
-    switch (providerName?.toLowerCase()) {
-      case "azurerm":
-      case "azure":
-        return (
-          <IconContext.Provider value={{ color: "#008AD7", size: "1.2em" }}>
-            <VscAzure />
-          </IconContext.Provider>
-        );
-      case "aws":
-        return (
-          <IconContext.Provider value={{ color: "#232F3E", size: "1.2em" }}>
-            <FaAws />
-          </IconContext.Provider>
-        );
-      case "google":
-      case "gcp":
-        return (
-          <IconContext.Provider value={{ color: "#4285F4", size: "1.2em" }}>
-            <FaGoogle />
-          </IconContext.Provider>
-        );
-      default:
-        return <CloudOutlined />;
-    }
+    return <CloudOutlined />;
   };
 
   // The card opens the provider page, where the version is chosen and the provider is added.
@@ -375,78 +346,39 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
     const alreadyImported = isModuleImported(module);
 
     return (
-      <Card hoverable className="module-card" style={{ width: "100%" }} styles={{ body: { padding: 0 } }}>
-        <div className="module-card-body">
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <div
-              style={{
-                flexShrink: 0,
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {renderModuleProviderIcon(module.provider)}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Typography.Text strong style={{ fontSize: 16, color: "#222b3d" }}>
-                  {module.namespace} / {module.name}
-                </Typography.Text>
-                {alreadyImported && (
-                  <Typography.Text
-                    type="secondary"
-                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}
-                  >
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                    In your Registry
-                  </Typography.Text>
-                )}
-              </div>
-              <div className="module-card-desc">{module.description || "No description available"}</div>
-            </div>
-            {!alreadyImported && (
-              <Button
-                icon={<PlusOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openAddModal(module);
-                }}
-                style={{ flexShrink: 0 }}
-              >
-                Add
-              </Button>
+      <div className="public-provider-card public-module-card">
+        <span className="public-provider-card-logo public-module-card-logo" aria-hidden="true">
+          {providerIcon(module.provider)}
+        </span>
+        <span className="public-provider-card-body">
+          <span className="public-provider-card-name">
+            {module.namespace} / {module.name}
+          </span>
+          {module.description && <span className="public-module-card-description">{module.description}</span>}
+          <span className="public-provider-card-meta">
+            <span>
+              Provider <code>{module.provider}</code>
+            </span>
+            <span>
+              <DownloadOutlined /> {formatCount(module.downloads)}
+            </span>
+            {alreadyImported && (
+              <span className="public-provider-card-imported">
+                <CheckCircleOutlined /> In your registry
+              </span>
             )}
-          </div>
-        </div>
-        {/* Footer with separator */}
-        <div
-          style={{
-            borderTop: "1px solid #f0f0f0",
-            padding: "10px 24px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Space size={16}>
-            <Space size={4}>
-              <DownloadOutlined style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }} />
-              <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-                {formatCount(module.downloads)}
-              </Typography.Text>
-            </Space>
-          </Space>
-          <Space size={6}>
-            {renderModuleProviderIcon(module.provider)}
-            <Typography.Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
-              {module.provider}
-            </Typography.Text>
-          </Space>
-        </div>
-      </Card>
+          </span>
+        </span>
+        {!alreadyImported && permissions.manageModule && (
+          <Button
+            icon={<PlusOutlined />}
+            aria-label={`Add ${module.namespace}/${module.name}`}
+            onClick={() => openAddModal(module)}
+          >
+            Add
+          </Button>
+        )}
+      </div>
     );
   };
 
@@ -463,7 +395,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           loading={(loading && activeTab === "modules") || loadingExisting}
           locale={{ emptyText: searchQuery ? "No modules found" : "Search for modules" }}
           pagination={{ defaultPageSize: 5, showTotal: (total, range) => `${range[0]} - ${range[1]} of ${total}` }}
-          renderItem={(item) => <List.Item style={{ padding: "6px 0" }}>{renderModuleCard(item)}</List.Item>}
+          renderItem={(item) => <List.Item className="public-registry-item">{renderModuleCard(item)}</List.Item>}
         />
       ),
     },
@@ -477,7 +409,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           loading={(loading && activeTab === "providers") || loadingExisting}
           locale={{ emptyText: searchQuery ? "No providers found" : "Search for providers" }}
           pagination={{ defaultPageSize: 5, showTotal: (total, range) => `${range[0]} - ${range[1]} of ${total}` }}
-          renderItem={(item) => <List.Item style={{ padding: "6px 0" }}>{renderProviderCard(item)}</List.Item>}
+          renderItem={(item) => <List.Item className="public-registry-item">{renderProviderCard(item)}</List.Item>}
         />
       ),
     },
@@ -499,7 +431,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         </Button>
       }
     >
-      <div style={{ marginTop: 24 }}>
+      <div className="public-registry-search">
         <Search
           aria-label="Search Terraform Registry"
           placeholder="Search Terraform Registry..."
@@ -513,7 +445,6 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           defaultValue={searchQuery}
           onSearch={handleSearch}
           loading={loading}
-          style={{ marginBottom: 24 }}
         />
         <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} />
       </div>
@@ -526,11 +457,11 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
         maskClosable={!importing}
         width={560}
         footer={[
+          <Button key="add" type="primary" loading={importing} onClick={handleAddModule}>
+            Add
+          </Button>,
           <Button key="cancel" onClick={closeModal} disabled={importing}>
             Cancel
-          </Button>,
-          <Button key="add" type="primary" loading={importing} onClick={handleAddModule}>
-            Import Module
           </Button>,
         ]}
       >
@@ -538,12 +469,9 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
           Import this module from the public Terraform Registry to your private registry in{" "}
           <strong>{organizationName}</strong>.
         </Typography.Paragraph>
-        <div style={{ background: "#f5f5f5", padding: 16, borderRadius: 8, marginBottom: 16 }}>
-          <Typography.Text strong style={{ fontSize: 16 }}>
-            {getModalItemName()}
-          </Typography.Text>
-        </div>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Text type="secondary">Module to add:</Typography.Text>
+        <Typography.Paragraph strong>{getModalItemName()}</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">
           This will create the module in your private registry, allowing you to use it in your Terraform configurations
           with your organization&apos;s registry URL.
         </Typography.Paragraph>

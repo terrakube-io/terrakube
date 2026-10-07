@@ -1,0 +1,127 @@
+.resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Count heading above a list of resource cards ("SSH keys (2)"). */
+h4.ant-typography.resource-list-title {
+  margin: 32px 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.resource-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+}
+
+.resource-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+  font-size: 20px;
+}
+
+.resource-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.resource-card-name {
+  font-size: 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.resource-card-meta {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Label and value pairs inside a card: a label column on wide screens, stacked on phones. */
+.resource-card-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.resource-card-fields dt {
+  color: var(--tk-text-secondary);
+}
+
+.resource-card-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 575px) {
+  /* Phones: the decorative tile gives its width to the values. */
+  .resource-card {
+    padding: 16px;
+  }
+
+  .resource-card-icon {
+    display: none;
+  }
+
+  .resource-card-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .resource-card-fields dd + dt {
+    margin-top: 4px;
+  }
+}
+
+.resource-card-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+/* Machine values (IDs, URLs, claim keys): monospace. */
+.resource-mono,
+.resource-mono.ant-typography,
+.resource-mono.ant-input,
+.resource-mono .ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+/* Hint above a modal field, when it explains what to enter (DESIGN.md, Modals). */
+.ant-typography.modal-field-hint {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.resource-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Federated credential claim conditions: the table, then the fields that add one. */
+.federated-claims {
+  margin-bottom: 24px;
+}

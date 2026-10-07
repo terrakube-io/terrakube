@@ -4,6 +4,7 @@ import axiosInstance from "../../config/axiosConfig";
 import { ActionWithSettings, Resource, Workspace } from "../types.js";
 import { getServiceIcon } from "./Icons.jsx";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import "./Workspaces.css";
 
 const ActionLoader = lazy(() => import("../../ActionLoader"));
 
@@ -130,7 +131,7 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
         <LoadingFallback />
       ) : (
         <Suspense fallback={<LoadingFallback />}>
-          <Space size={10} style={{ width: "100%" }} orientation="vertical">
+          <Space size={10} className="resource-drawer-body" orientation="vertical">
             <Row>
               <Col span={24}>
                 <Space size={5} orientation="horizontal">

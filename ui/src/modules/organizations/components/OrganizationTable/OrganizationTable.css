@@ -1,5 +1,10 @@
 /* OrganizationTable.css */
 
+.organization-search {
+  max-width: 320px;
+  margin-bottom: 16px;
+}
+
 .organization-list {
   margin-top: 16px;
   border: 1px solid var(--tk-border-primary);
@@ -34,6 +39,10 @@
   flex-direction: column;
   line-height: 0;
   font-size: 8px;
+}
+
+.organization-sort-caret-active {
+  color: var(--tk-link);
 }
 
 .organization-col-name {
@@ -85,7 +94,9 @@
   flex-shrink: 0;
 }
 
+/* --organization-status-color comes from the workspace status palette entry. */
 .organization-status-badge {
+  color: var(--organization-status-color);
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -150,7 +161,7 @@
 
 .organization-row-link:focus-visible,
 .organization-sortable-header:focus-visible {
-  outline: 2px solid #1890ff;
+  outline: 2px solid var(--tk-accent);
   outline-offset: -2px;
 }
 

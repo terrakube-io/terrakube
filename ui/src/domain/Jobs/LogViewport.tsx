@@ -1,4 +1,6 @@
 import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import clsx from "classnames";
+import "./LogViewport.css";
 
 type LogViewportProps = {
   lines: ReactNode[];
@@ -82,11 +84,19 @@ export function LogViewport({
   const visible = lines.slice(start, end);
 
   return (
-    <div ref={containerRef} className={className} onScroll={handleScroll} style={{ overflow: "auto" }}>
-      <div style={{ height: totalHeight, position: "relative" }}>
-        <div style={{ position: "absolute", top: start * lineHeight, left: 0, right: 0 }}>
+    // Only geometry that changes with the log stays inline: the line height once on the scroller (rows
+    // read it from CSS instead of each carrying a style object), the spacer height (grows with the log)
+    // and the window offset (changes on every scroll frame).
+    <div
+      ref={containerRef}
+      className={clsx("log-viewport", className)}
+      onScroll={handleScroll}
+      style={{ "--log-line-height": `${lineHeight}px` } as React.CSSProperties}
+    >
+      <div className="log-viewport-spacer" style={{ height: totalHeight }}>
+        <div className="log-viewport-window" style={{ top: start * lineHeight }}>
           {visible.map((line, i) => (
-            <div key={start + i} style={{ height: lineHeight, lineHeight: `${lineHeight}px` }}>
+            <div key={start + i} className="log-viewport-line">
               {line}
             </div>
           ))}

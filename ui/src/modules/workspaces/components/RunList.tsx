@@ -1,20 +1,25 @@
-import { List, Avatar, Tag, Pagination, Tooltip, Button } from "antd";
-import { UserOutlined, WarningOutlined } from "@ant-design/icons";
-import { Link } from "react-router-dom";
+import { Avatar, Button, Pagination, Tag, Tooltip, Typography } from "antd";
+import { FieldTimeOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { FiGitCommit } from "react-icons/fi";
+import { Link, useParams } from "react-router-dom";
 import { FlatJob, formatJobVia } from "../../../domain/types";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
-import RunFilter from "./RunFilter";
+import RunFilter, { ALL_RUNS } from "./RunFilter";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
-import { formatDateTime } from "@/modules/utils/dates";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { formatDateTime, formatDuration } from "@/modules/utils/dates";
+import { isTerminalStatus } from "@/domain/Jobs/stepStatus";
+import "@/domain/Jobs/runTokens.css";
+import "./RunList.css";
 
-// Storage key for persisting pagination state
+// Storage keys for persisting pagination and filter state
 const RUNS_PAGE_KEY = "runsCurrentPage";
 const RUNS_FILTER_KEY = "runsFilterValue";
 const RUNS_TEMPLATE_FILTER_KEY = "runsTemplateFilter";
+const PAGE_SIZE = 10;
 
-// Helper function to format date
 // Safely parse JSON with a fallback value
 const safeJsonParse = (jsonString: string | null, fallback: any): any => {
   if (!jsonString) return fallback;
@@ -34,154 +39,180 @@ type Props = {
 
 export default function RunList({ jobs, onRunClick, runLink }: Props) {
   const [currentPage, setCurrentPage] = useState<number>(parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1"));
-  const pageSize = 10;
   const [templateNames, setTemplateNames] = useState<{ [key: string]: string }>({});
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
-  const [filteredJobs, setFilteredJobs] = useState<FlatJob[]>(jobs);
+  const { orgid } = useParams();
+  // A deep link has the organization in the URL before anything has put it in sessionStorage.
+  const organizationId = orgid ?? sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const [status, setStatus] = useState<string>(sessionStorage.getItem(RUNS_FILTER_KEY) || ALL_RUNS);
+  const [templateIds, setTemplateIds] = useState<string[]>(
+    safeJsonParse(sessionStorage.getItem(RUNS_TEMPLATE_FILTER_KEY), [])
+  );
+  const [search, setSearch] = useState("");
 
-  // Save pagination state to session storage
   useEffect(() => {
     sessionStorage.setItem(RUNS_PAGE_KEY, currentPage.toString());
   }, [currentPage]);
 
+  useEffect(() => {
+    sessionStorage.setItem(RUNS_FILTER_KEY, status);
+    sessionStorage.setItem(RUNS_TEMPLATE_FILTER_KEY, JSON.stringify(templateIds));
+  }, [status, templateIds]);
+
   // Load all templates to map template IDs to names
   useEffect(() => {
-    axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
-      const templates = response.data.data;
-      const templateMap: { [key: string]: string } = {};
-
-      templates.forEach((template: any) => {
-        templateMap[template.id] = template.attributes.name;
-      });
-
-      setTemplateNames(templateMap);
-    });
+    if (!organizationId) return;
+    // Without the names the filter falls back to "Template <id>".
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((response) => {
+        const templateMap: { [key: string]: string } = {};
+        response.data.data.forEach((template: any) => {
+          templateMap[template.id] = template.attributes.name;
+        });
+        setTemplateNames(templateMap);
+      })
+      .catch(() => {});
   }, [organizationId]);
 
-  // Filter jobs based on the current filter
-  const applyFilter = useCallback((jobsToFilter: FlatJob[], filterValue: string) => {
-    if (filterValue !== "All") {
-      return jobsToFilter.filter((job) => job.status === filterValue);
-    }
-    return jobsToFilter;
-  }, []);
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { [ALL_RUNS]: jobs.length };
+    jobs.forEach((job) => {
+      counts[job.status] = (counts[job.status] ?? 0) + 1;
+    });
+    return counts;
+  }, [jobs]);
 
-  // Apply all filters (status and templates)
-  const applyAllFilters = useCallback(
-    (jobsToFilter: FlatJob[]) => {
-      const statusFilter = sessionStorage.getItem(RUNS_FILTER_KEY) || "All";
-      const templateFiltersStr = sessionStorage.getItem(RUNS_TEMPLATE_FILTER_KEY) || "[]";
-      const templateFilters = safeJsonParse(templateFiltersStr, []) as string[];
-
-      // Apply status filter
-      let filtered = applyFilter(jobsToFilter, statusFilter);
-
-      // Apply template filters
-      if (templateFilters.length > 0) {
-        filtered = filtered.filter((job) => {
-          const templateId = (job as any).templateReference;
-          return templateId && templateFilters.includes(templateId);
-        });
-      }
-
-      return filtered;
-    },
-    [applyFilter]
+  const templateOptions = useMemo(
+    () =>
+      [...new Set(jobs.map((job) => job.templateReference).filter((id): id is string => Boolean(id)))].map((id) => ({
+        label: templateNames[id] || `Template ${id}`,
+        value: id,
+      })),
+    [jobs, templateNames]
   );
 
-  // Update filtered jobs when the jobs prop changes, applying all filters
+  const sortedJobs = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return jobs
+      .filter((job) => status === ALL_RUNS || job.status === status)
+      .filter(
+        (job) => templateIds.length === 0 || (job.templateReference && templateIds.includes(job.templateReference))
+      )
+      .filter(
+        (job) =>
+          !query || [job.title, job.createdBy, job.commitId, `#${job.id}`].some((v) => v?.toLowerCase().includes(query))
+      )
+      .sort((a, b) => parseInt(b.id) - parseInt(a.id));
+  }, [jobs, status, templateIds, search]);
+
+  const paginatedJobs = sortedJobs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // The newest run of the workspace, whatever the filters show.
+  const currentId = jobs.reduce((max, job) => Math.max(max, parseInt(job.id)), -1).toString();
+
+  // Back to the first page when the filters leave fewer pages than the saved one.
   useEffect(() => {
-    setFilteredJobs(applyAllFilters(jobs));
-  }, [jobs, applyAllFilters]);
-
-  const getTemplateName = (job: FlatJob) => {
-    const templateId = (job as any).templateReference;
-    if (templateId && templateNames[templateId]) {
-      return templateNames[templateId];
-    }
-    return "Terraform";
-  };
-
-  const sortedJobs = [...filteredJobs].sort((a, b) => parseInt(b.id) - parseInt(a.id));
-  const paginatedJobs = sortedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  // Find the job with highest ID to mark as current
-  const highestId = sortedJobs.length > 0 ? sortedJobs[0].id : "-1";
-
-  // Reset to first page when filters change, but not when jobs update due to refresh
-  useEffect(() => {
-    const savedPage = parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1");
-    if (savedPage > 1 && Math.ceil(filteredJobs.length / pageSize) < savedPage) {
+    if (currentPage > 1 && Math.ceil(sortedJobs.length / PAGE_SIZE) < currentPage) {
       setCurrentPage(1);
     }
-  }, [filteredJobs]);
+  }, [sortedJobs.length, currentPage]);
 
-  // Page change handler
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+  const clearFilters = () => {
+    setStatus(ALL_RUNS);
+    setTemplateIds([]);
+    setSearch("");
   };
 
   return (
-    <div>
-      <h3>Run List</h3>
-      <RunFilter jobs={jobs} onFiltered={setFilteredJobs} applyFilter={applyFilter} templateNames={templateNames} />
-      <List
-        itemLayout="horizontal"
-        dataSource={paginatedJobs}
-        renderItem={(item) => (
-          <List.Item
-            actions={[
-              <div key="status" style={{ textAlign: "right" }}>
-                <WorkspaceStatusTag status={item.status} />
-                {item.prCommentError && (
-                  <Tooltip title={item.prCommentError}>
-                    <WarningOutlined style={{ color: "#fa8f37", marginLeft: 6 }} />
-                  </Tooltip>
-                )}
-                <div>
-                  <Tooltip title={formatDateTime((item as any).createdDate)}>
-                    <span className="metadata">{item.latestChange}</span>
-                  </Tooltip>
-                </div>
-              </div>,
-            ]}
-          >
-            <List.Item.Meta
-              avatar={<Avatar shape="square" icon={<UserOutlined />} />}
-              title={
-                <span>
-                  <Link to={runLink(item.id)} onClick={() => onRunClick(item.id)} style={{ color: "inherit" }}>
-                    {item.title}
-                  </Link>
-                  {item.id === highestId && <Tag style={{ marginLeft: 8 }}>CURRENT</Tag>}
-                </span>
-              }
-              description={
-                <span>
-                  #job-{item.id} &nbsp;&nbsp;|&nbsp;&nbsp; <b>{item.createdBy}</b> triggered via{" "}
-                  <b>{formatJobVia(item.via)}</b> using template <b>{getTemplateName(item)}</b>{" "}
-                  &nbsp;&nbsp;|&nbsp;&nbsp;{" "}
-                  <Button type="link" style={{ padding: 0 }}>
-                    #{item.commitId?.substring(0, 6)}
-                  </Button>
-                </span>
-              }
-            />
-          </List.Item>
-        )}
-        pagination={false}
-      />
-      {sortedJobs.length > 0 && (
-        <div style={{ textAlign: "right", marginTop: "16px" }}>
-          <Pagination
-            current={currentPage}
-            pageSize={pageSize}
-            total={sortedJobs.length}
-            onChange={handlePageChange}
-            showSizeChanger={false}
+    <section className="run-list-section" aria-labelledby="run-list-title">
+      <Typography.Title level={3} id="run-list-title">
+        Runs ({jobs.length})
+      </Typography.Title>
+      {jobs.length === 0 ? (
+        <EmptyState description="No runs yet. Use Run now to start the first plan for this workspace." />
+      ) : (
+        <>
+          <RunFilter
+            status={status}
+            onStatusChange={setStatus}
+            statusCounts={statusCounts}
+            templateIds={templateIds}
+            onTemplateIdsChange={setTemplateIds}
+            templateOptions={templateOptions}
+            search={search}
+            onSearchChange={setSearch}
           />
-        </div>
+          {sortedJobs.length === 0 ? (
+            <EmptyState description="No runs match these filters.">
+              <Button onClick={clearFilters}>Clear filters</Button>
+            </EmptyState>
+          ) : (
+            <ul className="run-list">
+              {paginatedJobs.map((item) => {
+                const commitId = item.commitId && item.commitId !== "000000000" ? item.commitId : undefined;
+                const templateName = item.templateReference ? templateNames[item.templateReference] : undefined;
+                const duration = isTerminalStatus(item.status)
+                  ? formatDuration(item.createdDate, item.updatedDate)
+                  : null;
+                return (
+                  <li key={item.id} className="run-row">
+                    <Avatar size={20} shape="square" icon={<UserOutlined />} />
+                    <div className="run-row-body">
+                      <div className="run-row-title">
+                        <Link to={runLink(item.id)} onClick={() => onRunClick(item.id)} className="run-row-link">
+                          {item.title}
+                        </Link>
+                        {item.id === currentId && <Tag>Current</Tag>}
+                      </div>
+                      <p className="run-row-meta">
+                        <span>
+                          <code>#{item.id}</code>
+                        </span>
+                        <span>
+                          <strong>{item.createdBy}</strong>{" "}
+                          <Tooltip title={formatDateTime(item.createdDate)}>
+                            <span className="run-row-time">{item.latestChange}</span>
+                          </Tooltip>
+                        </span>
+                        <span>via {formatJobVia(item.via)}</span>
+                        {templateName && <span>{templateName}</span>}
+                        {commitId && (
+                          <span>
+                            <FiGitCommit aria-label="commit" /> <code>{commitId.substring(0, 7)}</code>
+                          </span>
+                        )}
+                        {duration && (
+                          <span>
+                            <FieldTimeOutlined aria-label="duration" /> {duration}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="run-row-status">
+                      {item.prCommentError && (
+                        <Tooltip title={item.prCommentError}>
+                          <WarningOutlined className="run-row-warning" aria-label="Pull request comment failed" />
+                        </Tooltip>
+                      )}
+                      <WorkspaceStatusTag status={item.status} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {sortedJobs.length > PAGE_SIZE && (
+            <Pagination
+              className="run-list-pagination"
+              current={currentPage}
+              pageSize={PAGE_SIZE}
+              total={sortedJobs.length}
+              onChange={setCurrentPage}
+              showSizeChanger={false}
+            />
+          )}
+        </>
       )}
-    </div>
+    </section>
   );
 }

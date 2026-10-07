@@ -47,17 +47,14 @@ describe("WorkspaceFilter", () => {
     expect(container.querySelector(".workspace-filter-container--compact")).toBeInTheDocument();
   });
 
-  it("legacy mode (compact=false) renders the project dropdown, not chips", () => {
-    render(<WorkspaceFilter {...baseProps} projects={[{ id: "p1", name: "platform" }]} />);
-    expect(screen.getByText("Project")).toBeInTheDocument();
-    expect(screen.queryByText("All projects")).not.toBeInTheDocument();
-  });
+  it("both views render the same project select; only compact has the group-by-project switch", () => {
+    const { rerender } = render(<WorkspaceFilter {...baseProps} projects={[{ id: "p1", name: "platform" }]} />);
+    expect(screen.getByText("All projects")).toBeInTheDocument();
+    expect(screen.queryByText("Group by project")).not.toBeInTheDocument();
 
-  it("compact mode renders a native project select and a group-by-project switch instead of the legacy dropdown", () => {
-    render(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
+    rerender(<WorkspaceFilter {...baseProps} compact projects={[{ id: "p1", name: "platform" }]} />);
     expect(screen.getByText("All projects")).toBeInTheDocument();
     expect(screen.getByText("Group by project")).toBeInTheDocument();
-    expect(screen.queryByText("Project")).not.toBeInTheDocument();
   });
 
   it("selecting a project from the compact select calls onProjectIdChange with that project's id", () => {
@@ -105,9 +102,7 @@ describe("WorkspaceFilter", () => {
 
     await waitFor(() => expect(screen.getByTitle("billing = prod")).toBeInTheDocument());
 
-    const closeIcon = document.querySelector(".ant-tag-close-icon");
-    expect(closeIcon).not.toBeNull();
-    fireEvent.click(closeIcon!);
+    fireEvent.click(screen.getByLabelText("Remove the tag filter billing = prod"));
 
     expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
   });
@@ -122,7 +117,7 @@ describe("WorkspaceFilter", () => {
     expect(valueInput).toHaveValue("prod");
 
     fireEvent.change(valueInput, { target: { value: "staging" } });
-    fireEvent.click(screen.getByText("Apply Filter"));
+    fireEvent.click(screen.getByText("Apply filter"));
 
     expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([{ tagId: "tag-1", value: "staging" }]);
   });
@@ -134,12 +129,11 @@ describe("WorkspaceFilter", () => {
     fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
     const valueInput = await screen.findByPlaceholderText("Any value");
     fireEvent.change(valueInput, { target: { value: "  " } });
-    fireEvent.click(screen.getByText("Apply Filter"));
+    fireEvent.click(screen.getByText("Apply filter"));
 
     expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([{ tagId: "tag-1", value: undefined }]);
   });
 
-  // The card view has no row of active tag chips, so the popover is the only place to drop the tag filter
   it("clears only the tag filters from the popover", async () => {
     mockListOrganizationTags.mockResolvedValue([{ id: "tag-1", name: "billing" }]);
     render(<WorkspaceFilter {...baseProps} tagFilters={[{ tagId: "tag-1", value: "prod" }]} />);
@@ -157,7 +151,7 @@ describe("WorkspaceFilter", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Tags/ }));
 
-    await screen.findByText("Apply Filter");
+    await screen.findByText("Apply filter");
     expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
   });
 
@@ -170,21 +164,12 @@ describe("WorkspaceFilter", () => {
     fireEvent.click(screen.getByLabelText("Remove this tag filter"));
 
     expect(screen.getByPlaceholderText("Any value")).toHaveValue("");
-    fireEvent.click(screen.getByText("Apply Filter"));
+    fireEvent.click(screen.getByText("Apply filter"));
     expect(baseProps.onTagFiltersChange).toHaveBeenCalledWith([]);
   });
 
-  it("legacy mode commits search on Enter, not on every keystroke", () => {
-    render(<WorkspaceFilter {...baseProps} />);
-    const input = screen.getByLabelText("Search workspaces by name");
-    fireEvent.change(input, { target: { value: "billing" } });
-    expect(baseProps.onSearchChange).not.toHaveBeenCalled();
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
-    expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
-  });
-
-  it("compact mode filters live as you type, without needing Enter", () => {
-    render(<WorkspaceFilter {...baseProps} compact />);
+  it.each([false, true])("filters live as you type (compact=%s)", (compact) => {
+    render(<WorkspaceFilter {...baseProps} compact={compact} />);
     const input = screen.getByLabelText("Search workspaces by name");
     fireEvent.change(input, { target: { value: "billing" } });
     expect(baseProps.onSearchChange).toHaveBeenCalledWith("billing");
@@ -217,6 +202,16 @@ describe("WorkspaceFilter", () => {
     render(<WorkspaceFilter {...baseProps} compact statusCounts={{ All: 12, failed: 3 }} />);
     expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("hides statuses with no workspaces, but keeps All and the selected status", () => {
+    render(
+      <WorkspaceFilter {...baseProps} status="running" statusCounts={{ All: 5, failed: 2, running: 0, completed: 0 }} />
+    );
+    expect(screen.getByText("All")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
   });
 
   it("does not show a Clear all action when no filters are active", () => {

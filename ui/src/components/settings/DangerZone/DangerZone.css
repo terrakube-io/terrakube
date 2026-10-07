@@ -1,0 +1,19 @@
+.danger-zone {
+  max-width: 680px;
+  margin-top: 48px;
+}
+
+/* Alone on a page (workspace "Destruction and deletion"), it starts where other pages start. */
+.danger-zone:first-child {
+  margin-top: 0;
+}
+
+.danger-zone :is(h3, h4).ant-typography {
+  margin-bottom: 16px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.danger-zone .ant-typography + .ant-typography {
+  margin-top: 4px;
+}

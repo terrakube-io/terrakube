@@ -36,7 +36,7 @@ describe("GlobalVariableFormModal", () => {
     const keyInput = screen.getByLabelText("Key");
     fireEvent.change(keyInput, { target: { value: "DB_HOST" } });
 
-    const okButton = screen.getByRole("button", { name: "Save global variable" });
+    const okButton = screen.getByRole("button", { name: "Create variable" });
     fireEvent.click(okButton);
 
     await waitFor(() => {
@@ -53,12 +53,10 @@ describe("GlobalVariableFormModal", () => {
     fireEvent.change(screen.getByLabelText("Value"), { target: { value: "some-val" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "some-desc" } });
 
-    // Category select
-    fireEvent.mouseDown(screen.getByLabelText("Category"));
-    const option = await screen.findByText("Terraform Variable");
-    fireEvent.click(option);
+    // Category defaults to Terraform variable.
+    expect(screen.getByRole("radio", { name: /Terraform variable/ })).toBeChecked();
 
-    const okButton = screen.getByRole("button", { name: "Save global variable" });
+    const okButton = screen.getByRole("button", { name: "Create variable" });
     fireEvent.click(okButton);
 
     await waitFor(() => {
@@ -77,11 +75,9 @@ describe("GlobalVariableFormModal", () => {
     fireEvent.change(screen.getByLabelText("Value"), { target: { value: "updated-val" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "updated-desc" } });
 
-    fireEvent.mouseDown(screen.getByLabelText("Category"));
-    const option = await screen.findByText("Terraform Variable");
-    fireEvent.click(option);
+    fireEvent.click(screen.getByRole("radio", { name: /Environment variable/ }));
 
-    const okButton = screen.getByRole("button", { name: "Save global variable" });
+    const okButton = screen.getByRole("button", { name: "Save changes" });
     fireEvent.click(okButton);
 
     await waitFor(() => {
@@ -98,7 +94,7 @@ describe("GlobalVariableFormModal", () => {
 
     fireEvent.change(screen.getByLabelText("Key"), { target: { value: "EXISTING_KEY" } });
 
-    const okButton = screen.getByRole("button", { name: "Save global variable" });
+    const okButton = screen.getByRole("button", { name: "Save changes" });
     fireEvent.click(okButton);
 
     await waitFor(() => {

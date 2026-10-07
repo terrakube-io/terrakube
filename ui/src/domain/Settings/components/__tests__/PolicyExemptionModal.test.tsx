@@ -59,18 +59,16 @@ describe("PolicyExemptionModal", () => {
       />
     );
 
-    expect(screen.getByText("Create Policy Exemption")).toBeInTheDocument();
-    expect(screen.getByText("Policy Set")).toBeInTheDocument();
+    expect(screen.getByText("Create exemption", { selector: ".ant-modal-title" })).toBeInTheDocument();
+    expect(screen.getByText("Policy set")).toBeInTheDocument();
     expect(screen.getByText("Rule ID")).toBeInTheDocument();
-    expect(screen.getByText("Exemption Scope")).toBeInTheDocument();
-    expect(screen.getByText("Organization-Wide")).toBeInTheDocument();
-    expect(screen.getByText("Project-Scoped")).toBeInTheDocument();
-    expect(screen.getByText("Workspace-Scoped")).toBeInTheDocument();
-    expect(screen.getByText("Ticket Reference")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Organization-wide")).toBeInTheDocument();
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByText("Workspace")).toBeInTheDocument();
+    expect(screen.getByText("Ticket reference")).toBeInTheDocument();
     expect(screen.getByText("Justification")).toBeInTheDocument();
-    expect(
-      screen.getByText("Permanent / Indefinite Exemption (No Expiration Date)")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Never expires")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/policySet");
@@ -124,7 +122,7 @@ describe("PolicyExemptionModal", () => {
       />
     );
 
-    const submitBtn = screen.getByRole("button", { name: "Create Exemption" });
+    const submitBtn = screen.getByRole("button", { name: "Create exemption" });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -171,17 +169,17 @@ describe("PolicyExemptionModal", () => {
     );
 
     // Initially, Expiration Date is visible
-    expect(screen.getByText("Expiration Date")).toBeInTheDocument();
+    expect(screen.getByText("Expires on")).toBeInTheDocument();
 
     // Click label text to toggle indefinite on
-    const toggleLabel = screen.getByText("Permanent / Indefinite Exemption (No Expiration Date)");
+    const toggleLabel = screen.getByText("Never expires");
     fireEvent.click(toggleLabel);
 
     // Expiration date field should now be hidden
-    expect(screen.queryByText("Expiration Date")).not.toBeInTheDocument();
+    expect(screen.queryByText("Expires on")).not.toBeInTheDocument();
 
     // Submit form and verify expiresAt is null
-    const submitBtn = screen.getByRole("button", { name: "Create Exemption" });
+    const submitBtn = screen.getByRole("button", { name: "Create exemption" });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {

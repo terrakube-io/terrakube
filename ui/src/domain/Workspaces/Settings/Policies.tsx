@@ -1,10 +1,5 @@
-import {
-  InfoCircleOutlined,
-  PlayCircleOutlined,
-  PlusOutlined,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
-import { Alert, Button, Card, Space, Tooltip, Typography, message } from "antd";
+import { PlayCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { Alert, Button, Tooltip, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
@@ -14,13 +9,8 @@ import SettingsSection from "@/components/settings/SettingsSection/SettingsSecti
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-import {
-  ExemptionRecord,
-  PolicyExemptionModal,
-  PolicyExemptionTable,
-} from "../../Settings/components";
-
-const { Text, Paragraph } = Typography;
+import { ExemptionRecord, PolicyExemptionModal, PolicyExemptionTable } from "../../Settings/components";
+import "../Workspaces.css";
 
 type Props = {
   workspace: Workspace;
@@ -31,7 +21,8 @@ type Props = {
 
 export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false, onWorkspaceUpdate }: Props) => {
   const navigate = useNavigate();
-  const organizationId = workspace?.relationships?.organization?.data?.id || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const organizationId =
+    workspace?.relationships?.organization?.data?.id || sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const workspaceId = workspace?.id;
   const workspaceProjectId = workspace?.relationships?.project?.data?.id;
   const isLocked = workspace?.attributes?.locked;
@@ -147,15 +138,13 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
 
   const getDisabledReason = (): string | undefined => {
     if (!canEvaluate) {
-      return "You do not have permission to trigger policy evaluations on this workspace (requires manageWorkspace or planJob).";
+      return "You need permission to manage this workspace or plan runs to evaluate policies.";
     }
-    if (isLocked) {
-      return "This workspace is currently locked. Unlock it before evaluating policies.";
-    }
-    if (!hasCompletedRun) {
-      return "Workspace has no completed runs with a Terraform plan to evaluate.";
-    }
-    return undefined;
+    const blockers = [
+      isLocked && "This workspace is locked. Unlock it to evaluate policies.",
+      !hasCompletedRun && "This workspace has no completed run with a plan yet. Run a plan first.",
+    ].filter(Boolean);
+    return blockers.length > 0 ? blockers.join(" ") : undefined;
   };
 
   const disabledReason = getDisabledReason();
@@ -204,132 +193,63 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
     <div className="generalSettings">
       <SettingsPageHeader
         title="Policies"
-        description="Manage and evaluate OPA policy governance compliance for this workspace."
+        description="Check this workspace against your organization's OPA policies and see which rules are waived."
       />
 
-      <SettingsSection maxWidth="100%">
-        <Card
-          title={
-            <Space orientation="horizontal">
-              <SafetyCertificateOutlined />
-              <span>Compliance Status</span>
-            </Space>
-          }
-          style={{ marginBottom: 24 }}
-        >
-          <Space orientation="vertical" style={{ width: "100%" }}>
-            <div>
-              <Text strong style={{ marginRight: 8 }}>
-                Current Status:
-              </Text>
-              <PolicyStatusTag status={complianceStatus} />
-            </div>
-            <Paragraph type="secondary" style={{ margin: 0 }}>
-              {renderComplianceDescription()}
-            </Paragraph>
-          </Space>
-        </Card>
+      <SettingsSection title="Compliance status" description={renderComplianceDescription()}>
+        <PolicyStatusTag status={complianceStatus} />
+      </SettingsSection>
 
-        <Card
-          title={
-            <Space orientation="horizontal">
-              <SafetyCertificateOutlined />
-              <span>Active Policy Exemptions</span>
-            </Space>
-          }
-          extra={
-            <Tooltip
-              title={
-                !canManagePolicies
-                  ? "Requires Policy Management permission to add exemptions"
-                  : undefined
-              }
+      <SettingsSection
+        title="Evaluate policies"
+        description="Checks the last completed plan against every policy that applies to this workspace. Nothing is planned or applied, and no infrastructure changes."
+      >
+        {disabledReason && canEvaluate && (
+          <Alert title={disabledReason} type="warning" showIcon className="workspace-policies-alert" />
+        )}
+        <Tooltip title={canEvaluate ? undefined : disabledReason}>
+          <span>
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              onClick={handleTriggerEvaluation}
+              loading={loading}
+              disabled={isDisabled}
             >
-              <span>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={handleCreateExemption}
-                  disabled={!canManagePolicies}
-                  data-testid="add-workspace-exemption-btn"
-                >
-                  Add Exemption
-                </Button>
-              </span>
-            </Tooltip>
-          }
-          style={{ marginBottom: 24 }}
-        >
-          <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-            Rules waived for this workspace via active policy exemptions (including inherited organization and project waivers).
-          </Paragraph>
+              Evaluate policies now
+            </Button>
+          </span>
+        </Tooltip>
+      </SettingsSection>
 
-          <PolicyExemptionTable
-            items={workspaceExemptions}
-            loading={exemptionsLoading}
-            managePermission={canManagePolicies}
-            currentWorkspaceId={workspaceId}
-            onEdit={handleEditExemption}
-            onDelete={handleDeleteExemption}
-            pageSize={5}
-          />
-        </Card>
-
-        <Card
-          title={
-            <Space orientation="horizontal">
-              <PlayCircleOutlined />
-              <span>Trigger Policy Evaluation</span>
-            </Space>
-          }
-        >
-          <Paragraph>
-            Trigger an on-demand compliance scan to evaluate all applicable OPA policies against the last completed
-            Terraform plan for this workspace.
-          </Paragraph>
-          <Alert
-            title="Headless Evaluation"
-            description="Policy evaluation runs in-runner against the stored plan without creating or modifying live infrastructure."
-            type="info"
-            showIcon
-            icon={<InfoCircleOutlined />}
-            style={{ marginBottom: 24 }}
-          />
-
-          {isLocked && (
-            <Alert
-              title="Workspace Locked"
-              description="This workspace is currently locked. You must unlock it before triggering a policy evaluation."
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
-          {!hasCompletedRun && (
-            <Alert
-              title="No Completed Runs"
-              description="This workspace has not completed any runs with a Terraform plan yet. Run a plan before evaluating policies."
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
-          <Tooltip title={disabledReason}>
+      <SettingsSection
+        maxWidth="100%"
+        title="Policy exemptions"
+        description="Rules waived for this workspace, including exemptions inherited from the organization and project."
+        extra={
+          <Tooltip title={!canManagePolicies ? "Requires policy management permission" : undefined}>
             <span>
               <Button
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                onClick={handleTriggerEvaluation}
-                loading={loading}
-                disabled={isDisabled}
+                icon={<PlusOutlined />}
+                onClick={handleCreateExemption}
+                disabled={!canManagePolicies}
+                data-testid="add-workspace-exemption-btn"
               >
-                Evaluate Policies Now
+                Add exemption
               </Button>
             </span>
           </Tooltip>
-        </Card>
+        }
+      >
+        <PolicyExemptionTable
+          items={workspaceExemptions}
+          loading={exemptionsLoading}
+          managePermission={canManagePolicies}
+          currentWorkspaceId={workspaceId}
+          onEdit={handleEditExemption}
+          onDelete={handleDeleteExemption}
+          pageSize={5}
+        />
       </SettingsSection>
 
       {organizationId && (

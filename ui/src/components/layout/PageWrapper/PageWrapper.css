@@ -2,6 +2,7 @@
   padding: 0 clamp(16px, 4vw, 50px);
 }
 .page-wrapper-content {
+  background: var(--ant-color-bg-container);
   min-height: 600px;
   padding: clamp(12px, 3vw, 24px);
 }
@@ -45,9 +46,34 @@
   }
 }
 
-@media (max-width: 767px) {
+/* Placeholder for the organization crumb while its name loads. */
+.page-wrapper-crumb-skeleton.ant-skeleton.ant-skeleton-element {
+  vertical-align: middle;
+  .ant-skeleton-input {
+    width: 96px;
+    min-width: 96px;
+    height: 14px;
+  }
+}
+
+/* Tablets: the sidebar already takes width; 50px gutters and a 90% column leave a narrow card. */
+@media (max-width: 991.98px) {
+  .page-wrapper {
+    padding: 0 24px;
+  }
+
   .page-wrapper-inner-fluid {
     width: 100%;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .page-wrapper {
+    padding: 0 16px;
+  }
+
+  .page-wrapper-content {
+    padding: 16px;
   }
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CreateJob } from "../Create";
 
 window._env_ = {
@@ -57,5 +57,35 @@ describe("CreateJob Run now button", () => {
   it("disables Run now when the user lacks plan permission", async () => {
     render(<CreateJob changeJob={jest.fn()} planJob={false} />);
     await waitFor(() => expect(runNowButton()).toBeDisabled());
+  });
+});
+
+describe("CreateJob new run modal", () => {
+  it("offers up to three templates as explained choices and warns about destroy", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/template")) {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: "t-plan", attributes: { name: "Plan", description: "Plan only" } },
+              { id: "t-apply", attributes: { name: "Plan and Apply", description: "Plan, then apply" } },
+              { id: "t-destroy", attributes: { name: "Terraform-Destroy", description: "Running terraform destroy" } },
+              { id: "t-cli", attributes: { name: "Terraform-Plan/Apply-Cli", description: "CLI" } },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { data: { attributes: { branch: "main", defaultTemplate: "t-plan" } } } });
+    });
+
+    render(<CreateJob changeJob={jest.fn()} planJob={true} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /run now/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /run now/i }));
+
+    expect(await screen.findByText("Start a run")).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.getByRole("radio", { name: /^Plan Plan only/ })).toBeChecked();
+    expect(screen.getByText("Destroys every resource this workspace manages.")).toBeInTheDocument();
+    expect(screen.queryByText("Terraform-Plan/Apply-Cli")).not.toBeInTheDocument();
   });
 });

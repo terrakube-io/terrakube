@@ -8,8 +8,9 @@ test("organization general settings show a copyable ID and save changes", async 
   await page.goto(`/organizations/${orgId}/settings`);
   await expect(page.getByRole("heading", { name: "General settings" })).toBeVisible();
 
-  // The ID is read-only text with a copy control, not an input.
-  await expect(page.getByText(orgId, { exact: true })).toBeVisible();
+  // The ID is a read-only field with a separate copy control.
+  await expect(page.getByLabel("ID", { exact: true })).toHaveValue(orgId);
+  await expect(page.getByLabel("ID", { exact: true })).toHaveAttribute("readonly");
   await expect(page.getByRole("button", { name: "Copy ID" })).toBeVisible();
 
   const description = page.getByLabel("Description");

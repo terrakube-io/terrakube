@@ -1,36 +1,24 @@
-import {
-  DeleteOutlined,
-  EditOutlined,
-  InfoCircleOutlined,
-  MinusCircleOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-} from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
-import { Alert, Button, Col, Flex, Form, Input, message, Row, Select, Space, Switch, Table, Tag, Tooltip } from "antd";
+import { Alert, Button, Flex, Form, Grid, Input, message, Select, Switch, Table, Tag, Typography } from "antd";
 import { Buffer } from "buffer";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { Action } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
+import "./EditorForm.css";
+import "./Actions.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { DangerZone } from "@/components/settings/DangerZone";
 import { Loading } from "@/components/feedback/Loading";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { validateActionSyntax } from "./validateActionSyntax";
-
-const validateMessages: any = {
-  required: "${label} is required!",
-  types: {
-    version: "${label} is not a valid semver!",
-  },
-  pattern: {
-    mismatch: "${label} is not a valid semver!",
-  },
-};
 
 type IStandaloneCodeEditor = Parameters<OnMount>[0];
 
@@ -70,74 +58,65 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   const [syntaxError, setSyntaxError] = useState<string | null>(null);
   const [form] = Form.useForm();
   const editorRef = useRef<IStandaloneCodeEditor>(null);
+  const screens = Grid.useBreakpoint();
 
   const ACTIONS_COLUMNS = () => [
     {
       title: "Name",
       dataIndex: "name",
       key: "name",
-      render: (_: string, record: Action) => <div>{record.attributes.name}</div>,
+      render: (_: string, record: Action) => (
+        <Link to={`/organizations/${orgid}/settings/actions/edit/${record.id}`}>{record.attributes.name}</Link>
+      ),
     },
     {
       title: "Type",
       dataIndex: "type",
       key: "type",
-      render: (_: string, record: Action) => <div>{record.attributes.type}</div>,
+      render: (_: string, record: Action) => <span className="editor-form-mono">{record.attributes.type}</span>,
     },
     {
       title: "Category",
       dataIndex: "category",
       key: "category",
-      render: (_: string, record: Action) => <div>{record.attributes.category}</div>,
+      render: (_: string, record: Action) => record.attributes.category,
     },
     {
       title: "Version",
       dataIndex: "version",
       key: "version",
-      render: (_: string, record: Action) => <div>{record.attributes.version}</div>,
+      render: (_: string, record: Action) => <span className="editor-form-mono">{record.attributes.version}</span>,
     },
     {
-      title: "Active",
+      title: "Status",
       dataIndex: "active",
       key: "active",
       render: (_: string, record: Action) =>
-        record.attributes.active ? <Tag color="green">Active</Tag> : <Tag>Inactive</Tag>,
+        record.attributes.active ? <Tag color="success">Active</Tag> : <Tag>Inactive</Tag>,
     },
     {
       title: "Actions",
       key: "action",
+      align: "right" as const,
+      width: 96,
       render: (_: string, record: Action) => (
-        <div>
+        <Flex gap={8} justify="flex-end">
           <LinkButton
             to={`/organizations/${orgid}/settings/actions/edit/${record.id}`}
-            type="link"
             icon={<EditOutlined />}
             disabled={!managePermission}
-          >
-            Edit
-          </LinkButton>
+            aria-label={`Edit ${record.attributes.name}`}
+          />
           <Button
-            danger
-            type="link"
             icon={<DeleteOutlined />}
             disabled={!managePermission}
+            aria-label={`Delete ${record.attributes.name}`}
             onClick={() => setPendingDelete(record)}
-          >
-            Delete
-          </Button>
-        </div>
+          />
+        </Flex>
       ),
     },
   ];
-
-  const onCancel = () => {
-    closeEditor();
-    form.resetFields();
-    setActionContent("");
-    if (editorRef.current) {
-      editorRef.current.setValue("");
-    }
-  };
 
   useEffect(() => {
     setSyntaxError(null);
@@ -265,53 +244,66 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
     }
   }
 
+  const actionsUrl = `/organizations/${orgid}/settings/actions/new`;
+
   return (
     <div className="setting">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces/actions"
-        title={isEditing ? (mode === "edit" ? "Edit Action" : "Create New Action") : "Actions"}
+        title={isEditing ? (mode === "edit" ? "Edit action" : "Create action") : "Actions"}
         description={
           isEditing
-            ? undefined
-            : "Actions are used to extend the Terrakube UI. For example, you can add a new button to restart a VM directly from Terrakube."
+            ? "Choose where the action appears in a workspace and the code it runs."
+            : "Actions add buttons and tabs to workspaces, such as restarting a VM from its resource."
         }
+        divider={!isEditing ? false : undefined}
         actions={
           !isEditing ? (
-            <LinkButton
-              to={`/organizations/${orgid}/settings/actions/new`}
-              type="primary"
-              icon={<PlusOutlined />}
-              disabled={!managePermission}
-            >
-              Create Action
+            <LinkButton to={actionsUrl} type="primary" icon={<PlusOutlined />} disabled={!managePermission}>
+              Create action
             </LinkButton>
           ) : undefined
         }
       />
       {error ? (
         <Alert
-          title={error.includes("permission") ? "Access Denied" : "Error"}
+          title={error.includes("permission") ? "Access denied" : "Could not load actions"}
           description={error}
           type="error"
           showIcon
-          style={{ marginTop: "20px" }}
         />
       ) : !isEditing ? (
         <>
           {loading || !actions ? (
             <Loading loading description="Loading actions..." />
+          ) : actions.length === 0 ? (
+            <EmptyState simple description="No actions yet. Create one to add a button or tab to workspaces.">
+              {managePermission && (
+                <LinkButton to={actionsUrl} icon={<PlusOutlined />}>
+                  Create action
+                </LinkButton>
+              )}
+            </EmptyState>
           ) : (
-            <Table dataSource={actions} columns={ACTIONS_COLUMNS()} rowKey="id" />
+            <section>
+              <Typography.Title level={4}>Actions ({actions.length})</Typography.Title>
+              <Table
+                dataSource={actions}
+                columns={ACTIONS_COLUMNS()}
+                rowKey="id"
+                scroll={screens.lg ? undefined : { x: "max-content" }}
+              />
+            </section>
           )}
           <DeleteConfirmationModal
             open={pendingDelete !== null}
             title="Delete action"
             message={
               <>
-                Deleting the action <strong>{pendingDelete?.attributes.name}</strong> cannot be undone.
+                Workspaces stop showing <strong>{pendingDelete?.attributes.name}</strong>. This cannot be undone.
               </>
             }
-            okText="Delete"
+            okText="Delete action"
             onConfirm={() => {
               if (pendingDelete) onDelete(pendingDelete.id);
               setPendingDelete(null);
@@ -320,10 +312,12 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
           />
         </>
       ) : (
-        <div>
-          <Form
+        <>
+          <SettingsForm
             form={form}
-            layout="vertical"
+            className="editor-form"
+            saveLabel={mode === "create" ? "Create action" : "Update action"}
+            saveDisabled={!managePermission}
             onFinish={(values) => {
               const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
               const error = validateActionSyntax(editorValue);
@@ -335,206 +329,161 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
               if (mode === "create") onCreate(values, editorValue);
               else onUpdate(values, editorValue);
             }}
-            validateMessages={validateMessages}
           >
-            <SettingsSection
-              maxWidth={960}
-              title="General"
-              description="Identify the action and choose where it appears in the UI."
-              extra={
-                mode === "create" ? (
-                  <Button
-                    icon={<QuestionCircleOutlined />}
-                    target="_blank"
-                    rel="noreferrer"
-                    href={"https://docs.terrakube.io/user-guide/workspaces/actions/developing-actions/quick-start"}
-                    type="link"
-                  >
-                    Actions Documentation
-                  </Button>
-                ) : undefined
-              }
-            >
-              <Row gutter={16}>
-                <Col xs={24} md={12}>
-                  <Form.Item name="id" label="ID" rules={[{ required: true }]}>
-                    <Input disabled={mode !== "create"} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row gutter={16}>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="type"
-                    label="Type"
-                    tooltip={{
-                      title:
-                        "Defines the section where this action will appear. Check the docs to see the specific area where the action will be rendered.",
-                      icon: <InfoCircleOutlined />,
-                    }}
-                    rules={[{ required: true }]}
-                  >
-                    <Select placeholder="Please select a type">
-                      <Select.Option value="Workspace/Action">Workspace/Action</Select.Option>
-                      <Select.Option value="Workspace/ResourceDrawer/Action">
-                        Workspace/ResourceDrawer/Action
-                      </Select.Option>
-                      <Select.Option value="Workspace/ResourceDrawer/Tab">Workspace/ResourceDrawer/Tab</Select.Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="label"
-                    label="Label"
-                    tooltip={{
-                      title:
-                        "For tabs, this will be displayed as the tab name. For action buttons, it should be displayed as the button name.",
-                      icon: <InfoCircleOutlined />,
-                    }}
-                    rules={[{ required: true }]}
-                  >
-                    <Input />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row gutter={16}>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="category"
-                    label="Category"
-                    tooltip={{
-                      title:
-                        "This helps to organize the actions based on their function. Example: General, Azure, Cost, Monitoring.",
-                      icon: <InfoCircleOutlined />,
-                    }}
-                    rules={[{ required: true }]}
-                  >
-                    <Input />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="version"
-                    label="Version"
-                    tooltip={{
-                      title: "Must follow semantic versioning (e.g., 1.0.0).",
-                      icon: <InfoCircleOutlined />,
-                    }}
-                    rules={[
-                      { required: true },
-                      {
-                        pattern: new RegExp(/^([0-9]+)\.([0-9]+)\.([0-9]+)$/),
-                        message: "Version must be in semver format (e.g., 1.0.0)",
-                      },
-                    ]}
-                  >
-                    <Input />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Form.Item
-                name="description"
-                label="Description"
-                tooltip={{
-                  title: "A brief description of the action.",
-                  icon: <InfoCircleOutlined />,
-                }}
+            <div className="editor-form-fields">
+              <SettingsSection title="Identity">
+                <Form.Item
+                  name="id"
+                  label="ID"
+                  extra={
+                    mode === "create" ? "A unique, permanent identifier, such as terrakube.restart-vm." : undefined
+                  }
+                  rules={[{ required: true, message: "Enter an ID for the action" }]}
+                >
+                  <Input className="editor-form-mono" disabled={mode !== "create"} />
+                </Form.Item>
+                <Form.Item
+                  name="name"
+                  label="Name"
+                  rules={[{ required: true, message: "Enter a name for the action" }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item name="description" label="Description">
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+                </Form.Item>
+                <Form.Item
+                  name="version"
+                  label="Version"
+                  extra="Semantic version, such as 1.0.0."
+                  rules={[
+                    { required: true, message: "Enter a version" },
+                    {
+                      pattern: new RegExp(/^([0-9]+)\.([0-9]+)\.([0-9]+)$/),
+                      message: "Use a semantic version, such as 1.0.0",
+                    },
+                  ]}
+                >
+                  <Input className="editor-form-mono" />
+                </Form.Item>
+                <Form.Item name="active" valuePropName="checked" label="Active" extra="Inactive actions are hidden.">
+                  <Switch />
+                </Form.Item>
+              </SettingsSection>
+
+              <SettingsSection title="Placement" description="Where the action appears and how it is labeled.">
+                <Form.Item
+                  name="type"
+                  label="Type"
+                  extra="The area of the workspace that renders the action."
+                  rules={[{ required: true, message: "Choose a type" }]}
+                >
+                  <Select
+                    placeholder="Choose a type"
+                    options={[
+                      "Workspace/Action",
+                      "Workspace/ResourceDrawer/Action",
+                      "Workspace/ResourceDrawer/Tab",
+                    ].map((value) => ({ value, label: value }))}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="label"
+                  label="Label"
+                  extra="The button text, or the tab name for tabs."
+                  rules={[{ required: true, message: "Enter a label" }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="category"
+                  label="Category"
+                  extra="Groups related actions, such as General, Azure or Monitoring."
+                  rules={[{ required: true, message: "Enter a category" }]}
+                >
+                  <Input />
+                </Form.Item>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Display criteria"
+                description="Filters that decide when the action is shown, each with optional settings passed to it."
               >
-                <Input.TextArea rows={2} />
-              </Form.Item>
-              <Form.Item name="active" valuePropName="checked" label="Active" style={{ marginBottom: 0 }}>
-                <Switch />
-              </Form.Item>
-            </SettingsSection>
+                <Form.List name="displayCriteria">
+                  {(fields, { add, remove }) => (
+                    <>
+                      {fields.map(({ key, name, ...restField }) => (
+                        <div key={key} className="action-display-criteria">
+                          <Flex gap={8} align="baseline">
+                            <Form.Item
+                              {...restField}
+                              name={[name, "filter"]}
+                              className="action-criteria-field"
+                              rules={[{ required: true, message: "Enter a filter" }]}
+                            >
+                              <Input className="editor-form-mono" placeholder="Filter" aria-label="Filter" />
+                            </Form.Item>
+                            <Button
+                              type="text"
+                              icon={<MinusCircleOutlined />}
+                              aria-label="Remove display criteria"
+                              onClick={() => remove(name)}
+                            />
+                          </Flex>
+                          <Form.List name={[name, "settings"]}>
+                            {(settingFields, { add: addSetting, remove: removeSetting }) => (
+                              <div className="action-criteria-settings">
+                                {settingFields.map(({ key: settingKey, name: settingName, ...settingRestField }) => (
+                                  <Flex key={settingKey} gap={8} align="baseline">
+                                    <Form.Item
+                                      {...settingRestField}
+                                      name={[settingName, "key"]}
+                                      className="action-criteria-field"
+                                      rules={[{ required: true, message: "Enter a key" }]}
+                                    >
+                                      <Input placeholder="Key" aria-label="Setting key" />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...settingRestField}
+                                      name={[settingName, "value"]}
+                                      className="action-criteria-field"
+                                      rules={[{ required: true, message: "Enter a value" }]}
+                                    >
+                                      <Input placeholder="Value" aria-label="Setting value" />
+                                    </Form.Item>
+                                    <Button
+                                      type="text"
+                                      icon={<MinusCircleOutlined />}
+                                      aria-label="Remove setting"
+                                      onClick={() => removeSetting(settingName)}
+                                    />
+                                  </Flex>
+                                ))}
+                                <Form.Item>
+                                  <Button type="dashed" onClick={() => addSetting()} block icon={<PlusOutlined />}>
+                                    Add setting
+                                  </Button>
+                                </Form.Item>
+                              </div>
+                            )}
+                          </Form.List>
+                        </div>
+                      ))}
+                      <Form.Item>
+                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                          Add display criteria
+                        </Button>
+                      </Form.Item>
+                    </>
+                  )}
+                </Form.List>
+              </SettingsSection>
+            </div>
 
             <SettingsSection
-              maxWidth={960}
-              title="Display Criteria"
-              description="Control when the action is displayed and pass settings to it."
-            >
-              <Form.List name="displayCriteria">
-                {(fields, { add, remove }) => (
-                  <>
-                    {fields.map(({ key, name, ...restField }) => (
-                      <div key={key} style={{ marginBottom: 16 }}>
-                        <Space
-                          style={{ display: "flex", justifyContent: "space-between", width: "100%" }}
-                          align="baseline"
-                        >
-                          <Form.Item
-                            {...restField}
-                            name={[name, "filter"]}
-                            tooltip={{
-                              title: "Defines if the action appears or not.",
-                              icon: <InfoCircleOutlined />,
-                            }}
-                            style={{ width: "calc(100% - 24px)" }}
-                            rules={[{ required: true, message: "Missing filter" }]}
-                          >
-                            <Input placeholder="Filter" />
-                          </Form.Item>
-                          <Tooltip title="Remove Display Criteria">
-                            <MinusCircleOutlined onClick={() => remove(name)} />
-                          </Tooltip>
-                        </Space>
-                        <Form.List name={[name, "settings"]}>
-                          {(settingFields, { add: addSetting, remove: removeSetting }) => (
-                            <>
-                              {settingFields.map(({ key: settingKey, name: settingName, ...settingRestField }) => (
-                                <Space
-                                  key={settingKey}
-                                  style={{ display: "flex", marginBottom: 8, marginLeft: 24 }}
-                                  align="baseline"
-                                >
-                                  <Form.Item
-                                    {...settingRestField}
-                                    name={[settingName, "key"]}
-                                    rules={[{ required: true, message: "Missing key" }]}
-                                  >
-                                    <Input placeholder="Key" />
-                                  </Form.Item>
-                                  <Form.Item
-                                    {...settingRestField}
-                                    name={[settingName, "value"]}
-                                    rules={[{ required: true, message: "Missing value" }]}
-                                  >
-                                    <Input placeholder="Value" />
-                                  </Form.Item>
-                                  <Tooltip title="Remove Setting">
-                                    <MinusCircleOutlined onClick={() => removeSetting(settingName)} />
-                                  </Tooltip>
-                                </Space>
-                              ))}
-                              <Form.Item style={{ marginLeft: 24 }}>
-                                <Button type="dashed" onClick={() => addSetting()} block icon={<PlusOutlined />}>
-                                  Add Setting
-                                </Button>
-                              </Form.Item>
-                            </>
-                          )}
-                        </Form.List>
-                      </div>
-                    ))}
-                    <Form.Item>
-                      <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                        Add Display Criteria
-                      </Button>
-                    </Form.Item>
-                  </>
-                )}
-              </Form.List>
-            </SettingsSection>
-
-            <SettingsSection
-              maxWidth={960}
-              title="Action Code"
-              description="A JavaScript function equivalent to a React component. It receives a context object whose content varies by type, please check the docs."
+              maxWidth="100%"
+              title="Action code"
+              description="A JavaScript function that returns a React component. Its context depends on the type; see the docs."
             >
               <CodeEditor height="40vh" onMount={handleEditorDidMount} defaultLanguage="javascript" />
               {syntaxError && (
@@ -544,22 +493,24 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
                   role="alert"
                   title="Fix the action code before saving"
                   description={syntaxError}
+                  className="action-syntax-alert"
                 />
               )}
             </SettingsSection>
-
-            <Flex justify="flex-end" style={{ maxWidth: 960 }}>
-              <Space>
-                <Button type="default" onClick={onCancel}>
-                  Cancel
-                </Button>
-                <Button type="primary" htmlType="submit" disabled={!managePermission}>
-                  Save
-                </Button>
-              </Space>
-            </Flex>
-          </Form>
-        </div>
+          </SettingsForm>
+          {mode === "edit" && actionId && (
+            <DangerZone
+              actionName="Delete this action"
+              description="Workspaces stop showing this action. This cannot be undone."
+              disabled={!managePermission}
+              onConfirm={() => {
+                onDelete(actionId);
+                closeEditor();
+              }}
+              confirmMessage="Workspaces stop showing this action. This cannot be undone."
+            />
+          )}
+        </>
       )}
     </div>
   );

@@ -108,8 +108,8 @@ describe("PolicyExemptionsSettings", () => {
       expect(screen.getByText("SEC-202")).toBeInTheDocument();
       expect(screen.getByText("AWS Security Rules")).toBeInTheDocument();
       expect(screen.getByText("FinOps Governance")).toBeInTheDocument();
-      expect(screen.getByText("Workspace: frontend-prod")).toBeInTheDocument();
-      expect(screen.getByText("Organization-Wide")).toBeInTheDocument();
+      expect(screen.getByText("frontend-prod")).toBeInTheDocument();
+      expect(screen.getByText("Organization-wide")).toBeInTheDocument();
     });
 
     expect(screen.getByTestId("add-exemption-btn")).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("PolicyExemptionsSettings", () => {
     fireEvent.click(screen.getByTestId("add-exemption-btn"));
 
     await waitFor(() => {
-      expect(screen.getByText("Create Policy Exemption")).toBeInTheDocument();
+      expect(screen.getByText("Create exemption", { selector: ".ant-modal-title" })).toBeInTheDocument();
     });
   });
 });

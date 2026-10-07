@@ -1,13 +1,17 @@
-import { CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, LinkOutlined, SendOutlined } from "@ant-design/icons";
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  InfoCircleOutlined,
+  LinkOutlined,
+  SendOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Button,
   Checkbox,
-  Col,
+  Flex,
   Form,
   Input,
-  Radio,
-  Row,
   Select,
   Space,
   Spin,
@@ -16,7 +20,6 @@ import {
   Tooltip,
   Typography,
   message,
-  theme,
 } from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance, { getErrorMessage } from "@/config/axiosConfig";
@@ -25,8 +28,12 @@ import { JobStatus, NotificationChannelType, NotificationMessageStyle, Template 
 import { ChannelPicker } from "./ChannelPicker";
 import { CHANNEL_META } from "./channelMeta";
 import { JOB_STATUS_GROUPS } from "./jobStatusGroups";
+import "./Notifications.css";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import { DangerZone } from "@/components/settings/DangerZone";
 
 type Props = {
   orgId: string;
@@ -34,6 +41,7 @@ type Props = {
   mode: "create" | "edit";
   configId?: string;
   onDone: () => void;
+  managePermission?: boolean;
 };
 
 type ConfigurationForm = {
@@ -50,7 +58,14 @@ const JSONAPI_HEADERS = { "Content-Type": "application/vnd.api+json" };
 
 const TOTAL_STATUS_COUNT = JOB_STATUS_GROUPS.reduce((total, group) => total + group.statuses.length, 0);
 
-export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, configId, onDone }: Props) => {
+export const EditNotificationConfiguration = ({
+  orgId,
+  workspaceId,
+  mode,
+  configId,
+  onDone,
+  managePermission = true,
+}: Props) => {
   const [loading, setLoading] = useState(mode === "edit");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
@@ -69,7 +84,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
   );
   const channelType = Form.useWatch("channelType", form);
   const destinationUrl = Form.useWatch("destinationUrl", form);
-  const { token } = theme.useToken();
+  const name = Form.useWatch("name", form);
 
   const basePath = workspaceId
     ? `organization/${orgId}/workspace/${workspaceId}/notificationConfiguration`
@@ -85,7 +100,6 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
         setAvailableTemplates(templatesList);
       })
       .catch((err) => message.error(getErrorMessage(err) || "Failed to load templates"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   useEffect(() => {
@@ -138,7 +152,6 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
       form.setFieldsValue({ active: true, messageStyle: "DETAILED" });
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, configId]);
 
   useEffect(() => {
@@ -207,14 +220,14 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
       if (mode === "create") {
         const res = await axiosInstance.post(basePath, body, { headers: JSONAPI_HEADERS });
         savedId = res.data.data.id;
-        message.success("Notification configuration created successfully");
+        message.success("Notification created");
       } else {
         await axiosInstance.patch(
           `notification_configuration/${configId}`,
           { data: { id: configId, ...body.data } },
           { headers: JSONAPI_HEADERS }
         );
-        message.success("Notification configuration updated successfully");
+        message.success("Notification updated");
       }
       await saveTriggers(savedId!);
       await saveTemplates(savedId!);
@@ -229,7 +242,7 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
     try {
       values = await form.validateFields(["channelType", "destinationUrl", "signingSecret"]);
     } catch {
-      message.error("Fill in Channel and Destination URL before testing");
+      message.error("Choose a channel and enter the destination URL before testing");
       return;
     }
 
@@ -265,77 +278,71 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
     );
   };
 
+  const onDelete = () => {
+    axiosInstance
+      .delete(`notification_configuration/${configId}`, { headers: { "Content-Type": undefined } })
+      .then(() => {
+        message.success("Notification deleted");
+        onDone();
+      })
+      .catch((err) => message.error(getErrorMessage(err) || "Could not delete the notification"));
+  };
+
   return (
     <Spin spinning={loading}>
       <SettingsPageHeader
-        title={mode === "create" ? "Add Notification" : "Edit Notification"}
-        description="Send a message to a channel when jobs change state."
+        title={mode === "create" ? "Add notification" : "Edit notification"}
+        description="Send a message to a channel when runs change state."
       />
       {configWorkspaceId !== undefined &&
         (configWorkspaceId === null ? (
           <Alert
             type="warning"
             showIcon
-            style={{ marginBottom: 16 }}
+            className="notification-scope-alert"
             title="Organization-wide default"
-            description="Applies to every workspace in this organization, alongside whatever each workspace configures for itself. Changes here affect all of them."
+            description="Applies to every workspace in this organization, so changes here affect all of them."
           />
         ) : (
           <Alert
             type="info"
             showIcon
-            style={{ marginBottom: 16 }}
+            className="notification-scope-alert"
             title="This workspace only"
-            description="Only affects this workspace, in addition to any organization-wide defaults."
+            description="Applies to this workspace, in addition to the organization-wide notifications."
           />
         ))}
-      <SettingsSection maxWidth={960}>
-        <Form form={form} layout="vertical" onFinish={onFinish}>
-          <Typography.Title level={5} style={{ marginBottom: 12 }}>
-            1. Channel
-          </Typography.Title>
+      <SettingsForm form={form} onFinish={onFinish} showSave={false}>
+        <SettingsSection title="Channel">
           <Form.Item name="channelType" rules={[{ required: true, message: "Choose a channel" }]}>
             <ChannelPicker />
           </Form.Item>
+        </SettingsSection>
 
-          <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 12 }}>
-            2. Details
-          </Typography.Title>
-          <Row gutter={24} align="bottom">
-            <Col flex="auto">
-              <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter a name" }]}>
-                <Input placeholder="e.g. Prod Alerts" />
-              </Form.Item>
-            </Col>
-            <Col flex="none">
-              <Form.Item name="active" label="Active" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-          </Row>
+        <SettingsSection title="Details">
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[{ required: true, message: "Enter a name for the notification" }]}
+          >
+            <Input placeholder="Production alerts" />
+          </Form.Item>
           <Form.Item name="description" label="Description (optional)">
             <Input.TextArea
-              placeholder="What this is for, e.g. 'Pages on-call for prod workspace failures'"
+              placeholder="Pages on-call when production runs fail"
               autoSize={{ minRows: 1, maxRows: 4 }}
             />
           </Form.Item>
           <Form.Item
             name="destinationUrl"
             label="Destination URL"
-            rules={[{ required: true, message: "Please enter the destination URL" }]}
-            help={
+            rules={[{ required: true, message: "Enter the destination URL" }]}
+            extra={
               channelType && (
-                <Space orientation="vertical" size={0} style={{ marginTop: 2 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {CHANNEL_META[channelType].urlHelp}
-                  </Typography.Text>
+                <Space orientation="vertical" size={0}>
+                  <span>{CHANNEL_META[channelType].urlHelp}</span>
                   {CHANNEL_META[channelType].docsUrl && (
-                    <Typography.Link
-                      href={CHANNEL_META[channelType].docsUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ fontSize: 12 }}
-                    >
+                    <Typography.Link href={CHANNEL_META[channelType].docsUrl} target="_blank" rel="noreferrer">
                       <LinkOutlined /> {CHANNEL_META[channelType].docsLabel}
                     </Typography.Link>
                   )}
@@ -348,59 +355,53 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
           {channelType === "WEBHOOK" && (
             <Form.Item
               name="signingSecret"
-              label="Signing Secret (optional)"
-              help={
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  If set, requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so your
-                  endpoint can verify they came from Terrakube.
-                </Typography.Text>
+              label="Signing secret (optional)"
+              extra={
+                <>
+                  Requests are signed with an <code>X-Terrakube-Signature</code> header (HMAC-SHA256) so your endpoint
+                  can verify them.
+                </>
               }
             >
-              <Input.Password placeholder="Optional" />
+              <Input.Password />
             </Form.Item>
           )}
-          <Form.Item
-            name="messageStyle"
-            label="Message style"
-            help={
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Detailed sends the full card (run link, commit, buttons) for every status. Simple sends a single compact
-                line instead - useful for high-frequency channels.
-              </Typography.Text>
-            }
-          >
-            <Radio.Group>
-              <Radio.Button value="DETAILED">Detailed</Radio.Button>
-              <Radio.Button value="SIMPLE">Simple</Radio.Button>
-            </Radio.Group>
+          <Form.Item name="messageStyle" label="Message style">
+            <RadioChoices
+              options={[
+                {
+                  value: "DETAILED",
+                  label: "Detailed",
+                  help: "The full card with the run link, commit and buttons.",
+                },
+                { value: "SIMPLE", label: "Simple", help: "One compact line, for busy channels." },
+              ]}
+            />
           </Form.Item>
+          <Form.Item name="active" label="Active" valuePropName="checked" extra="Inactive notifications send nothing.">
+            <Switch />
+          </Form.Item>
+        </SettingsSection>
 
-          <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
-            3. Templates
-          </Typography.Title>
-          <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-            Leave empty to apply to every template. Select specific templates to only notify for runs using them.
-          </Typography.Text>
+        <SettingsSection title="Templates" description="Leave empty to notify for runs of every template.">
           <Form.Item>
             <Select
               mode="multiple"
               allowClear
+              aria-label="Templates"
               placeholder="All templates"
               value={selectedTemplateIds}
               onChange={setSelectedTemplateIds}
               options={availableTemplates.map((t) => ({ value: t.id, label: t.attributes.name }))}
             />
           </Form.Item>
+        </SettingsSection>
 
-          <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
-            4. Trigger on
-          </Typography.Title>
-          <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-            Choose which run outcomes send this notification. {selectedStatuses.length} of {TOTAL_STATUS_COUNT}{" "}
-            selected.
-          </Typography.Text>
-
-          <Row gutter={[10, 10]}>
+        <SettingsSection
+          title="Trigger on"
+          description={`Run outcomes that send this notification. ${selectedStatuses.length} of ${TOTAL_STATUS_COUNT} selected.`}
+        >
+          <Flex vertical gap={12} className="notification-trigger-groups">
             {JOB_STATUS_GROUPS.map((group) => {
               const groupValues = group.statuses.map((s) => s.value);
               const selectedInGroup = groupValues.filter((v) => selectedStatuses.includes(v));
@@ -408,101 +409,90 @@ export const EditNotificationConfiguration = ({ orgId, workspaceId, mode, config
               const GroupIcon = group.icon;
 
               return (
-                <Col key={group.key} xs={24} md={12}>
-                  <div
-                    data-testid={`trigger-group-${group.key}`}
-                    style={{
-                      border: `1px solid ${token.colorBorderSecondary}`,
-                      borderRadius: token.borderRadius,
-                      padding: "10px 14px",
-                      height: "100%",
-                    }}
-                  >
-                    <Space align="center" style={{ marginBottom: 6 }}>
-                      <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
-                        {group.label}
-                      </Tag>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {selectedInGroup.length}/{groupValues.length}
-                      </Typography.Text>
-                      <Button
-                        type="link"
-                        size="small"
-                        style={{ padding: 0, fontSize: 12 }}
-                        onClick={() => toggleGroup(groupValues, !allSelected)}
-                      >
-                        {allSelected ? "Clear" : "Select all"}
-                      </Button>
-                    </Space>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
-                      {group.statuses.map((status) => (
-                        <Space key={status.value} size={4} align="center">
-                          <Checkbox
-                            checked={selectedStatuses.includes(status.value)}
-                            onChange={(e) => {
-                              setSelectedStatuses((current) =>
-                                e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
-                              );
-                            }}
-                          >
-                            {status.label}
-                          </Checkbox>
-                          {status.hint && (
-                            <Tooltip title={status.hint}>
-                              <InfoCircleOutlined
-                                style={{
-                                  color: token.colorTextSecondary,
-                                  fontSize: 12,
-                                  cursor: "help",
-                                }}
-                              />
-                            </Tooltip>
-                          )}
-                        </Space>
-                      ))}
-                    </div>
-                  </div>
-                </Col>
+                <div key={group.key} data-testid={`trigger-group-${group.key}`} className="notification-trigger-group">
+                  <Space align="center" className="notification-trigger-group-header">
+                    <Tag color={group.color === "default" ? undefined : group.color} icon={<GroupIcon />}>
+                      {group.label}
+                    </Tag>
+                    <Typography.Text type="secondary" className="notification-meta-text">
+                      {selectedInGroup.length}/{groupValues.length}
+                    </Typography.Text>
+                    <Button type="link" size="small" onClick={() => toggleGroup(groupValues, !allSelected)}>
+                      {allSelected ? "Clear" : "Select all"}
+                    </Button>
+                  </Space>
+                  <Flex wrap gap="4px 20px">
+                    {group.statuses.map((status) => (
+                      <Space key={status.value} size={4} align="center">
+                        <Checkbox
+                          checked={selectedStatuses.includes(status.value)}
+                          onChange={(e) => {
+                            setSelectedStatuses((current) =>
+                              e.target.checked ? [...current, status.value] : current.filter((s) => s !== status.value)
+                            );
+                          }}
+                        >
+                          {status.label}
+                        </Checkbox>
+                        {status.hint && (
+                          <Tooltip title={status.hint}>
+                            <InfoCircleOutlined className="notification-trigger-hint" />
+                          </Tooltip>
+                        )}
+                      </Space>
+                    ))}
+                  </Flex>
+                </div>
               );
             })}
-          </Row>
+          </Flex>
+        </SettingsSection>
 
-          <Form.Item style={{ marginTop: 16 }}>
-            <Space orientation="vertical" size="small" style={{ width: "100%" }}>
-              {testResult && (
-                <Alert
-                  type={testResult === "success" ? "success" : "error"}
-                  showIcon
-                  icon={testResult === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                  title={
-                    testResult === "success"
-                      ? "Test notification delivered successfully"
-                      : "Test notification failed to deliver"
-                  }
-                  closable
-                  onClose={() => setTestResult(null)}
-                />
-              )}
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <Space>
-                  <Button
-                    icon={<SendOutlined />}
-                    onClick={sendTest}
-                    loading={testing}
-                    disabled={!channelType || !destinationUrl}
-                  >
-                    Send test notification
-                  </Button>
-                  <Button onClick={onDone}>Cancel</Button>
-                  <Button type="primary" htmlType="submit">
-                    {mode === "create" ? "Create" : "Update"}
-                  </Button>
-                </Space>
-              </div>
-            </Space>
-          </Form.Item>
-        </Form>
-      </SettingsSection>
+        <SettingsSection title="Test" description="Sends a sample message to the destination URL.">
+          <Space orientation="vertical" size="small" className="notification-test-block">
+            {testResult && (
+              <Alert
+                type={testResult === "success" ? "success" : "error"}
+                showIcon
+                icon={testResult === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                title={
+                  testResult === "success"
+                    ? "Test notification delivered successfully"
+                    : "Test notification failed to deliver"
+                }
+                closable
+                onClose={() => setTestResult(null)}
+              />
+            )}
+            <Button
+              icon={<SendOutlined />}
+              onClick={sendTest}
+              loading={testing}
+              disabled={!channelType || !destinationUrl}
+            >
+              Send test notification
+            </Button>
+          </Space>
+        </SettingsSection>
+
+        <Flex gap="small">
+          <Button type="primary" htmlType="submit" disabled={!managePermission}>
+            {mode === "create" ? "Create notification" : "Update notification"}
+          </Button>
+          <Button onClick={onDone}>Cancel</Button>
+        </Flex>
+      </SettingsForm>
+
+      {/* An organization-wide default opened from a workspace is deleted from the organization's settings. */}
+      {mode === "edit" && configId && !(configWorkspaceId === null && workspaceId) && (
+        <DangerZone
+          actionName="Delete this notification"
+          description="Runs stop sending messages for this notification. This cannot be undone."
+          disabled={!managePermission}
+          onConfirm={onDelete}
+          confirmMessage={`Runs stop sending messages for ${name}. This cannot be undone.`}
+        />
+      )}
     </Spin>
   );
 };

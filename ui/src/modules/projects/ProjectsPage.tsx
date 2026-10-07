@@ -10,6 +10,7 @@ import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import "./Projects.css";
 
 type Props = {
   organizationName: string;
@@ -73,7 +74,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       dataIndex: "name",
       key: "name",
       render: (_: any, record: ProjectModel) => (
-        <Button type="link" style={{ padding: 0 }}>
+        <Button type="link" className="projects-name-link">
           <Link to={`/organizations/${id}/projects/${record.id}`}>{record.name}</Link>
         </Button>
       ),

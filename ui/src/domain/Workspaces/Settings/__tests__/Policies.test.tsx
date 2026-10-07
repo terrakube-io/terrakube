@@ -45,17 +45,15 @@ describe("WorkspacePolicies", () => {
     render(<WorkspacePolicies workspace={baseWorkspace} manageWorkspace={true} />);
 
     expect(screen.getByText("Compliant")).toBeInTheDocument();
-    expect(screen.getByText("Evaluate Policies Now")).toBeEnabled();
+    expect(screen.getByText("Evaluate policies now")).toBeEnabled();
 
-    fireEvent.click(screen.getByText("Evaluate Policies Now"));
+    fireEvent.click(screen.getByText("Evaluate policies now"));
 
     await waitFor(() => {
       expect(axiosInstance.post).toHaveBeenCalledWith(
         "https://terrakube-api.test/policy/v1/organization/org-456/workspace/ws-123/evaluation"
       );
-      expect(mockNavigate).toHaveBeenCalledWith(
-        "/organizations/org-456/workspaces/ws-123/runs/999"
-      );
+      expect(mockNavigate).toHaveBeenCalledWith("/organizations/org-456/workspaces/ws-123/runs/999");
     });
   });
 
@@ -82,8 +80,8 @@ describe("WorkspacePolicies", () => {
     };
 
     render(<WorkspacePolicies workspace={ws} manageWorkspace={true} />);
-    expect(screen.getByText("Workspace Locked")).toBeInTheDocument();
-    expect(screen.getByText("Evaluate Policies Now").closest("button")).toBeDisabled();
+    expect(screen.getByText("This workspace is locked. Unlock it to evaluate policies.")).toBeInTheDocument();
+    expect(screen.getByText("Evaluate policies now").closest("button")).toBeDisabled();
   });
 
   it("disables button and displays warning alert when workspace has no completed runs", () => {
@@ -96,17 +94,19 @@ describe("WorkspacePolicies", () => {
     };
 
     render(<WorkspacePolicies workspace={ws} manageWorkspace={true} />);
-    expect(screen.getByText("No Completed Runs")).toBeInTheDocument();
-    expect(screen.getByText("Evaluate Policies Now").closest("button")).toBeDisabled();
+    expect(
+      screen.getByText("This workspace has no completed run with a plan yet. Run a plan first.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("Evaluate policies now").closest("button")).toBeDisabled();
   });
 
   it("disables button when user lacks both manageWorkspace and planJob permissions", () => {
     render(<WorkspacePolicies workspace={baseWorkspace} manageWorkspace={false} planJob={false} />);
-    expect(screen.getByText("Evaluate Policies Now").closest("button")).toBeDisabled();
+    expect(screen.getByText("Evaluate policies now").closest("button")).toBeDisabled();
   });
 
   it("enables button when user has planJob permission even without manageWorkspace", () => {
     render(<WorkspacePolicies workspace={baseWorkspace} manageWorkspace={false} planJob={true} />);
-    expect(screen.getByText("Evaluate Policies Now")).toBeEnabled();
+    expect(screen.getByText("Evaluate policies now")).toBeEnabled();
   });
 });

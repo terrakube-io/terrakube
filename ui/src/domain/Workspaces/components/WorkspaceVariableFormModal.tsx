@@ -1,5 +1,4 @@
 import type { FormInstance } from "antd";
-import { Typography } from "antd";
 import { CrudFormModal } from "@/components/modals/CrudFormModal";
 import { VariableFormFields } from "@/components/forms/VariableFormFields";
 import { CreateVariableForm, VariableCategory } from "@/domain/types";
@@ -39,11 +38,8 @@ export default function WorkspaceVariableFormModal({
       onCancel={onCancel}
       onSubmit={onSubmit}
       validateMessages={validateMessages}
+      initialValues={{ category: "TERRAFORM", hcl: false, sensitive: false }}
     >
-      <Typography.Title level={5} style={{ margin: "0 0 15px 0" }}>
-        Select variable category
-      </Typography.Title>
-
       <VariableFormFields
         category={category ?? undefined}
         onCategoryChange={(value) => onCategoryChange(value as VariableCategory)}

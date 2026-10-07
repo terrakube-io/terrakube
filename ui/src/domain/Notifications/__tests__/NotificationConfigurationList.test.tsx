@@ -82,7 +82,7 @@ describe("NotificationConfigurationList", () => {
     expect(screen.queryByText("Workspace Webhook")).not.toBeInTheDocument();
   });
 
-  it("tags each row as 'Org default' or 'This workspace' when viewing a workspace's page", async () => {
+  it("groups a workspace's page into this-workspace and organization-wide sections", async () => {
     render(
       <MemoryRouter>
         <NotificationConfigurationList orgId="org-1" workspaceId="ws-1" managePermission={true} />
@@ -90,11 +90,14 @@ describe("NotificationConfigurationList", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Org Slack Alerts")).toBeInTheDocument());
-    expect(screen.getByText("Org default")).toBeInTheDocument();
-    expect(screen.getByText("This workspace")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This workspace (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Organization-wide (1)" })).toBeInTheDocument();
+    // Organization-wide rows are managed from the organization, so they carry no row actions here.
+    expect(screen.getByRole("button", { name: "Edit Workspace Webhook" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Org Slack Alerts" })).not.toBeInTheDocument();
   });
 
-  it("does not show org/workspace scope tags on the organization-level page", async () => {
+  it("puts the add action in the header and names the notification in row actions", async () => {
     render(
       <MemoryRouter>
         <NotificationConfigurationList orgId="org-1" managePermission={true} />
@@ -102,8 +105,20 @@ describe("NotificationConfigurationList", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Org Slack Alerts")).toBeInTheDocument());
-    expect(screen.queryByText("Org default")).not.toBeInTheDocument();
-    expect(screen.queryByText("This workspace")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Add notification/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Edit Org Slack Alerts" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete Org Slack Alerts" })).toBeEnabled();
+  });
+
+  it("does not show a this-workspace section on the organization-level page", async () => {
+    render(
+      <MemoryRouter>
+        <NotificationConfigurationList orgId="org-1" managePermission={true} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Org Slack Alerts")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: /This workspace/ })).not.toBeInTheDocument();
   });
 
   it("does not offer an override action - workspace and org configs are purely additive now", async () => {

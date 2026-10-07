@@ -1,12 +1,11 @@
-import { ExclamationCircleOutlined, InfoCircleOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, Modal, Typography, message } from "antd";
+import { UNLOCK_CONFIRM_TEXT } from "./lockingCopy";
+import { Alert, Button, Form, Input, Modal, message } from "antd";
 import { useState } from "react";
-import axiosInstance from "../../../config/axiosConfig";
+import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-
-const { Text } = Typography;
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import "../Workspaces.css";
 
 type Props = {
   workspace: Workspace;
@@ -22,144 +21,85 @@ export const WorkspaceLocking = ({ workspace, manageWorkspace, onWorkspaceUpdate
   const lockDescription = workspace.attributes.lockDescription;
 
   const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
+  // Hook-based modal so the confirmation follows the app theme (light/dark).
+  const [modal, contextHolder] = Modal.useModal();
 
-  const handleLock = () => {
+  const setLock = (locked: boolean, description: string) =>
+    axiosInstance.patch(
+      `organization/${organizationId}/workspace/${workspaceId}`,
+      { data: { type: "workspace", id: workspaceId, attributes: { locked, lockDescription: description } } },
+      { headers: { "Content-Type": "application/vnd.api+json" } }
+    );
+
+  const handleLock = (values: { lockDescription?: string }) => {
     setLoading(true);
-    const description = form.getFieldValue("lockDescription") || "";
-    const body = {
-      data: {
-        type: "workspace",
-        id: workspaceId,
-        attributes: {
-          locked: true,
-          lockDescription: description,
-        },
-      },
-    };
-    axiosInstance
-      .patch(`organization/${organizationId}/workspace/${workspaceId}`, body, {
-        headers: { "Content-Type": "application/vnd.api+json" },
-      })
+    setLock(true, values.lockDescription || "")
       .then(() => {
-        message.success("Workspace locked successfully");
+        message.success("Workspace locked");
         onWorkspaceUpdate();
       })
-      .catch((error) => {
-        const detail = error?.response?.data?.errors?.[0]?.detail || error.message;
-        message.error("Failed to lock workspace: " + detail);
-      })
+      .catch((error) => message.error(`Could not lock the workspace: ${getErrorMessage(error)}`))
       .finally(() => setLoading(false));
   };
 
   const handleUnlock = () => {
-    Modal.confirm({
-      title: `Unlock workspace ${workspaceName}`,
-      icon: <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />,
-      content: (
-        <div>
-          <p>
-            Unlocking this workspace will allow other users to run Terraform. Be careful: if a remote Terraform run is
-            still using the lock, this may lead to inconsistent state.
-          </p>
-          <p>
-            <Text strong>This operation cannot be undone.</Text> Are you sure?
-          </p>
-        </div>
-      ),
-      okText: "Yes, unlock workspace",
-      okType: "danger",
+    modal.confirm({
+      title: `Unlock ${workspaceName}?`,
+      content: UNLOCK_CONFIRM_TEXT,
+      okText: "Unlock workspace",
       cancelText: "Cancel",
-      onOk() {
-        return new Promise<void>((resolve, reject) => {
-          const body = {
-            data: {
-              type: "workspace",
-              id: workspaceId,
-              attributes: {
-                locked: false,
-                lockDescription: "",
-              },
-            },
-          };
-          axiosInstance
-            .patch(`organization/${organizationId}/workspace/${workspaceId}`, body, {
-              headers: { "Content-Type": "application/vnd.api+json" },
-            })
-            .then(() => {
-              message.success("Workspace unlocked successfully");
-              onWorkspaceUpdate();
-              resolve();
-            })
-            .catch((error) => {
-              const detail = error?.response?.data?.errors?.[0]?.detail || error.message;
-              message.error("Failed to unlock workspace: " + detail);
-              reject();
-            });
-        });
-      },
+      onOk: () =>
+        setLock(false, "")
+          .then(() => {
+            message.success("Workspace unlocked");
+            onWorkspaceUpdate();
+          })
+          .catch((error) => {
+            message.error(`Could not unlock the workspace: ${getErrorMessage(error)}`);
+            throw error;
+          }),
     });
   };
 
   return (
     <div className="generalSettings">
+      {contextHolder}
       <SettingsPageHeader
         title="Locking"
         description="Prevent new runs from starting on this workspace while it is locked."
+        divider={false}
       />
 
-      <SettingsSection>
-        {isLocked ? (
-          <>
-            <Alert
-              title={
-                <span>
-                  This workspace is <Text strong>currently locked</Text>.
-                  {lockDescription
-                    ? ` Reason: ${lockDescription}`
-                    : " No reason was provided for locking this workspace."}
-                </span>
-              }
-              type="info"
-              showIcon
-              icon={<InfoCircleOutlined />}
-              style={{ marginBottom: 24 }}
-            />
-            <p>
-              <Text type="secondary">
-                If you've finished making changes, you can manually unlock this workspace to allow Terraform runs to
-                proceed.
-              </Text>
-            </p>
-            <Button type="primary" onClick={handleUnlock} loading={loading} disabled={!manageWorkspace}>
-              Unlock {workspaceName}
-            </Button>
-          </>
-        ) : (
-          <>
-            <p>
-              <Text type="secondary">
-                This workspace is not currently locked. All operations can proceed normally. You can lock this workspace
-                to prevent Terraform runs.
-              </Text>
-            </p>
-
-            <Form form={form} layout="vertical" style={{ maxWidth: 600, marginBottom: 24 }}>
-              <Form.Item
-                name="lockDescription"
-                label="Lock reason (optional)"
-                extra="Provide a reason for locking this workspace so other team members understand why."
-              >
-                <Input.TextArea rows={3} placeholder="Lock description details" disabled={!manageWorkspace} />
-              </Form.Item>
-            </Form>
-
-            <Button type="primary" onClick={handleLock} loading={loading} disabled={!manageWorkspace}>
-              Lock {workspaceName}
-            </Button>
-          </>
-        )}
-      </SettingsSection>
+      {isLocked ? (
+        <SettingsForm showSave={false}>
+          <Alert
+            type="warning"
+            showIcon
+            title="This workspace is locked. New runs will not start until it is unlocked."
+            description={lockDescription ? `Reason: ${lockDescription}` : "No reason was given."}
+            className="workspace-locked-alert"
+          />
+          <Button onClick={handleUnlock} disabled={!manageWorkspace}>
+            Unlock workspace
+          </Button>
+        </SettingsForm>
+      ) : (
+        <SettingsForm
+          onFinish={handleLock}
+          disabled={!manageWorkspace}
+          saveDisabled={!manageWorkspace}
+          saveLabel="Lock workspace"
+          saving={loading}
+        >
+          <Form.Item
+            name="lockDescription"
+            label="Lock reason"
+            extra="Optional. Shown on the workspace overview while it is locked."
+          >
+            <Input.TextArea rows={3} placeholder="e.g. Upgrading the provider, do not run" />
+          </Form.Item>
+        </SettingsForm>
+      )}
     </div>
   );
 };

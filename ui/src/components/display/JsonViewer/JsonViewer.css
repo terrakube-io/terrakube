@@ -1,0 +1,199 @@
+/* Syntax and diff colors: each clears 4.5:1 on the viewer surface in its theme. */
+.json-viewer {
+  --jv-bg: var(--tk-fill-secondary);
+  --jv-key: #0550ae;
+  --jv-string: #953800;
+  --jv-number: #6639ba;
+  --jv-boolean: #0a6b78;
+  --jv-muted: var(--tk-text-secondary);
+  --jv-removed: #cf1322;
+  --jv-removed-bg: #fff1f0;
+  --jv-added: #237804;
+  --jv-added-bg: #f6ffed;
+}
+
+[data-theme="dark"] .json-viewer {
+  --jv-bg: var(--tk-bg-base);
+  --jv-key: #79c0ff;
+  --jv-string: #ffa657;
+  --jv-number: #d2a8ff;
+  --jv-boolean: #56d4dd;
+  --jv-removed: #ff7875;
+  --jv-removed-bg: rgba(255, 120, 117, 0.12);
+  --jv-added: #73d13d;
+  --jv-added-bg: rgba(115, 209, 61, 0.12);
+}
+
+.jv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jv-copy-status {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.jv-copy-status:empty {
+  display: none;
+}
+
+.jv-filter {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.jv-surface {
+  max-height: 60vh;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--jv-bg);
+  color: var(--tk-text-primary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.jv-surface:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.jv-surface--modal {
+  max-height: calc(100vh - 160px);
+}
+
+.jv-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jv-row {
+  position: relative;
+  display: block;
+  padding-left: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jv-toggle {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jv-toggle:hover {
+  background: var(--tk-fill-primary);
+}
+
+.jv-toggle:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: -2px;
+}
+
+.jv-caret {
+  position: absolute;
+  top: 0.45em;
+  left: 2px;
+  color: var(--jv-muted);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.jv-toggle[aria-expanded="true"] > .jv-caret {
+  transform: rotate(90deg);
+}
+
+.jv-children {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--tk-border-secondary);
+}
+
+.jv-key {
+  color: var(--jv-key);
+}
+
+.jv-string {
+  color: var(--jv-string);
+}
+
+.jv-number {
+  color: var(--jv-number);
+}
+
+.jv-boolean {
+  color: var(--jv-boolean);
+}
+
+.jv-null,
+.jv-punct,
+.jv-index,
+.jv-count {
+  color: var(--jv-muted);
+}
+
+.jv-count {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 12px;
+}
+
+/* Diff: removed values red and struck through, added values green; the whole subtree takes the tone. */
+.json-viewer del,
+.json-viewer ins {
+  display: inline;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.json-viewer del {
+  background: var(--jv-removed-bg);
+  color: var(--jv-removed);
+  text-decoration: line-through;
+}
+
+.json-viewer ins {
+  background: var(--jv-added-bg);
+  color: var(--jv-added);
+  text-decoration: none;
+}
+
+.json-viewer del.jv-block,
+.json-viewer ins.jv-block {
+  display: block;
+  padding: 0;
+}
+
+.json-viewer del :is(.jv-key, .jv-string, .jv-number, .jv-boolean, .jv-null, .jv-punct, .jv-index, .jv-count) {
+  color: var(--jv-removed);
+}
+
+.json-viewer ins :is(.jv-key, .jv-string, .jv-number, .jv-boolean, .jv-null, .jv-punct, .jv-index, .jv-count) {
+  color: var(--jv-added);
+}
+
+/* Full screen: the toolbar stays on top and the tree fills the rest. */
+.json-viewer:fullscreen {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--tk-bg-container);
+}
+
+.json-viewer:fullscreen .jv-surface {
+  flex: 1;
+  max-height: none;
+}

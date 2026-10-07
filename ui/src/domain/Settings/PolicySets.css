@@ -1,0 +1,107 @@
+/* Policy sets, exemptions and parameters (DESIGN.md: list anatomy, Tone Not Shadow, Machine Truth). */
+.policy-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.policy-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.policy-list-header .ant-typography {
+  margin: 0;
+}
+
+.policy-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.policy-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.policy-set-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+}
+
+.policy-set-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.policy-set-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.policy-set-card-title .ant-tag {
+  margin: 0;
+  font-weight: 400;
+}
+
+.ant-typography.policy-set-card-description {
+  margin: 8px 0 0;
+}
+
+.policy-set-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.policy-set-card-meta .anticon {
+  margin-right: 4px;
+}
+
+.policy-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.policy-cell-stack .ant-typography {
+  max-width: 100%;
+}
+
+.policy-cell-secondary {
+  font-size: 13px;
+}
+
+.policy-section {
+  margin-top: 32px;
+}
+
+@media (max-width: 767px) {
+  .policy-set-card {
+    flex-direction: column;
+  }
+}

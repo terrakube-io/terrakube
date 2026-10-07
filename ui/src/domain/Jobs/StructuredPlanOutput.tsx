@@ -34,6 +34,7 @@ import {
 } from "react-icons/si";
 import { stripAnsi } from "./stripAnsi";
 import { ApplyChange, Diagnostic, PlanChange, TerraformOutputValue, getPlanChangeActionLabel } from "./structuredPlan";
+import "./runTokens.css";
 import "./StructuredPlanOutput.css";
 
 type Props = {

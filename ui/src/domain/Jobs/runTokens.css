@@ -1,0 +1,109 @@
+/*
+ * Run page colour tokens: the only literal colours on the run list, run detail, plan, policy and log views.
+ * Text tokens clear 4.5:1 on their own -bg and on the container in both themes; status tokens are for icons (3:1).
+ */
+:root {
+  /* Plan actions and diff values: text, soft background, border */
+  --run-create: #147d37;
+  --run-create-bg: #eefbf3;
+  --run-create-border: #cdeeda;
+  --run-update: #2563eb;
+  --run-update-bg: #eef4ff;
+  --run-update-border: #cad9ff;
+  --run-delete: #cf1322;
+  --run-delete-bg: #fff2f1;
+  --run-delete-border: #f4d0cd;
+  --run-import: #0369a1;
+  --run-import-bg: #f0f9ff;
+  --run-import-border: #bae6fd;
+  --run-warn: #8a5a00;
+  --run-warn-bg: #fff7e6;
+  --run-warn-border: #f5dfb2;
+  --run-sensitive: #6b21a8;
+  --run-sensitive-bg: #f5f0fe;
+  --run-sensitive-border: #e3d3ff;
+
+  /* Solid plan summary segments; white text on them in both themes */
+  --run-create-solid: #147d37;
+  --run-update-solid: #2563eb;
+  --run-delete-solid: #cf1322;
+  --run-import-solid: #0369a1;
+  --run-on-solid: #ffffff;
+
+  /* Status icons */
+  --run-status-success: #389e0d;
+  --run-status-running: var(--tk-status-info);
+  --run-status-warning: #ad6800;
+  --run-status-error: #cf1322;
+  --run-status-neutral: var(--tk-text-tertiary);
+
+  --run-divider: var(--tk-border-secondary);
+  --run-focus: var(--tk-link);
+
+  /* Console and log output stay dark in both themes */
+  --run-console-bg: #1e1e1e;
+  --run-console-fg: #d4d4d4;
+  --run-console-strong: #ffffff;
+  --run-console-error: #ffb4b4;
+  --run-console-line: rgba(255, 255, 255, 0.1);
+  --run-console-raised: rgba(255, 255, 255, 0.04);
+  --run-console-control: rgba(30, 30, 30, 0.8);
+  --run-console-control-hover: rgba(60, 60, 60, 0.9);
+  /* ANSI colours in logs, each ≥4.5:1 on the console background */
+  --run-ansi-black: #8b949e;
+  --run-ansi-red: #ff7b72;
+  --run-ansi-green: #3fb950;
+  --run-ansi-yellow: #e3b341;
+  --run-ansi-blue: #58a6ff;
+  --run-ansi-magenta: #d2a8ff;
+  --run-ansi-cyan: #39c5cf;
+  --run-ansi-white: #ffffff;
+}
+
+[data-theme="dark"] {
+  --run-create: #3fb950;
+  --run-create-bg: rgba(46, 160, 67, 0.15);
+  --run-create-border: rgba(46, 160, 67, 0.35);
+  --run-update: #58a6ff;
+  --run-update-bg: rgba(56, 139, 253, 0.15);
+  --run-update-border: rgba(56, 139, 253, 0.35);
+  --run-delete: #ff7b72;
+  --run-delete-bg: rgba(248, 81, 73, 0.15);
+  --run-delete-border: rgba(248, 81, 73, 0.35);
+  --run-import: #38bdf8;
+  --run-import-bg: rgba(56, 189, 248, 0.15);
+  --run-import-border: rgba(56, 189, 248, 0.35);
+  --run-warn: #e3b341;
+  --run-warn-bg: rgba(210, 153, 34, 0.15);
+  --run-warn-border: rgba(210, 153, 34, 0.35);
+  --run-sensitive: #d2a8ff;
+  --run-sensitive-bg: rgba(163, 113, 247, 0.15);
+  --run-sensitive-border: rgba(163, 113, 247, 0.35);
+
+  --run-status-success: #73d13d;
+  --run-status-warning: #d89614;
+  --run-status-error: #ff7875;
+
+  --run-divider: var(--tk-border-primary);
+}
+
+/* A run or step status icon: colour from its status, the label next to it carries the meaning. */
+.run-status-icon {
+  color: var(--run-status-neutral);
+}
+
+.run-status-icon:is([data-status="completed"], [data-status="noChanges"], [data-status="approved"]) {
+  color: var(--run-status-success);
+}
+
+.run-status-icon[data-status="running"] {
+  color: var(--run-status-running);
+}
+
+.run-status-icon[data-status="waitingApproval"] {
+  color: var(--run-status-warning);
+}
+
+.run-status-icon:is([data-status="failed"], [data-status="cancelled"], [data-status="rejected"]) {
+  color: var(--run-status-error);
+}

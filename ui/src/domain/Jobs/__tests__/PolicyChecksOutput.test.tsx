@@ -1,5 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import React from "react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { PolicyChecksOutput } from "../PolicyChecksOutput";
 import { PolicyEvaluationContext } from "../../types";
 
@@ -96,11 +95,11 @@ describe("PolicyChecksOutput", () => {
   it("renders summary badges correctly", () => {
     render(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" />);
 
-    expect(screen.getByTestId("pill-passed")).toHaveTextContent("8 Passed");
-    expect(screen.getByTestId("pill-exempted")).toHaveTextContent("1 Exempted");
-    expect(screen.getByTestId("pill-warning")).toHaveTextContent("1 Warnings");
-    expect(screen.getByTestId("pill-soft")).toHaveTextContent("1 Soft Mandatory");
-    expect(screen.getByTestId("pill-hard")).toHaveTextContent("1 Hard Mandatory");
+    expect(screen.getByTestId("pill-passed")).toHaveTextContent("Passed8");
+    expect(screen.getByTestId("pill-exempted")).toHaveTextContent("Exempted1");
+    expect(screen.getByTestId("pill-warning")).toHaveTextContent("Advisory1");
+    expect(screen.getByTestId("pill-soft")).toHaveTextContent("Soft mandatory1");
+    expect(screen.getByTestId("pill-hard")).toHaveTextContent("Hard mandatory1");
   });
 
   it("renders exemption card with ticket, countdown, and justification", () => {
@@ -116,23 +115,25 @@ describe("PolicyChecksOutput", () => {
     render(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" />);
 
     // Click 'Exempted' filter
-    const exemptedTab = screen.getByRole("radio", { name: /exempted/i });
-    fireEvent.click(exemptedTab);
+    fireEvent.click(screen.getByRole("button", { name: /^exempted/i }));
 
     expect(screen.getByText("azure_apim_no_public_network")).toBeInTheDocument();
     expect(screen.queryByText("no_public_ssh")).not.toBeInTheDocument();
 
-    // Click 'Violations' filter
-    const violationsTab = screen.getByRole("radio", { name: /violations/i });
-    fireEvent.click(violationsTab);
+    // Hard and soft mandatory violations each have their own filter
+    fireEvent.click(screen.getByRole("button", { name: /^hard mandatory/i }));
+    expect(screen.getByText("no_public_ssh").closest('[data-testid="rule-card"]')).toHaveClass(
+      "policy-rule-card--hard"
+    );
+    expect(screen.queryByText("require_owner_tag")).not.toBeInTheDocument();
 
-    expect(screen.getByText("no_public_ssh")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^soft mandatory/i }));
     expect(screen.getByText("require_owner_tag")).toBeInTheDocument();
+    expect(screen.queryByText("no_public_ssh")).not.toBeInTheDocument();
     expect(screen.queryByText("azure_apim_no_public_network")).not.toBeInTheDocument();
 
-    // Click 'Warnings' filter
-    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
-    fireEvent.click(warningsTab);
+    // Click 'Advisory' filter
+    fireEvent.click(screen.getByRole("button", { name: /^advisory/i }));
 
     expect(screen.getByText("expensive_vm_size")).toBeInTheDocument();
     expect(screen.queryByText("no_public_ssh")).not.toBeInTheDocument();
@@ -163,6 +164,7 @@ describe("PolicyChecksOutput", () => {
         policyEvaluation={sampleEvaluation}
         jobId="123"
         organizationId="org-123"
+        canApprove
         onOverrideSuccess={onOverrideSuccess}
       />
     );
@@ -170,7 +172,7 @@ describe("PolicyChecksOutput", () => {
     const overrideBtn = screen.getByTestId("override-button");
     fireEvent.click(overrideBtn);
 
-    expect(screen.getByText("Override Soft-Mandatory Policy Checks")).toBeInTheDocument();
+    expect(screen.getByText("Override soft-mandatory policy checks")).toBeInTheDocument();
 
     const textarea = screen.getByPlaceholderText(/Approved by SecOps for emergency mitigation/i);
     fireEvent.change(textarea, { target: { value: "Approved hotfix exception" } });
@@ -217,8 +219,31 @@ describe("PolicyChecksOutput", () => {
 
     const ruleCard = screen.getByTestId("rule-card");
     expect(ruleCard).toHaveClass("policy-rule-card--soft");
-    expect(screen.getByText("Soft Mandatory")).toBeInTheDocument();
-    expect(screen.queryByText("Hard Mandatory")).not.toBeInTheDocument();
+    expect(within(ruleCard).getByText("Soft mandatory")).toBeInTheDocument();
+    expect(screen.queryByText("Hard mandatory")).not.toBeInTheDocument();
+  });
+
+  it("disables override and discard without the approve permission and says why", async () => {
+    render(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" status="waitingApproval" />);
+
+    const override = screen.getByTestId("override-button");
+    expect(override).toBeDisabled();
+    expect(screen.getByTestId("reject-button")).toBeDisabled();
+    fireEvent.click(override);
+    expect(screen.queryByText("Override soft-mandatory policy checks")).not.toBeInTheDocument();
+
+    fireEvent.mouseOver(override.parentElement!);
+    expect(
+      (await screen.findAllByText("You do not have permission to approve runs on this workspace.")).length
+    ).toBeGreaterThan(0);
+  });
+
+  it("names the result filter and the search box differently", () => {
+    render(<PolicyChecksOutput policyEvaluation={sampleEvaluation} jobId="123" />);
+
+    expect(screen.getByRole("group", { name: "Filter by result" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search policy results" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter policy results")).not.toBeInTheDocument();
   });
 
   it("hides override and reject buttons when status is approved, rejected, or completed", () => {
@@ -250,6 +275,7 @@ describe("PolicyChecksOutput", () => {
         jobId="123"
         organizationId="org-123"
         status="waitingApproval"
+        canApprove
         onRejectSuccess={onRejectSuccess}
       />
     );
@@ -259,8 +285,14 @@ describe("PolicyChecksOutput", () => {
     const textarea = screen.getByPlaceholderText(/Approved by SecOps for emergency mitigation/i);
     fireEvent.change(textarea, { target: { value: "Violates security policy - rejected" } });
 
-    const rejectBtn = screen.getByTestId("reject-override-btn");
-    fireEvent.click(rejectBtn);
+    // Discarding asks first and states the consequence
+    fireEvent.click(screen.getByTestId("reject-override-btn"));
+    expect(screen.getByText(/The plan is not applied and the run is marked as discarded/)).toBeInTheDocument();
+    expect(patchMock).not.toHaveBeenCalled();
+    const confirm = screen
+      .getAllByRole("button", { name: "Discard run" })
+      .find((button) => button.classList.contains("ant-btn-primary"));
+    fireEvent.click(confirm!);
 
     await waitFor(() => {
       expect(patchMock).toHaveBeenCalledWith(
@@ -288,6 +320,7 @@ describe("PolicyChecksOutput", () => {
         jobId="123"
         organizationId="org-123"
         status="waitingApproval"
+        canApprove
       />
     );
 
@@ -318,8 +351,8 @@ describe("PolicyChecksOutput", () => {
 
     render(<PolicyChecksOutput policyEvaluation={timestampEvaluation} jobId="123" organizationId="org-123" />);
 
-    expect(screen.getByText(/Active Policy Exemption/)).toBeInTheDocument();
-    expect(screen.getByText(/Expires:/)).toBeInTheDocument();
+    expect(screen.getByText(/Active policy exemption/)).toBeInTheDocument();
+    expect(screen.getByText(/Expires/)).toBeInTheDocument();
     expect(screen.getByText(/2030-12-31/)).toBeInTheDocument();
   });
 
@@ -359,8 +392,7 @@ describe("PolicyChecksOutput", () => {
     render(<PolicyChecksOutput policyEvaluation={legacyWarningEvaluation} jobId="125" />);
 
     // Click 'Warnings' filter
-    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
-    fireEvent.click(warningsTab);
+    fireEvent.click(screen.getByRole("button", { name: /^advisory/i }));
 
     expect(screen.getByText("password_length_advisory")).toBeInTheDocument();
     expect(screen.getByText("random_password.db_password_advisory")).toBeInTheDocument();
@@ -402,17 +434,17 @@ describe("PolicyChecksOutput", () => {
     render(<PolicyChecksOutput policyEvaluation={mixedEvaluation} jobId="126" />);
 
     // Click 'Warnings' filter
-    const warningsTab = screen.getByRole("radio", { name: /warnings/i });
-    fireEvent.click(warningsTab);
+    fireEvent.click(screen.getByRole("button", { name: /^advisory/i }));
 
     expect(screen.getByText("s3_lifecycle_warn")).toBeInTheDocument();
     expect(screen.queryByText("s3_bucket_deny")).not.toBeInTheDocument();
 
     // Click 'Violations' filter
-    const violationsTab = screen.getByRole("radio", { name: /violations/i });
-    fireEvent.click(violationsTab);
+    fireEvent.click(screen.getByRole("button", { name: /^hard mandatory/i }));
 
-    expect(screen.getByText("s3_bucket_deny")).toBeInTheDocument();
+    expect(screen.getByText("s3_bucket_deny").closest('[data-testid="rule-card"]')).toHaveClass(
+      "policy-rule-card--hard"
+    );
     expect(screen.queryByText("s3_lifecycle_warn")).not.toBeInTheDocument();
   });
 
@@ -449,31 +481,28 @@ describe("PolicyChecksOutput", () => {
 
     render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="127" />);
 
-    // Top pill displays '2 Passed'
-    const passedPill = screen.getByTestId("pill-passed");
-    expect(passedPill).toHaveTextContent("2 Passed");
-
-    // Filter bar has All (2) and Passed (2)
-    const allTab = screen.getByRole("radio", { name: /all \(2\)/i });
-    const passedTab = screen.getByRole("radio", { name: /passed \(2\)/i });
-    expect(allTab).toBeInTheDocument();
-    expect(passedTab).toBeInTheDocument();
+    // Filter chips: All 2 and Passed 2; empty severities stay hidden
+    expect(screen.getByTestId("pill-passed")).toHaveTextContent("Passed2");
+    expect(screen.getByRole("button", { name: "All 2" })).toBeInTheDocument();
+    expect(screen.queryByTestId("pill-hard")).not.toBeInTheDocument();
 
     // Both passed cards rendered in 'All' view
     expect(screen.getByText("aws-baseline-security")).toBeInTheDocument();
     expect(screen.getByText("tagging-compliance")).toBeInTheDocument();
-    expect(screen.getAllByText("Passed")).toHaveLength(2);
-    expect(screen.getByText("Hard Mandatory")).toBeInTheDocument();
-    expect(screen.getByText("Advisory")).toBeInTheDocument();
+    const cards = screen.getAllByTestId("rule-card");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]).getByText("Passed")).toBeInTheDocument();
+    expect(within(cards[0]).getByText("Hard mandatory")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("Advisory")).toBeInTheDocument();
 
     // Execution logs can be expanded and collapsed
     const toggleLogsBtn = screen.getByTestId("toggle-logs-aws-baseline-security");
-    expect(toggleLogsBtn).toHaveTextContent("View Execution Logs");
+    expect(toggleLogsBtn).toHaveTextContent("View execution logs");
     fireEvent.click(toggleLogsBtn);
 
     expect(screen.getByTestId("logs-content-aws-baseline-security")).toBeInTheDocument();
     expect(screen.getByText(/✔ All policy rules passed\./)).toBeInTheDocument();
-    expect(toggleLogsBtn).toHaveTextContent("Hide Execution Logs");
+    expect(toggleLogsBtn).toHaveTextContent("Hide execution logs");
 
     fireEvent.click(toggleLogsBtn);
     expect(screen.queryByTestId("logs-content-aws-baseline-security")).not.toBeInTheDocument();
@@ -505,22 +534,21 @@ describe("PolicyChecksOutput", () => {
     render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="128" />);
 
     const passedPill = screen.getByTestId("pill-passed");
-    const passedTab = screen.getByRole("radio", { name: /passed \(2\)/i });
-    const allTab = screen.getByRole("radio", { name: /all \(2\)/i });
+    const allPill = screen.getByRole("button", { name: "All 2" });
 
     // Initial state is 'All'
-    expect(allTab).toBeChecked();
-    expect(passedTab).not.toBeChecked();
+    expect(allPill).toHaveAttribute("aria-pressed", "true");
+    expect(passedPill).toHaveAttribute("aria-pressed", "false");
 
     // Click passed pill -> switches to passed
     fireEvent.click(passedPill);
-    expect(passedTab).toBeChecked();
-    expect(passedPill).toHaveClass("policy-pill--active");
+    expect(passedPill).toHaveAttribute("aria-pressed", "true");
+    expect(allPill).toHaveAttribute("aria-pressed", "false");
 
     // Click passed pill again -> toggles back to all
     fireEvent.click(passedPill);
-    expect(allTab).toBeChecked();
-    expect(passedPill).not.toHaveClass("policy-pill--active");
+    expect(allPill).toHaveAttribute("aria-pressed", "true");
+    expect(passedPill).toHaveAttribute("aria-pressed", "false");
   });
 
   it("filters passed rules with search input", () => {
@@ -545,7 +573,7 @@ describe("PolicyChecksOutput", () => {
 
     render(<PolicyChecksOutput policyEvaluation={passedEvaluation} jobId="129" />);
 
-    const searchInput = screen.getByPlaceholderText(/filter by rule, resource, or ticket/i);
+    const searchInput = screen.getByRole("textbox", { name: "Search policy results" });
     fireEvent.change(searchInput, { target: { value: "tagging" } });
 
     expect(screen.getByText("tagging-compliance")).toBeInTheDocument();

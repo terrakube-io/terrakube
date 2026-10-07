@@ -5,7 +5,7 @@ export function getWorkspaceStatusText(status?: string): string | undefined {
     case JobStatus.Completed:
       return "Completed";
     case JobStatus.NoChanges:
-      return "No Changes";
+      return "No changes";
     case JobStatus.Running:
       return "Running";
     case JobStatus.Queue:
@@ -13,11 +13,11 @@ export function getWorkspaceStatusText(status?: string): string | undefined {
     case JobStatus.Pending:
       return "Pending";
     case JobStatus.WaitingApproval:
-      return "Waiting Approval";
+      return "Waiting approval";
     case JobStatus.NotExecuted:
-      return "Not Executed";
+      return "Not executed";
     case "NeverExecuted":
-      return "Never Executed";
+      return "Never executed";
     case JobStatus.Rejected:
       return "Discarded";
     case JobStatus.Cancelled:

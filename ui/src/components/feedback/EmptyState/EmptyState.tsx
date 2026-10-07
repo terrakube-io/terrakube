@@ -1,18 +1,17 @@
 import { Empty } from "antd";
+import "./EmptyState.css";
 
 type Props = {
   description: React.ReactNode;
+  /** @deprecated Every empty state uses the simple illustration now. */
   simple?: boolean;
   children?: React.ReactNode;
 };
 
-export default function EmptyState({ description, simple, children }: Props) {
+// One illustration everywhere: the detailed antd picture has fixed greys that clash with the dark theme.
+export default function EmptyState({ description, children }: Props) {
   return (
-    <Empty
-      image={simple ? Empty.PRESENTED_IMAGE_SIMPLE : undefined}
-      description={description}
-      style={{ margin: "96px auto 48px", maxWidth: 420 }}
-    >
+    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={description} className="empty-state">
       {children}
     </Empty>
   );

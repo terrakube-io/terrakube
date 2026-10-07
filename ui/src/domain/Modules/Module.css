@@ -1,280 +1,523 @@
-.moduleList {
-  width: 100%;
+/* Private registry: list (modules and providers) and the module and provider detail pages. */
+
+/* ---- List ---- */
+.ant-typography.registry-intro {
+  max-width: 720px;
+  margin: 8px 0 0;
 }
 
-.modulesWrapper {
-  width: 100%;
-}
-
-/* Registry page — centered, constrained width, matches the standard page-width cap */
-
-/* Module card — Leaa-inspired: white card, soft shadow, no border */
-.module-card.ant-card {
-  box-shadow:
-    0 9px 18px 0 rgba(0, 35, 90, 0.06),
-    0 0 2px 0 rgba(0, 35, 90, 0.06);
-  border: none !important;
-  border-radius: 8px;
-  transition: box-shadow 0.25s ease;
-}
-
-.module-card.ant-card:hover {
-  box-shadow:
-    0 9px 24px 0 rgba(0, 35, 90, 0.1),
-    0 0 2px 0 rgba(0, 35, 90, 0.08);
-}
-
-/* Uniform card content height */
-.module-card-body {
-  min-height: 80px;
-  padding: 20px 24px 16px;
-}
-
-/* Description: 2-line clamp for compactness */
-.module-card-desc {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-top: 4px;
-  font-size: 13px;
-  color: #656d76;
-  line-height: 1.5;
-}
-
-/* Module card name */
-.module-card-name {
-  font-size: 16px;
-  color: #222b3d;
-}
-
-[data-theme="dark"] .module-card-name {
-  color: var(--tk-accent);
-}
-
-/* Dark mode for module card description */
-[data-theme="dark"] .module-card-desc {
-  color: #8b949e;
-}
-
-/* Dark mode for module card border */
-[data-theme="dark"] .module-card .ant-card {
-  border-color: var(--tk-border-primary);
-}
-
-[data-theme="dark"] .module-card-body + div {
-  border-top-color: var(--tk-border-primary) !important;
-}
-
-.module-flat-icon {
+/* One row of 32px controls: what to show, a search, the view toggle. No container box. */
+.registry-filter {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: #f6fbfe;
+  gap: 8px;
+  margin: 24px 0 16px;
 }
 
-.module-flat-meta .ant-typography {
-  font-size: 12px;
-  color: #8c97a8;
+.registry-search {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
-.module-flat-meta .anticon,
-.module-flat-meta svg {
-  font-size: 12px;
-  width: 12px;
-  height: 12px;
-  color: #8c97a8;
+.registry-search .anticon-search {
+  color: var(--tk-text-tertiary);
 }
 
-.moduleProvider {
-  font-size: 13px;
-  margin-top: 5px;
+.registry-search .ant-input::placeholder {
+  color: var(--tk-text-secondary);
 }
 
-.moduleDescription {
-  font-size: 15px;
+.registry-count.ant-typography {
+  margin: 0 0 12px;
+  font-size: 20px;
 }
 
-.moduleTitle {
-  font-size: 30px;
-  margin: 0;
-}
-
-.moduleDetails {
+.registry-loading {
   display: block;
+  margin: 48px auto;
+}
+
+.registry-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.registry-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+  transition: border-color 150ms ease-out;
+}
+
+.registry-card:hover {
+  border-color: var(--tk-accent);
+}
+
+.registry-card:has(.registry-card-name:focus-visible) {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.registry-card-icon,
+.registry-detail-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+  font-size: 20px;
+}
+
+.registry-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+a.registry-card-name,
+a.registry-card-name:hover {
+  color: var(--tk-text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+a.registry-card-name:focus-visible {
+  outline: none;
+}
+
+/* The name link covers the whole card; links in the meta line sit above it. */
+a.registry-card-name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+}
+
+.registry-card-description {
+  color: var(--tk-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.registry-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  color: var(--tk-text-secondary);
   font-size: 13px;
-  margin-top: 5px;
 }
 
-.moduleDetails td {
-  padding-right: 20px;
-  padding-top: 5px;
+.registry-card-meta a {
+  position: relative;
+  z-index: 1;
 }
 
-.black {
-  color: black;
+.registry-pagination {
+  margin-top: 16px;
+  text-align: right;
 }
 
-.moduleTabs {
-  margin-top: 20px;
+.registry-table-row {
+  cursor: pointer;
 }
 
-.moduleCode {
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--border-color);
-  border-image: initial;
-  color: inherit;
-  font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
-  font-size: 12px;
-  overflow-x: auto;
-  width: 100%;
-  padding: 5px;
-  background-color: var(--code-bg);
+a.registry-table-name {
+  display: block;
+  color: var(--tk-text-primary);
+  font-weight: 500;
 }
 
-.moduleCredentials {
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--border-color);
-  border-image: initial;
-  color: inherit;
-  font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
-  font-size: 12px;
-  overflow-x: auto;
-  width: 100%;
-  padding: 5px;
-  background-color: var(--code-bg);
-  margin-top: 10px;
-}
-
-.moduleInstructions {
+.registry-table-description {
+  display: block;
+  overflow: hidden;
+  color: var(--tk-text-secondary);
   font-size: 13px;
-  width: 100%;
-}
-
-.moduleSubtitles {
-  font-size: 15px;
   font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.markdown-body {
-  font-size: small;
+/* Machine values: provider systems, versions, addresses, HCL. */
+/* :root outweighs the global dark-theme code chip. */
+:root .registry-mono,
+:root .registry-card-meta code,
+:root .registry-rail code,
+:root .registry-detail-address code {
+  padding: 0;
+  border: 0;
+  background: none;
   color: inherit;
-  background-color: inherit;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }
 
-/* Style all text elements to inherit theme colors */
-.markdown-body h1,
-.markdown-body h2,
-.markdown-body h3,
-.markdown-body h4,
-.markdown-body h5,
-.markdown-body h6,
-.markdown-body p,
-.markdown-body li,
-.markdown-body table,
-.markdown-body blockquote {
-  color: inherit;
-  background-color: inherit;
+/* ---- Detail ---- */
+.registry-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
 }
 
-/* Markdown tables */
-.markdown-body table {
-  border-collapse: collapse;
-  width: 100%;
+.registry-detail-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  font-size: 24px;
+}
+
+.registry-detail-title {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.registry-detail-title h2.ant-typography {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.registry-detail-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--tk-text-secondary);
+}
+
+.registry-detail-address code {
+  overflow-wrap: anywhere;
+}
+
+.registry-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.registry-detail-version {
+  width: 180px;
+}
+
+.ant-typography.registry-detail-description {
+  max-width: 720px;
+  margin: 16px 0 0;
+}
+
+.registry-detail-alert {
+  margin-top: 16px;
+}
+
+.registry-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 40px;
+  margin-top: 32px;
+}
+
+.registry-section + .registry-section {
+  margin-top: 32px;
+}
+
+.registry-section h3.ant-typography {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+:root .registry-snippet {
+  margin: 12px 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+:root .registry-snippet-small {
+  margin-bottom: 0;
+  padding: 12px 16px;
+}
+
+.registry-hint {
+  margin: 16px 0 0;
+  color: var(--tk-text-secondary);
+}
+
+.registry-hint summary {
+  width: fit-content;
+  color: var(--tk-link);
+  cursor: pointer;
+}
+
+.registry-hint p {
+  margin: 8px 0 0;
+}
+
+.registry-tabs .ant-tabs-extra-content {
+  padding-left: 16px;
+}
+
+.registry-submodule {
+  width: 220px;
+}
+
+.registry-tab-empty {
+  display: block;
+  padding: 24px 0;
+  color: var(--tk-text-secondary);
+}
+
+.registry-tab-intro {
+  margin: 0 0 12px;
+  color: var(--tk-text-secondary);
+}
+
+/* Long types and defaults break inside the fixed-width table instead of widening the page. */
+.registry-table code,
+.registry-table td {
+  overflow-wrap: anywhere;
+}
+
+.registry-pre {
+  white-space: pre-wrap;
+}
+
+/* Right rail: a facts list like the workspace overview. */
+.registry-rail {
+  font-size: 13px;
+}
+
+.registry-rail-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0 0 20px;
+  list-style: none;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.registry-rail-facts:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.registry-rail-facts li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--tk-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.registry-rail-label {
+  color: var(--tk-text-secondary);
+}
+
+.registry-rail-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.registry-rail-section {
+  padding-top: 20px;
+}
+
+.registry-rail-section h3.ant-typography {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.registry-rail-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 991.98px) {
+  .registry-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .registry-filter {
+    flex-wrap: wrap;
+  }
+
+  .registry-search {
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .registry-tabs .ant-tabs-extra-content {
+    display: none;
+  }
+}
+
+/* ---- Readme (own styles: the global markdown stylesheet is light-only) ---- */
+.registry-readme {
+  color: var(--tk-text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.registry-readme > :first-child {
+  margin-top: 0;
+}
+
+.registry-readme h1,
+.registry-readme h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.registry-readme h1,
+.registry-readme h2,
+.registry-readme h3,
+.registry-readme h4,
+.registry-readme h5,
+.registry-readme h6 {
+  margin: 24px 0 12px;
+  color: var(--tk-text-primary);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.registry-readme h1 {
+  font-size: 24px;
+}
+
+.registry-readme h2 {
+  font-size: 20px;
+}
+
+.registry-readme h3 {
+  font-size: 16px;
+}
+
+.registry-readme img {
+  max-width: 100%;
+}
+
+.registry-readme table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
   margin: 1em 0;
-  color: inherit;
-  background-color: inherit;
+  overflow: auto;
+  border-collapse: collapse;
 }
 
-.markdown-body table tr {
-  background-color: inherit;
-  border-top: 1px solid var(--border-color);
-}
-
-.markdown-body table tr:nth-child(2n) {
-  background-color: var(--table-row-bg);
-}
-
-.markdown-body table th,
-.markdown-body table td {
+.registry-readme th,
+.registry-readme td {
   padding: 6px 13px;
-  border: 1px solid var(--border-color);
-  background-color: inherit;
+  border: 1px solid var(--tk-border-primary);
 }
 
-.markdown-body table th {
-  background-color: var(--table-header-bg);
+.registry-readme th {
+  background: var(--tk-fill-primary);
   font-weight: 600;
 }
 
-/* Code blocks */
-.markdown-body pre {
-  background-color: var(--code-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+.registry-readme tr:nth-child(2n) td {
+  background: var(--tk-fill-secondary);
+}
+
+:root .registry-readme pre {
   padding: 16px;
   overflow: auto;
-  color: inherit;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 6px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
 }
 
-.markdown-body code {
-  background-color: var(--code-bg);
-  border-radius: 3px;
+:root .registry-readme code {
   padding: 0.2em 0.4em;
-  margin: 0;
+  border-radius: 4px;
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-primary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 85%;
-  color: inherit;
 }
 
-/* Ensure code blocks inside pre tags inherit color */
-.markdown-body pre code {
-  color: inherit;
-  background-color: transparent;
+:root .registry-readme pre code {
   padding: 0;
-  margin: 0;
-  font-size: inherit;
-  border-radius: 0;
-  border: none;
+  background: none;
+  font-size: 13px;
 }
 
-/* Links */
-.markdown-body a {
-  color: var(--ant-primary-color);
+.registry-readme a {
+  color: var(--tk-link);
 }
 
-.markdown-body a:hover {
-  color: var(--ant-primary-color-hover);
+.registry-readme a:hover {
+  color: var(--tk-link-hover);
 }
 
-/* Blockquotes */
-.markdown-body blockquote {
-  color: inherit;
-  opacity: 0.8;
-  padding-left: 1em;
-  border-left: 0.25em solid var(--border-color);
+.registry-readme blockquote {
   margin: 1em 0;
+  padding-left: 1em;
+  border-left: 0.25em solid var(--tk-border-primary);
+  color: var(--tk-text-secondary);
 }
 
-/* Lists */
-.markdown-body ul,
-.markdown-body ol {
+.registry-readme ul,
+.registry-readme ol {
   padding-left: 2em;
 }
 
-.markdown-body li + li {
+.registry-readme li + li {
   margin-top: 0.25em;
 }
 
-/* Horizontal rule */
-.markdown-body hr {
+.registry-readme hr {
   height: 1px;
-  border: none;
-  background-color: var(--border-color);
   margin: 24px 0;
+  border: none;
+  background: var(--tk-border-secondary);
+}
+
+/* ---- Publish form ---- */
+.registry-form-section.ant-typography {
+  margin: 32px 0 16px;
+  font-size: 20px;
+}
+
+.settings-form > .registry-form-section.ant-typography:first-child {
+  margin-top: 0;
+}
+
+.registry-mono-input {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }

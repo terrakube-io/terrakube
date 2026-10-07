@@ -23,3 +23,16 @@ export function formatOrdinalDate(date: DateTime): string {
       : (({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th");
   return `${date.toFormat("MMMM")} ${day}${suffix}, ${date.year}`;
 }
+
+// "42s", "3m 05s", "1h 02m": elapsed time between two ISO timestamps; null when either is missing or invalid.
+export function formatDuration(startIso?: string | null, endIso?: string | null): string | null {
+  if (!startIso || !endIso) return null;
+  const start = DateTime.fromISO(startIso);
+  const end = DateTime.fromISO(endIso);
+  if (!start.isValid || !end.isValid || end < start) return null;
+  const seconds = Math.round(end.diff(start, "seconds").seconds);
+  if (seconds < 60) return `${seconds}s`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${pad(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${pad(Math.floor((seconds % 3600) / 60))}m`;
+}

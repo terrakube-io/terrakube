@@ -1,6 +1,4 @@
-import { CloseCircleOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
-import { Typography } from "antd";
 import { CrudFormModal } from "@/components/modals/CrudFormModal";
 import { VariableFormFields } from "@/components/forms/VariableFormFields";
 
@@ -33,13 +31,8 @@ export default function CollectionVariableModal({ open, mode, form, confirmLoadi
       onCancel={onCancel}
       onSubmit={onSubmit}
       confirmLoading={confirmLoading}
-      closeIcon={<CloseCircleOutlined />}
       initialValues={{ category: "TERRAFORM", hcl: false, sensitive: false }}
     >
-      <Typography.Title level={5} style={{ margin: "20px 0 15px 0" }}>
-        Select variable category
-      </Typography.Title>
-
       <VariableFormFields />
     </CrudFormModal>
   );

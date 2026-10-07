@@ -1,19 +1,105 @@
+/* Run detail: header (status, run number, workspace · commit), byline and facts, then one panel per section. */
+.run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.run-detail-loading {
+  min-height: 120px;
+}
+
+.run-step-notice {
+  margin-bottom: 12px;
+}
+
+.run-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .job-headline {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
   flex-wrap: wrap;
+}
+
+.job-headline .ant-tag {
+  margin: 0;
 }
 
 .job-headline-title {
   margin: 0;
+  color: var(--tk-text-primary);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .job-headline-meta {
-  font-weight: 500;
   color: var(--tk-text-secondary);
+  font-size: 16px;
+}
+
+/* Two classes so the global dark-theme code chip does not apply. */
+.job-headline .job-headline-meta code,
+.run-header .run-byline code,
+.run-header .run-facts code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.run-byline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--tk-text-secondary);
+}
+
+.run-byline > .ant-avatar {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.run-byline strong {
+  color: var(--tk-text-primary);
+  font-weight: 600;
+}
+
+.run-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 8px 0 0;
+}
+
+.run-facts > div {
+  min-width: 0;
+}
+
+.run-facts dt {
+  margin-bottom: 2px;
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+}
+
+.run-facts dd {
+  margin: 0;
+  color: var(--tk-text-primary);
+}
+
+.run-facts-note {
+  margin: 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
 }
 
 /* Stays under the headline while the operator scrolls the plan, so the decision is never below the fold. */
@@ -24,7 +110,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px 16px;
   flex-wrap: wrap;
   padding: 12px 16px;
   border: 1px solid var(--tk-border-primary);
@@ -41,4 +127,98 @@
 
 .job-action-bar-summary {
   font-variant-numeric: tabular-nums;
+}
+
+.run-guard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-guard-variables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.run-guard-variables code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+/* Every section (policy checks, each step) is the same panel: 1px border, 8px radius, no tinted header. */
+.ant-collapse.run-panel {
+  border-color: var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-bg-container);
+}
+
+.ant-collapse.run-panel > .ant-collapse-item {
+  border-bottom: 0;
+}
+
+.ant-collapse.run-panel > .ant-collapse-item > .ant-collapse-header {
+  align-items: center;
+  padding: 12px 16px;
+}
+
+.ant-collapse.run-panel > .ant-collapse-item > .ant-collapse-panel,
+.ant-collapse.run-panel > .ant-collapse-item > .ant-collapse-content {
+  border-top: 1px solid var(--run-divider);
+  background: var(--tk-bg-container);
+}
+
+.ant-collapse.run-panel .ant-collapse-body {
+  padding: 16px;
+}
+
+/* A step that has nothing to show yet reads as text, not as a disabled control. */
+.ant-collapse.run-panel .ant-collapse-item-disabled > .ant-collapse-header {
+  color: var(--tk-text-primary);
+  cursor: default;
+}
+
+.run-panel-label {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.run-panel-label .ant-tag {
+  margin: 0;
+}
+
+.run-panel-label > .anticon {
+  font-size: 18px;
+}
+
+.run-panel-title {
+  margin: 0;
+  color: var(--tk-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.run-panel-status {
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+}
+
+.run-panel-icon {
+  color: var(--tk-text-secondary);
+}
+
+@media (max-width: 575.98px) {
+  .ant-collapse.run-panel > .ant-collapse-item > .ant-collapse-header {
+    flex-wrap: wrap;
+    padding: 12px;
+  }
+
+  .ant-collapse.run-panel .ant-collapse-body {
+    padding: 12px;
+  }
 }

@@ -1,5 +1,10 @@
 .settings-section {
+  max-width: var(--settings-section-max-width);
   margin-bottom: 32px;
+}
+
+.settings-section-title.ant-typography {
+  margin: 0;
 }
 
 .settings-section-header {
@@ -21,6 +26,14 @@
 
 .settings-section-danger {
   border-color: var(--ant-color-error);
+}
+
+.settings-section-danger .settings-section-description {
+  margin-bottom: 0;
+}
+
+.settings-section-danger-action {
+  flex-shrink: 0;
 }
 
 .settings-section-danger .ant-card-head {

@@ -15,7 +15,6 @@ import {
   Steps,
   Tag,
   message,
-  theme,
   Typography,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -47,6 +46,7 @@ import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import VcsLogo from "@/components/display/VcsLogo";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
+import "./CreateImport.css";
 
 const validateMessages = {
   required: "${label} is required!",
@@ -61,7 +61,6 @@ type IacType = {
   name: string;
   description?: string;
   icon?: string;
-  color?: string;
 };
 
 type CreateWorkspaceForm = {
@@ -77,7 +76,6 @@ type CreateWorkspaceForm = {
 };
 
 export const CreateWorkspace = () => {
-  const { token } = theme.useToken();
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
@@ -559,15 +557,7 @@ export const CreateWorkspace = () => {
       ]}
       width="reading"
     >
-      <div
-        style={{
-          background: token.colorFillAlter,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: token.borderRadiusLG,
-          padding: "20px 24px",
-          margin: "16px 0 24px 0",
-        }}
-      >
+      <div className="ws-create-steps">
         <Steps
           current={current}
           onChange={handleChange}
@@ -590,7 +580,7 @@ export const CreateWorkspace = () => {
       </div>
       {current == 0 && (
         <Space className="chooseType" orientation="vertical">
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="ws-create-title">
             Choose your IaC type{" "}
           </Typography.Title>
           <List
@@ -605,26 +595,11 @@ export const CreateWorkspace = () => {
             dataSource={iacTypes}
             renderItem={(item) => (
               <List.Item>
-                <Card
-                  style={{ textAlign: "center", minHeight: 220 }}
-                  styles={{ body: { padding: 32 } }}
-                  hoverable
-                  onClick={() => handleIacTypeClick(item)}
-                >
-                  <Space orientation="vertical" align="center" size="middle" style={{ width: "100%" }}>
-                    <img
-                      style={{
-                        padding: "14px",
-                        backgroundColor: item.color,
-                        width: "96px",
-                        maxWidth: "100%",
-                        height: "auto",
-                      }}
-                      alt={item.name}
-                      src={item.icon}
-                    />
-                    <span style={{ fontWeight: "bold", fontSize: 18, whiteSpace: "nowrap" }}>{item.name}</span>
-                  </Space>
+                <Card className="ws-create-iac-card" hoverable onClick={() => handleIacTypeClick(item)}>
+                  <Flex vertical align="center" gap="middle">
+                    <img className="ws-create-iac-logo" alt={item.name} src={item.icon} />
+                    <span className="ws-create-iac-name">{item.name}</span>
+                  </Flex>
                 </Card>
               </List.Item>
             )}
@@ -634,7 +609,7 @@ export const CreateWorkspace = () => {
 
       {current === 1 && (
         <Space className="chooseType" orientation="vertical">
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="ws-create-title">
             Choose your workflow{" "}
           </Typography.Title>
           <Card hoverable onClick={handleClick}>
@@ -646,7 +621,6 @@ export const CreateWorkspace = () => {
               Store your {iacType?.name} configuration in a git repository, and trigger runs based on pull requests and
               merges.
             </div>
-            <div className="workflowSelect"></div>
           </Card>
           <Card hoverable onClick={handleCliDriven}>
             <IconContext.Provider value={{ size: "1.3em" }}>
@@ -671,7 +645,7 @@ export const CreateWorkspace = () => {
 
       {current === 2 && versionControlFlow && (
         <Space className="chooseType" orientation="vertical">
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="ws-create-title">
             Connect to a version control provider
           </Typography.Title>
           <div className="workflowDescription2 App-text">
@@ -762,8 +736,8 @@ export const CreateWorkspace = () => {
         validateMessages={validateMessages}
         initialValues={{ folder: "/" }}
       >
-        <Space hidden={step2Hidden} className="chooseType" orientation="vertical" style={{ width: "100%" }}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
+        <Space hidden={step2Hidden} className="chooseType" orientation="vertical">
+          <Typography.Title level={3} className="ws-create-title">
             Choose a repository
           </Typography.Title>
           <div className="workflowDescription2 App-text">
@@ -778,30 +752,16 @@ export const CreateWorkspace = () => {
                 { label: "Browse repositories", value: "list" },
                 { label: "Enter URL manually", value: "manual" },
               ]}
-              style={{ marginBottom: 8 }}
+              className="ws-create-repo-mode"
             />
           )}
 
           {repoPickerMode === "list" && (
-            <div style={{ width: "100%", maxWidth: 640 }}>
-              <Card
-                size="small"
-                styles={{ body: { padding: 0 } }}
-                style={{ borderRadius: token.borderRadiusLG, overflow: "hidden" }}
-              >
-                <Flex
-                  wrap="wrap"
-                  gap="small"
-                  justify="space-between"
-                  align="center"
-                  style={{
-                    padding: "12px",
-                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                    backgroundColor: token.colorFillAlter,
-                  }}
-                >
+            <div className="ws-create-repo-picker">
+              <Card size="small" className="ws-create-repo-card">
+                <Flex wrap="wrap" gap="small" justify="space-between" align="center" className="ws-create-repo-toolbar">
                   <Select
-                    style={{ flex: "1 1 200px", minWidth: 180 }}
+                    className="ws-create-repo-group"
                     loading={groupsLoading}
                     value={selectedGroup || undefined}
                     placeholder="Select organization"
@@ -811,17 +771,17 @@ export const CreateWorkspace = () => {
                   <Input.Search
                     placeholder="Filter repositories by name"
                     allowClear
-                    style={{ flex: "1 1 220px", minWidth: 180 }}
+                    className="ws-create-repo-search"
                     value={repoSearch}
                     onChange={(e) => handleRepoSearchChange(e.target.value)}
                   />
                 </Flex>
 
-                {repoError && <Alert type="error" showIcon banner title={repoError} style={{ borderRadius: 0 }} />}
+                {repoError && <Alert type="error" showIcon banner title={repoError} className="ws-create-repo-error" />}
 
                 <List
                   loading={repoLoading && repoResults.length === 0}
-                  style={{ maxHeight: 420, overflowY: "auto" }}
+                  className="ws-create-repo-list"
                   dataSource={repoResults}
                   locale={{
                     emptyText: repoSearch ? `No repositories match "${repoSearch}"` : "No repositories found",
@@ -829,23 +789,19 @@ export const CreateWorkspace = () => {
                   renderItem={(repo: VcsRepositorySummary) => (
                     <List.Item
                       onClick={() => handleRepoSelect(repo)}
-                      style={{
-                        cursor: "pointer",
-                        padding: "10px 12px",
-                        backgroundColor: selectedRepoUrl === repo.url ? token.controlItemBgActive : "transparent",
-                        borderLeft:
-                          selectedRepoUrl === repo.url ? `3px solid ${token.colorPrimary}` : "3px solid transparent",
-                      }}
+                      className={
+                        selectedRepoUrl === repo.url ? "ws-create-repo ws-create-repo--selected" : "ws-create-repo"
+                      }
                     >
-                      <Flex justify="space-between" align="center" style={{ width: "100%" }}>
+                      <Flex justify="space-between" align="center" className="ws-create-repo-row">
                         <Space orientation="vertical" size={0}>
-                          <span style={{ fontWeight: 500 }}>{repo.name}</span>
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          <span className="ws-create-repo-name">{repo.name}</span>
+                          <Typography.Text type="secondary" className="ws-create-repo-full-name">
                             {repo.fullName}
                           </Typography.Text>
                         </Space>
                         {repo.privateRepo && (
-                          <Tag icon={<LockOutlined />} style={{ marginRight: 0 }}>
+                          <Tag icon={<LockOutlined />} className="ws-create-repo-private">
                             Private
                           </Tag>
                         )}
@@ -855,13 +811,7 @@ export const CreateWorkspace = () => {
                 />
 
                 {repoHasMore && (
-                  <div
-                    style={{
-                      textAlign: "center",
-                      padding: 8,
-                      borderTop: `1px solid ${token.colorBorderSecondary}`,
-                    }}
-                  >
+                  <div className="ws-create-repo-more">
                     <Button onClick={handleLoadMoreRepos} loading={repoLoading} type="link" size="small">
                       Load more repositories
                     </Button>
@@ -899,7 +849,7 @@ export const CreateWorkspace = () => {
         </Space>
 
         <Space hidden={step3Hidden} className="chooseType" orientation="vertical">
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="ws-create-title">
             Configure settings
           </Typography.Title>
           <Form.Item
@@ -942,7 +892,7 @@ export const CreateWorkspace = () => {
             rules={[{ required: requiredVcsPush }]}
             hidden={!versionControlFlow}
           >
-            <Select placeholder="Select Template" style={{ width: 250 }}>
+            <Select placeholder="Select Template" className="ws-create-field">
               {orgTemplates.map(function (template) {
                 return <Option key={template?.id}>{template?.attributes?.name}</Option>;
               })}
@@ -962,7 +912,7 @@ export const CreateWorkspace = () => {
               placeholder="e.g. 1.11.0 or ~>1.11.0"
               options={terraformVersions.map((v) => ({ value: v }))}
               filterOption={(input, option) => (option?.value ?? "").includes(input)}
-              style={{ width: 250 }}
+              className="ws-create-field"
             />
           </Form.Item>
           <Form.Item
@@ -973,7 +923,7 @@ export const CreateWorkspace = () => {
             extra="To use the SSH support in modules the source should be used like git@github.com:AzBuilder/terrakube-docker-compose.git"
             rules={[{ required: false }]}
           >
-            <Select placeholder="select SSH Key" style={{ width: 250 }}>
+            <Select placeholder="select SSH Key" className="ws-create-field">
               {sshKeys.map(function (sshKey) {
                 return <Option key={sshKey?.id}>{sshKey?.attributes?.name}</Option>;
               })}
@@ -984,7 +934,7 @@ export const CreateWorkspace = () => {
             label="Project"
             extra="Optional. Assigning a project lets you group and filter workspaces."
           >
-            <Select placeholder="(No project)" style={{ width: 250 }}>
+            <Select placeholder="(No project)" className="ws-create-field">
               {!preselectedProjectId && <Option key="none">(No project)</Option>}
               {projectList.map((p) => (
                 <Option key={p.id}>{p.name}</Option>

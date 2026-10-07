@@ -23,6 +23,7 @@ import {
 } from "@/modules/workspaces/utils/workspaceSort";
 import projectService from "@/modules/projects/projectService";
 import { ErrorInformation } from "@/modules/api/types";
+import "./OrganizationDetailsPage.css";
 
 type Props = {
   organizationName: string;
@@ -223,7 +224,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
         { label: "Workspaces", path: `/organizations/${id}/workspaces` },
       ]}
       actions={
-        <Space>
+        <Space wrap>
           <ListViewToggle value={listViewMode} onChange={setListViewMode} />
           <LinkButton to={`/organizations/${id}/workspaces/import`} icon={<ImportOutlined />}>
             Import workspaces
@@ -280,11 +281,11 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
               split={false}
               dataSource={workspaces}
               renderItem={(item) => (
-                <List.Item style={{ position: "relative" }}>
+                <List.Item className="workspace-card-item">
                   <Link
                     to={`/organizations/${id}/workspaces/${item.id}`}
                     aria-label={`Open workspace ${item.name}`}
-                    style={{ position: "absolute", inset: 0, zIndex: 1 }}
+                    className="workspace-card-link"
                   />
                   <WorkspaceCard tags={tags} item={item} organizationId={id} />
                 </List.Item>

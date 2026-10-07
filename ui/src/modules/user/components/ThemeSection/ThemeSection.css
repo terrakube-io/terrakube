@@ -78,6 +78,15 @@
   border-radius: 6px;
 }
 
+/* Each swatch shows its own scheme's accent (see themeConfig.ts), whatever the active scheme is. */
+.theme-swatch[data-scheme="terrakube"] {
+  background: #722ed1;
+}
+
+.theme-swatch[data-scheme="blue"] {
+  background: #1890ff;
+}
+
 /* Scheme tiles: swatch on the left spanning the title and note rows. */
 .theme-tile:not(.theme-tile-preview) {
   display: grid;
@@ -102,9 +111,25 @@
   color: var(--tk-text-secondary);
 }
 
-/* Miniature app: graphite sidebar plus a card, drawn in the mode's own colors. */
+/* Miniature app: graphite sidebar plus a card, drawn in the mode's own colors (the light and dark
+   values of variables.css, fixed here so both previews render the same in either theme). */
+.theme-preview[data-mode="light"] {
+  --theme-preview-canvas: #f0f2f5;
+  --theme-preview-card: #ffffff;
+  --theme-preview-line: #d9d9d9;
+  --theme-preview-ink: rgba(0, 0, 0, 0.88);
+}
+
+.theme-preview[data-mode="dark"] {
+  --theme-preview-canvas: #0d1117;
+  --theme-preview-card: #161b22;
+  --theme-preview-line: #30363d;
+  --theme-preview-ink: #e6edf3;
+}
+
 .theme-preview {
   display: flex;
+  background: var(--theme-preview-canvas);
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 6px;
@@ -114,11 +139,12 @@
 .theme-preview-side {
   width: 22%;
   padding: 10% 6%;
-  background: #161b22;
+  background: var(--tk-sidebar-bg);
 }
 
 .theme-preview-nav {
   display: block;
+  background: var(--tk-accent);
   height: 6px;
   border-radius: 2px;
   opacity: 0.85;
@@ -135,12 +161,14 @@
   gap: 6px;
   height: 100%;
   padding: 10%;
-  border: 1px solid;
+  border: 1px solid var(--theme-preview-line);
   border-radius: 4px;
+  background: var(--theme-preview-card);
 }
 
 .theme-preview-line {
   display: block;
+  background: var(--theme-preview-ink);
   height: 5px;
   width: 70%;
   border-radius: 2px;
@@ -154,6 +182,7 @@
 
 .theme-preview-button {
   display: block;
+  background: var(--tk-accent);
   width: 38%;
   height: 9px;
   margin-top: auto;

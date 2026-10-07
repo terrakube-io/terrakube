@@ -5055,6 +5055,7 @@ __metadata:
     reactflow: "npm:^11.11.3"
     redux: "npm:^5.0.1"
     rehype-raw: "npm:^7.0.0"
+    rehype-sanitize: "npm:^6.0.0"
     remark-gfm: "npm:4.0.1"
     rollup-plugin-visualizer: "npm:^7.1.1"
     sucrase: "npm:^3.35.1"

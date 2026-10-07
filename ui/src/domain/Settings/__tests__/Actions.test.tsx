@@ -78,7 +78,7 @@ it.each(["new", "edit"] as const)("blocks invalid code and allows a corrected %s
     await waitFor(() => expect(screen.getByLabelText("Action code")).toHaveValue(invalidCode));
   }
 
-  fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: mode === "new" ? "Create action" : "Update action" }));
   expect(await screen.findByText("Fix the action code before saving")).toBeInTheDocument();
   expect(axiosInstance.post).not.toHaveBeenCalled();
   expect(axiosInstance.patch).not.toHaveBeenCalled();
@@ -86,7 +86,7 @@ it.each(["new", "edit"] as const)("blocks invalid code and allows a corrected %s
   expect(screen.getByLabelText("Action code")).toHaveFocus();
 
   fireEvent.change(screen.getByLabelText("Action code"), { target: { value: validCode } });
-  fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: mode === "new" ? "Create action" : "Update action" }));
   const save = mode === "new" ? axiosInstance.post : axiosInstance.patch;
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(jest.mocked(save).mock.calls[0][1]).toEqual(

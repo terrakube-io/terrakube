@@ -1,0 +1,99 @@
+/* Project list, detail layout and its settings panels (General, Workspaces, Teams). */
+
+.projects-name-link.ant-btn {
+  padding: 0;
+}
+
+/* Detail layout: settings menu on the left, the active panel on the right. */
+.ant-layout.project-detail-layout {
+  background: var(--tk-bg-container);
+}
+
+/* Outranks the dark-mode sider border in global.css. */
+.ant-layout .ant-layout-sider.project-detail-sider {
+  background: var(--tk-bg-container);
+  border-right: 1px solid var(--tk-border-secondary);
+  height: 100%;
+  overflow: auto;
+}
+
+.ant-menu.project-detail-menu {
+  height: 100%;
+}
+
+.ant-layout-content.project-detail-content {
+  padding: 0 24px;
+  min-height: 280px;
+  max-width: 900px;
+}
+
+.project-settings-panel {
+  width: 100%;
+}
+
+/* General settings: delete section. */
+.project-delete-section {
+  margin-top: 40px;
+}
+
+.project-delete-title {
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.project-delete-notice {
+  margin-bottom: 16px;
+}
+
+.project-delete-workspaces-warning {
+  margin-top: 8px;
+}
+
+.ant-btn.project-delete-button {
+  width: fit-content;
+  padding: 8px 24px;
+  height: auto;
+}
+
+/* Team access. */
+.ant-table-wrapper.project-access-table {
+  margin-bottom: 32px;
+}
+
+.ant-form.project-access-add-form {
+  margin-bottom: 8px;
+}
+
+.ant-select.project-access-team-select {
+  min-width: 220px;
+}
+
+.ant-select.project-access-role-select {
+  width: 200px;
+}
+
+/* Role options render in the select's portal, so these are not scoped to the tab. */
+.ant-space.project-access-role-option {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.ant-typography.project-access-role-description {
+  font-size: 12px;
+  white-space: normal;
+}
+
+.ant-tag.project-access-role-tag {
+  cursor: default;
+}
+
+.ant-btn.project-access-change-button {
+  padding: 0;
+  height: auto;
+}
+
+.ant-typography.project-access-footnote {
+  display: block;
+  margin-top: 16px;
+  font-size: 12px;
+}

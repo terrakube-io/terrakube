@@ -9,11 +9,18 @@
 }
 
 /* Icon tile, name with status tags and meta line, delete action pinned top right. */
+.token-list-items-after-error {
+  margin-top: 10px;
+}
+
 .token-item {
   display: flex;
   align-items: flex-start;
   gap: 16px;
   padding: 20px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background-color: var(--tk-bg-container);
 }
 
 .token-item-icon {
@@ -53,7 +60,7 @@
 }
 
 /* Status colors: antd's warning/error text tokens fall below 4.5:1 at 13px,
-   so the text uses darker (light mode) or lighter (dark mode) steps of the same palettes. */
+   so the text uses the --tk-status-* steps (darker in light mode, lighter in dark mode). */
 .token-item {
   --token-status-bg: var(--tk-fill-primary);
   --token-status-fg: var(--tk-text-secondary);
@@ -61,20 +68,18 @@
 
 .token-item[data-status="expiring"] {
   --token-status-bg: #fff7e6;
-  --token-status-fg: #ad6800;
+  --token-status-fg: var(--tk-status-warning);
 }
 
 .token-item[data-status="expired"] {
   --token-status-bg: #fff1f0;
-  --token-status-fg: #cf1322;
+  --token-status-fg: var(--tk-status-error);
 }
 
 [data-theme="dark"] .token-item[data-status="expiring"] {
   --token-status-bg: rgba(216, 150, 20, 0.15);
-  --token-status-fg: #d89614;
 }
 
 [data-theme="dark"] .token-item[data-status="expired"] {
   --token-status-bg: rgba(255, 120, 117, 0.12);
-  --token-status-fg: #ff7875;
 }

@@ -4,6 +4,7 @@ import cronstrue from "cronstrue";
 import { useEffect, useMemo, useState } from "react";
 import { Cron } from "react-js-cron";
 import "react-js-cron/dist/styles.css";
+import "./Workspaces.css";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import * as C2Q from "cron-to-quartz";
@@ -224,7 +225,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
 
   return (
     <div>
-      <Typography.Title level={2} style={{ margin: 0 }}>
+      <Typography.Title level={2} className="workspace-flush-title">
         Schedules
       </Typography.Title>
       <div>
@@ -266,7 +267,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
             });
         }}
       >
-        <Space style={{ width: "100%" }} orientation="vertical">
+        <Space className="schedule-modal-body" orientation="vertical">
           <Form name="create-org" form={form} layout="vertical" validateMessages={validateMessages}>
             <Form.Item
               name="templateId"
@@ -292,7 +293,7 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
           </Form>
           <span>
             {" "}
-            <span style={{ color: "#ff4d4f" }}>*</span> Cron
+            <span className="schedule-required-mark">*</span> Cron
           </span>
           <Input name="cron" value={value} />
           <Cron value={value} setValue={setValue} />

@@ -11,9 +11,11 @@ async function removeImportedProvider(page: Page, orgId: string) {
   await expect(add.or(inRegistry)).toBeVisible();
   if (!(await inRegistry.isVisible())) return;
   await inRegistry.click();
-  await page.getByRole("button", { name: /Manage Provider/ }).click();
-  await page.getByText("Remove from organization").click();
-  await page.getByRole("button", { name: "Yes" }).click();
+  await page.getByRole("button", { name: /Manage provider/ }).click();
+  await page.getByRole("menuitem", { name: "Delete provider" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete provider" });
+  await dialog.getByLabel("Type the name to confirm").fill("random");
+  await dialog.getByRole("button", { name: "Delete provider" }).click();
   await expect(page).toHaveURL(/\/registry(\?|$)/);
 }
 

@@ -1,23 +1,12 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Collapse,
-  Form,
-  message,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Alert, Button, Collapse, Form, message, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import WorkspaceVariableFormModal from "./components/WorkspaceVariableFormModal";
+import "./Workspaces.css";
 
 const VARIABLES_COLUMS = (
   onEdit: (variable: FlatVariable) => void,
@@ -59,12 +48,7 @@ const VARIABLES_COLUMS = (
           trigger={["hover"]}
         >
           <div
-            style={{
-              maxWidth: 2000,
-              maxHeight: 100,
-              overflow: "auto",
-              cursor: manageWorkspace ? "pointer" : "default",
-            }}
+            className={`workspace-variable-value workspace-variable-value--${manageWorkspace ? "editable" : "readonly"}`}
             onClick={() => {
               if (manageWorkspace) onEdit(record);
             }}
@@ -144,7 +128,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
           overlayClassName="tooltip"
           trigger={["hover"]}
         >
-          <div style={{ maxWidth: 2000, maxHeight: 100, overflow: "auto" }}>{record.value}</div>
+          <div className="workspace-variable-value">{record.value}</div>
         </Tooltip>
       );
     },
@@ -212,7 +196,7 @@ const GLOBAL_VARIABLES_COLUMNS = () => [
           overlayClassName="tooltip"
           trigger={["hover"]}
         >
-          <div style={{ maxWidth: 2000, maxHeight: 100, overflow: "auto" }}>{record.value}</div>
+          <div className="workspace-variable-value">{record.value}</div>
         </Tooltip>
       );
     },
@@ -372,7 +356,7 @@ export const Variables = ({
 
   return (
     <div>
-      <Typography.Title level={3} style={{ margin: 0 }}>
+      <Typography.Title level={3} className="workspace-flush-title">
         Variables
       </Typography.Title>
       <div>
@@ -391,7 +375,7 @@ export const Variables = ({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: "16px" }}
+          className="workspace-variables-alert"
           title="Some sensitive variables are incomplete"
           description="Complete or delete the highlighted variables before starting a new run."
         />
@@ -404,7 +388,7 @@ export const Variables = ({
       >
         <Collapse
           defaultActiveKey={["TERRAFORM", "ENV"]}
-          style={{ marginBottom: 16 }}
+          className="workspace-variables-collapse"
           items={[
             {
               key: "TERRAFORM",

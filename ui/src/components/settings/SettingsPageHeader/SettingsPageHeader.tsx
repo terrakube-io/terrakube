@@ -1,5 +1,6 @@
-import { QuestionCircleOutlined } from "@ant-design/icons";
-import { Button, Divider, Flex, Tooltip, Typography } from "antd";
+import { ExportOutlined } from "@ant-design/icons";
+import { Divider, Flex, Typography } from "antd";
+import "./SettingsPageHeader.css";
 
 type Props = {
   title: React.ReactNode;
@@ -16,34 +17,35 @@ export default function SettingsPageHeader({ title, description, actions, action
     <>
       <Flex justify="space-between" align="center" wrap gap="middle">
         <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={3} className="settings-page-header-title">
             {title}
           </Typography.Title>
-          {description && (
-            <Typography.Text type="secondary" style={{ display: "block", margin: "8px 0 0", maxWidth: 720 }}>
+          {(description || docUrl) && (
+            <Typography.Text type="secondary" className="settings-page-header-description">
               {description}
-            </Typography.Text>
-          )}
-        </div>
-        {(headerActions || docUrl) && (
-          <Flex align="center" gap="small">
-            {headerActions}
-            {docUrl && (
-              <Tooltip title="Open documentation">
-                <Button
-                  type="default"
-                  icon={<QuestionCircleOutlined />}
+              {description && docUrl && " "}
+              {/* The docs link ends the intro instead of a separate icon button. */}
+              {docUrl && (
+                <Typography.Link
                   href={docUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="Open documentation"
-                />
-              </Tooltip>
-            )}
+                  className="settings-page-header-doc-link"
+                >
+                  Documentation{" "}
+                  <ExportOutlined aria-label="opens in a new tab" className="settings-page-header-doc-icon" />
+                </Typography.Link>
+              )}
+            </Typography.Text>
+          )}
+        </div>
+        {headerActions && (
+          <Flex align="center" gap="small">
+            {headerActions}
           </Flex>
         )}
       </Flex>
-      {divider ? <Divider style={{ margin: "16px 0 24px" }} /> : <div style={{ marginBottom: 24 }} />}
+      {divider ? <Divider className="settings-page-header-divider" /> : <div className="settings-page-header-spacer" />}
     </>
   );
 }

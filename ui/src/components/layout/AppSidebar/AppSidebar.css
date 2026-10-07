@@ -4,60 +4,6 @@
   overflow: visible;
 }
 
-/* Narrow viewports: the sidebar floats over the page as a drawer instead of taking width from it. */
-.app-sidebar--drawer {
-  position: fixed;
-  inset-block: 0;
-  left: 0;
-  z-index: 1000;
-  height: 100dvh;
-  box-shadow: var(--tk-shadow-lg);
-}
-
-/* Opens the drawer. It stays above the drawer so it also closes it; the page leaves room for it
-   (see .app-content-scroll in Home.css). */
-.app-sidebar-drawer-trigger {
-  position: fixed;
-  top: 8px;
-  left: 8px;
-  z-index: 1001;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  background: var(--tk-sidebar-bg);
-  border: 1px solid var(--tk-sidebar-border);
-  border-radius: 6px;
-  color: var(--tk-sidebar-text);
-  cursor: pointer;
-}
-
-/* The trigger stays put while the drawer is open (it closes it), so the drawer header makes room for it. */
-.app-sidebar--drawer .app-sidebar-header {
-  padding-left: 52px;
-}
-
-.app-sidebar-drawer-trigger:focus-visible {
-  outline: 2px solid var(--tk-accent);
-  outline-offset: 2px;
-}
-
-.app-sidebar-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-sidebar--drawer,
-  .app-sidebar--drawer .ant-layout-sider-children {
-    transition: none;
-  }
-}
-
 .app-sidebar-inner {
   display: flex;
   flex-direction: column;
@@ -201,8 +147,8 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  /* No extra fade: at 11px the secondary grey needs its full 5.4:1 on graphite. */
   color: var(--tk-sidebar-text-secondary);
-  opacity: 0.75;
 }
 
 .app-sidebar-menu .ant-menu-item-group-list {
@@ -232,4 +178,108 @@
   .app-sidebar-menu {
     animation: none;
   }
+}
+
+/* Below md the sidebar becomes an off-canvas drawer opened from a graphite top
+   bar, so it never takes width from the page. Breakpoint matches MOBILE_QUERY. */
+.app-mobile-bar {
+  display: none;
+}
+
+@media (max-width: 767.98px) {
+  .app-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 56px;
+    padding: 0 12px;
+    flex-shrink: 0;
+    background: var(--tk-sidebar-bg);
+    border-bottom: 1px solid var(--tk-sidebar-border);
+  }
+
+  .app-sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    z-index: 1001;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s;
+  }
+
+  /* Visibility flips at once on open so focus can move into the drawer. */
+  .app-sidebar--open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease;
+    box-shadow: 0 8px 24px rgba(1, 4, 9, 0.45);
+  }
+
+  .app-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(1, 4, 9, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .app-sidebar--open {
+    transition: none;
+  }
+}
+
+/* The sidebar is graphite in both modes, so the beta marker uses fixed tints of the accent. */
+.app-sidebar .ant-tag.app-sidebar-beta {
+  margin-inline-start: 6px;
+  border: none;
+  background: color-mix(in srgb, var(--tk-accent) 30%, transparent);
+  color: #e6edf3;
+}
+
+/* Collapse toggle as a tab on the sidebar's right edge, sticking out over the page. */
+.app-sidebar-edge-toggle {
+  position: absolute;
+  top: 18px;
+  right: -20px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--tk-sidebar-border);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background: var(--tk-sidebar-bg);
+  color: var(--tk-sidebar-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.app-sidebar-edge-toggle:hover {
+  background: var(--tk-sidebar-control-bg);
+  color: var(--tk-sidebar-text);
+}
+
+.app-sidebar-edge-toggle:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+/* Collapsed: group titles ("Organization settings", "Security"…) cannot fit in 64px; show them as dividers. */
+.app-sidebar .ant-menu-inline-collapsed .ant-menu-item-group-title {
+  height: 1px;
+  margin: 10px 16px;
+  padding: 0;
+  overflow: hidden;
+  font-size: 0;
+  background: var(--tk-sidebar-border);
 }

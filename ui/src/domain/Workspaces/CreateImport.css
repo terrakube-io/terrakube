@@ -1,0 +1,261 @@
+/* New Workspace (Create.tsx) and Import Workspaces (Import.tsx) wizards. */
+
+h3.ws-create-title,
+h3.ws-import-title {
+  margin: 0;
+}
+
+/* Each wizard step is a full-width vertical Space */
+.chooseType {
+  width: 100%;
+}
+
+/* Workflow choice cards */
+.workflowType {
+  margin-left: 10px;
+  font-weight: 500;
+}
+
+.workflowDescription {
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+.workflowDescription2 {
+  margin-bottom: 20px;
+}
+
+/* Create: steps band */
+.ws-create-steps {
+  margin: 16px 0 24px;
+  padding: 20px 24px;
+  background: var(--ant-color-fill-alter);
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+}
+
+/* Create: IaC type cards */
+.ant-card.ws-create-iac-card {
+  min-height: 220px;
+  text-align: center;
+}
+
+.ant-card.ws-create-iac-card .ant-card-body {
+  padding: 32px;
+}
+
+.ws-create-iac-logo {
+  width: 96px;
+  max-width: 100%;
+  height: auto;
+  padding: 14px;
+}
+
+.ws-create-iac-name {
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Create: repository picker */
+.ws-create-repo-mode {
+  margin-bottom: 8px;
+}
+
+.ws-create-repo-picker {
+  width: 100%;
+  max-width: 640px;
+}
+
+.ant-card.ws-create-repo-card {
+  overflow: hidden;
+  border-radius: var(--ant-border-radius-lg);
+}
+
+.ant-card.ws-create-repo-card .ant-card-body {
+  padding: 0;
+}
+
+.ws-create-repo-toolbar {
+  padding: 12px;
+  background: var(--ant-color-fill-alter);
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.ws-create-repo-group,
+.ws-create-repo-search {
+  min-width: 180px;
+}
+
+.ws-create-repo-group {
+  flex: 1 1 200px;
+}
+
+.ws-create-repo-search {
+  flex: 1 1 220px;
+}
+
+.ant-alert.ws-create-repo-error {
+  border-radius: 0;
+}
+
+.ws-create-repo-list {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.ws-create-repo-list .ant-list-item.ws-create-repo {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+
+.ws-create-repo-list .ant-list-item.ws-create-repo--selected {
+  background: var(--ant-control-item-bg-active);
+  border-left-color: var(--tk-accent);
+}
+
+.ws-create-repo-row {
+  width: 100%;
+}
+
+.ws-create-repo-name {
+  font-weight: 500;
+}
+
+.ws-create-repo-full-name {
+  font-size: 12px;
+}
+
+.ant-tag.ws-create-repo-private {
+  margin-inline-end: 0;
+}
+
+.ws-create-repo-more {
+  padding: 8px;
+  text-align: center;
+  border-top: 1px solid var(--tk-border-secondary);
+}
+
+.ant-form-item .ant-select.ws-create-field {
+  width: 250px;
+}
+
+/* Import: page */
+.ws-import-alert {
+  margin-bottom: 20px;
+}
+
+.ws-import-steps {
+  margin-bottom: 24px;
+}
+
+.ant-card.ws-import-platform-card {
+  width: 100%;
+  max-width: 240px;
+  height: 120px;
+  text-align: center;
+}
+
+/* --ws-import-logo-height: per-platform logo height, set from the platform list */
+.ws-import-platform-logo {
+  max-width: 100%;
+  height: var(--ws-import-logo-height);
+  padding: 6px;
+}
+
+/* Import: variable collection mapping modal */
+.ant-card.ws-import-summary {
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ant-color-info) 8%, transparent) 0%,
+    color-mix(in srgb, var(--ant-color-info) 2%, transparent) 100%
+  );
+}
+
+.ws-import-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.ant-card.ws-import-stat {
+  border-radius: 10px;
+}
+
+.ant-card.ws-import-panel,
+.ant-card.ws-import-mapping,
+.ant-card.ws-import-add,
+.ant-card.ws-import-secret {
+  border-radius: 12px;
+}
+
+.ant-card.ws-import-panel .ant-card-body {
+  padding-top: 12px;
+}
+
+.ant-card.ws-import-add {
+  border-style: dashed;
+}
+
+.ant-card.ws-import-mapping--additional,
+.ant-card.ws-import-secret--filled {
+  border-color: color-mix(in srgb, var(--ant-color-info) 25%, transparent);
+  background: color-mix(in srgb, var(--ant-color-info) 3%, transparent);
+}
+
+.ant-card.ws-import-secret--filled {
+  border-color: color-mix(in srgb, var(--ant-color-info) 20%, transparent);
+}
+
+.ant-card.ws-import-secret--incomplete {
+  border-color: color-mix(in srgb, var(--ant-color-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--ant-color-warning) 4%, transparent);
+}
+
+.ws-import-mapping-grid,
+.ws-import-secret-grid {
+  display: grid;
+  gap: 16px;
+  align-items: end;
+}
+
+.ws-import-mapping-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ws-import-mapping-grid--additional {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.ws-import-secret-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px) auto;
+}
+
+.ant-select.ws-import-full {
+  width: 100%;
+}
+
+.ws-import-field-value {
+  margin-top: 6px;
+}
+
+.ws-import-secret-note {
+  margin-top: 8px;
+}
+
+/* Phones: stack the mapping and secret rows instead of squeezing three columns */
+@media (max-width: 575px) {
+  .ws-import-mapping-grid,
+  .ws-import-mapping-grid--additional,
+  .ws-import-secret-grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .ws-import-mapping-grid > .ant-btn,
+  .ws-import-secret-grid > .ant-btn {
+    justify-self: start;
+  }
+}

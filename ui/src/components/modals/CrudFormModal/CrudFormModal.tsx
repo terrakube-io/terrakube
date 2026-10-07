@@ -1,5 +1,6 @@
-import { Form, Modal, Space } from "antd";
+import { Button, Flex, Form, Modal } from "antd";
 import type { FormInstance } from "antd";
+import "./CrudFormModal.css";
 
 type Props<T> = {
   open: boolean;
@@ -32,38 +33,39 @@ export default function CrudFormModal<T>({
   initialValues,
   children,
 }: Props<T>) {
+  const submit = () => {
+    // Invalid fields show their own messages, so only validation failures are swallowed.
+    form.validateFields().then(onSubmit, (err) => {
+      if (!err?.errorFields) throw err;
+    });
+  };
+
   return (
     <Modal
+      className="form-modal"
       width={width}
       open={open}
       title={title}
-      okText={okText}
       onCancel={onCancel}
-      cancelText="Cancel"
       closeIcon={closeIcon}
-      confirmLoading={confirmLoading}
-      onOk={() => {
-        form
-          .validateFields()
-          .then((values) => {
-            onSubmit(values);
-          })
-          .catch((info) => {
-            console.log("Validate Failed:", info);
-          });
-      }}
+      footer={
+        <Flex gap="small">
+          <Button type="primary" loading={confirmLoading} onClick={submit}>
+            {okText}
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
+        </Flex>
+      }
     >
-      <Space style={{ width: "100%" }} orientation="vertical">
-        <Form
-          name={formName}
-          form={form}
-          layout="vertical"
-          validateMessages={validateMessages}
-          initialValues={initialValues}
-        >
-          {children}
-        </Form>
-      </Space>
+      <Form
+        name={formName}
+        form={form}
+        layout="vertical"
+        validateMessages={validateMessages}
+        initialValues={initialValues}
+      >
+        {children}
+      </Form>
     </Modal>
   );
 }

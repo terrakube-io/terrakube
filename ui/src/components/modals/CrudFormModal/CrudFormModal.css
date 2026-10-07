@@ -1,0 +1,43 @@
+/* Form dialogs: header and footer as full-width bands, primary action first (DESIGN.md, Modals). */
+.form-modal .ant-modal-container {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.form-modal .ant-modal-header {
+  margin-bottom: 0;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.form-modal .ant-modal-body {
+  padding: 24px 24px 4px;
+}
+
+.form-modal .ant-modal-footer {
+  margin-top: 0;
+  padding: 16px 24px;
+  border-top: 1px solid var(--tk-border-secondary);
+  background: var(--tk-fill-secondary);
+}
+
+[data-theme="dark"] .form-modal .ant-modal-footer {
+  background: var(--tk-bg-container);
+}
+
+.form-modal .ant-form-item-label > label {
+  font-weight: 600;
+}
+
+/* A checkbox field with its help line 4px below, aligned with the label text. */
+.settings-checkbox-item .ant-form-item-control-input {
+  min-height: 0;
+}
+
+.settings-checkbox-item .ant-form-item-extra {
+  min-height: 0;
+  margin-top: 4px;
+  padding-left: 24px;
+  font-size: 13px;
+}

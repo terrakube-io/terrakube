@@ -1,0 +1,21 @@
+.ant-tag.policy-status-tag {
+  margin-inline-end: 0;
+  cursor: default;
+}
+
+.ant-tag.policy-status-tag-interactive {
+  cursor: pointer;
+}
+
+.policy-status-tag-link {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  vertical-align: middle;
+  text-decoration: none;
+}
+
+.policy-status-tag-anchor {
+  display: inline-flex;
+  vertical-align: middle;
+}

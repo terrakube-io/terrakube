@@ -1,0 +1,48 @@
+/* One row per trigger: a summary line, with its fields stacked below when expanded. */
+.webhook-triggers {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+}
+
+.webhook-trigger + .webhook-trigger {
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.webhook-trigger-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.webhook-trigger-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.webhook-trigger-title {
+  overflow-wrap: anywhere;
+}
+
+.webhook-trigger-meta {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.webhook-trigger-fields {
+  padding: 16px 16px 0;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+/* Branch and path patterns are machine values: monospace. */
+.webhook-mono,
+.webhook-mono.ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}

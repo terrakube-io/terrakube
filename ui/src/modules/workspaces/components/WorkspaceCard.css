@@ -1,0 +1,18 @@
+.ant-card.workspace-card,
+.ant-space.workspace-card-body {
+  width: 100%;
+}
+
+.ant-space.workspace-card-meta {
+  margin-top: 25px;
+}
+
+.ant-typography.workspace-card-vcs-link {
+  position: relative;
+  z-index: 2;
+}
+
+.ant-typography.workspace-card-cli {
+  vertical-align: middle;
+  display: inline-block;
+}

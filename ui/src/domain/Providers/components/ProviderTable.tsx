@@ -1,6 +1,6 @@
-import { Table, Typography } from "antd";
+import { Table } from "antd";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import formatVersion from "@/modules/utils/formatVersion";
+import { parseProviderDescription } from "../../Modules/registryHelpers";
 import { FlatProvider } from "../types";
 
 type Params = {
@@ -9,19 +9,11 @@ type Params = {
 
 type Props = {
   providers: FlatProvider[];
-  searchFilter: string;
 };
 
-export default function ProviderTable({ providers, searchFilter }: Props) {
+export default function ProviderTable({ providers }: Props) {
   const { orgid } = useParams<Params>();
   const navigate = useNavigate();
-
-  const filteredProviders = providers.filter(
-    (provider) =>
-      searchFilter === "" ||
-      provider.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      provider.description?.toLowerCase().includes(searchFilter.toLowerCase())
-  );
 
   const columns = [
     {
@@ -29,43 +21,48 @@ export default function ProviderTable({ providers, searchFilter }: Props) {
       dataIndex: "name",
       key: "name",
       sorter: (a: FlatProvider, b: FlatProvider) => a.name.localeCompare(b.name),
-      render: (name: string, record: FlatProvider) => (
-        <Link
-          to={`/organizations/${orgid}/registry/providers/${record.id}`}
-          style={{ color: "inherit", display: "block" }}
-        >
-          <Typography.Text strong>{name}</Typography.Text>
-          <div>
-            <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-              {record.description || "No description provided for this provider"}
-            </Typography.Text>
-          </div>
-        </Link>
-      ),
+      render: (name: string, record: FlatProvider) => {
+        const { text } = parseProviderDescription(record.description);
+        return (
+          <>
+            <Link to={`/organizations/${orgid}/registry/providers/${record.id}`} className="registry-table-name">
+              {name}
+            </Link>
+            {text && <span className="registry-table-description">{text}</span>}
+          </>
+        );
+      },
+    },
+    {
+      title: "Namespace",
+      dataIndex: "registryNamespace",
+      key: "registryNamespace",
+      width: 180,
+      render: (namespace: string | undefined) => namespace || "—",
     },
     {
       title: "Latest version",
       dataIndex: "latestVersion",
       key: "latestVersion",
       width: 160,
-      render: (version: string | undefined) => (version ? formatVersion(version) : "—"),
+      render: (version: string | undefined) => (version ? <code className="registry-mono">{version}</code> : "—"),
     },
   ];
 
   return (
     <Table
       rowKey="id"
-      dataSource={filteredProviders}
+      dataSource={providers}
       columns={columns}
-      pagination={{ defaultPageSize: 10, showSizeChanger: true }}
+      tableLayout="fixed"
+      pagination={{ defaultPageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
+      rowClassName="registry-table-row"
       onRow={(record) => ({
         onClick: (event) => {
           if ((event.target as HTMLElement).closest("a")) return;
           navigate(`/organizations/${orgid}/registry/providers/${record.id}`);
         },
-        style: { cursor: "pointer" },
       })}
-      locale={{ emptyText: "No providers match your search." }}
     />
   );
 }

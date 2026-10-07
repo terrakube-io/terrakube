@@ -1,4 +1,5 @@
 import { Flex, Spin, Typography } from "antd";
+import "./Loading.css";
 
 type Props = {
   loading: boolean;
@@ -18,7 +19,7 @@ export default function Loading({ loading, description, overlay = false, childre
 
   if (loading) {
     return (
-      <Flex vertical align="center" justify="center" gap="middle" style={{ minHeight: "40vh", width: "100%" }}>
+      <Flex vertical align="center" justify="center" gap="middle" className="loading-block">
         <Spin size="large" />
         {description && <Typography.Text type="secondary">{description}</Typography.Text>}
       </Flex>

@@ -1,10 +1,13 @@
 import { CheckCircleOutlined, CloudOutlined, CopyOutlined, ExportOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Modal, Select, Tag, Typography, message } from "antd";
+import { Alert, Button, Modal, Select, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { LinkButton } from "@/components/navigation/LinkButton";
+import { copyValue } from "@/components/settings/IdField/IdField";
 import { relativeTime } from "@/modules/utils/dates";
 import { formatCount } from "@/modules/utils/formatCount";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import { compareVersions } from "../Workspaces/Workspaces";
 import { getProviderVersions, getPublicProvider, importProvider, listProviders } from "./providerService";
 import { ProviderModel, TerraformRegistryProviderDetails, TerraformRegistryProviderVersions } from "./types";
@@ -24,6 +27,7 @@ export const PublicProviderDetails = ({ organizationName }: Props) => {
   const { orgid, namespace, name } = useParams<Params>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { permissions } = useOrgPermissions();
 
   const [latest, setLatest] = useState<TerraformRegistryProviderDetails>();
   const [details, setDetails] = useState<TerraformRegistryProviderDetails>();
@@ -158,20 +162,27 @@ export const PublicProviderDetails = ({ organizationName }: Props) => {
               </Typography.Text>
             </div>
             {existingProviderId ? (
-              <Link to={`/organizations/${orgid}/registry/providers/${existingProviderId}`}>
-                <Button icon={<CheckCircleOutlined />} tabIndex={-1}>
-                  In your registry
-                </Button>
-              </Link>
-            ) : (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                disabled={!selectedVersion}
-                onClick={() => setConfirmOpen(true)}
+              <LinkButton
+                to={`/organizations/${orgid}/registry/providers/${existingProviderId}`}
+                icon={<CheckCircleOutlined />}
               >
-                Add to Terrakube
-              </Button>
+                In your registry
+              </LinkButton>
+            ) : (
+              <Tooltip
+                title={
+                  permissions.manageProvider ? undefined : "You need the Manage providers permission to add a provider."
+                }
+              >
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  disabled={!selectedVersion || !permissions.manageProvider}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  Add to Terrakube
+                </Button>
+              </Tooltip>
             )}
           </header>
 
@@ -229,7 +240,12 @@ export const PublicProviderDetails = ({ organizationName }: Props) => {
             <pre className="public-provider-snippet">{snippet}</pre>
             <Button
               icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard.writeText(snippet).then(() => message.success("Copied to clipboard"))}
+              onClick={() =>
+                copyValue(snippet).then(
+                  () => message.success("Configuration copied"),
+                  () => message.error("Could not copy the configuration")
+                )
+              }
             >
               Copy configuration
             </Button>

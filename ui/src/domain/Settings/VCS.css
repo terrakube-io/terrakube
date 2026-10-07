@@ -1,0 +1,92 @@
+/* Provider picker: four tiles, one per provider (DESIGN.md, Picker). */
+.vcs-provider-tiles.ant-radio-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 575px) {
+  .vcs-provider-tiles.ant-radio-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.vcs-provider-tile.ant-radio-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 20px 8px 16px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.vcs-provider-tile.ant-radio-wrapper:hover,
+.vcs-provider-tile.ant-radio-wrapper-checked {
+  border-color: var(--tk-accent);
+}
+
+.vcs-provider-tile.ant-radio-wrapper-checked {
+  box-shadow: inset 0 0 0 1px var(--tk-accent);
+}
+
+/* The radio stays in the tab order; the tile border shows the selection and the focus ring. */
+.vcs-provider-tile .ant-radio {
+  position: absolute;
+  opacity: 0;
+}
+
+.vcs-provider-tile:has(input:focus-visible) {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
+
+.vcs-provider-tile .ant-radio-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+
+/* antd and react-icons glyphs differ in box size; a fixed box keeps the labels on one line. */
+.vcs-provider-tile-icon {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.vcs-provider-tile-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.vcs-provider-selected-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.vcs-guide-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.vcs-guide-list li + li {
+  margin-top: 4px;
+}
+
+/* Pending OAuth connection: the consequence, then the connect action. */
+.vcs-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}

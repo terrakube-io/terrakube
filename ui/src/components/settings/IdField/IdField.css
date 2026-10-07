@@ -1,0 +1,5 @@
+/* IDs are machine values: monospace. */
+.id-field .ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}

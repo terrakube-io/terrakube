@@ -3,12 +3,12 @@
 }
 
 .terminal-container {
-  background-color: #1e1e1e;
+  background-color: var(--run-console-bg);
   width: 100%;
 }
 
 .terminal-content {
-  color: #ffffff;
+  color: var(--run-console-strong);
   font-family: SFMono-Regular, consolas, "Liberation Mono", menlo, courier, monospace;
   font-size: 0.875em;
 }
@@ -31,18 +31,75 @@
   align-items: center;
   gap: 10px;
   padding: 10px 20px;
-  color: #d4d4d4;
+  color: var(--run-console-fg);
   font-size: 0.8125em;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--run-console-raised);
+  border-bottom: 1px solid var(--run-console-line);
 }
 
 .terminal-notice--error {
-  color: #ffb4b4;
+  color: var(--run-console-error);
 }
 
 .tf-log-line {
   display: inline;
+}
+
+/* ansi-to-react wraps each line in <code>; keep the global dark-theme code chip off log lines. */
+.terminal-content .tf-log-line code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* ansi-to-react in class mode: log colours come from the console palette instead of inline rgb(). */
+.tf-log-line .ansi-bold {
+  font-weight: 700;
+}
+
+.tf-log-line .ansi-dim {
+  opacity: 0.75;
+}
+
+.tf-log-line .ansi-italic {
+  font-style: italic;
+}
+
+.tf-log-line .ansi-underline {
+  text-decoration: underline;
+}
+
+.tf-log-line :is(.ansi-black-fg, .ansi-bright-black-fg) {
+  color: var(--run-ansi-black);
+}
+
+.tf-log-line :is(.ansi-red-fg, .ansi-bright-red-fg) {
+  color: var(--run-ansi-red);
+}
+
+.tf-log-line :is(.ansi-green-fg, .ansi-bright-green-fg) {
+  color: var(--run-ansi-green);
+}
+
+.tf-log-line :is(.ansi-yellow-fg, .ansi-bright-yellow-fg) {
+  color: var(--run-ansi-yellow);
+}
+
+.tf-log-line :is(.ansi-blue-fg, .ansi-bright-blue-fg) {
+  color: var(--run-ansi-blue);
+}
+
+.tf-log-line :is(.ansi-magenta-fg, .ansi-bright-magenta-fg) {
+  color: var(--run-ansi-magenta);
+}
+
+.tf-log-line :is(.ansi-cyan-fg, .ansi-bright-cyan-fg) {
+  color: var(--run-ansi-cyan);
+}
+
+.tf-log-line :is(.ansi-white-fg, .ansi-bright-white-fg) {
+  color: var(--run-ansi-white);
 }
 
 .terminal-toolbar {
@@ -58,7 +115,8 @@
   pointer-events: none;
 }
 
-.terminal-wrapper:hover .terminal-toolbar {
+.terminal-wrapper:hover .terminal-toolbar,
+.terminal-wrapper:focus-within .terminal-toolbar {
   opacity: 1;
   pointer-events: auto;
 }
@@ -70,10 +128,10 @@
   padding: 4px 10px;
   font-size: 12px;
   line-height: 1;
-  color: #d4d4d4;
-  background: rgba(30, 30, 30, 0.8);
+  color: var(--run-console-fg);
+  background: var(--run-console-control);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--run-console-line);
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -81,15 +139,12 @@
 }
 
 .terminal-toolbar-btn:hover {
-  background: rgba(60, 60, 60, 0.9);
+  background: var(--run-console-control-hover);
 }
 
-.terminal-toolbar-btn--active {
-  background: #2563eb;
-  color: #ffffff;
-  border-color: #2563eb;
-}
-
+.terminal-toolbar-btn--active,
 .terminal-toolbar-btn--active:hover {
-  background: #1d4ed8;
+  background: var(--run-update-solid);
+  color: var(--run-on-solid);
+  border-color: var(--run-update-solid);
 }

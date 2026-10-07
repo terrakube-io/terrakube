@@ -1,15 +1,9 @@
-import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Space, Typography, message } from "antd";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { message } from "antd";
+import { Link, useNavigate } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { Workspace } from "../../types";
 import { genericHeader } from "../Workspaces";
-import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
-import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
-
-const { Text } = Typography;
+import { DangerZone } from "@/components/settings/DangerZone";
 
 type Props = {
   workspace: Workspace;
@@ -19,7 +13,6 @@ type Props = {
 export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
   const organizationId = workspace.relationships.organization.data.id;
   const navigate = useNavigate();
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
   function generateRandomString(length: number) {
@@ -74,54 +67,24 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }: Props) => {
       });
   };
 
-  const isLocked = workspace.attributes?.locked;
-  const resourceCount = workspace.attributes?.resourceCount ?? 0;
-
   return (
     <div className="generalSettings">
-      <SettingsPageHeader
-        title="Destruction and Deletion"
-        description="There are two independent steps for destroying this workspace and any infrastructure associated with it. First, any Terraform infrastructure managed by this workspace can be destroyed. Then, the workspace in Terrakube, including any variables, settings, and alert history can be deleted."
-      />
-
-      <SettingsSection
-        danger
-        title="Delete this Workspace"
+      <DangerZone
+        titleLevel={3}
+        actionName="Delete this workspace"
         description={
           <>
-            <Text strong>Warning!</Text> Deleting this workspace permanently removes all of its variables, settings,
-            alert history, run history, and Terraform state.
-            <br />
-            This workspace is {isLocked ? "locked" : "unlocked"} and is
-            {resourceCount > 0 ? ` managing ${resourceCount} resources` : " not managing any resources"}.
+            Removes the workspace from Terrakube: active runs are cancelled, its schedules stop, its VCS connection is
+            removed, and its state files and run outputs are deleted from storage. This cannot be undone. It does not
+            destroy any infrastructure: resources this workspace manages keep running, and without the state Terrakube
+            can no longer manage them. To remove them, start a destroy job from the{" "}
+            <Link to={`/organizations/${organizationId}/workspaces/${workspace.id}`}>workspace overview</Link> first.
           </>
         }
-      >
-        <Button
-          type="primary"
-          danger
-          style={{ width: "fit-content", padding: "8px 24px", height: "auto" }}
-          disabled={!manageWorkspace}
-          onClick={() => setDeleteModalOpen(true)}
-        >
-          <Space>
-            <DeleteOutlined />
-            Delete from Terrakube
-          </Space>
-        </Button>
-      </SettingsSection>
-
-      <DeleteConfirmationModal
-        open={deleteModalOpen}
-        title="Delete this workspace"
-        message={`Workspace "${workspace.attributes.name}" will be permanently deleted from this organization, including its variables, settings, run history, and Terraform state.`}
+        disabled={!manageWorkspace}
         confirmValue={workspace.attributes.name}
-        okText="Delete this workspace"
-        onConfirm={() => {
-          setDeleteModalOpen(false);
-          onDelete(workspace);
-        }}
-        onCancel={() => setDeleteModalOpen(false)}
+        confirmMessage={`Workspace "${workspace.attributes.name}" will be removed from Terrakube: active runs are cancelled and its state files and run outputs are deleted. This cannot be undone. Resources it manages are not destroyed.`}
+        onConfirm={() => onDelete(workspace)}
       />
     </div>
   );

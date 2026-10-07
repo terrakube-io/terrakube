@@ -71,8 +71,7 @@ function SortableHeader({
     const activate = () => onSortChange(spec.single);
     return (
       <span
-        className="workspace-sortable-header"
-        style={{ fontWeight: active ? 700 : undefined }}
+        className={active ? "workspace-sortable-header workspace-sortable-header--active" : "workspace-sortable-header"}
         role="button"
         tabIndex={0}
         onClick={activate}
@@ -95,8 +94,8 @@ function SortableHeader({
     >
       {label}
       <span className="workspace-sort-carets">
-        <CaretUpOutlined style={{ color: isAsc ? "var(--tk-accent)" : undefined }} />
-        <CaretDownOutlined style={{ color: isDesc ? "var(--tk-accent)" : undefined }} />
+        <CaretUpOutlined className={isAsc ? "workspace-sort-caret--active" : undefined} />
+        <CaretDownOutlined className={isDesc ? "workspace-sort-caret--active" : undefined} />
       </span>
     </span>
   );
@@ -124,7 +123,9 @@ function WorkspaceRow({
         <div className="workspace-name-line1">
           <span
             className="workspace-status-icon"
-            style={{ color: (item.lastStatus && statusColors[item.lastStatus]) || "#8b949e" }}
+            style={
+              { "--workspace-status-color": item.lastStatus && statusColors[item.lastStatus] } as React.CSSProperties
+            }
           >
             {getWorkspaceStatusIcon(item.lastStatus)}
           </span>
@@ -164,7 +165,7 @@ function WorkspaceRow({
       </div>
       <div className="workspace-col-run">
         <ClockCircleOutlined />
-        <span>{relativeTime(item.lastRun) ?? "Never Executed"}</span>
+        <span>{relativeTime(item.lastRun) ?? "Never executed"}</span>
       </div>
       <div className="workspace-col-version">
         <IacTypeLogo type={item.iacType} />

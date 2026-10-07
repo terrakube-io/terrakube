@@ -6,22 +6,7 @@ import {
   TeamOutlined,
   UsergroupAddOutlined,
 } from "@ant-design/icons";
-import {
-  Button,
-  Card,
-  Checkbox,
-  Flex,
-  Form,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-  theme,
-} from "antd";
+import { Button, Card, Checkbox, Form, Select, Space, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
@@ -33,6 +18,7 @@ import { Workspace } from "../../types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import "./TeamAccess.css";
 
 type Props = {
   workspace: Workspace;
@@ -60,7 +46,7 @@ const ROLES = [
   {
     value: "write",
     label: "Write",
-    color: "orange",
+    color: "magenta",
     description: "Can manage the workspace, and queue and apply plans.",
   },
   {
@@ -78,20 +64,24 @@ const ROLES = [
   {
     value: "custom",
     label: "Custom",
-    color: "purple",
+    color: "default",
     description: "Choose individual permissions for this team.",
   },
 ];
 
 const PERMISSION_FIELDS: { key: keyof WorkspaceAccessPermissions; label: string; shortLabel: string }[] = [
-  { key: "manageWorkspace", label: "Manage Workspace", shortLabel: "Workspace" },
-  { key: "manageState", label: "Manage State", shortLabel: "State" },
-  { key: "planJob", label: "Plan Runs", shortLabel: "Plan" },
-  { key: "approveJob", label: "Approve Runs", shortLabel: "Approve" },
+  { key: "manageWorkspace", label: "Manage workspace", shortLabel: "Workspace" },
+  { key: "manageState", label: "Manage state", shortLabel: "State" },
+  { key: "planJob", label: "Plan runs", shortLabel: "Plan" },
+  { key: "approveJob", label: "Approve runs", shortLabel: "Approve" },
 ];
 
 function roleColor(role: string): string {
   return ROLES.find((r) => r.value === role)?.color ?? "default";
+}
+
+function roleLabel(role: string): string {
+  return ROLES.find((r) => r.value === role)?.label ?? "Custom";
 }
 
 function roleDescription(role: string): string {
@@ -140,7 +130,6 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
   const [form] = Form.useForm<AddTeamForm>();
   const addRole = Form.useWatch("role", form);
   const addFormRef = useRef<HTMLDivElement>(null);
-  const { token } = theme.useToken();
 
   const scrollToAddForm = () => {
     addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -230,7 +219,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     try {
       const permissions = editingRole === "custom" ? editingPermissions : undefined;
       await workspaceAccessService.updateWorkspaceAccess(orgid, workspaceId, record.id, editingRole, permissions);
-      message.success(`Role for "${record.name}" updated to ${editingRole}`);
+      message.success(`Role for "${record.name}" updated to ${roleLabel(editingRole)}`);
       setEditingId(null);
       await load();
     } catch (err: any) {
@@ -244,20 +233,21 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     }
   };
 
-  const renderRoleSelect = (value: string, onChange: (value: string) => void) => (
+  const renderRoleSelect = (value: string, onChange: (value: string) => void, compact = false) => (
     <Select
-      size="small"
+      size={compact ? "small" : undefined}
       value={value}
       onChange={onChange}
-      style={{ width: 160 }}
+      className={compact ? "team-access-role-select team-access-role-select--compact" : "team-access-role-select"}
+      popupMatchSelectWidth={320}
       options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
       optionRender={(opt) => {
         const r = ROLES.find((x) => x.value === opt.value);
         if (!r) return opt.label;
         return (
-          <Space orientation="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 4 }}>
+          <Space orientation="vertical" size={2} className="team-access-role-option">
             <Tag color={r.color}>{r.label}</Tag>
-            <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: "normal" }}>
+            <Typography.Text type="secondary" className="team-access-role-option-description">
               {r.description}
             </Typography.Text>
           </Space>
@@ -275,10 +265,9 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "Team",
       dataIndex: "name",
       key: "name",
-      width: 220,
       render: (name: string) => (
         <Space size={8}>
-          <TeamOutlined style={{ color: token.colorTextSecondary }} />
+          <TeamOutlined className="team-access-icon" />
           <Typography.Text strong>{name}</Typography.Text>
         </Space>
       ),
@@ -287,14 +276,14 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "Role",
       dataIndex: "role",
       key: "role",
-      width: 320,
+      width: 176,
       render: (role: string, record: WorkspaceAccessModel) => {
         if (canManage && editingId === record.id) {
           return (
             <Space orientation="vertical" size={8}>
-              {renderRoleSelect(editingRole, setEditingRole)}
+              {renderRoleSelect(editingRole, setEditingRole, true)}
               {editingRole === "custom" && (
-                <Space wrap size={12}>
+                <Space orientation="vertical" size={4}>
                   {PERMISSION_FIELDS.map((field) => (
                     <Checkbox
                       key={field.key}
@@ -320,17 +309,12 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
         return (
           <Space>
             <Tooltip title={roleDescription(role)}>
-              <Tag color={roleColor(role)} style={{ cursor: "default" }}>
-                {role ?? "custom"}
+              <Tag color={roleColor(role)} className="team-access-role-tag">
+                {roleLabel(role)}
               </Tag>
             </Tooltip>
             {canManage && (
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0, height: "auto" }}
-                onClick={() => onEditRole(record)}
-              >
+              <Button type="link" size="small" className="team-access-change-role" onClick={() => onEditRole(record)}>
                 Change
               </Button>
             )}
@@ -344,21 +328,25 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       children: PERMISSION_FIELDS.map((field) => ({
         title: (
           <Tooltip title={field.label}>
-            <span>{field.shortLabel}</span>
+            <span className="team-access-permission-heading">{field.shortLabel}</span>
           </Tooltip>
         ),
         key: field.key,
         align: "center" as const,
-        width: 84,
+        width: 96,
         render: (_: any, record: WorkspaceAccessModel) => {
           const granted = effectivePermissions(record)[field.key];
-          return granted ? (
-            <Tooltip title={`Can ${field.label.toLowerCase()}`}>
-              <CheckCircleFilled style={{ color: token.colorSuccess, fontSize: 16 }} />
-            </Tooltip>
-          ) : (
-            <Tooltip title={`Cannot ${field.label.toLowerCase()}`}>
-              <CloseCircleOutlined style={{ color: token.colorTextQuaternary, fontSize: 16 }} />
+          const label = `${granted ? "Can" : "Cannot"} ${field.label.toLowerCase()}`;
+          return (
+            <Tooltip title={label}>
+              {granted ? (
+                <CheckCircleFilled
+                  aria-label={label}
+                  className="team-access-permission team-access-permission--granted"
+                />
+              ) : (
+                <CloseCircleOutlined aria-label={label} className="team-access-permission" />
+              )}
             </Tooltip>
           );
         },
@@ -368,70 +356,76 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
       title: "",
       key: "actions",
       align: "right" as const,
-      width: 120,
+      width: 56,
       render: (_: any, record: WorkspaceAccessModel) => (
-        <Button
-          danger
-          icon={<DeleteOutlined />}
-          size="small"
-          disabled={!canManage}
-          onClick={() => setPendingDelete(record)}
-        >
-          Remove
-        </Button>
+        <Tooltip title="Remove access">
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            size="small"
+            disabled={!canManage}
+            aria-label={`Remove access for team ${record.name}`}
+            onClick={() => setPendingDelete(record)}
+          />
+        </Tooltip>
       ),
     },
   ];
 
-  const teamCountLabel =
-    accessList.length === 0
-      ? "No teams have access yet"
-      : `${accessList.length} team${accessList.length === 1 ? "" : "s"} have access`;
+  const teamCountLabel = accessList.length === 1 ? "1 team has access" : `${accessList.length} teams have access`;
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="team-access">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations/team-management"
-        title="Team Access"
-        description="Grant teams specific permissions on this workspace."
+        title="Team access"
+        description={
+          <>
+            Grant teams permissions on this workspace, here or with the{" "}
+            <Typography.Text code>terrakube_workspace_access</Typography.Text> resource. Teams keep any organization or
+            project permissions they already have.
+          </>
+        }
       />
-      <p>Teams granted access to this workspace via the Terrakube UI or the terrakube_workspace_access resource.</p>
 
       <SettingsSection maxWidth="100%">
-        <Space align="center" style={{ marginBottom: 12 }}>
-          <TeamOutlined style={{ color: token.colorTextSecondary }} />
-          <Typography.Text type="secondary">{teamCountLabel}</Typography.Text>
-        </Space>
-
-        <Spin spinning={loading}>
-          <Table
-            dataSource={accessList}
-            columns={columns}
-            rowKey="id"
-            pagination={false}
-            tableLayout="fixed"
-            scroll={{ x: 996 }}
-            locale={{
-              emptyText: (
-                <EmptyState
-                  simple
-                  description={
-                    canManage
-                      ? "No teams have been granted workspace-level access."
-                      : "You don't have permission to view or manage team assignments for this workspace."
-                  }
-                >
-                  {canManage && (
-                    <Button type="primary" icon={<PlusOutlined />} onClick={scrollToAddForm}>
-                      Add a team
-                    </Button>
-                  )}
-                </EmptyState>
-              ),
-            }}
-            style={{ marginBottom: 32 }}
-          />
-        </Spin>
+        {!loading && accessList.length === 0 ? (
+          <EmptyState
+            simple
+            description={
+              <Typography.Text type="secondary">
+                {canManage
+                  ? "No teams have been granted access to this workspace yet."
+                  : "You don't have permission to view or manage team assignments for this workspace."}
+              </Typography.Text>
+            }
+          >
+            {canManage && (
+              <Button icon={<PlusOutlined />} onClick={scrollToAddForm}>
+                Add a team
+              </Button>
+            )}
+          </EmptyState>
+        ) : (
+          <>
+            <Space align="center" className="team-access-count">
+              <TeamOutlined className="team-access-icon" />
+              <Typography.Text type="secondary">{teamCountLabel}</Typography.Text>
+            </Space>
+            <Spin spinning={loading}>
+              <Table
+                dataSource={accessList}
+                columns={columns}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                tableLayout="fixed"
+                scroll={{ x: "max-content" }}
+                className="team-access-table"
+              />
+            </Spin>
+          </>
+        )}
 
         {canManage && (
           <Card
@@ -440,64 +434,59 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
             title={
               <Space>
                 <UsergroupAddOutlined />
-                <span>Grant Access</span>
+                <span>Grant access</span>
               </Space>
             }
-            style={{ maxWidth: 640, marginBottom: 16 }}
+            className="team-access-grant"
           >
             <Form form={form} layout="vertical" onFinish={onAdd}>
-              <Space align="start" wrap>
-                <Form.Item name="teamName" label="Team" rules={[{ required: true, message: "Team name is required" }]}>
-                  <Select
-                    showSearch
-                    placeholder="Select a team"
-                    optionFilterProp="label"
-                    loading={loadingTeams}
-                    style={{ minWidth: 220 }}
-                    options={teams.map((t) => ({
-                      label: t.name,
-                      value: t.name,
-                      disabled: accessList.some((a) => a.name === t.name),
-                    }))}
-                  />
-                </Form.Item>
-                <Form.Item name="role" label="Role" initialValue="write" rules={[{ required: true }]}>
-                  {renderRoleSelect(addRole ?? "write", (value) => form.setFieldsValue({ role: value }))}
-                </Form.Item>
-              </Space>
+              <Form.Item name="teamName" label="Team" rules={[{ required: true, message: "Team name is required" }]}>
+                <Select
+                  showSearch
+                  placeholder="Select a team"
+                  optionFilterProp="label"
+                  loading={loadingTeams}
+                  options={teams.map((t) => ({
+                    label: t.name,
+                    value: t.name,
+                    disabled: accessList.some((a) => a.name === t.name),
+                  }))}
+                />
+              </Form.Item>
+              <Form.Item name="role" label="Role" initialValue="write" rules={[{ required: true }]}>
+                {renderRoleSelect(addRole ?? "write", (value) => form.setFieldsValue({ role: value }))}
+              </Form.Item>
 
               {addRole === "custom" && (
-                <Space wrap size={16} style={{ marginBottom: 8 }}>
+                <Space wrap size={16} className="team-access-custom-permissions">
                   {PERMISSION_FIELDS.map((field) => (
-                    <Form.Item key={field.key} name={field.key} valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Form.Item
+                      key={field.key}
+                      name={field.key}
+                      valuePropName="checked"
+                      className="team-access-flush-item"
+                    >
                       <Checkbox>{field.label}</Checkbox>
                     </Form.Item>
                   ))}
                 </Space>
               )}
 
-              <Form.Item style={{ marginBottom: 0 }}>
-                <Flex justify="flex-end">
-                  <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
-                    Add Team
-                  </Button>
-                </Flex>
+              <Form.Item className="team-access-flush-item">
+                <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
+                  Add team
+                </Button>
               </Form.Item>
             </Form>
           </Card>
         )}
-
-        <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 16 }}>
-          Teams added here can access this workspace based on their assigned role, in addition to any organization-level
-          or project-level permissions they already have.
-        </Typography.Text>
       </SettingsSection>
 
       <DeleteConfirmationModal
         open={pendingDelete !== null}
         title="Remove team access"
-        message={`Remove team "${pendingDelete?.name}" from this workspace?`}
-        okText="Delete"
+        message={`Team "${pendingDelete?.name}" will lose the access granted on this workspace. Organization and project permissions are not changed.`}
+        okText="Remove access"
         onConfirm={() => {
           if (pendingDelete) {
             onRemove(pendingDelete.id, pendingDelete.name);

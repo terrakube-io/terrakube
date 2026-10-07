@@ -10,9 +10,11 @@ type Props = {
   tokens: UserToken[];
   onDeleted: () => void;
   action: (id: string) => Promise<ApiResponse<undefined>>;
+  // Hide the count heading when the page already titles the section.
+  hideTitle?: boolean;
 };
 
-export default function TokenGrid({ tokens, action, onDeleted }: Props) {
+export default function TokenGrid({ tokens, action, onDeleted, hideTitle }: Props) {
   const [pendingDelete, setPendingDelete] = useState<UserToken | null>(null);
   const { loading, execute, error } = useApiRequest({
     action: action,
@@ -23,11 +25,13 @@ export default function TokenGrid({ tokens, action, onDeleted }: Props) {
 
   return (
     <div className="token-list">
-      <Typography.Title level={4} className="list-header">
-        Tokens ({tokens.length})
-      </Typography.Title>
+      {!hideTitle && (
+        <Typography.Title level={4} className="list-header">
+          Tokens ({tokens.length})
+        </Typography.Title>
+      )}
       {error && <Alert title="Failed to delete token" type="error" showIcon banner />}
-      <Flex vertical gap="middle" style={{ marginTop: error !== undefined ? "10px" : undefined }}>
+      <Flex vertical gap="middle" className={error !== undefined ? "token-list-items-after-error" : undefined}>
         {tokens.map((tkn) => (
           <TokenGridItem key={tkn.id} token={tkn} onDelete={() => setPendingDelete(tkn)} loading={loading} />
         ))}

@@ -5,6 +5,7 @@ import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import "./Projects.css";
 
 type Props = {
   orgid: string;
@@ -57,7 +58,7 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
   ];
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="project-settings-panel">
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/projects/workspace-assignment"
         title="Workspaces"

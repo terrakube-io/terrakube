@@ -1,20 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { Button, Card, Col, Divider, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message } from "antd";
-import {
-  ArrowLeftOutlined,
-  BellOutlined,
-  BranchesOutlined,
-  FolderOutlined,
-  SaveOutlined,
-  TeamOutlined,
-} from "@ant-design/icons";
+import { Form, Input, Select, Tabs, Typography, message } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsForm } from "@/components/settings/SettingsForm";
+import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
+import { RadioChoices } from "@/components/settings/RadioChoices";
+import { DangerZone } from "@/components/settings/DangerZone";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
 import { PolicySetParameters } from "./components";
+import "./PolicySets.css";
 
-const { Paragraph } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -38,8 +34,9 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
   const [notificationConfigs, setNotificationConfigs] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(false);
-  const [isGlobal, setIsGlobal] = useState(false);
+  const [policySetName, setPolicySetName] = useState("");
   const [activeTab, setActiveTab] = useState("settings");
+  const isGlobal = Form.useWatch("global", form);
 
   const backUrl = `/organizations/${orgid}/settings/policies`;
 
@@ -83,7 +80,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
         .then(async (res) => {
           const item = res.data.data;
           const attrs = item.attributes;
-          setIsGlobal(attrs.global || false);
+          setPolicySetName(attrs.name);
 
           const attachedWorkspaces: string[] = [];
           const attachedProjects: string[] = [];
@@ -196,13 +193,13 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
           headers: { "Content-Type": "application/vnd.api+json" },
         });
         savedId = createRes.data?.data?.id;
-        message.success("Policy Set created successfully");
+        message.success("Policy set created");
       } else {
         payload.data.id = policySetId;
         await axiosInstance.patch(`policy_set/${policySetId}`, payload, {
           headers: { "Content-Type": "application/vnd.api+json" },
         });
-        message.success("Policy Set updated successfully");
+        message.success("Policy set updated");
       }
 
       // Sync attachments if not global
@@ -293,262 +290,228 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
     return <LoadingFallback />;
   }
 
+  const onDelete = () => {
+    axiosInstance
+      .delete(`policy_set/${policySetId}`)
+      .then(() => {
+        message.success("Policy set deleted");
+        navigate(backUrl);
+      })
+      .catch((err) => message.error(getErrorMessage(err)));
+  };
+
   const settingsForm = (
-    <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
-      <Card title="General Settings" style={{ marginBottom: 24 }}>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item
-                name="name"
-                label="Policy Set Name"
-                rules={[{ required: true, message: "Please enter a policy set name" }]}
-              >
-                <Input placeholder="e.g. enterprise-security-baseline" />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="description" label="Description">
-                <TextArea rows={3} placeholder="Brief description of the rules enforced by this policy set" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+    <>
+      <SettingsForm
+        form={form}
+        onFinish={onFinish}
+        saveLabel={mode === "create" ? "Create policy set" : "Update policy set"}
+        saveDisabled={!managePermission}
+        saving={submitting}
+      >
+        <SettingsSection title="Identity">
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Enter a name for the policy set" }]}>
+            <Input placeholder="security-baseline" />
+          </Form.Item>
+          <Form.Item name="description" label="Description">
+            <TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="What these rules check" />
+          </Form.Item>
+        </SettingsSection>
 
-        <Card title="Enforcement & Governance" style={{ marginBottom: 24 }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="enforcementLevel"
-                label="Enforcement Level"
-                rules={[{ required: true, message: "Please select an enforcement level" }]}
-                tooltip="Hard-mandatory halts execution on violation. Soft-mandatory requires authorized override. Advisory prints warnings."
-              >
-                <Select>
-                  <Option value="HARD_MANDATORY">Hard Mandatory (Blocks Apply)</Option>
-                  <Option value="SOFT_MANDATORY">Soft Mandatory (Requires Override)</Option>
-                  <Option value="ADVISORY">Advisory (Warning Only)</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="shadowEnforcementLevel"
-                label="Shadow Mode (Telemetry Only)"
-                tooltip="Evaluates rules against incoming plans for metrics without altering pass/fail status."
-              >
-                <Select allowClear placeholder="Disabled">
-                  <Option value="HARD_MANDATORY">Shadow Hard-Mandatory</Option>
-                  <Option value="SOFT_MANDATORY">Shadow Soft-Mandatory</Option>
-                  <Option value="ADVISORY">Shadow Advisory</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item
-                name="overrideTeam"
-                label="Authorized Override Team (optional)"
-                tooltip="RBAC team authorized to approve soft-mandatory violations in the UI or API."
-              >
-                <Select
-                  showSearch
-                  allowClear
-                  placeholder="Select an override team (optional)"
-                  data-testid="policy-set-override-team-select"
-                  loading={loadingTeams}
-                  filterOption={(input, option) =>
-                    String(option?.value ?? "")
-                      .toLowerCase()
-                      .includes(input.toLowerCase())
-                  }
+        <SettingsSection title="Enforcement" description="What happens to a run that violates a rule in this set.">
+          <Form.Item
+            name="enforcementLevel"
+            label="Enforcement level"
+            rules={[{ required: true, message: "Choose an enforcement level" }]}
+          >
+            <RadioChoices
+              options={[
+                { value: "HARD_MANDATORY", label: "Hard mandatory", help: "The run stops before apply." },
+                {
+                  value: "SOFT_MANDATORY",
+                  label: "Soft mandatory",
+                  help: "The run waits until a member of the override team approves it.",
+                },
+                { value: "ADVISORY", label: "Advisory", help: "The violation is reported and the run continues." },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="overrideTeam"
+            label="Override team"
+            extra="Members of this team can approve soft-mandatory violations."
+          >
+            <Select
+              showSearch
+              allowClear
+              placeholder="No override team"
+              data-testid="policy-set-override-team-select"
+              loading={loadingTeams}
+              filterOption={(input, option) =>
+                String(option?.value ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+            >
+              {teamOptions.map((t) => (
+                <Option key={t.id} value={t.name}>
+                  {t.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="shadowEnforcementLevel"
+            label="Shadow enforcement"
+            extra="Also evaluates the rules at this level and records the result, without changing the run."
+          >
+            <Select allowClear placeholder="Off">
+              <Option value="HARD_MANDATORY">Hard mandatory</Option>
+              <Option value="SOFT_MANDATORY">Soft mandatory</Option>
+              <Option value="ADVISORY">Advisory</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="opaVersion"
+            label="OPA version"
+            extra={
+              <>
+                Leave empty to use the default version. See{" "}
+                <Typography.Link
+                  href="https://github.com/open-policy-agent/opa/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  {teamOptions.map((t) => (
-                    <Option key={t.id} value={t.name}>
-                      <Space>
-                        <TeamOutlined />
-                        <span>{t.name}</span>
-                      </Space>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item
-                name="opaVersion"
-                label="OPA Version"
-                tooltip="Custom Open Policy Agent version used to evaluate this policy set."
-                extra={
-                  <span>
-                    Leave blank to inherit the system default. Check available releases on the{" "}
-                    <a
-                      href="https://github.com/open-policy-agent/opa/releases"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      OPA GitHub Releases
-                    </a>{" "}
-                    page (e.g. <code>1.20.2</code> or <code>0.68.0</code>).
-                  </span>
-                }
-              >
-                <Input placeholder="Inherit system default (e.g. 1.20.2)" data-testid="policy-set-opa-version-input" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+                  OPA releases
+                </Typography.Link>
+                .
+              </>
+            }
+          >
+            <Input
+              className="policy-mono"
+              placeholder="Inherit system default (e.g. 1.20.2)"
+              data-testid="policy-set-opa-version-input"
+            />
+          </Form.Item>
+          <Form.Item
+            name="notificationConfigurationId"
+            label="Notification"
+            extra="Sends a message to this channel when a run violates a rule in this set."
+          >
+            <Select
+              allowClear
+              placeholder="No notification"
+              data-testid="policy-set-notification-select"
+              options={notificationConfigs.map((nc) => ({
+                value: nc.id,
+                label: nc.attributes?.name || nc.id,
+              }))}
+            />
+          </Form.Item>
+        </SettingsSection>
 
-        <Card title="Notifications & Alerting" style={{ marginBottom: 24 }}>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item
-                name="notificationConfigurationId"
-                label="Notification Channel"
-                tooltip="Optional channel to receive immediate alerts whenever hard or soft violations are detected in this policy set."
-              >
-                <Select
-                  allowClear
-                  placeholder="Select Notification Channel (Optional)"
-                  data-testid="policy-set-notification-select"
-                >
-                  {notificationConfigs.map((nc) => (
-                    <Option key={nc.id} value={nc.id}>
-                      <Space>
-                        <BellOutlined />
-                        <span>{nc.attributes?.name || nc.id}</span>
-                        {nc.attributes?.channelType && <Tag color="purple">{nc.attributes.channelType}</Tag>}
-                      </Space>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+        <SettingsSection title="Source" description="The repository folder that holds the Rego files.">
+          <Form.Item name="vcsId" label="VCS provider">
+            <Select
+              allowClear
+              placeholder="No VCS provider"
+              options={vcsProviders.map((v) => ({ value: v.id, label: v.attributes?.name || v.id }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="repository"
+            label="Repository"
+            rules={[{ required: true, message: "Enter the repository URL" }]}
+          >
+            <Input className="policy-mono" placeholder="https://github.com/org/opa-policies.git" />
+          </Form.Item>
+          <Form.Item name="branch" label="Branch">
+            <Input className="policy-mono" placeholder="main" />
+          </Form.Item>
+          <Form.Item name="folder" label="Folder">
+            <Input className="policy-mono" placeholder="/" />
+          </Form.Item>
+        </SettingsSection>
 
-        <Card title="Source Repository" style={{ marginBottom: 24 }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="vcsId" label="VCS Provider">
-                <Select allowClear placeholder="Select VCS Provider">
-                  {vcsProviders.map((v) => (
-                    <Option key={v.id} value={v.id}>
-                      {v.attributes?.name || v.id}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="repository"
-                label="Repository / Source"
-                rules={[{ required: true, message: "Please specify repository URL or identifier" }]}
-              >
-                <Input placeholder="e.g. https://github.com/org/opa-policies.git" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="branch" label="Branch">
-                <Input prefix={<BranchesOutlined />} placeholder="main" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="folder" label="Policy Directory Path">
-                <Input prefix={<FolderOutlined />} placeholder="/" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="Scope & Attachments" style={{ marginBottom: 24 }}>
+        <SettingsSection title="Scope" description="The workspaces checked against this policy set.">
           <Form.Item
             name="global"
-            label="Global Scope"
-            valuePropName="checked"
-            extra="When enabled, this policy set automatically evaluates against every workspace in the organization."
+            label="Applies to"
+            getValueProps={(value) => ({ value: value ? "all" : "selected" })}
+            normalize={(value) => value === "all"}
           >
-            <Switch checked={isGlobal} onChange={(checked) => setIsGlobal(checked)} />
+            <RadioChoices
+              options={[
+                { value: "all", label: "All workspaces", help: "Every workspace in the organization." },
+                {
+                  value: "selected",
+                  label: "Selected workspaces",
+                  help: "Only the workspaces, projects and tags chosen below.",
+                },
+              ]}
+            />
           </Form.Item>
 
           {!isGlobal && (
             <>
-              <Divider />
-              <Paragraph type="secondary">
-                Attach this policy set to specific workspaces, projects, or tags across the organization.
-              </Paragraph>
-              <Row gutter={16}>
-                <Col span={24}>
-                  <Form.Item name="workspaces" label="Attached Workspaces">
-                    <Select mode="multiple" placeholder="Select Workspaces" allowClear style={{ width: "100%" }}>
-                      {workspaces.map((ws) => (
-                        <Option key={ws.id} value={ws.id}>
-                          {ws.attributes?.name || ws.id}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="projects" label="Attached Projects">
-                    <Select mode="multiple" placeholder="Select Projects" allowClear style={{ width: "100%" }}>
-                      {projects.map((p) => (
-                        <Option key={p.id} value={p.id}>
-                          {p.attributes?.name || p.id}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="tags" label="Attached Tags">
-                    <Select mode="multiple" placeholder="Select Tags" allowClear style={{ width: "100%" }}>
-                      {tags.map((t) => (
-                        <Option key={t.id} value={t.id}>
-                          {t.attributes?.name || t.id}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-              </Row>
+              <Form.Item name="workspaces" label="Workspaces">
+                <Select
+                  mode="multiple"
+                  placeholder="Choose workspaces"
+                  allowClear
+                  optionFilterProp="label"
+                  options={workspaces.map((ws) => ({ value: ws.id, label: ws.attributes?.name || ws.id }))}
+                />
+              </Form.Item>
+              <Form.Item name="projects" label="Projects" extra="Includes every workspace in the project.">
+                <Select
+                  mode="multiple"
+                  placeholder="Choose projects"
+                  allowClear
+                  optionFilterProp="label"
+                  options={projects.map((p) => ({ value: p.id, label: p.attributes?.name || p.id }))}
+                />
+              </Form.Item>
+              <Form.Item name="tags" label="Tags" extra="Includes every workspace with the tag.">
+                <Select
+                  mode="multiple"
+                  placeholder="Choose tags"
+                  allowClear
+                  optionFilterProp="label"
+                  options={tags.map((t) => ({ value: t.id, label: t.attributes?.name || t.id }))}
+                />
+              </Form.Item>
             </>
           )}
-        </Card>
+        </SettingsSection>
+      </SettingsForm>
 
-        <Form.Item>
-          <Space>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<SaveOutlined />}
-              loading={submitting}
-              disabled={!managePermission}
-            >
-              {mode === "create" ? "Create Policy Set" : "Save Changes"}
-            </Button>
-            <Button onClick={() => navigate(backUrl)}>Cancel</Button>
-          </Space>
-        </Form.Item>
-      </Form>
+      {mode === "edit" && policySetId && (
+        <DangerZone
+          actionName="Delete this policy set"
+          description="Workspaces stop being checked against these rules. Its attachments, parameters and exemptions are deleted too. This cannot be undone."
+          disabled={!managePermission}
+          onConfirm={onDelete}
+          confirmValue={policySetName}
+          confirmMessage={`Workspaces will no longer be checked against ${policySetName}. Its attachments, parameters and exemptions are deleted too. This cannot be undone.`}
+        />
+      )}
+    </>
   );
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div>
       <SettingsPageHeader
-        title={mode === "create" ? "Create Policy Set" : "Edit Policy Set"}
-        description="Configure Open Policy Agent (OPA) guardrails, enforcement levels, and repository source."
-        actions={
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backUrl)}>
-            Back to Policy Sets
-          </Button>
-        }
+        title={mode === "create" ? "Create policy set" : "Edit policy set"}
+        description="Choose the rules to enforce, how strictly, and on which workspaces."
+        divider={mode === "create"}
       />
 
       {mode === "edit" && policySetId ? (
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
-          style={{ marginBottom: 24 }}
           items={[
             {
               key: "settings",
@@ -558,12 +521,7 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
             {
               key: "parameters",
               label: "Parameters",
-              children: (
-                <PolicySetParameters
-                  policySetId={policySetId}
-                  managePermission={managePermission}
-                />
-              ),
+              children: <PolicySetParameters policySetId={policySetId} managePermission={managePermission} />,
             },
           ]}
         />

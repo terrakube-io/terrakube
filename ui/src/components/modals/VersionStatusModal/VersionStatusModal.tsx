@@ -1,6 +1,7 @@
 import { Alert, Form, Input, Modal, Radio } from "antd";
 import { useEffect, useState } from "react";
 import { VersionKind, VersionStatus, VersionStatusValue } from "./versionStatus";
+import "./VersionStatusModal.css";
 
 type FormValues = {
   status: VersionStatusValue;
@@ -105,7 +106,7 @@ export default function VersionStatusModal({ open, version, kind, status, onCanc
           <>
             <Form.Item name="deprecationMessage" label="Message" extra={MESSAGE_HELP[kind]} rules={[{ max: 1024 }]}>
               {/* The counter is absolutely positioned under the textarea; keep the help text below it. */}
-              <Input.TextArea rows={3} maxLength={1024} showCount style={{ marginBottom: 20 }} />
+              <Input.TextArea rows={3} maxLength={1024} showCount className="version-status-message" />
             </Form.Item>
             {selected === "removed" && <Alert type="error" showIcon title={REMOVE_WARNING[kind]} />}
           </>

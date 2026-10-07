@@ -76,7 +76,7 @@
 }
 
 [data-theme="dark"] .create-pat-modal .token-display .created-token {
-  color: var(--tk-accent);
+  color: var(--tk-link);
 }
 
 [data-theme="dark"] .create-pat-modal .warning-banner {

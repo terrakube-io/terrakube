@@ -1,14 +1,5 @@
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  DownOutlined,
-  SafetyCertificateOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ExclamationCircleOutlined,
-  QuestionCircleOutlined,
-} from "@ant-design/icons";
-import { Row, Col, Select, Input, Button, Popover, Badge, Switch, Flex, Typography, Tag, Space } from "antd";
+import { CloseOutlined, DeleteOutlined, DownOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Button, Input, Popover, Select, Switch, Tag } from "antd";
 import clsx from "classnames";
 import { useEffect, useMemo, useState } from "react";
 import organizationService from "@/modules/organizations/organizationService";
@@ -92,9 +83,7 @@ export default function WorkspaceFilter({
     // inline function on every render, which would otherwise refetch in a loop.
   }, [organizationId]);
 
-  const options = useMemo(() => {
-    return tags.map((t) => ({ label: t.name, value: t.id }));
-  }, [tags]);
+  const tagOptions = useMemo(() => tags.map((t) => ({ label: t.name, value: t.id })), [tags]);
 
   const [isTagsPopoverOpen, setIsTagsPopoverOpen] = useState(false);
   const [tempTagRows, setTempTagRows] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
@@ -119,17 +108,13 @@ export default function WorkspaceFilter({
     setIsTagsPopoverOpen(false);
   };
 
-  const handleCancelTags = () => {
+  const handleClearTags = () => {
+    onTagFiltersChange([]);
     setIsTagsPopoverOpen(false);
   };
 
   const addFilterRow = () => {
     setTempTagRows([...tempTagRows, { key: "", value: "" }]);
-  };
-
-  const handleClearTags = () => {
-    onTagFiltersChange([]);
-    setIsTagsPopoverOpen(false);
   };
 
   // Removing the last row leaves an empty one, so the popover always has a row to fill in
@@ -145,58 +130,54 @@ export default function WorkspaceFilter({
   };
 
   const tagsContent = (
-    <div className="filter-popover-content">
-      <div className="filter-popover-header">
-        <Row gutter={12}>
-          <Col span={11}>Tag key</Col>
-          <Col span={11}>Tag value (Optional)</Col>
-          <Col span={2}></Col>
-        </Row>
+    <div className="workspace-tag-filter">
+      <div className="workspace-tag-filter-header" aria-hidden="true">
+        <span>Tag key</span>
+        <span>Value (optional)</span>
       </div>
       {tempTagRows.map((row, index) => (
-        <div key={index} className="filter-row">
+        <div key={index} className="workspace-tag-filter-row">
           <Select
             showSearch
-            placeholder="Select tag"
-            optionFilterProp="children"
-            options={options}
+            aria-label="Tag key"
+            placeholder="Select a key"
+            options={tagOptions}
+            optionFilterProp="label"
             value={row.key || undefined}
             onChange={(val) => updateFilterRow(index, "key", val)}
-            filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-            style={{ width: "45%" }}
+            notFoundContent="No tags in this organization"
           />
           <Input
+            aria-label="Tag value"
             placeholder="Any value"
             value={row.value}
             maxLength={TAG_VALUE_MAX_LENGTH}
             onChange={(e) => updateFilterRow(index, "value", e.target.value)}
-            style={{ width: "45%" }}
           />
-          <DeleteOutlined
-            className="filter-row-remove"
+          <Button
+            type="text"
+            icon={<DeleteOutlined />}
             aria-label="Remove this tag filter"
             onClick={() => removeFilterRow(index)}
           />
         </div>
       ))}
-      <button type="button" className="add-filter-btn" onClick={addFilterRow}>
-        <PlusOutlined /> Filter by another tag
-      </button>
-      <div className="filter-footer">
+      <Button type="link" icon={<PlusOutlined />} className="workspace-tag-filter-add" onClick={addFilterRow}>
+        Filter by another tag
+      </Button>
+      <div className="workspace-tag-filter-footer">
         {tagFilters.length > 0 && (
-          <Button type="link" className="filter-footer-clear" onClick={handleClearTags}>
+          <Button type="link" className="workspace-tag-filter-clear" onClick={handleClearTags}>
             Clear
           </Button>
         )}
-        <Button onClick={handleCancelTags}>Cancel</Button>
+        <Button onClick={() => setIsTagsPopoverOpen(false)}>Cancel</Button>
         <Button type="primary" onClick={handleApplyTags}>
-          Apply Filter
+          Apply filter
         </Button>
       </div>
     </div>
   );
-
-  const controlSize = compact ? "small" : "middle";
 
   const hasActiveFilters =
     status !== WorkspaceStatusFilter.All ||
@@ -213,80 +194,42 @@ export default function WorkspaceFilter({
   };
 
   const policyOptions = [
-    {
-      value: PolicyComplianceFilter.All,
-      label: (
-        <Space size={6}>
-          <SafetyCertificateOutlined style={{ color: "var(--tk-accent, #1677ff)" }} />
-          <span>All policies ({policyCounts?.All ?? 0})</span>
-        </Space>
-      ),
-    },
-    {
-      value: PolicyComplianceFilter.Compliant,
-      label: (
-        <Space size={6}>
-          <CheckCircleOutlined style={{ color: "#2eb039" }} />
-          <span>Compliant ({policyCounts?.COMPLIANT ?? 0})</span>
-        </Space>
-      ),
-    },
-    {
-      value: PolicyComplianceFilter.NonCompliant,
-      label: (
-        <Space size={6}>
-          <CloseCircleOutlined style={{ color: "#FB0136" }} />
-          <span>Non-compliant ({policyCounts?.NON_COMPLIANT ?? 0})</span>
-        </Space>
-      ),
-    },
-    {
-      value: PolicyComplianceFilter.Exempted,
-      label: (
-        <Space size={6}>
-          <ExclamationCircleOutlined style={{ color: "#108ee9" }} />
-          <span>Exempted ({policyCounts?.EXEMPTED ?? 0})</span>
-        </Space>
-      ),
-    },
-    {
-      value: PolicyComplianceFilter.Unknown,
-      label: (
-        <Space size={6}>
-          <QuestionCircleOutlined style={{ color: "#8c8c8c" }} />
-          <span>Unknown ({policyCounts?.UNKNOWN ?? 0})</span>
-        </Space>
-      ),
-    },
+    { value: PolicyComplianceFilter.All, label: `All policies (${policyCounts?.All ?? 0})` },
+    { value: PolicyComplianceFilter.Compliant, label: `Compliant (${policyCounts?.COMPLIANT ?? 0})` },
+    { value: PolicyComplianceFilter.NonCompliant, label: `Non-compliant (${policyCounts?.NON_COMPLIANT ?? 0})` },
+    { value: PolicyComplianceFilter.Exempted, label: `Exempted (${policyCounts?.EXEMPTED ?? 0})` },
+    { value: PolicyComplianceFilter.Unknown, label: `Unknown (${policyCounts?.UNKNOWN ?? 0})` },
   ];
+
+  // Statuses nobody is in stay out of the way; "All" and the selected one always show.
+  const visibleStatuses = WORKSPACE_STATUS_PALETTE.filter(
+    (opt) =>
+      opt.value === WorkspaceStatusFilter.All ||
+      opt.value === status ||
+      statusCounts === undefined ||
+      (statusCounts[opt.value] ?? 0) > 0
+  );
 
   return (
     <div className={clsx("workspace-filter-container", { "workspace-filter-container--compact": compact })}>
-      {/* Top row: Search (+ project picker and group-by-project in compact mode) */}
-      <div className="workspace-filter-search-row">
-        <Input.Search
-          size="large"
+      <div className="workspace-filter-controls">
+        <Input
           aria-label="Search workspaces by name"
-          placeholder="Search by name..."
+          placeholder="Search by name"
+          prefix={<SearchOutlined />}
           value={searchInputValue}
           onChange={(e) => {
-            const value = e.target.value;
-            setSearchInputValue(value);
-            // Compact ("New") view filters live as you type. Legacy view keeps its
-            // original behavior of only committing the search on Enter/search-click.
-            if (compact) {
-              onSearchChange(value);
-            }
+            setSearchInputValue(e.target.value);
+            onSearchChange(e.target.value);
           }}
-          onSearch={() => onSearchChange(searchInputValue)}
           allowClear
           className="workspace-search-input"
         />
-        {compact && projects.length > 0 && (
+        {projects.length > 0 && (
           <Select
-            size="large"
             showSearch
             allowClear
+            aria-label="Project"
             placeholder="All projects"
             value={projectId ?? undefined}
             onChange={(val) => onProjectIdChange(val ?? null)}
@@ -298,106 +241,84 @@ export default function WorkspaceFilter({
             className="workspace-project-select"
           />
         )}
+        {onPolicyStatusChange && (
+          <Select
+            aria-label="Policy status"
+            value={policyStatus || PolicyComplianceFilter.All}
+            onChange={(val) => onPolicyStatusChange(val)}
+            options={policyOptions}
+            className="workspace-policy-select"
+            data-testid="workspace-policy-filter-select"
+          />
+        )}
+        <Popover
+          content={tagsContent}
+          trigger="click"
+          open={isTagsPopoverOpen}
+          onOpenChange={handleOpenChange}
+          placement="bottomRight"
+          arrow={false}
+        >
+          <Button aria-haspopup="dialog" aria-expanded={isTagsPopoverOpen} className="workspace-tags-button">
+            Tags
+            {tagFilters.length > 0 && <span className="workspace-tags-count">{tagFilters.length}</span>}
+            <DownOutlined />
+          </Button>
+        </Popover>
+        <Select
+          aria-label="Sort by"
+          value={sortOption}
+          onChange={onSortChange}
+          options={WORKSPACE_SORT_OPTIONS}
+          className="workspace-sort-select"
+        />
+      </div>
+
+      <div className="workspace-filter-status-row">
+        <div className="workspace-status-pills" role="group" aria-label="Filter by status">
+          {visibleStatuses.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={status === opt.value}
+              data-status={opt.value}
+              className={clsx("workspace-status-pill", { "workspace-status-pill--active": status === opt.value })}
+              onClick={() => onStatusChange(opt.value)}
+            >
+              {opt.icon}
+              {opt.label}
+              {statusCounts?.[opt.value] !== undefined && (
+                <span className="workspace-status-count">{statusCounts[opt.value]}</span>
+              )}
+            </button>
+          ))}
+          {hasActiveFilters && (
+            <button type="button" className="workspace-clear-filters" onClick={handleClearFilters}>
+              Clear all
+            </button>
+          )}
+        </div>
         {compact && (
-          <Flex align="center" gap={8} className="workspace-group-toggle">
-            <Switch checked={groupByProject} onChange={(checked) => onGroupByProjectChange(checked)} />
-            <Typography.Text style={{ fontSize: 14 }}>Group by project</Typography.Text>
-          </Flex>
+          <span className="workspace-group-toggle">
+            <Switch
+              id="workspace-group-by-project"
+              size="small"
+              checked={groupByProject}
+              onChange={(checked) => onGroupByProjectChange(checked)}
+            />
+            <label htmlFor="workspace-group-by-project">Group by project</label>
+          </span>
         )}
       </div>
-
-      {/* Bottom row: Status (left) | Tags + Sort (right) */}
-      <div className="workspace-filter-bar">
-        <div className="workspace-filter-left">
-          <div className="workspace-status-pills">
-            {WORKSPACE_STATUS_PALETTE.map((opt) => {
-              const active = status === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  aria-pressed={active}
-                  className={clsx("workspace-status-pill", { "workspace-status-pill--active": active })}
-                  style={opt.color ? { color: opt.color, borderColor: active ? opt.color : undefined } : undefined}
-                  onClick={() => onStatusChange(opt.value)}
-                >
-                  {opt.icon}
-                  {opt.label}
-                  {statusCounts?.[opt.value] !== undefined && (
-                    <span className="workspace-status-count">{statusCounts[opt.value]}</span>
-                  )}
-                </button>
-              );
-            })}
-            {hasActiveFilters && (
-              <button type="button" className="workspace-clear-filters" onClick={handleClearFilters}>
-                Clear all
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="workspace-filter-right">
-          {!compact && projects.length > 0 && (
-            <Select
-              size={controlSize}
-              allowClear
-              placeholder="Project"
-              value={projectId || undefined}
-              onChange={(val) => onProjectIdChange(val ?? null)}
-              options={[
-                { label: "(Unassigned)", value: "__unassigned__" },
-                ...projects.map((p) => ({ label: p.name, value: p.id })),
-              ]}
-              style={{ minWidth: 140 }}
-            />
-          )}
-          {onPolicyStatusChange && (
-            <Select
-              size={controlSize}
-              value={policyStatus || PolicyComplianceFilter.All}
-              onChange={(val) => onPolicyStatusChange(val)}
-              options={policyOptions}
-              style={{ minWidth: 165 }}
-              placeholder="Policy status"
-              data-testid="workspace-policy-filter-select"
-            />
-          )}
-          <Popover
-            content={tagsContent}
-            trigger="click"
-            open={isTagsPopoverOpen}
-            onOpenChange={handleOpenChange}
-            placement="bottomRight"
-            overlayClassName="workspace-filter-popover"
-          >
-            <Button size={controlSize} className={`filter-button ${tagFilters.length > 0 ? "active" : ""}`}>
-              Tags
-              {tagFilters.length > 0 && <Badge count={tagFilters.length} style={{ backgroundColor: "#52c41a" }} />}
-              <DownOutlined />
-            </Button>
-          </Popover>
-          <Select
-            size={controlSize}
-            value={sortOption}
-            onChange={onSortChange}
-            options={WORKSPACE_SORT_OPTIONS}
-            className="workspace-sort-select"
-            placeholder="Sort by"
-          />
-        </div>
-      </div>
-
-      {compact && tagFilters.length > 0 && (
-        <Flex align="center" gap={6} wrap className="workspace-active-tags-row">
-          <Typography.Text style={{ fontSize: 12 }} type="secondary">
-            Filtering by tag:
-          </Typography.Text>
+      {tagFilters.length > 0 && (
+        <div className="workspace-active-tags" role="group" aria-label="Active tag filters">
+          <span className="workspace-active-tags-label">Filtering by tag</span>
           {tagFilters.map((filter) => (
             <Tag
               key={`${filter.tagId}:${filter.value ?? ""}`}
               title={formatWorkspaceTag(filter, tags)}
               closable
+              closeIcon={<CloseOutlined aria-label={`Remove the tag filter ${formatWorkspaceTag(filter, tags)}`} />}
               onClose={(e) => {
                 e.preventDefault();
                 onTagFiltersChange(tagFilters.filter((current) => current !== filter));
@@ -406,7 +327,7 @@ export default function WorkspaceFilter({
               <WorkspaceTagLabel binding={filter} tags={tags} />
             </Tag>
           ))}
-        </Flex>
+        </div>
       )}
     </div>
   );

@@ -1,0 +1,72 @@
+/* Organization icon picker: a trigger showing the current icon and a searchable icon grid in a popover. */
+
+.icon-selector-trigger {
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 4px;
+  padding: 4px 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 32px;
+}
+
+.icon-selector-trigger .org-icon {
+  font-size: 20px;
+}
+
+.icon-selector-placeholder {
+  color: var(--tk-text-tertiary);
+}
+
+.icon-selector-panel {
+  width: min(600px, calc(100vw - 32px));
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.icon-selector-search {
+  margin-bottom: 8px;
+}
+
+.icon-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.icon-selector-option {
+  padding: 6px;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 4px;
+  height: 60px;
+  width: 100%;
+  max-width: 130px;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.icon-selector-option-selected {
+  border-color: var(--tk-accent);
+}
+
+.icon-selector-option .org-icon {
+  font-size: 24px;
+}
+
+.icon-selector-option-label {
+  font-size: 9px;
+  margin-top: 2px;
+  color: var(--tk-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
