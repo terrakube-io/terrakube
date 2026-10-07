@@ -1,7 +1,7 @@
 import { ArrowLeftOutlined, LeftOutlined, RightOutlined, RollbackOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Avatar, Button, Empty, Skeleton, Space, Tabs, Typography, message } from "antd";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -93,7 +93,8 @@ export const States = ({
   onRollback,
   manageState,
 }: Props) => {
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE) ?? "";
+  const { orgid } = useParams();
+  const organizationId = orgid ?? sessionStorage.getItem(ORGANIZATION_ARCHIVE) ?? "";
   const [selectedId, setSelectedId] = useState<string>();
   const [stateJson, setStateJson] = useState<Loaded>();
   const [rawState, setRawState] = useState<Loaded>();

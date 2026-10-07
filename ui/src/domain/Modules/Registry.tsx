@@ -16,6 +16,8 @@ import { FlatProvider } from "../Providers/types";
 import { ErrorInformation } from "@/modules/api/types";
 import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
+import { compareVersionsDesc } from "./registryHelpers";
 import "./Module.css";
 
 const PAGE_SIZE = 10;
@@ -63,16 +65,7 @@ async function fetchProviders(orgId: string): Promise<FlatProvider[]> {
 
   return data.map((p: any) => {
     const versions = providerVersions[p.id] || [];
-    // Sort semver descending to get latest
-    versions.sort((a: string, b: string) => {
-      const pa = a.split(".").map(Number);
-      const pb = b.split(".").map(Number);
-      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-        const diff = (pb[i] || 0) - (pa[i] || 0);
-        if (diff !== 0) return diff;
-      }
-      return 0;
-    });
+    versions.sort(compareVersionsDesc);
     return {
       id: p.id,
       ...p.attributes,
@@ -97,6 +90,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ErrorInformation | undefined>(undefined);
   const [listViewMode, setListViewMode] = useState<ListViewMode>(() => getStoredListViewMode());
+  const { permissions } = useOrgPermissions();
 
   // Track which data has been loaded to avoid re-fetching
   const modulesLoaded = useRef(false);
@@ -174,15 +168,19 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
     init();
   }, [orgid]);
 
-  const handleTabChange = (key: string) => {
-    setSearchParams({ tab: key });
-    setPage(1);
-    // Lazy load the other tab's data on first switch
-    if (key === "providers") {
+  // Lazy load the other tab's data on first switch, whether from the control or Back/Forward.
+  useEffect(() => {
+    if (loading) return;
+    if (activeTab === "providers") {
       loadProviders();
     } else {
       loadModules();
     }
+  }, [activeTab, loading, loadModules, loadProviders]);
+
+  const handleTabChange = (key: string) => {
+    setSearchParams({ tab: key });
+    setPage(1);
   };
 
   const filter = searchFilter.trim().toLowerCase();
@@ -192,7 +190,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
   const pageItems = filtered?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) ?? [];
   const noun = isModules ? "modules" : "providers";
 
-  const publishButton = (
+  const publishButton = permissions.manageModule && (
     <LinkButton type="primary" icon={<CloudUploadOutlined />} to={`/organizations/${orgid}/registry/create`}>
       Publish module
     </LinkButton>
@@ -218,7 +216,7 @@ export const Registry = ({ setOrganizationName, organizationName }: Props) => {
               : `There are no providers in ${organizationName} yet. Add one from the public registry.`
           }
         >
-          {isModules ? publishButton : searchButton("primary")}
+          {isModules && publishButton ? publishButton : searchButton("primary")}
         </EmptyState>
       );
     }

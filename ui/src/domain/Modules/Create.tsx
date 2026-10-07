@@ -57,11 +57,10 @@ export const CreateModule = () => {
   // "terraform-aws-vpc.git" names the module "vpc" for the "aws" provider; fill in what is still empty.
   const fillFromSource = () => {
     const source: string | undefined = form.getFieldValue("source");
-    const providerValue = source?.match("terraform-(.*)-");
-    if (!source || !providerValue) return;
-    if (!form.getFieldValue("provider")) form.setFieldsValue({ provider: providerValue[1] });
-    const nameValue = source.match(providerValue[1] + "-(.*).git");
-    if (nameValue && !form.getFieldValue("name")) form.setFieldsValue({ name: nameValue[1] });
+    const match = source?.match(/terraform-([^-/]+)-([^/]+?)(?:\.git)?\/?$/);
+    if (!match) return;
+    if (!form.getFieldValue("provider")) form.setFieldsValue({ provider: match[1] });
+    if (!form.getFieldValue("name")) form.setFieldsValue({ name: match[2] });
   };
 
   const onFinish = (values: CreateModuleForm) => {

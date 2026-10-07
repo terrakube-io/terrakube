@@ -33,15 +33,18 @@ type ModuleDetails = {
 };
 
 const Markdown = lazy(async () => {
-  const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }] = await Promise.all([
-    import("react-markdown"),
-    import("remark-gfm"),
-    import("rehype-raw"),
-  ]);
+  const [{ default: ReactMarkdown }, { default: remarkGfm }, { default: rehypeRaw }, { default: rehypeSanitize }] =
+    await Promise.all([
+      import("react-markdown"),
+      import("remark-gfm"),
+      import("rehype-raw"),
+      import("rehype-sanitize"),
+    ]);
 
   const MarkdownWithPlugins = ({ children }: { children: string }) => {
     return (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+      // READMEs come from module repositories: keep their HTML, but sanitize it so it can't run script.
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]}>
         {children}
       </ReactMarkdown>
     );

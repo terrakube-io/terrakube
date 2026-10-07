@@ -40,5 +40,6 @@ describe("TeamPermissionsV2", () => {
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Manage modules" })).toBeChecked());
     expect(screen.getByRole("checkbox", { name: "Manage modules" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Manage policies" })).toBeChecked();
   });
 });

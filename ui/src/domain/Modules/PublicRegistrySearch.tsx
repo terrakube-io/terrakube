@@ -13,6 +13,7 @@ import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { listProviders } from "../Providers/providerService";
 import { formatCount } from "@/modules/utils/formatCount";
 import { providerIcon } from "./registryHelpers";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import "./PublicRegistrySearch.css";
 import { ProviderModel } from "../Providers/types";
 import { ModuleModel } from "../types";
@@ -100,6 +101,7 @@ type ModalState = {
 export const PublicRegistrySearch = ({ organizationName }: Props) => {
   const { orgid } = useParams<Params>();
   const navigate = useNavigate();
+  const { permissions } = useOrgPermissions();
 
   // Tab and query live in the URL so returning from a provider page restores the results.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -367,7 +369,7 @@ export const PublicRegistrySearch = ({ organizationName }: Props) => {
             )}
           </span>
         </span>
-        {!alreadyImported && (
+        {!alreadyImported && permissions.manageModule && (
           <Button
             icon={<PlusOutlined />}
             aria-label={`Add ${module.namespace}/${module.name}`}

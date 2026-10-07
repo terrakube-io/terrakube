@@ -31,15 +31,29 @@ export function registryHostname(): string {
  * Returns the description without it, and the URL with its owner/repo label.
  */
 export function parseProviderDescription(description = "") {
-  const url = description.match(/https?:\/\/[^\s]+/)?.[0];
-  const text = (url ? description.replace(url, "") : description).replace(/Source:?\s*/i, "").trim();
+  const match = description.match(/https?:\/\/[^\s]+/)?.[0];
+  const text = (match ? description.replace(match, "") : description).replace(/Source:?\s*/i, "").trim();
+  // A clone URL ("…/repo.git") is not a page; links such as "/issues" are built on top of it.
+  const url = match?.replace(/\/+$/, "").replace(/\.git$/, "");
   let label = "";
   if (url) {
     try {
-      label = new URL(url).pathname.replace(/^\//, "").replace(/\.git$/, "");
+      label = new URL(url).pathname.replace(/^\//, "");
     } catch {
       /* invalid URL – show none */
     }
   }
   return { text, source: url && label ? { url, label } : undefined };
+}
+
+/** Newest first: "1.10.0" before "1.9.0", a release before its pre-releases, a leading "v" ignored. */
+export function compareVersionsDesc(a: string, b: string) {
+  const [coreA, preA] = a.replace(/^v/, "").split(/-(.*)/);
+  const [coreB, preB] = b.replace(/^v/, "").split(/-(.*)/);
+  const numeric = { numeric: true };
+  const byCore = coreB.localeCompare(coreA, undefined, numeric);
+  if (byCore !== 0 || preA === preB) return byCore;
+  if (!preA) return -1;
+  if (!preB) return 1;
+  return preB.localeCompare(preA, undefined, numeric);
 }

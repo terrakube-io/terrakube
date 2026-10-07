@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import RunList from "../RunList";
 import { FlatJob, JobStatus } from "@/domain/types";
+import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
 
 jest.mock("@/config/axiosConfig", () => ({
   __esModule: true,
@@ -34,6 +35,7 @@ describe("RunList", () => {
   beforeEach(() => sessionStorage.clear());
 
   it("shows the count, only statuses that have runs, and a byline with commit and duration", async () => {
+    sessionStorage.setItem(ORGANIZATION_ARCHIVE, "org-1");
     renderList([job("1", JobStatus.Completed), job("2", JobStatus.Failed), job("3", JobStatus.Completed)]);
 
     expect(screen.getByRole("heading", { name: "Runs (3)" })).toBeInTheDocument();

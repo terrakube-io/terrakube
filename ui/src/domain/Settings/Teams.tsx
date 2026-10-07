@@ -23,6 +23,7 @@ const customPermissionLabels: [keyof Team["attributes"], string][] = [
   ["manageTemplate", "templates"],
   ["manageVcs", "VCS"],
   ["manageCollection", "collections"],
+  ["managePolicies", "policies"],
   ["planJob", "plan runs"],
   ["approveJob", "apply runs"],
 ];

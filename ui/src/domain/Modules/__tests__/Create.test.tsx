@@ -66,6 +66,15 @@ describe("CreateModule", () => {
     expect(await screen.findByText("Module page")).toBeInTheDocument();
   });
 
+  it("reads a multi-word module name and a repository URL with regex characters", () => {
+    renderCreate();
+    fill("Repository URL", "https://example.com/acme/terraform-a(b-vpc-endpoints.git");
+    fireEvent.blur(screen.getByLabelText("Repository URL"));
+
+    expect(screen.getByLabelText("Provider")).toHaveValue("a(b");
+    expect(screen.getByLabelText("Name")).toHaveValue("vpc-endpoints");
+  });
+
   it("links the chosen VCS connection", async () => {
     renderCreate();
     fireEvent.click(await screen.findByRole("radio", { name: "github-main" }));

@@ -31,6 +31,7 @@ type CreateTeamForm = {
 
 type UpdateTeamForm = {
   manageCollection: boolean;
+  managePolicies: boolean;
   manageJob: boolean;
   manageModule: boolean;
   manageProvider: boolean;
@@ -81,6 +82,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           manageVcs: attrs.manageVcs,
           manageTemplate: attrs.manageTemplate,
           manageCollection: attrs.manageCollection,
+          managePolicies: attrs.managePolicies,
           manageJob: attrs.manageJob,
           role: attrs.role || "custom",
           planJob: attrs.planJob ?? attrs.manageJob,
@@ -116,6 +118,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           manageVcs: values.manageVcs,
           manageTemplate: values.manageTemplate,
           manageCollection: values.manageCollection,
+          managePolicies: values.managePolicies,
           manageJob: manageJob,
           role: values.role || "custom",
           planJob: values.planJob,
@@ -157,6 +160,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           manageVcs: values.manageVcs,
           manageTemplate: values.manageTemplate,
           manageCollection: values.manageCollection,
+          managePolicies: values.managePolicies,
           manageJob: manageJob,
           role: values.role || "custom",
           planJob: values.planJob,

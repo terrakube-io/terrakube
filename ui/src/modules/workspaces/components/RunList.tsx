@@ -1,7 +1,7 @@
 import { Avatar, Button, Pagination, Tag, Tooltip, Typography } from "antd";
 import { FieldTimeOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
 import { FiGitCommit } from "react-icons/fi";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { FlatJob, formatJobVia } from "../../../domain/types";
 import { useState, useEffect, useMemo } from "react";
 import axiosInstance from "../../../config/axiosConfig";
@@ -40,7 +40,9 @@ type Props = {
 export default function RunList({ jobs, onRunClick, runLink }: Props) {
   const [currentPage, setCurrentPage] = useState<number>(parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1"));
   const [templateNames, setTemplateNames] = useState<{ [key: string]: string }>({});
-  const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const { orgid } = useParams();
+  // A deep link has the organization in the URL before anything has put it in sessionStorage.
+  const organizationId = orgid ?? sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [status, setStatus] = useState<string>(sessionStorage.getItem(RUNS_FILTER_KEY) || ALL_RUNS);
   const [templateIds, setTemplateIds] = useState<string[]>(
     safeJsonParse(sessionStorage.getItem(RUNS_TEMPLATE_FILTER_KEY), [])
@@ -58,13 +60,18 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
 
   // Load all templates to map template IDs to names
   useEffect(() => {
-    axiosInstance.get(`organization/${organizationId}/template`).then((response) => {
-      const templateMap: { [key: string]: string } = {};
-      response.data.data.forEach((template: any) => {
-        templateMap[template.id] = template.attributes.name;
-      });
-      setTemplateNames(templateMap);
-    });
+    if (!organizationId) return;
+    // Without the names the filter falls back to "Template <id>".
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((response) => {
+        const templateMap: { [key: string]: string } = {};
+        response.data.data.forEach((template: any) => {
+          templateMap[template.id] = template.attributes.name;
+        });
+        setTemplateNames(templateMap);
+      })
+      .catch(() => {});
   }, [organizationId]);
 
   const statusCounts = useMemo(() => {
